@@ -11,7 +11,7 @@
 // browser to prove there is a picture in it and that a non-16:9 target got
 // bars rather than a stretch.
 //
-// Start a server first. node tools/export-smoke.mjs [url] [outDir]
+// Start a server first. node tools/export-smoke.mjs [url] [outDir] [v2]
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,6 +19,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { withAllWorlds, withLegacyRange } from './lib/allWorlds.mjs';
+import { landscapeOwnership, assertLandscapeOwnership } from './range-scene-smoke.mjs';
+import { seedBrowserConstruction, installSeedReceiver } from './lib/landscape-browser.mjs';
 
 const url = process.argv[2] || 'http://127.0.0.1:8080';
 const out = path.resolve(process.argv[3] || '.smoke/export');
@@ -107,6 +109,8 @@ const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
 try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 780 }, acceptDownloads: true });
+  await context.addInitScript(seedBrowserConstruction, 315);
+  await context.addInitScript(installSeedReceiver);
   await context.route('**/soundfonts/', (route) => route.fulfill({ json: [] }));
   await context.route('**/favicon.ico', (route) => route.fulfill({ status: 204 }));
   const page = await context.newPage();
@@ -131,7 +135,9 @@ try {
   entry.searchParams.set('seed', '315');
   // The first card is the Range; its v2 recorder output is covered by
   // range-scene-smoke --suite export (see withLegacyRange).
-  await page.goto(withLegacyRange(withAllWorlds(entry.href)));
+  const v2 = process.argv[4] === 'v2';
+  if (v2) { entry.searchParams.set('rangeRenderer', 'v2'); entry.searchParams.set('rangeView', 'teton-jackson-lake'); }
+  await page.goto(v2 ? withAllWorlds(entry.href) : withLegacyRange(withAllWorlds(entry.href)));
   await page.locator('#titleSettings').evaluate((node) => { node.open = true; });
   const lyrics = page.locator('#lyricGroundingBtn');
   if (await lyrics.getAttribute('aria-pressed') === 'true') await lyrics.click();
@@ -149,15 +155,24 @@ try {
   await page.locator('.worldCard').first().click();
   await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 1500, null, { timeout: 60000 });
 
+  assertLandscapeOwnership(await landscapeOwnership(page));
+  if (v2) {
+    await page.waitForFunction(() => window.__SMW.rangeState?.active, null, { timeout: 120000 });
+    check('actual v2 scene is active for the recording', true, JSON.stringify(await page.evaluate(() => ({ seed: window.__SMW.songSeed, view: window.__SMW.rangeState.viewId, generation: window.__SMW.ridgeStateKey }))));
+  }
+
   // --- record from the HUD, mid-song
   await clickHudButton('#recordBtn');
   check('recording is armed', await page.getAttribute('#recordBtn', 'aria-pressed') === 'true');
+  // Armed includes preparation; wait for the real recorder before measuring.
+  await page.waitForFunction(() => document.getElementById('recordBtn').title === 'Stop recording and save the video', null, { timeout: 120000 });
   await page.waitForTimeout(4000);
   // The HUD holds itself open while recording: its stop control is the only
   // way out, and a faded HUD sits under the canvas.
   check('the HUD stays reachable while recording', await page.locator('#recordBtn').isVisible());
 
   const hudDownload = page.waitForEvent('download', { timeout: 60000 });
+  hudDownload.catch(() => {});
   await clickHudButton('#recordBtn');
   const saved = await hudDownload;
   const hudPath = path.join(out, 'hud' + path.extname(saved.suggestedFilename()));
@@ -192,6 +207,7 @@ try {
   await carSaved.saveAs(carPath);
   const car = await inspect(page, await fs.readFile(carPath), candidate.mimeType);
 
+  assertLandscapeOwnership(await landscapeOwnership(page));
   check('the car export is exactly 800x480', car.width === 800 && car.height === 480, `${car.width}x${car.height}`);
   // The stage is 16:9 and the target is 5:3, so the show must sit in a
   // letterbox: dark top and bottom, picture through the middle. A stretch

@@ -1,0 +1,383 @@
+{
+  "sources": {
+    "src/world/alpine/../BiomeManager.js": "8b4ffa087d70a05c8ea4fae3b7231643730e931d06a8377078c6127e49cff29f",
+    "src/world/alpine/../CelestialState.js": "073e7a5480324a3d6e6cdd91adca24c99a324d3f55aaa23349f19e0f7d6deb65",
+    "src/world/alpine/RangeScene.js": "91dacc54892613115027d5620179e1c99fbba2750b50e14ae393588d522c7b9d",
+    "src/world/alpine/TerrainMaterial.js": "c61d67e0c7cfa82114462018fad0fae4341ece9008f9adb5040beb4e95c6101c",
+    "src/world/alpine/ForestGL.js": "1823b2daea67cc9c756eab963e04af8a5adf4313b00601e98f5e7e83cf24723f",
+    "src/world/alpine/RockStageGL.js": "2e74f0080943759304278f19a45d4bfb97777bd8ac04a22c3bdbec6cc1c65277"
+  },
+  "evidence": {
+    "regions": {
+      "facing": {
+        "day": {
+          "n": 396,
+          "luma": 170.18497222222226,
+          "redBlue": 1.5043692186577446
+        },
+        "dusk": {
+          "n": 396,
+          "luma": 129.50238232323233,
+          "redBlue": 1.5537875804122359
+        },
+        "gap": {
+          "n": 396,
+          "luma": 92.27113333333345,
+          "redBlue": 1.4672174003973648
+        },
+        "moon": {
+          "n": 396,
+          "luma": 100.93381010101012,
+          "redBlue": 1.340790610384581
+        }
+      },
+      "shaded": {
+        "day": {
+          "n": 60575,
+          "luma": 105.94112967395297,
+          "redBlue": 1.5037913016936355
+        },
+        "dusk": {
+          "n": 60575,
+          "luma": 90.07723570119705,
+          "redBlue": 1.4862720882521738
+        },
+        "gap": {
+          "n": 60575,
+          "luma": 85.71352221543953,
+          "redBlue": 1.47276754498544
+        },
+        "moon": {
+          "n": 60575,
+          "luma": 85.97204663311048,
+          "redBlue": 1.466525840109573
+        }
+      },
+      "snow": {
+        "day": {
+          "n": 13099,
+          "luma": 126.8185260859596,
+          "redBlue": 1.2696036244436162
+        },
+        "dusk": {
+          "n": 13099,
+          "luma": 96.09320549660212,
+          "redBlue": 1.4213107396799387
+        },
+        "gap": {
+          "n": 13099,
+          "luma": 86.04157079166279,
+          "redBlue": 1.4431176762301705
+        },
+        "moon": {
+          "n": 13099,
+          "luma": 87.36957273074337,
+          "redBlue": 1.4084683809263208
+        }
+      },
+      "forest": {
+        "day": {
+          "n": 86812,
+          "luma": 93.54088271206345,
+          "redBlue": 1.493314371558122
+        },
+        "dusk": {
+          "n": 86812,
+          "luma": 85.54186568213925,
+          "redBlue": 1.483444434480216
+        },
+        "gap": {
+          "n": 86812,
+          "luma": 79.8981732110647,
+          "redBlue": 1.45526486113098
+        },
+        "moon": {
+          "n": 86812,
+          "luma": 80.72093793710879,
+          "redBlue": 1.4405607424471987
+        }
+      },
+      "water": {
+        "day": {
+          "n": 168155,
+          "luma": 192.52886372523022,
+          "redBlue": 1.2947419226075583
+        },
+        "dusk": {
+          "n": 168155,
+          "luma": 172.6242208520273,
+          "redBlue": 1.365021113132315
+        },
+        "gap": {
+          "n": 168155,
+          "luma": 164.94251240457027,
+          "redBlue": 1.4154858814197844
+        },
+        "moon": {
+          "n": 168155,
+          "luma": 167.5877881240182,
+          "redBlue": 1.3767380486127196
+        }
+      }
+    },
+    "fixed": {
+      "timeMs": 19999.999999999953,
+      "progress01": 0.46927188901679956,
+      "view": "teton-jackson-lake"
+    },
+    "lights": {
+      "day": {
+        "space": "scenic-stage logical px; ground anchor converted through recorded view transforms",
+        "state": {
+          "sun": {
+            "xFrac": 0.5000000000000038,
+            "yFrac": 0.11331491288501717,
+            "radiusFrac": 0.02010352178297441,
+            "scale": 1.1487726733128232,
+            "altitude01": 1,
+            "visibility": 1,
+            "directGain": 1.6,
+            "colorHex": "#ffe2b8"
+          },
+          "moon": {
+            "xFrac": 0.9199999999999999,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.02010352178297441,
+            "scale": 1.1487726733128232,
+            "altitude01": 0,
+            "visibility": 0,
+            "directGain": 0,
+            "colorHex": "#c8d8ff"
+          },
+          "activeBody": "sun",
+          "night01": 0,
+          "dawn01": 0,
+          "dusk01": 0,
+          "ambientMultiplier": 1
+        },
+        "celestial": {
+          "xFrac": 0.5000000000000038,
+          "yFrac": 0.11331491288501717,
+          "radiusFrac": 0.02010352178297441,
+          "scale": 1.1487726733128232,
+          "altitude01": 1,
+          "visibility": 1,
+          "directGain": 1.6,
+          "colorHex": "#ffe2b8",
+          "body": "sun",
+          "intensity": 1.5219763894413614
+        },
+        "ground": {
+          "x": 703.9666352219538,
+          "y": 96.9979284742988,
+          "colorHex": "#ffe2b8",
+          "intensity": 1.5219763894413614,
+          "dirX": 0,
+          "dirY": 1,
+          "celestialYFrac": 0.11331491288501717,
+          "space": "ground"
+        },
+        "ambientMultiplier": 1,
+        "night01": 0,
+        "dawn01": 0,
+        "dusk01": 0,
+        "sky": {
+          "top": "#0f1a2d",
+          "mid": "#3d5474",
+          "horizon": "#e1c39b",
+          "air": "#e1c39b"
+        }
+      },
+      "dusk": {
+        "space": "scenic-stage logical px; ground anchor converted through recorded view transforms",
+        "state": {
+          "sun": {
+            "xFrac": 0.09999999999998999,
+            "yFrac": 0.3578367978636788,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.3384096012849358,
+            "altitude01": 0.07473009358638703,
+            "visibility": 0.9341261698298379,
+            "directGain": 1.4946018717277407,
+            "colorHex": "#ffe2b8"
+          },
+          "moon": {
+            "xFrac": 0.92,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.3384096012849358,
+            "altitude01": 0,
+            "visibility": 0,
+            "directGain": 0,
+            "colorHex": "#c8d8ff"
+          },
+          "activeBody": "sun",
+          "night01": 0.957031250000041,
+          "dawn01": 0,
+          "dusk01": 0.14999999999999256,
+          "ambientMultiplier": 0.37792968749997335
+        },
+        "celestial": {
+          "xFrac": 0.09999999999998999,
+          "yFrac": 0.3578367978636788,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 1.3384096012849358,
+          "altitude01": 0.07473009358638703,
+          "visibility": 0.9341261698298379,
+          "directGain": 1.4946018717277407,
+          "colorHex": "#ffe2b8",
+          "body": "sun",
+          "intensity": 1.3825067313481658
+        },
+        "ground": {
+          "x": 141.77661912420086,
+          "y": 303.71158860173296,
+          "colorHex": "#ffe2b8",
+          "intensity": 1.3825067313481658,
+          "dirX": 0.7192784112507062,
+          "dirY": 0.6947219350996915,
+          "celestialYFrac": 0.3578367978636788,
+          "space": "ground"
+        },
+        "ambientMultiplier": 0.37792968749997335,
+        "night01": 0.957031250000041,
+        "dawn01": 0,
+        "dusk01": 0.14999999999999256,
+        "sky": {
+          "top": "#0a101c",
+          "mid": "#2d3d55",
+          "horizon": "#c2a886",
+          "air": "#c2a886"
+        }
+      },
+      "gap": {
+        "space": "scenic-stage logical px; ground anchor converted through recorded view transforms",
+        "state": {
+          "sun": {
+            "xFrac": 0.07999999999999996,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.3841066732286689,
+            "altitude01": 0,
+            "visibility": 0,
+            "directGain": 0,
+            "colorHex": "#ffe2b8"
+          },
+          "moon": {
+            "xFrac": 0.92,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.3841066732286689,
+            "altitude01": 0,
+            "visibility": 0,
+            "directGain": 0,
+            "colorHex": "#c8d8ff"
+          },
+          "activeBody": null,
+          "night01": 1,
+          "dawn01": 0,
+          "dusk01": 0.0899999999999751,
+          "ambientMultiplier": 0.35
+        },
+        "celestial": {
+          "xFrac": 0.07999999999999996,
+          "yFrac": 0.3781,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 1.3841066732286689,
+          "altitude01": 0,
+          "visibility": 0,
+          "directGain": 0,
+          "colorHex": "#ffe2b8",
+          "body": null,
+          "intensity": 0
+        },
+        "ground": {
+          "x": 1295.3600000000001,
+          "y": 320.6288,
+          "colorHex": "#ffd49a",
+          "intensity": 0,
+          "dirX": -0.7463317880763479,
+          "dirY": 0.6655740846117445,
+          "celestialYFrac": 0.3781,
+          "space": "ground"
+        },
+        "ambientMultiplier": 0.35,
+        "night01": 1,
+        "dawn01": 0,
+        "dusk01": 0.0899999999999751,
+        "sky": {
+          "top": "#090f1b",
+          "mid": "#2c3c53",
+          "horizon": "#c0a684",
+          "air": "#c0a684"
+        }
+      },
+      "moon": {
+        "space": "scenic-stage logical px; ground anchor converted through recorded view transforms",
+        "state": {
+          "sun": {
+            "xFrac": 0.07999999999999996,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.7788934790773931,
+            "altitude01": 0,
+            "visibility": 0,
+            "directGain": 0,
+            "colorHex": "#ffe2b8"
+          },
+          "moon": {
+            "xFrac": 0.5002346044969171,
+            "yFrac": 0.09759755109017812,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.7788934790773931,
+            "altitude01": 1,
+            "visibility": 1,
+            "directGain": 0.25,
+            "colorHex": "#c8d8ff"
+          },
+          "activeBody": "moon",
+          "night01": 1,
+          "dawn01": 0,
+          "dusk01": 0,
+          "ambientMultiplier": 0.35
+        },
+        "celestial": {
+          "xFrac": 0.5002346044969171,
+          "yFrac": 0.09759755109017812,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 1.7788934790773931,
+          "altitude01": 1,
+          "visibility": 1,
+          "directGain": 0.25,
+          "colorHex": "#c8d8ff",
+          "body": "moon",
+          "intensity": 0.25
+        },
+        "ground": {
+          "x": 704.3303231316594,
+          "y": 82.76272332447104,
+          "colorHex": "#c8d8ff",
+          "intensity": 0.25,
+          "dirX": -0.0004316610167052219,
+          "dirY": 0.999999906834379,
+          "celestialYFrac": 0.09759755109017812,
+          "space": "ground"
+        },
+        "ambientMultiplier": 0.35,
+        "night01": 1,
+        "dawn01": 0,
+        "dusk01": 0,
+        "sky": {
+          "top": "#090f1b",
+          "mid": "#2c3c53",
+          "horizon": "#c0a684",
+          "air": "#c0a684"
+        }
+      }
+    },
+    "emitters": [],
+    "errors": []
+  },
+  "errors": [],
+  "captureSourceNote": "Base c3312b91ce384937be9bf2bf920c4c9039e1b1a5 plus Task7 BiomeManager body-color fix; exact source SHA256 values in this report identify the rendered code. Test harness evolved during acceptance; see README and task report."
+}

@@ -1999,6 +1999,16 @@ export class BiomeManager {
     this._specShift = easeSpectralShift(this._specShift, target, dtSec);
   }
 
+  /** One body colour for its disc and physical receivers. Decorative halo
+   * accents remain independent. Rotate each authored body before blending,
+   * matching the two body painters during a biome transition. */
+  currentCelestialColor() {
+    if (!this.currentBlend) return '#fff3df';
+    const { from, to, t } = this.currentBlend;
+    return this.lerpCache.get(this._rotated(this._profile(from).celestial.color),
+      this._rotated(this._profile(to).celestial.color), t);
+  }
+
   /** The current blended halo color -- shared accent for HUD-level effects. */
   currentHaloColor() {
     if (!this.currentBlend) return '#ffffff';
@@ -2454,7 +2464,7 @@ export class BiomeManager {
       const compact = !!this.rangePresentation?.enabled && !this.terrainPreview;
       this.celestialState = resolveCelestialState({ timeMs: heardTimeMs, cycleMs: this._dayNightCycleMs,
         viewport: canvas, approach: { progress01: this._progress || 0 }, moonOffset,
-        reducedMotion: this.reducedMotion, sunColor: this.currentHaloColor(),
+        reducedMotion: this.reducedMotion, sunColor: this.currentCelestialColor(),
         sunRadiusPx: Math.max(A.celestial.radius || 0, B.celestial.radius || 0),
         moonRadiusPx: (compact ? rangeV2MoonRadius(canvas.width, grow) : rangeMoonRadius(canvas.height, grow)) / grow,
         radiusCapPx: compact ? rangeV2MoonRadius(canvas.width, grow) : Infinity });
@@ -4221,7 +4231,7 @@ export class BiomeManager {
     const haloMul = 1 + kickBloom(heardKick);
     const rotCel = (c) => ({
       ...c,
-      color: this._rotated(c.color),
+      color: resolved?.colorHex || this._rotated(c.color),
       haloColor: this._rotated(c.haloColor),
       radius: Math.min(capR, (c.radius || 0) * grow),
     });

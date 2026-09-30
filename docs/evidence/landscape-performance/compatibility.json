@@ -1,0 +1,2181 @@
+{
+  "classification": "Compatibility and correctness; no hardware timing claim",
+  "cases": [
+    {
+      "mode": "default",
+      "rows": [
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 0,
+            "draws": 1
+          },
+          "drawMs": 329.2000000178814,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 1,
+            "progress01": 0.38675379578724634,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 1,
+                "partitions": 3,
+                "lastPartitionMs": 35
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 136526491,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "legacy-strips#2": {
+                  "pending": 0,
+                  "live": 37662184,
+                  "count": 1
+                },
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 6,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0,
+              "lastPartitionMs": 35,
+              "frameId": 1,
+              "frameRenderMs": 322.80000001192093,
+              "frameCopyMs": 0.3999999761581421
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              }
+            }
+          }
+        },
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 50000.00000000311,
+            "draws": 1
+          },
+          "drawMs": 1384.199999988079,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 2,
+            "progress01": 0.5752100440941423,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 2,
+                "partitions": 6,
+                "lastPartitionMs": 0.29999998211860657
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 98864307,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 5,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0.41670370699620335,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0.20897051871259217,
+                  "pitchActivity": 0.06834551136398874,
+                  "pitch01": 0.38333333333333336
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0.5815417009108724,
+                  "pitchActivity": 0.3927073959071893,
+                  "pitch01": 0
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0.39327886835581466,
+                  "pitchActivity": 0.14067998628838388,
+                  "pitch01": 0.6754509042451876
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0,
+              "lastPartitionMs": 0.29999998211860657,
+              "frameId": 2,
+              "frameRenderMs": 2.9999999403953552,
+              "frameCopyMs": 0.30000004172325134
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0.41670370699620335,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0.20897051871259217,
+                "pitchActivity": 0.06834551136398874,
+                "pitch01": 0.38333333333333336
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0.5815417009108724,
+                "pitchActivity": 0.3927073959071893,
+                "pitch01": 0
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0.39327886835581466,
+                "pitchActivity": 0.14067998628838388,
+                "pitch01": 0.6754509042451876
+              }
+            }
+          }
+        },
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 79999.99999999921,
+            "draws": 1
+          },
+          "drawMs": 811.8000000119209,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 3,
+            "progress01": 0.6838268220473084,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 3,
+                "partitions": 9,
+                "lastPartitionMs": 0.19999998807907104
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 98864307,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 5,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0.6667259311938774,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0.4057741808647346,
+                  "pitchActivity": 0.2459906303949564,
+                  "pitch01": 0
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0.26085508510264455,
+                  "pitchActivity": 0.09044365823445301,
+                  "pitch01": 0.6333333333333333
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0.10000002384185791,
+              "lastPartitionMs": 0.19999998807907104,
+              "frameId": 3,
+              "frameRenderMs": 1.7999999821186066,
+              "frameCopyMs": 0.20000001788139343
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0.6667259311938774,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0.4057741808647346,
+                "pitchActivity": 0.2459906303949564,
+                "pitch01": 0
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0.26085508510264455,
+                "pitchActivity": 0.09044365823445301,
+                "pitch01": 0.6333333333333333
+              }
+            }
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "mode": "revelation",
+      "rows": [
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 0,
+            "draws": 1
+          },
+          "drawMs": 65.30000001192093,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 1,
+            "progress01": 0.38675379578724634,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 1,
+                "partitions": 3,
+                "lastPartitionMs": 5.800000011920929
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 136526491,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "legacy-strips#2": {
+                  "pending": 0,
+                  "live": 37662184,
+                  "count": 1
+                },
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 6,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0.09999999403953552,
+              "lastPartitionMs": 5.800000011920929,
+              "frameId": 1,
+              "frameRenderMs": 57.40000003576279,
+              "frameCopyMs": 0.3999999761581421
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              }
+            }
+          }
+        },
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 50000.00000000311,
+            "draws": 1
+          },
+          "drawMs": 1332.6000000238419,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 2,
+            "progress01": 0.5752100440941423,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 2,
+                "partitions": 6,
+                "lastPartitionMs": 0.4000000059604645
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 98864307,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 5,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0.41670370699620335,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0.20897051871259217,
+                  "pitchActivity": 0.06834551136398874,
+                  "pitch01": 0.38333333333333336
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0.5815417009108724,
+                  "pitchActivity": 0.3927073959071893,
+                  "pitch01": 0
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0.39327886835581466,
+                  "pitchActivity": 0.14067998628838388,
+                  "pitch01": 0.6754509042451876
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0.09999999403953552,
+              "lastPartitionMs": 0.4000000059604645,
+              "frameId": 2,
+              "frameRenderMs": 3.100000023841858,
+              "frameCopyMs": 0.19999998807907104
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0.41670370699620335,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0.20897051871259217,
+                "pitchActivity": 0.06834551136398874,
+                "pitch01": 0.38333333333333336
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0.5815417009108724,
+                "pitchActivity": 0.3927073959071893,
+                "pitch01": 0
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0.39327886835581466,
+                "pitchActivity": 0.14067998628838388,
+                "pitch01": 0.6754509042451876
+              }
+            }
+          }
+        },
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 79999.99999999921,
+            "draws": 1
+          },
+          "drawMs": 806.4000000059605,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 3,
+            "progress01": 0.6838268220473084,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 3,
+                "partitions": 9,
+                "lastPartitionMs": 0.19999998807907104
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 98864307,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 5,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0.6667259311938774,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0.4057741808647346,
+                  "pitchActivity": 0.2459906303949564,
+                  "pitch01": 0
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0.26085508510264455,
+                  "pitchActivity": 0.09044365823445301,
+                  "pitch01": 0.6333333333333333
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0,
+              "lastPartitionMs": 0.19999998807907104,
+              "frameId": 3,
+              "frameRenderMs": 2,
+              "frameCopyMs": 0.09999999403953552
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0.6667259311938774,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0.4057741808647346,
+                "pitchActivity": 0.2459906303949564,
+                "pitch01": 0
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0.26085508510264455,
+                "pitchActivity": 0.09044365823445301,
+                "pitch01": 0.6333333333333333
+              }
+            }
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "mode": "gameplay",
+      "rows": [
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 0,
+            "draws": 1
+          },
+          "drawMs": 47,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 1,
+            "progress01": 0.38675379578724634,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 1,
+                "partitions": 3,
+                "lastPartitionMs": 6.5
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 136526491,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "legacy-strips#2": {
+                  "pending": 0,
+                  "live": 37662184,
+                  "count": 1
+                },
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 6,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0,
+              "lastPartitionMs": 6.5,
+              "frameId": 1,
+              "frameRenderMs": 39.10000002384186,
+              "frameCopyMs": 0.19999998807907104
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              }
+            }
+          }
+        },
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 50000.00000000311,
+            "draws": 1
+          },
+          "drawMs": 1319.699999988079,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 2,
+            "progress01": 0.5752100440941423,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 2,
+                "partitions": 6,
+                "lastPartitionMs": 0.20000001788139343
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 98864307,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 5,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0.41670370699620335,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0.20897051871259217,
+                  "pitchActivity": 0.06834551136398874,
+                  "pitch01": 0.38333333333333336
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0.5815417009108724,
+                  "pitchActivity": 0.3927073959071893,
+                  "pitch01": 0
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0.39327886835581466,
+                  "pitchActivity": 0.14067998628838388,
+                  "pitch01": 0.6754509042451876
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0.09999999403953552,
+              "lastPartitionMs": 0.30000001192092896,
+              "frameId": 2,
+              "frameRenderMs": 3.199999988079071,
+              "frameCopyMs": 0.30000001192092896
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0.41670370699620335,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0.20897051871259217,
+                "pitchActivity": 0.06834551136398874,
+                "pitch01": 0.38333333333333336
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0.5815417009108724,
+                "pitchActivity": 0.3927073959071893,
+                "pitch01": 0
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0.39327886835581466,
+                "pitchActivity": 0.14067998628838388,
+                "pitch01": 0.6754509042451876
+              }
+            }
+          }
+        },
+        {
+          "clock": {
+            "width": 960,
+            "height": 540,
+            "timeMs": 79999.99999999921,
+            "draws": 1
+          },
+          "drawMs": 811.6999999880791,
+          "range": {
+            "mode": "v2",
+            "active": true,
+            "reason": null,
+            "viewId": "teton-jackson-lake",
+            "forcedCandidate": false,
+            "forcedViewId": "teton-jackson-lake",
+            "diag": null,
+            "generation": 1,
+            "runtime": "ready",
+            "arrival": 1,
+            "incomingFade": 1,
+            "incomingViewId": null,
+            "seamP": 1,
+            "failures": {},
+            "deferred": [],
+            "frameId": 3,
+            "progress01": 0.6838268220473084,
+            "scene": {
+              "prepared": [
+                "teton-jackson-lake"
+              ],
+              "pending": [],
+              "contextLost": false,
+              "size": {
+                "width": 1056,
+                "height": 636
+              },
+              "stats": {
+                "depthPasses": 3,
+                "partitions": 9,
+                "lastPartitionMs": 0.30000001192092896
+              },
+              "sideB": false
+            },
+            "residency": {
+              "budget": "desktop",
+              "budgetBytes": 268435456,
+              "pendingBytes": 0,
+              "liveBytes": 98864307,
+              "denials": 0,
+              "overcommits": 0,
+              "byOwner": {
+                "range-terrain-cpu": {
+                  "pending": 0,
+                  "live": 8185208,
+                  "count": 1
+                },
+                "range-material": {
+                  "pending": 0,
+                  "live": 12582910,
+                  "count": 1
+                },
+                "range-terrain-gpu": {
+                  "pending": 0,
+                  "live": 64663869,
+                  "count": 1
+                },
+                "range-targets": {
+                  "pending": 0,
+                  "live": 13432320,
+                  "count": 2
+                }
+              },
+              "pinned": [
+                "range:render-target",
+                "range:ground-target",
+                "range:render-target-B",
+                "range:terrain-gpu:teton-jackson-lake:desktop",
+                "range:terrain-cpu:teton-jackson-lake",
+                "range:material:dry-conifer"
+              ],
+              "cancelledGenerations": [],
+              "peakBytes": 178337062,
+              "peakByOwner": {
+                "legacy-strips#2": 37662184,
+                "range-terrain-cpu": 8185208,
+                "range-material": 12582910,
+                "range-terrain-gpu": 64663869,
+                "range-scratch": 55242891
+              },
+              "entryCount": 5,
+              "generations": [
+                0,
+                1
+              ]
+            },
+            "narrative": {
+              "relief": 1,
+              "atmosphere": 1,
+              "materials": 1,
+              "features": 1,
+              "spaceAuthority": 1,
+              "skyDark": 1,
+              "traceResolution": 1,
+              "revelation": 1,
+              "progress": 0.6667259311938774,
+              "cast": {
+                "midio": 0,
+                "broshi": 0,
+                "midasus": 0
+              },
+              "handoff": {
+                "midio": 1,
+                "broshi": 1,
+                "midasus": 1
+              },
+              "sources": {
+                "midio": {
+                  "source": "lane:MIDIO",
+                  "activity": 0,
+                  "pitchActivity": 0,
+                  "pitch01": 0.5
+                },
+                "broshi": {
+                  "source": "lane:BROSHI",
+                  "activity": 0.4057741808647346,
+                  "pitchActivity": 0.2459906303949564,
+                  "pitch01": 0
+                },
+                "midasus": {
+                  "source": "lane:MIDASUS",
+                  "activity": 0.26085508510264455,
+                  "pitchActivity": 0.09044365823445301,
+                  "pitch01": 0.6333333333333333
+                }
+              }
+            },
+            "timings": {
+              "lastCopyMs": 0,
+              "lastPartitionMs": 0.30000001192092896,
+              "frameId": 3,
+              "frameRenderMs": 2.200000047683716,
+              "frameCopyMs": 0.29999998211860657
+            },
+            "catalogVersion": 17
+          },
+          "quality": 0,
+          "generation": 1,
+          "seed": 2917029651,
+          "world": "alpine",
+          "identity": {
+            "loadedDigest": "03e11692b6a9a6ba4615f4f1ccf0bcd063550fcaacd515d65435b6c884b9a455",
+            "loadedFiles": 300,
+            "rangeAssets": [
+              "src/assets/range/v2/materials/dry-conifer.json",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+              "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+              "src/assets/range/v2/textures/cc0-ground022.webp",
+              "src/assets/range/v2/textures/cc0-ground068.webp",
+              "src/assets/range/v2/textures/cc0-rock020.webp",
+              "src/assets/range/v2/textures/cc0-rock051.webp",
+              "src/assets/range/v2/textures/cc0-rock063.webp",
+              "src/assets/range/v2/textures/proc-canopy.webp",
+              "src/assets/range/v2/textures/proc-cliff.webp",
+              "src/assets/range/v2/textures/proc-snow.webp",
+              "src/vendor/range/three-range.module.js"
+            ]
+          },
+          "ownership": {
+            "actorClass": "Object",
+            "retired": {
+              "broshi": false,
+              "midasus": false,
+              "ensemble": false,
+              "excursions": false,
+              "focus": false,
+              "gaze": false,
+              "cuts": false,
+              "jump": false,
+              "performer": false
+            },
+            "decoration": {
+              "farVignettes": false,
+              "skyEnsemble": false,
+              "murmuration": false
+            },
+            "emitters": [],
+            "capture": false,
+            "brush": false,
+            "reflections": 0,
+            "policy": {
+              "performers": false,
+              "decorativeActors": false,
+              "artificialNearProps": false,
+              "cathodeBoss": false
+            }
+          },
+          "narrative": {
+            "relief": 1,
+            "atmosphere": 1,
+            "materials": 1,
+            "features": 1,
+            "spaceAuthority": 1,
+            "skyDark": 1,
+            "traceResolution": 1,
+            "revelation": 1,
+            "progress": 0.6667259311938774,
+            "cast": {
+              "midio": 0,
+              "broshi": 0,
+              "midasus": 0
+            },
+            "handoff": {
+              "midio": 1,
+              "broshi": 1,
+              "midasus": 1
+            },
+            "sources": {
+              "midio": {
+                "source": "lane:MIDIO",
+                "activity": 0,
+                "pitchActivity": 0,
+                "pitch01": 0.5
+              },
+              "broshi": {
+                "source": "lane:BROSHI",
+                "activity": 0.4057741808647346,
+                "pitchActivity": 0.2459906303949564,
+                "pitch01": 0
+              },
+              "midasus": {
+                "source": "lane:MIDASUS",
+                "activity": 0.26085508510264455,
+                "pitchActivity": 0.09044365823445301,
+                "pitch01": 0.6333333333333333
+              }
+            }
+          }
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "captureSourceNote": "Captured before Task 7 commit, base c3312b91ce384937be9bf2bf920c4c9039e1b1a5 plus src/world/BiomeManager.js SHA256 8b4ffa087d70a05c8ea4fae3b7231643730e931d06a8377078c6127e49cff29f."
+}

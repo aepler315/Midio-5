@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { installSeedReceiver } from './lib/landscape-browser.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITES = ['pilot', 'selection', 'motion', 'lifecycle', 'export', 'complete'];
@@ -51,7 +52,7 @@ export function parseSceneArgs(argv) {
  *  terrain assets to their manifests), or the browser is testing something else. */
 async function servedIdentity(url, sourceRoot) {
   const files = [...IDENTITY_FILES];
-  const { default: catalog } = await import(path.join(sourceRoot, 'src/world/terrain/sceneCatalogData.js'));
+  const { default: catalog } = await import(pathToFileURL(path.join(sourceRoot, 'src/world/terrain/sceneCatalogData.js')).href);
   for (const v of catalog.views) {
     files.push(`src/assets/range/v2/${v.terrainManifestUrl}`);
     const m = JSON.parse(await fs.readFile(path.join(sourceRoot, 'src/assets/range/v2', v.terrainManifestUrl), 'utf8'));
@@ -118,6 +119,7 @@ async function launch() {
 /** Open the app in export mode with a song and the requested Range mode. */
 export async function openSong(browser, { url, wav, width, height, params = {}, dpr = 1 }) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: dpr, serviceWorkers: 'block' });
+  if (params.seed != null) await context.addInitScript(installSeedReceiver);
   const page = await context.newPage();
   watchLoaded(page);
   const errors = [];
@@ -172,64 +174,37 @@ export async function captureFrame(page, timeMs, { hook = null } = {}) {
       world: smw.sim.biomes.world.kind,
     };
   }, { timeMs, hook });
+  assert.ok(Math.abs(frame.clock.timeMs - timeMs) <= 17, `export clock did not reach ${timeMs}: ${frame.clock.timeMs}; reset before a backward sequence`);
   frame.identity = await loadedIdentity(page);
   return frame;
 }
 
-/**
- * Task 12 evidence: find a frame where a performer stands over a pool, then
- * render that same heard time four times -- reflections off, on, on, off.
- * Re-rendering one time is a paused frame. Pixel differences are classified
- * as inside a pool (the reflection), inside a captured body's rectangle
- * (single-draw composite vs direct draw) or elsewhere (must be ~none).
- */
-export async function reflectionEvidence(page, { fromMs, toMs, stepMs = 1000 }) {
-  return page.evaluate(async ({ fromMs: a, toMs: b, stepMs: st }) => {
-    const smw = window.__SMW;
-    const r = smw.renderer.canvasRenderer || smw.renderer;
-    const stage = document.querySelector('#stage');
-    const grab = () => {
-      const c = document.createElement('canvas'); c.width = stage.width; c.height = stage.height;
-      const x = c.getContext('2d'); x.drawImage(stage, 0, 0);
-      return { data: x.getImageData(0, 0, c.width, c.height).data, png: c.toDataURL('image/png').split(',')[1] };
-    };
-    let found = null;
-    for (let t = a; t <= b; t += st) {
-      r.reflectionStats = null;
-      smw.renderExportFrame(t);
-      const s = r.reflectionStats;
-      if (s && s.frameId === smw.rangeState.frameId && s.layers.length) { found = { t, stats: s }; break; }
-    }
-    if (!found) return { found: false };
-    const t = found.t;
-    r.reflectionsEnabled = false; smw.renderExportFrame(t); const off1 = grab();
-    r.reflectionsEnabled = true; smw.renderExportFrame(t); const on1 = grab(); const stats = r.reflectionStats;
-    smw.renderExportFrame(t); const on2 = grab();
-    r.reflectionsEnabled = false; smw.renderExportFrame(t); const off2 = grab();
-    r.reflectionsEnabled = true;
-    const W = stage.width, H = stage.height;
-    const [ma, , , md, me, mf] = stats.transform;
-    const polys = stats.pools.map((p) => p.polygon.map((q) => ({ x: ma * q.x + me, y: md * q.y + mf })));
-    const inside = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const p = poly[i], q = poly[j]; if ((p.y > y) !== (q.y > y) && x < ((q.x - p.x) * (y - p.y)) / (q.y - p.y) + p.x) c = !c; } return c; };
-    const inBody = (x, y) => stats.layers.some((l) => x >= l.device.x && x < l.device.x + l.device.w && y >= l.device.y && y < l.device.y + l.device.h);
-    const diff = (A, B, thr = 6) => {
-      const out = { pool: 0, body: 0, elsewhere: 0, maxElsewhere: 0 };
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        const i = (y * W + x) * 4;
-        const d = Math.max(Math.abs(A[i] - B[i]), Math.abs(A[i + 1] - B[i + 1]), Math.abs(A[i + 2] - B[i + 2]));
-        if (d <= thr) continue;
-        if (polys.some((p) => inside(p, x + 0.5, y + 0.5))) out.pool++;
-        else if (inBody(x, y)) out.body++;
-        else { out.elsewhere++; out.maxElsewhere = Math.max(out.maxElsewhere, d); }
-      }
-      return out;
-    };
+/** Inspect real ownership after a draw, including hidden capture and focus paths. */
+export async function landscapeOwnership(page) {
+  return page.evaluate(() => {
+    const app = window.__SMW, sim = app.sim, mgr = sim.biomes;
+    const painter = app.renderer.canvasRenderer || app.renderer;
     return {
-      found: true, t, stats,
-      reflection: diff(off1.data, on1.data), paused: diff(on1.data, on2.data), noise: diff(off1.data, off2.data),
-      pngOn: on1.png, pngOff: off1.png,
+      actorClass: sim.midio?.constructor?.name || null,
+      retired: Object.fromEntries(['broshi', 'midasus', 'ensemble', 'excursions', 'focus', 'gaze', 'cuts', 'jump', 'performer']
+        .map(key => [key, !!sim[key]])),
+      decoration: Object.fromEntries(['farVignettes', 'skyEnsemble', 'murmuration'].map(key => [key, !!mgr[key]])),
+      emitters: mgr.rangePresentation?.frame?.emitters || [],
+      capture: !!painter._capture, brush: !!painter.brush,
+      reflections: painter.reflectionStats?.layers?.length || 0,
+      policy: sim.presentation,
     };
-  }, { fromMs, toMs, stepMs });
+  });
+}
+
+export function assertLandscapeOwnership(state) {
+  assert.ok(state.actorClass === 'Object' || state.actorClass == null, 'stage coordinate alias must have no actor behavior');
+  assert.ok(Object.values(state.retired).every(value => !value), 'retired actor simulation must be absent');
+  assert.ok(Object.values(state.decoration).every(value => !value), 'incidental actor owners must be absent');
+  assert.deepEqual(state.emitters, [], 'no private actor lights');
+  assert.equal(state.capture, false, 'no performer capture resource');
+  assert.equal(state.brush, false, 'no actor trails');
+  assert.equal(state.reflections, 0, 'no actor reflections');
 }
 
 async function writePng(dir, name, b64) {
@@ -249,26 +224,7 @@ async function suitePilot(ctx) {
   const expectCandidate = catalog.views.find((v) => v.id === view)?.status !== 'approved';
   assert.equal(v2.state.runtime, 'ready', `v2 runtime not ready: ${JSON.stringify(v2.state)}`);
   assert.ok(v2.state.scene?.prepared?.includes(view), `pilot view not prepared: ${JSON.stringify(v2.state.failures)}`);
-  for (const t of [6000, 30000, 60000, 90000]) {
-    if (t === 60000) {
-      // Task 12: a performer over a pool, between the 30 s and 59 s frames.
-      const refl = await reflectionEvidence(v2.page, { fromMs: 31000, toMs: 58000 });
-      if (refl.found) {
-        report.pilot.reflection = { t: refl.t, layers: refl.stats.layers, pools: refl.stats.pools.length,
-          reflection: refl.reflection, paused: refl.paused, noise: refl.noise,
-          pngOn: path.relative(root, await writePng(out, `pilot-v2-${view}-${refl.t}-reflection-on.png`, refl.pngOn)),
-          pngOff: path.relative(root, await writePng(out, `pilot-v2-${view}-${refl.t}-reflection-off.png`, refl.pngOff)) };
-        console.log(`reflection ${refl.t}ms: ${JSON.stringify({ reflection: refl.reflection, paused: refl.paused, noise: refl.noise })}`);
-        assert.ok(refl.reflection.pool > 50, 'reflection pixels inside the pools');
-        // Outside pools and body rectangles only render noise may differ
-        // (measured by re-rendering with reflections off twice).
-        assert.ok(refl.reflection.elsewhere <= refl.noise.elsewhere + 20, 'no reflection outside the wet masks');
-        assert.equal(refl.paused.pool + refl.paused.elsewhere, 0, 'a paused frame redraws the same reflection');
-      } else {
-        report.pilot.reflection = { found: false };
-        console.log('reflection: no performer over a pool between 31 s and 58 s');
-      }
-    }
+  for (const t of [0, 250, 6000, 30000, 60000, 90000]) {
     if (t === 60000) {
       // Pass-disabled diagnostic at 60s, before the 60s frame: the far
       // partition's pixels must be absent. The export clock only runs forward.
@@ -282,13 +238,15 @@ async function suitePilot(ctx) {
     assert.equal(f.range.active, true, `v2 not active at ${t}ms: ${f.range.reason}`);
     assert.equal(f.range.viewId, view);
     assert.equal(f.range.forcedCandidate, expectCandidate, expectCandidate ? 'a forced candidate must be labelled' : 'an approved view is not a candidate');
-    report.pilot.frames.push({ ...f, png: path.relative(root, png) });
+    const ownership = await landscapeOwnership(v2.page);
+    assertLandscapeOwnership(ownership);
+    report.pilot.frames.push({ ...f, ownership, png: path.relative(root, png) });
     console.log(`pilot v2 ${t}ms: view=${f.range.viewId} u=${f.range.progress01?.toFixed(3)} draw=${f.drawMs.toFixed(0)}ms partition=${f.range.timings.lastPartitionMs.toFixed(0)}ms copy=${f.range.timings.lastCopyMs.toFixed(1)}ms`);
   }
   report.pilot.pageErrors = v2.errors;
   await v2.context.close();
   const legacy = await openSong(browser, { url: args.url, wav, width, height, params: { rangeRenderer: 'legacy' } });
-  await captureFrame(legacy.page, 6000); // past the opening assembly, as the v2 run was
+  await captureFrame(legacy.page, 0); // actor-free from the opening
   const lf = await captureFrame(legacy.page, 30000);
   report.pilot.legacyPng = path.relative(root, await writePng(out, 'pilot-legacy-30000.png', lf.png));
   assert.equal(lf.range.active, false);
@@ -616,12 +574,12 @@ async function suiteLifecycle(ctx) {
         return !!ext;
       });
       await new Promise((res) => setTimeout(res, 200));
-      const during = await captureFrame(page, 20000);
+      const during = await captureFrame(page, 55000);
       await page.evaluate(() => {
         window.__rangeLoseContext.restoreContext();
       });
       await new Promise((res) => setTimeout(res, 300));
-      const after = await captureFrame(page, 20000);
+      const after = await captureFrame(page, 55000);
       contextCycle = { lost, duringActive: during.range.active, duringReason: during.range.reason, afterActive: after.range.active, afterView: after.range.viewId };
       check(`cycle ${i}: context loss draws legacy, restore draws v2 again`, lost && !during.range.active && after.range.active,
         JSON.stringify(contextCycle));

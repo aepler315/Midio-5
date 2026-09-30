@@ -317,4 +317,3 @@ Keep seven reviewable commits but integrate them as one coherent feature branch.
 Implementation should re-read the latest main and relevant repository instructions before editing. Reconcile any intervening work against this frozen baseline instead of blindly applying line numbers. Open a PR only when requested by the implementation task, with actual test results and clear hardware limitations.
 
 The first artistic comparison should answer three questions: Does the landscape visibly carry the song? Does stronger motion preserve the mountains' scale? Does day/night change the world enough to feel consequential? Those judgments require matched moving evidence after implementation.
-
