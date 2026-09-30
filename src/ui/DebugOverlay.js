@@ -256,7 +256,7 @@ export class DebugOverlay {
     }
     lines.push(`calm=${this.sim.calm.level.toFixed(2)}  epic=${this.sim.vibe.epic.toFixed(2)}  valence=${this.sim.vibe.valence.toFixed(2)}`);
     lines.push(`hype: fast=${this.sim.hype.fast.toFixed(2)} slow=${this.sim.hype.slow.toFixed(2)} buildUp=${this.sim.hype.buildUp.toFixed(2)} drops=${this.sim.hype.dropCount}`);
-    lines.push(`broshi rabid=${this.sim.broshi.rabid ? 'YES' : 'no'} rho=${(this.sim.broshi.rho || 0).toFixed(2)}`);
+
 
     const fit = this.sim.fitDiagnostic;
     if (fit?.lines?.length) {

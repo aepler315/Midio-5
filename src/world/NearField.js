@@ -85,6 +85,7 @@ export class NearField {
   }
 
   _sector(idx, biomeName) {
+    if (this.identity && ['city', 'strip', 'foundry', 'nave', 'cathode'].includes(this.identity.kind)) return null;
     if (!this._cache.has(idx)) {
       // A consecutive run of eligible sectors alternates occupied/empty.
       // Walk only to the first failed roll, without caching unseen geometry.

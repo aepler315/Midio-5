@@ -226,35 +226,14 @@ test('drawCharacterReflections draws nothing outside a Mirror lake section', asy
   assert.equal(ellipses.length, 0, 'no lake this frame, no reflection to draw');
 });
 
-test('drawCharacterReflections skips inactive entries (burrowed/voyaging) and non-finite positions', async () => {
-  const { BiomeManager } = await import('../src/world/BiomeManager.js');
-  const bm = Object.create(BiomeManager.prototype);
-  bm.lakeRing = { displacementAt: () => 0 };
-  bm._lakeReflectGroundY = 400;
-  const { ctx, ellipses } = fillRecordingCtx();
-
-  bm.drawCharacterReflections(ctx, stageView(), [
-    { x: 300, hue: 40, active: true },
-    { x: 500, hue: 200, active: false }, // e.g. Broshi underground
-    { x: NaN, hue: 90, active: true },   // e.g. Midasus mid-voyage, no real position
-  ]);
-
-  assert.equal(ellipses.length, 1, 'only the one present, positioned character reflects');
-  assert.equal(ellipses[0][0], 300, 'reflection is anchored at that character\'s own x (plus ripple)');
-});
-
-test('drawCharacterReflections offsets each reflection by that character\'s own ripple sample', async () => {
+test('character lake reflections are retired even for positioned visible characters', async () => {
   const { BiomeManager } = await import('../src/world/BiomeManager.js');
   const bm = Object.create(BiomeManager.prototype);
   bm._lakeReflectGroundY = 400;
-  const seen = [];
-  bm.lakeRing = { displacementAt: (theta) => { seen.push(theta); return 7; } };
+  bm.lakeRing = { displacementAt() { assert.fail('personal ripple sample'); } };
   const { ctx, ellipses } = fillRecordingCtx();
-
   bm.drawCharacterReflections(ctx, stageView(), [{ x: 300, hue: 40, active: true }]);
-
-  assert.equal(ellipses[0][0], 321, 'ripple displacement (x3, matching the water\'s own ripple scale) nudges the reflection x');
-  assert.ok(seen.length > 0 && Number.isFinite(seen[0]), 'sampled the ring at a real angle');
+  assert.deepEqual(ellipses, []);
 });
 
 test('no drawImage anywhere is handed a plain {width,height}', async () => {

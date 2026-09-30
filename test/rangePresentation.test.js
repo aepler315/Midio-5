@@ -64,7 +64,7 @@ test('v2 draws its partitions at the retained pass boundaries, legacy scenery no
   pres.drawPartition = (ctx, pass) => { order.push(`gpu:${pass}`); calls.push(`gpu:${pass}`); return true; };
   m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
   const seq = calls.filter((c) => /gpu:|_draw(HorizonEQ|SpectrumMassif|FarVignettes|MidDepthLife|Ground|LegacyScenic)|spaceRidge|_drawSky/.test(c));
-  assert.deepEqual(seq, ['_drawSky', 'spaceRidge', '_drawSpectrumMassif', 'gpu:far', '_drawHorizonEQ', '_drawFarVignettes',
+  assert.deepEqual(seq, ['_drawSky', 'spaceRidge', '_drawSpectrumMassif', 'gpu:far', '_drawHorizonEQ',
     'gpu:mid', '_drawMidDepthLife', 'gpu:near', '_drawGround']);
   assert.ok(!calls.includes('_drawLegacyScenic'), 'no double-painted terrain');
   assert.equal(calls.filter((c) => c === '_drawHorizonEQ').length, 1, 'the Dancing Ridge draws exactly once');

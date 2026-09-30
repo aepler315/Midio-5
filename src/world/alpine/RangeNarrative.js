@@ -38,6 +38,18 @@ function sourceIndex(events, id, casting) {
   };
 }
 
+/** Causal lane lookup retained independently of the retired reveal arc. */
+export function compileRangeSources({ timeline = [], casting = DEFAULT_CASTING } = {}) {
+  const events = timeline.filter(e => Number.isFinite(e.tMs) && e.tMs >= 0 && unit(e.vel) > 0)
+    .map(e => ({ ...e, durMs: Math.max(90, Number.isFinite(e.durMs) ? e.durMs : 90) }))
+    .sort((a, b) => a.tMs - b.tMs);
+  const indexes = Object.fromEntries(Object.keys(LANES).map(id => [id, sourceIndex(events, id, casting)]));
+  return Object.freeze({ sample(timeMs = 0) {
+    const at = Number.isFinite(timeMs) ? Math.max(0, timeMs) : 0;
+    return Object.freeze(Object.fromEntries(Object.entries(indexes).map(([id, sample]) => [id, sample(at)])));
+  } });
+}
+
 export function compileRangeNarrative({ durationMs = 0, energyCurves = null, timeline = [],
   sections = [], barGrid = null, casting = DEFAULT_CASTING } = {}) {
   durationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;

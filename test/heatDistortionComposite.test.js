@@ -98,7 +98,7 @@ for (const [height, groundY] of [[720, 616], [1440, 308]]) {
       const cy = sy + sh / 2;
       maxima.set(cy, Math.max(maxima.get(cy) || 0, Math.abs(dx - sx)));
     };
-    const sim = { ...makeSim(), hype: null, fire: { active: true, intensity01: 1 }, midio: { groundY } };
+    const sim = { ...makeSim(), hype: null, fire: { active: true, intensity01: 1 }, stageAnchor: { originX: 50, groundY } };
     for (let i = 0; i < 160; i++) {
       sim.timeMs = i * 25;
       Renderer.prototype._drawHeatDistortion.call(self, ctx, canvas, sim,

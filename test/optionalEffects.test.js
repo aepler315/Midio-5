@@ -69,5 +69,5 @@ test('no perf policy means full quality for a world that paints the effect', () 
   mgr.stepOptionalEffects(1000, 0.016, null, 0, { x: 0, y: 0 });
   assert.ok(calls.includes('mandala'));
   assert.ok(calls.includes('rd'));
-  assert.ok(calls.includes('murmuration'));
+  assert.equal(calls.includes('murmuration'), false, 'quality cannot restore retired creatures');
 });

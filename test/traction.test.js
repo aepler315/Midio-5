@@ -50,18 +50,18 @@ test('WeatherDirector: sustained snowfall settles ground cover; other skies melt
   assert.ok(w.groundCover < covered * 0.3, `expected a thaw under petals, got ${w.groundCover} (was ${covered})`);
 });
 
-// The skid must move Midio's BODY, never the world->screen origin that
-// ground/obstacles/burrow anchor on -- folding it into midioX translated
-// the whole world with him and cancelled the visible slide.
-test('lerpState: midioX stays the pure origin, midioDrawX carries the interpolated skid', async () => {
+test('stage origin remains world-owned even with stale performer and skid state', async () => {
   const { Simulation } = await import('../src/sim/Simulation.js');
   const stub = {
-    prev: { worldX: 0, midioY: 540, slipX: 10, scaleX: 1, scaleY: 1, leanDeg: 0 },
-    curr: { worldX: 2, midioY: 540, slipX: 20, scaleX: 1, scaleY: 1, leanDeg: 0 },
-    midio: { screenX: 220, slipX: 20 },
-    jump: { airborne: false },
+    prev: { worldX: 0, slipX: 10 }, curr: { worldX: 2, slipX: 20 },
+    stageAnchor: { originX: 220, groundY: 625 },
+    midio: { screenX: 900, slipX: 20 }, jump: { airborne: true },
   };
-  const pose = Simulation.prototype.lerpState.call(stub, 0.5);
-  assert.equal(pose.midioX, 220, 'origin never slips');
-  assert.ok(Math.abs(pose.midioDrawX - 235) < 1e-9, 'his body slides by the lerped skid (15px)');
+  const pose = Simulation.prototype.lerpState.call(stub, .5);
+  assert.equal(pose.worldX, 1);
+  assert.equal(pose.originX, 220);
+  assert.equal(pose.midioX, 220);
+  assert.equal(pose.midioDrawX, 220);
+  assert.equal(pose.groundY, 625);
+  assert.equal(pose.airborne, false);
 });

@@ -205,7 +205,7 @@ test('every biome has a real silhouette color to darken (no crash on an unknown 
 });
 
 test('world foreground geometry is independent of a generated landmark key', () => {
-  for (const kind of ['alpine', 'city', 'airless', 'abyssal', 'strip', 'foundry', 'overgrowth', 'nave']) {
+  for (const kind of ['alpine', 'airless', 'abyssal', 'overgrowth']) {
     const a = new NearField(555, { id: 'custom', kind });
     const b = new NearField(555, { id: 'custom', kind });
     const shapesA = [], shapesB = [];
@@ -234,7 +234,7 @@ test('foreground occupancy is independent of seek and query order', () => {
 });
 
 test('world props stay within bounded coverage and stop swaying under reduced motion', () => {
-  for (const kind of ['alpine', 'city', 'airless', 'abyssal', 'strip', 'foundry', 'overgrowth', 'nave']) {
+  for (const kind of ['alpine', 'airless', 'abyssal', 'overgrowth']) {
     const nf = new NearField(315, { kind });
     let d;
     for (let i = 1; !d && i < 100; i++) d = nf._sector(i, BIOME);

@@ -5,20 +5,16 @@ import { buildRangeFrame, viewportState, sceneDeformation, rangeMusicState } fro
 import { LerpCache } from '../src/utils/color.js';
 import { compileRangeNarrative } from '../src/world/alpine/RangeNarrative.js';
 
-test('narrative frames remove all emitters and retain source activity at final heard time', () => {
+test('legacy reveal input cannot restore emitters or delay the landscape opening', () => {
   const sim = fakeSim(90);
-  const schedule = compileRangeNarrative({ durationMs: 100000, timeline: [
-    { tMs: 0, durMs: 100000, vel: 1, role: 'BASS', lane: 'MIDIO', src: 'midi', pitch: 72 },
-  ], casting: { midio: 'lead-lane', broshi: 'melody', midasus: 'melody' } });
-  sim.rangeNarrativeAt = at => schedule.sample(at);
-  const f = buildRangeFrame({ frameId: 1, sim, pose, scenicViewport: vp(1280, 720, 1280, 720), groundViewport: vp(1280, 720, 1280, 720) });
-  assert.equal(f.narrative.revelation, 1);
-  assert.ok(f.emitters.every(e => !e.visible && e.presence === 0));
-  assert.ok(f.music.melodicM > 0, 'lead lane transfers even when its role is BASS');
+  sim.rangeNarrativeAt = () => compileRangeNarrative({ durationMs: 100000 }).sample(0);
+  const f = buildRangeFrame({ frameId: 1, sim, pose });
+  assert.equal(f.narrative, null);
+  assert.deepEqual(f.emitters, []);
   sim.biomes.tSec = 0;
   const opening = buildRangeFrame({ frameId: 2, sim, pose });
-  assert.equal(opening.narrative.revelation, 0);
-  assert.equal(opening.light.sky.top, '#fff3db');
+  assert.equal(opening.narrative, null);
+  assert.notEqual(opening.light.sky.top, '#fff3db', 'the old reveal sky cannot replace the current world sky');
 });
 
 function fakeSim(tSec = 30, { reducedFlash = false, preview = false } = {}) {
@@ -70,8 +66,7 @@ test('the same instant yields the same frozen snapshot', () => {
   assert.ok(Object.isFrozen(a) && Object.isFrozen(a.groundBars) && Object.isFrozen(a.groundBars[0]) && Object.isFrozen(a.music));
   assert.throws(() => { 'use strict'; a.progress01 = 0; });
   assert.equal(a.viewFromId, 'nc-ross-lake-north');
-  assert.equal(a.emitters.find((e) => e.id === 'broshi').airborneM, 12);
-  assert.equal(a.emitters.find((e) => e.id === 'midasus').visible, false, 'Midasus away on a voyage');
+  assert.deepEqual(a.emitters, []);
 });
 
 test('seeking back and forth reconstructs the same frame state', () => {

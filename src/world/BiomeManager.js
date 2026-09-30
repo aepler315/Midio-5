@@ -1,3 +1,4 @@
+import { resolveLandscapePresentation } from './LandscapePresentation.js';
 import { identityAllows } from './WorldIdentity.js';
 // Orchestrates the 8-layer parallax contract (spec §4.1.1), biome
 // scheduling via novelty-curve segmentation (§4.1.3), and gamma-correct
@@ -20,8 +21,7 @@ import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
 import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
-import { rangeSkyState } from './alpine/RangeFrame.js';
-import { withNarrativeAlpha, drawNarrativeMarks } from '../render/NarrativeDraw.js';
+import { withNarrativeAlpha } from '../render/NarrativeDraw.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
 import { drawRidgeSurface } from './alpine/RidgeSurfaceDraw.js';
 import { buildGroundPatches, drawGroundMaterial } from './alpine/GroundMaterial.js';
@@ -44,7 +44,6 @@ import {
   pullbackHeightMul,
   mountainStripDrawHeight, ridgeSwell01, FAR_DANCE_LAYER, anchoredFarDrawHeight,
   massifDrawHeight, massifRidgeHeight01, massifRidgeJagPx, massifClearing01,
-  MASSIF_MARKER_SPEED_PX_S, MASSIF_MARKER_LIFE_SEC, nextMassifMarkerDelaySec,
   massifEqStep, massifBandLevel,
 } from './MountainChoreo.js';
 import {
@@ -82,7 +81,7 @@ import {
 import { drawRockStageShade } from './alpine/RockStage.js';
 import { CHARACTER_SCHEMES } from './dna/ShapeGrammar.js';
 import {
-  islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
+  islands, tsunamiSchedule,
   tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale,
   tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks,
   fishArcY, serpentHumpY,
@@ -92,8 +91,6 @@ import {
 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
 import { SpaceRidge } from './SpaceRidge.js';
-import { SkyEnsemble } from './SkyEnsemble.js';
-import { FarVignettes } from './FarVignettes.js';
 import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO, scatterBiomeLayers } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
@@ -121,7 +118,6 @@ import {
   horizonCrest, massifCrest, massifRidgeLift01,
 } from './terrain/HorizonRidge.js';
 import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
-import { Murmuration } from './Murmuration.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
@@ -770,12 +766,7 @@ export class BiomeManager {
     // silhouettes that occasionally drift across its face -- the comparison
     // against something the eye already knows the size of is what actually
     // sells "this is unfathomably huge," not raw height alone.
-    this._massifRand = mulberry32(hashSeed(`${songSeed}:massif`));
     this._massifMarkers = []; // {x0, y, bornMs}
-    this._massifNextSpawnMs = nextMassifMarkerDelaySec(this._massifRand) * 1000;
-    // Miniature characters running along the near ranges' ridges — an
-    // independent trio per range so the depths don't mirror each other.
-
     this.songSeed = songSeed;
     this.visualStyle = 'rendered'; // set via setVisualStyle from Simulation / main
     // Legacy strips share the page's graphics budget when one is given, so
@@ -811,12 +802,8 @@ export class BiomeManager {
     this._activeWeatherIntensity = 0; // weatherState.intensity * suppress, computed in update(), read by draw()
     this.snowCover = 0; // settled snow 0..1, set externally each frame from Simulation.snowCover -- drives the frost caps
 
-    // Planets + astral artifacts: seeded per song/biome, drawn behind the
-    // celestial so the sun/moon and ranges occlude them naturally.
-    this.skyEnsemble = new SkyEnsemble(songSeed, durationMs);
-    // Far-distance vignettes: rare seeded scenes (aliens at dinner, a cloud
-    // whale...) witnessed way out between the L2 and L3 ranges.
-    this.farVignettes = new FarVignettes(songSeed);
+    // Listening policy is independent of narrative phase and quality.
+    this.presentation = resolveLandscapePresentation({ worldId, stageWidth: canvasWidth, stageHeight: canvasHeight, groundY });
     // Near-field foreground occluders: the mirror image of farVignettes at
     // the OTHER end of the depth stack -- huge biome-landmark silhouettes
     // sweeping past faster than the characters, close enough to occlude
@@ -839,14 +826,12 @@ export class BiomeManager {
     // MIDI custom biome: alpine only — city worlds keep their own palettes.
     if (this.customBiome && this._singleCustom) this.loadCustom(this.customBiome);
 
-    // Ocean ecosystem: islands + ships sit on the water always; sea life,
-    // the rare monster, and tsunamis (anchored on the song's loudest bars)
-    // are the phenomena-gated extras.
+    // Natural islands and water hazards remain; creature/vehicle schedules are retired.
     this._islands = islands(hashSeed(`${songSeed}:islands`), 7);
-    this._ships = ships(hashSeed(`${songSeed}:ships`), 5);
-    this._seaLife = seaLifeSchedule(hashSeed(`${songSeed}:sealife`), durationMs, { minGapMs: 3500, maxGapMs: 9000 });
+    this._ships = [];
+    this._seaLife = [];
     this._seaLifeIdx = 0;
-    this._monsters = monsterSchedule(hashSeed(`${songSeed}:monster`), durationMs);
+    this._monsters = [];
     this._monsterIdx = 0;
     // Worlds without a sea do not grow a tsunami schedule. An empty list
     // keeps the shared update from arming a flood nothing will draw.
@@ -889,7 +874,7 @@ export class BiomeManager {
     this.milestoneAtMs = -Infinity;
     this._lastSeenMilestoneMs = -Infinity;
     this.milestoneIdx = -1;
-    this.murmuration = new Murmuration(canvasWidth, canvasHeight, songSeed);
+
     this._beatMs = 500; // EMA'd kick interval, feeding the swarm's natural frequency
     this._lastKickMs = null;
 
@@ -959,7 +944,6 @@ export class BiomeManager {
         this.ribbon.kick();
         this.rd.onKick();
         this.weaver.onKick(evt.vel, evt.tMs);
-        if (evt.vel > 0.78) this.murmuration.startle(evt.vel);
         // Heavy kicks strike lightning, but only while a storm is blowing.
         const active = this.currentBlend ? this._profile(this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from) : null;
         if (active && active.fx === 'lightning') this.lightning.maybeTrigger(evt.tMs, evt.vel, this.w, this.groundY);
@@ -2266,7 +2250,6 @@ export class BiomeManager {
     this.budget = this._lightBudget * this.focusMul * this.stillnessMul;
     const gain = this.budget * this.hypeBoost;
     this.mandala.intensity = gain;
-    this.murmuration.intensity = gain;
     this.cymatics.intensity = gain;
     this.swarm.intensity = gain;
     this.ribbon.intensity = gain;
@@ -2429,6 +2412,7 @@ export class BiomeManager {
   }
 
   draw(ctx, canvas, worldX, originX = 0, skyVoyage = null, particleMul = 1, perf = null, groundView = null) {
+    this.rangeNarrative = null;
     // Deeper PerfGovernor rungs (mobile performance round): the optional
     // phenomena layer and the depth-haze layer count both read this for
     // the rest of the frame, so it's stashed on `this` rather than threaded
@@ -2442,7 +2426,7 @@ export class BiomeManager {
     // let every caller below share one derivation per unique input.
     this._crestCache = new Map();
     this._ridgeMusicCache = null;
-    const phenomenaFull = !this.rangeNarrative && (perf ? perf.phenomenaFull : true);
+    const phenomenaFull = perf ? perf.phenomenaFull : true;
     const {
       from, to, t, fromHeightMul = 1, toHeightMul = 1, fromSnowLine01 = 1, toSnowLine01 = 1,
     } = this.currentBlend
@@ -2513,7 +2497,6 @@ export class BiomeManager {
       ? this.lerpCache.get(skyHorizon, NIGHT_SKY_COLOR, horizonPull)
       : skyHorizon;
     this._airColor = skyHorizonNight;
-    if (this.rangeNarrative) this._airColor = rangeSkyState(this, A, B, t, dn.night, this.rangeNarrative).air;
 
     // Range v2 decides here, with light and air resolved, whether its GPU
     // scene draws this frame's scenic partitions. Legacy strips are only
@@ -2550,42 +2533,26 @@ export class BiomeManager {
     }
 
     this._drawSky(ctx, canvas, A, B, t, dn.night);
-    drawNarrativeMarks(ctx, this.rangeNarrative, this.tSec * 1000, canvas, this.songSeed, this.reducedMotion);
 
     // Planets + astral artifacts, behind everything else in the heavens --
     // purely atmospheric, first to go on the deepest perf rung.
-    if (!this._rangeSky && this._pass('ensemble') && phenomenaFull) this.skyEnsemble.draw(ctx, canvas, this.tSec * 1000, {
-      fromName: A.name, toName: B.name, t,
-      colors: {
-        skyMid: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
-        silhouette: this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)),
-        halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
-      },
-      tSec: this.tSec, groove: this._ridgeEnvelope()?.groove ?? this._danceGroove,
-      reducedFlash: this.reducedFlash,
-      presentation: this._rangePresentation?.ensemble ?? 1,
-      maxPlanets: this.world?.kind === 'alpine' ? 1 : Infinity,
-    });
-
     // The Range's main upper-sky form. Its painter owns steady contrast;
     // ordinary astronomy was excluded from its live corridor in _drawSky.
     // Draw before dawn wash and the opaque celestial so it remains distant.
     {
-      let spaceCol = this._rotated(rotateHueHex(
+      const spaceCol = this._rotated(rotateHueHex(
         this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t), 45,
       ));
-      const n = this.rangeNarrative;
-      if (n) spaceCol = this.lerpCache.get('#000000', spaceCol, n.skyDark);
-      const authority = n ? .15 + .85 * n.spaceAuthority : 1;
+      const authority = 1;
       if (this._pass('space-ridge')) this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash,
-        authority, n ? n.sources.midasus.activity * n.handoff.midasus : 0, this.reducedMotion, n?.cast.midasus ?? 1);
+        authority, this.worldSources?.sample(this.tSec * 1000).midasus.activity ?? 0, this.reducedMotion, 0);
     }
 
     // Dawn/dusk tint washes bracket the sun's own rise and set.
     for (const wash of [{ color: '#ff9a6b', alpha: dn.dawnAlpha }, { color: '#141040', alpha: dn.duskAlpha }]) {
       if (wash.alpha > 0.005) {
         ctx.save();
-        ctx.globalAlpha = wash.alpha * (this.rangeNarrative?.atmosphere ?? 1);
+        ctx.globalAlpha = wash.alpha * (1);
         ctx.fillStyle = wash.color;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
@@ -2604,8 +2571,8 @@ export class BiomeManager {
     // ordinary source-over) now properly occludes whatever of these fell
     // behind its disc, same as it always did for the plain star layer in
     // _drawSky/_drawStarfield (also drawn before the celestial bodies).
-    if (!this.rangeNarrative) this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
-    withNarrativeAlpha(ctx, this.rangeNarrative?.cast.midasus ?? 1, c => this.drawDeepSky(c, skyVoyage, canvas));
+    this.lightning.draw(ctx, canvas, this.tSec * 1000, this.reducedFlash); // behind the ranges: bolts land beyond the hills
+    // Personal sky voyages are retired; scenic stars/clouds remain.
     // Ambient connect-the-dots + reward volleys read as starlight, so the
     // night sky brightens them the same way it brightens the atlas stars.
     // The Range's constellations were effectively washed out in daylight:
@@ -2618,7 +2585,7 @@ export class BiomeManager {
     // The weaver is far lighter than the rest of the phenomena layer -- it
     // must NOT drop out with them (rung 5) or The Range's sky goes dark.
     const constellationsOn = this._perf ? this._perf.constellationsEnabled : true;
-    if (!this.rangeNarrative && this._pass('weaver') && constellationsOn && skyA > 0.02 && (!this._rangeSky || this._rangeSky.showWeaver)) {
+    if (this._pass('weaver') && constellationsOn && skyA > 0.02 && (!this._rangeSky || this._rangeSky.showWeaver)) {
       const live = this._rangePresentation?.liveWeaver ?? 1;
       const retained = this._rangePresentation?.retainedWeaver ?? 1;
       const alpineSky = this.world?.kind === 'alpine';
@@ -2633,8 +2600,8 @@ export class BiomeManager {
     // over their last stretch of altitude rather than popping at the
     // horizon, and both rise from and set into the sea horizon.
     this._moonDisc = null;
-    if (sunUp) withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => this._drawCelestial(c, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac));
-    if (dn.moonAlt > 0.001) withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => {
+    if (sunUp) withNarrativeAlpha(ctx, 1, c => this._drawCelestial(c, canvas, A, B, t, celestialYFrac, horizonFade(dn.sunAlt), celestialXFrac));
+    if (dn.moonAlt > 0.001) withNarrativeAlpha(ctx, 1, c => {
       // Where the sun really is -- below the horizon all night, which is the
       // whole point: it's what makes the moon read as lit from underneath.
       const sun = sunScreenFrac(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
@@ -2651,7 +2618,7 @@ export class BiomeManager {
       const halo = hexToRgb(this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)));
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
       const moon = this._moonDisc;
-      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
+      withNarrativeAlpha(ctx, 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
         dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
         lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
         light: moon || { x: canvas.width * celestialXFrac, y: canvas.height * celestialYFrac },
@@ -2699,7 +2666,7 @@ export class BiomeManager {
       if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     }
     const glacialInland = v2 && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.glacier);
-    if (!glacialInland) withNarrativeAlpha(ctx, this.rangeNarrative?.features ?? 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
+    if (!glacialInland) withNarrativeAlpha(ctx, 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
     if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     // The horizon EQ belongs to the v2 sequence (between far and mid)
     // whenever v2 draws, arriving or not.
@@ -2751,8 +2718,8 @@ export class BiomeManager {
       const bars = this.groundField.visibleBars(worldX, originX, groundCanvas.width);
       this._groundReceivers = this.rangePresentation.groundReceivers();
       this._lakeReflectGroundY = null;
-      withNarrativeAlpha(ctx, this.rangeNarrative?.relief ?? 1, c => drawRockStageShade(c, { bars, width: groundCanvas.width, height: groundCanvas.height }));
-      withNarrativeAlpha(ctx, this.rangeNarrative?.materials ?? 1, c => this._drawGroundSignatures(c, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t));
+      withNarrativeAlpha(ctx, 1, c => drawRockStageShade(c, { bars, width: groundCanvas.width, height: groundCanvas.height }));
+      withNarrativeAlpha(ctx, 1, c => this._drawGroundSignatures(c, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t));
     } else {
       this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
       // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
@@ -2837,7 +2804,7 @@ export class BiomeManager {
     }
     this._drawLayer(ctx, canvas, 'L2', scrollX0, tintL2, t, A, B);
     if (hazeLayers >= 3) this._drawHaze(ctx, canvas, 'L2', A, B, t, arc);
-    if (!skipShared) this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2);
+
     this._drawLayer(ctx, canvas, 'L3', scrollX1, tintL3, t, A, B);
     this._drawHaze(ctx, canvas, 'L3', A, B, t, arc);
     this._drawCastShadow(ctx, canvas, 'L2', 'L3', scrollX0, scrollX1, A, B, t);
@@ -2870,10 +2837,9 @@ export class BiomeManager {
   _drawRangeV2Scenic(ctx, canvas, frame, { worldX, originX, A, B, t, phenomenaFull, particleMul, mandalaColor, skyHorizonNight }) {
     const pres = this.rangePresentation;
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
-    const farTint = this.lerpCache.get(tint, skyHorizonNight, AERIAL_PULL.L2 || 0);
     pres.drawPartition(ctx, 'far', canvas);
     this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
-    this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, farTint);
+
     pres.drawPartition(ctx, 'mid', canvas);
     this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
     pres.drawPartition(ctx, 'near', canvas);
@@ -2891,18 +2857,7 @@ export class BiomeManager {
     return tint;
   }
 
-  _drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, tintL2) {
-    // Far-distance vignettes: between the farthest range and everything
-    // nearer, so the L3/L4/L5 ridges partially occlude them -- genuinely
-    // "witnessed in the far distance", not sprites pasted on the sky.
-    if (phenomenaFull) this.farVignettes.draw(ctx, canvas, worldX, {
-      tSec: this.tSec,
-      kick: planeKick(this.tSec * 1000, this._danceKickMs, 'vignette', this._danceKickAmp),
-      silhouette: tintL2, // they sit at L2's depth, so they wear L2's air
-      sky: this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)),
-      halo: this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)),
-    });
-  }
+  _drawFarVignettes() {}
 
   /** Mid-depth life shared by both scenic stacks: ambient particles,
    *  music weather, the Kuramoto swarm and the murmuration. */
@@ -2958,7 +2913,6 @@ export class BiomeManager {
       this.swarm.intensity = prev * decorative;
       this.swarm.draw(ctx, canvas, mandalaColor);
       this.swarm.intensity = prev;
-      this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul * decorative);
     }
   }
 
@@ -3585,13 +3539,7 @@ export class BiomeManager {
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
-    if (this.rangeNarrative && this.world?.kind === 'alpine') {
-      const sky = rangeSkyState(this, A, B, t, night, this.rangeNarrative);
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, sky.top); gradient.addColorStop(.5, sky.mid); gradient.addColorStop(1, sky.horizon);
-      ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      return;
-    }
+
     // Water and vault ceilings retain local light effects, not astronomy.
     const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
@@ -4556,7 +4504,7 @@ export class BiomeManager {
       reactionDiffusion: phenomenaFull && kind !== 'cathode',
       spaceRidge: alpine,
       lightRig: alpine,
-      murmuration: phenomenaFull && alpine,
+      murmuration: false,
       lightning: alpine,
       weaver: constellations && identityAllows(this.world, 'constellations'),
       meteors: phenomenaFull && identityAllows(this.world, 'meteors'),
@@ -4585,7 +4533,6 @@ export class BiomeManager {
     // Reduced flash keeps the slow tumble and drops the beat hitch.
     const kickTau = this.reducedFlash ? -1 : nowMs - this._danceKickMs;
     if (fx.spaceRidge) this.spaceRidge.update(nowMs, dtSec, this._eqSmoothed, this.calmLevel, kickTau);
-    if (fx.murmuration) this.murmuration.update(nowMs, dtSec, energyCurves, calmLevel, wind);
     return fx;
   }
 
@@ -5301,22 +5248,17 @@ export class BiomeManager {
       bands: this._eqSmoothed, worldX, tSec: this.tSec,
       maxHeightFrac: EQ_MAX_HEIGHT_FRAC,
     });
-    const n = this.rangeNarrative;
-    if (n && !this.reducedMotion) {
-      const source = n.sources.midio, gain = source.activity * n.handoff.midio;
-      for (const p of points) p.y -= gain * 14 * Math.sin(p.x / 180 + this.tSec * 2.2 + source.pitch01 * 2);
-    }
+
     return points;
   }
 
   _drawHorizonEQ(ctx, canvas, worldX, A, B, t) {
-    let color = ensureMinLightness(
+    const color = ensureMinLightness(
       this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)), .72);
-    if (this.rangeNarrative) color = this.lerpCache.get('#000000', color, this.rangeNarrative.materials);
     const eqMul = styleDials(this.visualStyle).horizonEqAlpha ?? 1;
     const pts = this._horizonEqPoints(canvas, worldX);
     if (this._landscapeGeometry) this._landscapeGeometry.horizon = pts;
-    const presence = clamp01(this.openingGain ?? 1) * eqMul * (this.rangeNarrative ? .35 + .65 * this.rangeNarrative.handoff.midio : 1);
+    const presence = eqMul;
     if (presence < 0.005) return;
     const activity = clamp01(this._eqSmoothed.reduce((sum, value) => sum + value, 0) / BAND_COUNT);
     const halo = presence * (.08 + .28 * activity) * (this.reducedFlash ? .42 : 1)
@@ -5717,24 +5659,7 @@ export class BiomeManager {
     const drawSet = (P, strips, alpha, heightMul, snowLine, targetCtx = ctx, targetCanvas = canvas) => {
       this._heightStrips = strips;
       this._alpineSideProfile = P;
-      if (this.rangeNarrative) {
-        // Technical fallback keeps the current phase on its own available
-        // geometry; it never replays the opening or restores companions.
-        const n = this.rangeNarrative;
-        const geom = this._crestPoints(targetCanvas, strips[layerKey], scrollX, yOff, layerKey, P.terrainEnergy ?? 1, heightMul);
-        const points = geom?.pts || [];
-        if (points.length) {
-          targetCtx.save(); targetCtx.globalAlpha = alpha;
-          targetCtx.beginPath(); points.forEach((p, i) => i ? targetCtx.lineTo(p.x, p.y) : targetCtx.moveTo(p.x, p.y));
-          targetCtx.lineTo(points.at(-1).x, targetCanvas.height); targetCtx.lineTo(points[0].x, targetCanvas.height); targetCtx.closePath();
-          targetCtx.fillStyle = this.lerpCache.get(this._airColor, tint, n.relief); targetCtx.fill();
-          targetCtx.beginPath(); points.forEach((p, i) => i ? targetCtx.lineTo(p.x, p.y) : targetCtx.moveTo(p.x, p.y));
-          targetCtx.strokeStyle = n.materials < .5 ? '#000000' : tint;
-          targetCtx.lineWidth = 1.3; targetCtx.globalAlpha = alpha * (1 - .65 * n.materials); targetCtx.stroke();
-          targetCtx.restore();
-        }
-        return;
-      }
+
       const offscreen = targetCtx !== ctx;
       if (this._pass('ridge-base', layerKey)) {
         targetCtx.globalAlpha = alpha;
@@ -7371,7 +7296,6 @@ export class BiomeManager {
     const sil = this.lerpCache.get(A.silhouette, B.silhouette, t);
     const body = this._rotated(this.lerpCache.get(sil, skyMid, 0.55));
     const cap = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
-    const nowMs = this.tSec * 1000;
     // The clearing: mostly veiled near its own crest, rarely fully bared --
     // see massifClearing01's doc for why the window is deliberately narrow.
     const clearing = massifClearing01(this.tSec);
@@ -7451,48 +7375,11 @@ export class BiomeManager {
     }
     ctx.restore();
 
-    this._drawMassifMarkers(ctx, nowMs, left, massifW, baseY - maxH, baseY - maxH * 0.4);
+
   }
 
-  /** Tiny, ordinary-parallax silhouettes drifting across the massif's face
-   *  on a seeded timer (MountainChoreo.js's marker constants). This is the
-   *  actual "occasionally perceived in a way that makes its raw size
-   *  known" mechanic: a shape crossing in front of the massif at a normal,
-   *  everyday speed, while the massif itself barely seems to move at all,
-   *  IS the scale reveal -- the comparison does work no amount of raw
-   *  height alone ever could. */
-  _drawMassifMarkers(ctx, nowMs, left, massifW, topY, bottomY) {
-    if (nowMs >= this._massifNextSpawnMs && massifW > 40) {
-      this._massifMarkers.push({
-        x0: left + this._massifRand() * massifW * 0.3,
-        y: topY + this._massifRand() * Math.max(1, bottomY - topY),
-        bornMs: nowMs,
-      });
-      this._massifNextSpawnMs = nowMs + nextMassifMarkerDelaySec(this._massifRand) * 1000;
-    }
-    if (!this._massifMarkers.length) return;
-    ctx.save();
-    ctx.fillStyle = 'rgba(6,6,12,0.6)';
-    this._massifMarkers = this._massifMarkers.filter((m) => {
-      const ageSec = (nowMs - m.bornMs) / 1000;
-      if (ageSec > MASSIF_MARKER_LIFE_SEC) return false;
-      const x = m.x0 + MASSIF_MARKER_SPEED_PX_S * ageSec;
-      // Eases in and out of visibility rather than popping -- a hard cut at
-      // either end would read as a glitch, not a distant bird/ship passing.
-      const fade = Math.min(1, ageSec * 3) * Math.min(1, (MASSIF_MARKER_LIFE_SEC - ageSec) * 3);
-      const wobble = Math.sin(ageSec * 3 + m.bornMs * 0.001) * 2;
-      ctx.globalAlpha = 0.55 * fade;
-      ctx.beginPath();
-      ctx.moveTo(x, m.y + wobble);
-      ctx.lineTo(x - 5, m.y + wobble + 2.2);
-      ctx.lineTo(x - 5, m.y + wobble - 2.2);
-      ctx.closePath();
-      ctx.fill();
-      return true;
-    });
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
+  /** Retired marker entry point; stale callers cannot spawn timed actors. */
+  _drawMassifMarkers() {}
 
   _drawShimmered(ctx, canvas, strip, scrollX, yOff = 0) {
     const w = strip.width, h = strip.height;
@@ -8174,36 +8061,7 @@ export class BiomeManager {
    *  `entries`: [{x, hue, active}] in screen space; inactive entries
    *  (burrowed, voyaging) are skipped so nothing reflects a performer who
    *  isn't actually standing on the shore. */
-  drawCharacterReflections(ctx, canvas, entries) {
-    const groundY = this._lakeReflectGroundY;
-    if (groundY == null) return;
-    const lakeHeight = canvas.height - groundY;
-    if (lakeHeight <= 0) return;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, groundY, canvas.width, lakeHeight);
-    ctx.clip();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const e of entries) {
-      if (!e || !e.active || !Number.isFinite(e.x)) continue;
-      ctx.globalAlpha = e.presence ?? 1;
-      // Same ring the water ripples borrow from _drawLakeReflection, sampled
-      // at this character's own horizontal position so their reflection
-      // wobbles in sync with the water right under them, not in lockstep
-      // with everyone else's.
-      const theta = ((e.x / canvas.width) % 1 + 1) * Math.PI * 2;
-      const ripple = this.lakeRing.displacementAt(theta) * 3;
-      const grad = ctx.createLinearGradient(0, groundY, 0, groundY + 74);
-      grad.addColorStop(0, `hsla(${e.hue}, 70%, 68%, 0.28)`);
-      grad.addColorStop(1, `hsla(${e.hue}, 70%, 68%, 0)`);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.ellipse(e.x + ripple, groundY + 30, 18, 30, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
+  drawCharacterReflections() {}
 
   /** The Wind: SAKURA's piles actively shed a few petals downwind rather
    *  than just sitting there as static ellipses. */

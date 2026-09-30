@@ -264,19 +264,10 @@ const paramBus = new ParamBus();
 let audioEngine = null;
 let synth = null;
 let sim = null;
-const rangeListeningEl = document.getElementById('rangeListening');
 const rangeNavigationEl = document.getElementById('rangeNavigation');
 const rangeSeekEl = document.getElementById('rangeSeek');
 rangeSeekEl?.addEventListener('change', () => { if (sim) seekSong(Number(rangeSeekEl.value) * 1000); });
 document.getElementById('rangeRestart')?.addEventListener('click', () => { if (sim) seekSong(0); });
-let rangeListening = new URLSearchParams(location.search).get('rangeExperience') === 'revelation';
-if (rangeListeningEl) {
-  rangeListeningEl.value = rangeListening ? 'revelation' : 'gameplay';
-  rangeListeningEl.addEventListener('change', () => {
-    rangeListening = rangeListeningEl.value === 'revelation';
-  if (sim) sim.rangeListening = rangeListening && !sim.analysisOpening;
-  });
-}
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
@@ -1046,21 +1037,12 @@ function renderTracks(tracks, pairs) {
     return other ? other.name : null;
   };
 
-  // Casting: who performs this track (Casting.js lanes) -- shown as the
-  // performer's initial so the delegation is visible, not guessed at.
-  const laneGlyph = (lane) => {
-    if (lane === 'MIDASUS') return '<span class="laneTag" title="Danced by Midasus (clean melody)">\u2726 Midasus</span>';
-    if (lane === 'BROSHI') return '<span class="laneTag" title="Hopped by Broshi (bass line)">\u25b8 Broshi</span>';
-    if (lane === 'MIDIO') return '<span class="laneTag" title="Ridden by Midio (lead line)">\u2605 Midio</span>';
-    return '';
-  };
   const rows = shown.map((t) => {
     const partner = t.intertwined ? partnerName(t) : null;
     const title = partner ? `Widens apart from "${partner}" over the course of the song` : '';
     return `<div class="trackRow${t.intertwined ? ' intertwined' : ''}" title="${escapeHtml(title)}">`
       + `<span class="roleDot role-${t.role}"></span>`
       + `<span class="trackName">${escapeHtml(t.name)}${partner ? ' \u2194' : ''}</span>`
-      + laneGlyph(t.lane)
       + `<span class="panGlyph">${panGlyph(t.pan)}</span>`
       + `<span class="trackMeta">${t.noteCount}</span>`
       + `</div>`;
@@ -1645,21 +1627,6 @@ function confirmWorld(id) {
 }
 
 function startConfirmedWorld(pending, id) {
-  // A setting changed while the picker was open may have selected the pilot
-  // after an opening-only load. Wait before starting audio or the show.
-  if (rangeListening && pending.data.opening) {
-    if (fullAnalysisPending) {
-      const gen = loadGen;
-      showProgress('Finishing the full-song listening analysis…');
-      fullAnalysisPending.then(() => {
-        progressEl.classList.add('hidden');
-        if (gen !== loadGen) return;
-        if (pending.data.opening) { showErrorBanner('Full-song analysis is needed for this listening presentation.'); return; }
-        startConfirmedWorld(pending, id);
-      });
-    } else showErrorBanner('Full-song analysis is needed for this listening presentation.');
-    return;
-  }
   stopWorldPreview();
   lastWorldId = id;
   pending.data.worldId = id;
@@ -1824,8 +1791,6 @@ function startTimeline(timelineData, extra = {}) {
   try {
     sim = new Simulation(conductor, paramBus, {
       bpm: timelineData.bpm || 120,
-      rangeListening,
-      rangeNarrative: timelineData.rangeNarrative || null,
       energyCurves: timelineData.energyCurves || null,
       // Logical stage always 1280×720 — canvas buffer may be 4K.
       canvasWidth: STAGE_W,
@@ -1874,7 +1839,6 @@ function startTimeline(timelineData, extra = {}) {
   sim.audioOverview = timelineData.audioOverview || null;
   sim.analysisOpening = timelineData.opening || null;
   // This snapshot belongs to the song, beyond Simulation teardown/rebuild.
-  if (!timelineData.opening) timelineData.rangeNarrative = sim.rangeNarrative;
   if (sim.biomes.chapterPlan) timelineData.chapterState = {
     seed: sim.songSeed, previous: sim.biomes.chapterPlan, committedThroughMs: timelineData.durationMs,
   };
@@ -1985,7 +1949,7 @@ function startTimeline(timelineData, extra = {}) {
   progressEl.classList.add('hidden');
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
-  rangeNavigationEl?.classList.toggle('hidden', !sim.rangeNarrativeAt());
+  rangeNavigationEl?.classList.remove('hidden');
   if (rangeSeekEl) { rangeSeekEl.max = String((conductor.durationMs || 0) / 1000); rangeSeekEl.value = String(startedAt / 1000); }
   wakeHud();
   // Name the real range behind The Range. The renderer draws it on the
@@ -2516,7 +2480,6 @@ async function loadAudioFiles(files) {
     // (OpeningAnalysis.js). The first pass is then just the opening.
     const openingFirst = useOpeningAnalysis({
       durationSec: audioBuffer.duration, stemDrop: isStemDrop, exporting: !!readBulkExportFromUrl(),
-      rangeListening,
     });
     const analysis = audioToTimeline(openingFirst ? sliceAudioBuffer(audioBuffer, OPENING_SECONDS) : audioBuffer, {
       userStems: isStemDrop ? decoded : null,
@@ -3413,7 +3376,7 @@ function frame(tRaf) {
     // stands in for, and every eye pass banked that as display latency.
     const visualBeatMs = simTime - (sim.visualLagMs || 0);
     const alive = recalibration.update(simTime, {
-      beatPeriodMs: sim.jump.beatPeriodMs,
+      beatPeriodMs: sim.beatAnchor.periodMs,
       confidence: sim.beatAnchor.confidence,
       reducedFlash,
       // Matched against the same collapsed onsets the tap is measured
@@ -3423,7 +3386,7 @@ function frame(tRaf) {
       // display latency.
       beatPulse01: recalibration.phase === PHASE_EYE
         ? beatPulse01(
-          syncCalibrator.collapsedOnsets(sim.jump.kickTimes, sim.jump.beatPeriodMs),
+          syncCalibrator.collapsedOnsets(sim.kickTimes, sim.beatAnchor.periodMs),
           visualBeatMs,
         )
         : 0,
@@ -3478,36 +3441,11 @@ function formatDuration(ms) {
 
 /** Build end-of-run stats: measurable song/run facts, no grade or score. */
 function buildRunStats(sim) {
-  const combo = sim.comboSystem;
-  const sk = sim.scoreKeeper;
-  const chart = sim.noteChart || {};
-  const durationMs = sim.conductor?.durationMs || 0;
-  const sections = sim.biomes?.sections?.length || 0;
-  const holdsTotal = chart.holdCount || 0;
-  const taps = chart.tapCount || 0;
-  const jumps = combo.cleanLandings || 0;
-  const peakFever = sim.fever ? Math.round((sim.fever.peak || 0) * 100) : 0;
-  const peakMult = Math.min(3, combo.peakM || 1);
-  const bpm = sim.bpm || 0;
-
   return [
-    { label: 'Duration', value: formatDuration(durationMs) },
-    { label: 'Tempo', value: bpm ? `${Math.round(bpm)} BPM` : '—' },
-    { label: 'Clean landings', value: String(jumps) },
-    { label: 'Peak streak', value: String(sk.peakStreak || 0) },
-    { label: 'Peak mult', value: `×${peakMult.toFixed(1)}` },
-    { label: 'Peak fever', value: `${peakFever}%` },
-    { label: 'Chart jumps', value: String(taps) },
-    {
-      label: 'Holds ridden',
-      value: holdsTotal > 0 ? `${sk.holdsCompleted} / ${holdsTotal}` : '—',
-    },
-    { label: 'Sections', value: String(sections) },
-    {
-      label: 'Stage',
-      value: `${canvas.width}×${canvas.height}`,
-      wide: true,
-    },
+    { label: 'Duration', value: formatDuration(sim.conductor?.durationMs || 0) },
+    { label: 'Tempo', value: sim.bpm ? `${Math.round(sim.bpm)} BPM` : '—' },
+    { label: 'Sections', value: String(sim.biomes?.sections?.length || 0) },
+    { label: 'Stage', value: `${canvas.width}×${canvas.height}`, wide: true },
   ];
 }
 
@@ -3688,7 +3626,7 @@ function beatTap(role = null) {
  *  Opt-in only (the 'C' key) -- there is no automatic prompt. */
 function startRecalibration() {
   if (!running || !sim || paused || recalibration.active) return;
-  recalibration.start(simTime, sim.jump.beatPeriodMs, sim.beatAnchor.confidence);
+  recalibration.start(simTime, sim.beatAnchor.periodMs, sim.beatAnchor.confidence);
   // Start from the trim already in force rather than from zero: it is a
   // correction the player has already made, and the pass refines it.
   syncCalibrator.reset(btLatencyTrimMs);
@@ -3711,7 +3649,7 @@ function applySyncTap(tapMs) {
   // A positive trim only works up to visualNow's own clamp; past it the
   // number rises and the picture does not, which for a loop that measures
   // its own residual is a runaway rather than a plateau.
-  const result = syncCalibrator.tap(tapMs, sim.jump.kickTimes, sim.jump.beatPeriodMs, {
+  const result = syncCalibrator.tap(tapMs, sim.kickTimes, sim.beatAnchor.periodMs, {
     maxPositiveTrimMs: positiveTrimCeilingMs(audioEngine.outputLatencyMs),
   });
   // A tap with no kick near it measured nothing; the last good reading
@@ -4083,7 +4021,7 @@ function replaySong({ songSeed } = {}) {
   if (!lastTimelineData) { window.location.reload(); return; }
   // A full-song recording is the whole song: wait for its analysis rather
   // than record the part past the opening with nothing driving it.
-  if ((pendingExportPresetId || rangeListening) && lastTimelineData.opening && fullAnalysisPending) {
+  if (pendingExportPresetId && lastTimelineData.opening && fullAnalysisPending) {
     const waitingOn = lastTimelineData;
     showProgress('Finishing the analysis…');
     fullAnalysisPending.finally(() => {

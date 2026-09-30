@@ -47,13 +47,11 @@ const cue = (kind, value = 1, tMs = 1000) => ({ tMs, kind, value, bucket: 8 });
 
 test('each live cue kind reaches its own engine entry point', () => {
   const cases = [
-    [CueKind.APOTHEOSIS, 'forceTrigger'],
     [CueKind.KEY_CHANGE, 'forceChange'],
     [CueKind.CALM, 'cueCalm'],
     [CueKind.METEORS, 'cueMeteors'],
     [CueKind.LIGHTNING, 'cueLightning'],
     [CueKind.SHAKE, 'shake'],
-    [CueKind.FEVER, 'spark'],
   ];
   for (const [kind, expected] of cases) {
     const { sim, calls } = bareSimWithCues([cue(kind)]);
@@ -62,21 +60,19 @@ test('each live cue kind reaches its own engine entry point', () => {
   }
 });
 
-test('a flourish cue defers the disc until after ensemble.update, like a drop', () => {
-  // maybeDisc used to run here, then ensemble.update() cleared discCue in
-  // the same step and the trio never spun. Same deferral as DROP.
-  const { sim, calls } = bareSimWithCues([cue(CueKind.FLOURISH)]);
+test('legacy performer cues cannot activate discarded owners', () => {
+  const { sim, calls } = bareSimWithCues([cue(CueKind.FLOURISH), cue(CueKind.FEVER), cue(CueKind.APOTHEOSIS)]);
   sim._applyCues(1000);
-  assert.equal(sim._pendingDiscReason, 'cue');
-  assert.ok(!calls.some((c) => c[0] === 'maybeDisc'), 'maybeDisc waits for the pending slot after ensemble.update');
+  assert.deepEqual(calls, []);
+  assert.equal(sim._pendingDiscReason, null);
 });
 
-test('a drop cue both surges the hype and arms the deferred disc flourish', () => {
+test('a drop cue surges world hype without arming a performer flourish', () => {
   const { sim, calls } = bareSimWithCues([cue(CueKind.DROP, 0.75)]);
   sim._applyCues(1000);
   assert.deepEqual(calls[0], ['cueDrop', 1000, 0.75]);
   // Matches the detected drop's own one-phase deferral (see step()).
-  assert.equal(sim._pendingDiscReason, 'cue');
+  assert.equal(sim._pendingDiscReason, null);
 });
 
 test('a weather cue passes the named kind through, not a strength', () => {
@@ -85,10 +81,10 @@ test('a weather cue passes the named kind through, not a strength', () => {
   assert.deepEqual(calls[0], ['cueKind', 0, 'embers']);
 });
 
-test('a ground-pulse cue both shocks the terrain and echoes it on screen', () => {
+test('a ground-pulse cue shocks terrain without personal screen effects', () => {
   const { sim, calls } = bareSimWithCues([cue(CueKind.GROUND_PULSE, 0.5)]);
   sim._applyCues(1000);
-  assert.deepEqual(calls.map((c) => c[0]), ['impulse', 'trigger']);
+  assert.deepEqual(calls.map((c) => c[0]), ['impulse']);
 });
 
 test('cue strength scales the effect it drives', () => {
@@ -101,7 +97,7 @@ test('cue strength scales the effect it drives', () => {
 
 test('every cue in one step is applied, not just the first', () => {
   const { sim, calls } = bareSimWithCues([
-    cue(CueKind.SHAKE), cue(CueKind.FEVER), cue(CueKind.APOTHEOSIS),
+    cue(CueKind.SHAKE), cue(CueKind.CALM), cue(CueKind.METEORS),
   ]);
   sim._applyCues(1000);
   assert.equal(calls.length, 3);

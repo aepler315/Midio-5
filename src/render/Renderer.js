@@ -9,26 +9,19 @@ import { easeHueDeg } from './stellar.js';
 import { MIDIO_IDENTITY_HUE, REWARD_HUE } from './ColorLaw.js';
 import { ComposerStrip } from './ComposerStrip.js';
 import { drawRangeCaption } from '../ui/RangeCaption.js';
-import { RainbowBrush } from './RainbowBrush.js';
 import { GOLD_AFTERIMAGE_LIFE_MS } from '../sim/MidioPerformer.js';
-import { contactShadow } from '../world/ContactShadow.js';
 import { clamp01 } from '../utils/math.js';
 import { capFlashAlpha, flashCompositeOp } from '../ui/Accessibility.js';
 import { LerpCache, hexToRgb } from '../utils/color.js';
 import { spectralFamily } from './spectral.js';
 import { hypeFrameStyle } from '../sim/HypeDirector.js';
 import { salienceBudgetFor } from './SalienceBudget.js';
-import { isRendered, styleDials } from './VisualStyle.js';
-import { groundGlowLights, characterGlowLight } from './LightField.js';
+import { styleDials } from './VisualStyle.js';
 import { GroundResponse, recentConductorHits } from '../world/alpine/GroundResponse.js';
-import { PerformerCapture } from './PerformerCapture.js';
-import { sharedResidency } from './GraphicsResidency.js';
-import { drawWetReflections } from '../world/alpine/WetReflection.js';
 import { viewportState } from '../world/alpine/RangeFrame.js';
-import { withNarrativeAlpha, composedNarrativeEdge } from './NarrativeDraw.js';
+import { composedNarrativeEdge } from './NarrativeDraw.js';
 import { narrativePressure } from '../world/alpine/RangeNarrative.js';
 import { quantizeCanvas } from './PaletteQuantize.js';
-import { rangeQuality } from '../world/alpine/RangeQuality.js';
 
 // Reserve margin (logical stage px) around the visible frame that camera
 // shake/drift/sway/roll are free to pan into without ever exposing raw,
@@ -179,7 +172,6 @@ export class Renderer {
     this.composer = null; // lazy: needs the conductor's timeline at first draw
     // The picture opens clean; F3 can reveal the timeline for section debug.
     this.hudInFrame = false;
-    this.brush = new RainbowBrush();
     // Drop motion blur: a 3-slot ring of backing-store-sized canvases holding
     // the last three composed frames, captured every frame so the ring is
     // already warm when a drop lands. Lazy: allocated on first draw, resized
@@ -268,13 +260,12 @@ export class Renderer {
     const pose = sim.lerpState(alpha);
     const camera = presentationCamera(sim.camera, this.rangePresentation, sim.biomes);
     const biomeManager = sim.biomes || null;
-    const narrative = sim.rangeNarrativeAt?.() || null;
+    const narrative = null;
     this.rangeListeningActive = !!narrative;
-    const presence = narrative?.cast || { midio: 1, broshi: 1, midasus: 1 };
     if (biomeManager) biomeManager.rangeNarrative = narrative;
     const perf = sim.perf || null;
     const particleMul = perf ? perf.particleMul : 1;
-    const salience = salienceBudgetFor(sim.focus, biomeManager?.world);
+    const salience = salienceBudgetFor(null, biomeManager?.world);
     const worldParticleMul = particleMul * salience.particles;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -325,7 +316,7 @@ export class Renderer {
     // (zoomed, wider) bounds the same way it always has.
     const sxFixed = canvas.width / nominalW;
     const syFixed = canvas.height / nominalH;
-    const groundOffsetY = groundPresentationOffsetY(this.rangePresentation, biomeManager, nominalH, sim.midio.groundY);
+    const groundOffsetY = groundPresentationOffsetY(this.rangePresentation, biomeManager, nominalH, (sim.stageAnchor?.groundY ?? pose.groundY ?? 625));
     const groundStage = this._groundStageView || (this._groundStageView = { width: 0, height: 0 });
     groundStage.width = nominalW + 2 * SHAKE_MARGIN_PX;
     groundStage.height = nominalH + 2 * SHAKE_MARGIN_PX;
@@ -356,174 +347,22 @@ export class Renderer {
     }
     if (biomeManager) {
       biomeManager.salience = salience;
-      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, sim.midasus && presence.midasus > 0 ? sim.midasus.voyage : null, worldParticleMul, perf, groundView);
+      biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
       groundView.apply();
-      this._drawGround(ctx, groundView.stage, pose, sim.midio.groundY);
+      this._drawGround(ctx, groundView.stage, pose, (sim.stageAnchor?.groundY ?? pose.groundY ?? 625));
     }
     // Movement VII: the celestial body as a light, resolved once per frame
     // and shared by every contact shadow / rim light call below.
-    const light = biomeManager ? biomeManager.currentLight() : null;
-    const contactShadowsEnabled = perf ? perf.contactShadowsEnabled : true;
-    const rimLightEnabled = perf ? perf.rimLightEnabled : true;
-    // Secondary lights: a kick-synced ground pulse or Midasus's own core
-    // now actually casts light on whoever's nearby, not just looks bright
-    // itself (see LightField.js). Empty whenever nothing's active, and
-    // skipped outright under perf pressure like the celestial light itself.
-    const groundField = biomeManager ? biomeManager.groundField : null;
-    const groundLights = (rimLightEnabled && groundField)
-      ? groundGlowLights(groundField.activeGlowScreenLights(pose.worldX, pose.midioX), biomeManager.currentHaloColor())
-      : [];
-    // What she sees: the celestial and the ground pulses, not her own light.
-    const worldLights = rimLightEnabled ? [light, ...groundLights].filter(Boolean) : (light ? [light] : []);
-    // What everyone ELSE sees: the above, plus her own glow if she's out
-    // and visible (not off mid-voyage in deep space, drawn as a tiny dot).
-    const midasusGlowLight = (rimLightEnabled && presence.midasus > 0 && sim.midasus && sim.midasus.voyage.depth <= 0)
-      ? characterGlowLight(sim.midasus.p.x, sim.midasus.p.y, sim.midasus.hue, (0.25 + 0.35 * clamp01(sim.midasus.pulse - 1)) * presence.midasus)
-      : null;
-    const companionLights = midasusGlowLight ? [...worldLights, midasusGlowLight] : worldLights;
-
-    // Broshi's underground excursion: drawn beneath the world -- literally
-    // inside the earth, under everything that walks on it -- rather than
-    // inside BiomeManager's sky/parallax stack.
-    if (sim.broshi) withNarrativeAlpha(ctx, presence.broshi, c => sim.broshi.burrow.draw(c, pose.worldX, pose.midioX));
-
-    // The Unraveling: a global desaturation overlay, drawn right here so it
-    // only touches the world painted so far (sky/phenomena/silhouettes/
-    // burrow) -- telegraph, obstacles, and every character draw afterward,
-    // fully saturated, exactly per the hard rule.
-    if (sim.coda && !narrative) this._drawDesaturationOverlay(ctx, stage, sim.coda);
-
-    if (sim.telegraph && !narrative) sim.telegraph.draw(ctx, sim.midio.groundY);
-    if (contactShadowsEnabled && sim.obstacles && !narrative) {
-      const groundYAt = groundField
-        ? (sx) => groundField.heightAt(pose.worldX + (sx - pose.midioX))
-        : () => sim.midio.groundY;
-      for (const o of sim.obstacles.groundedShadows(pose.worldX, pose.midioX, groundYAt)) {
-        const s = contactShadow(o.x, o.groundY, 0, o.width, light);
-        this._drawContactShadow(ctx, { ...s, alpha: s.alpha * o.presence });
-      }
-    }
-    if (sim.obstacles && !narrative) {
-      sim.obstacles.draw(ctx, pose.worldX, pose.midioX, sim.midio.groundY, {
-        nowMs: sim.timeMs, energyCurves: sim.energyCurves,
-        wind: sim.biomes ? sim.biomes.wind : { x: 0, y: 0 },
-        particleMul, reducedFlash: !!sim.reducedFlash,
-      });
-    }
-    if (sim.impactFX && !narrative) sim.impactFX.draw(ctx, pose.worldX, pose.midioX, !!sim.reducedFlash, stage.width);
-    if (sim.rippleFX) sim.rippleFX.draw(ctx, pose.worldX, pose.midioX, sim.reducedFlash, stage.width);
-    if (sim.battle && !narrative) this._drawBattleEnemies(ctx, sim);
-
-    // Rainbow brush: paint Midio's jump arcs, world-locked behind him.
-    // Purely cosmetic trail decoration -- sheds outright under sustained
-    // perf pressure (see PerfGovernor.brushEnabled) rather than just
-    // thinning, since up to 320 additive dabs redrawn every frame is real
-    // cost for zero gameplay content.
-    this.brush.update(sim.timeMs, pose.airborne, pose.worldX, pose.midioY, particleMul);
-    if (!narrative && (!sim.perf || sim.perf.brushEnabled)) {
-      this.brush.draw(ctx, pose.worldX, pose.midioX, sim.timeMs, sim.apotheosis && sim.apotheosis.active ? 2 : 1, !!sim.reducedFlash, stage.width);
-    }
-
-    // Fever adds its own glow on top of the vibe's epic-ness -- a hot streak
-    // makes Midio himself burn brighter, not just the world around him.
-    const feverGlow = sim.fever ? 3.0 * sim.fever.level : 0;
-    // The old 2.5 floor melted him well past meltMesh's 0.02 no-op threshold
-    // even at epic=0, so he was always visibly liquid regardless of what the
-    // music was doing -- a quiet verse and an epic passage looked like the
-    // same character. Trading most of that floor for range (epic still
-    // reaches its old ~7.0 ceiling at 1) lets a genuinely quiet section
-    // bring him close to rest, so the swell into an epic passage is
-    // something that actually happens rather than something that was
-    // always half-happening.
-    const vibeMelt = sim.vibe ? 0.3 + 6.7 * sim.vibe.epic : 0;
-    const drawMidioBody = (c) => withNarrativeAlpha(c, presence.midio, d => this._drawMidio(d, pose, sim.performer, sim.timeMs / 1000, vibeMelt + feverGlow, sim.apotheosis, sim.reducedFlash, MIDIO_IDENTITY_HUE, sim.ensemble, companionLights, sim.focus ? sim.focus.mul('midio') : 1, sim.gaze,
-      sim.beatAnchor && sim.beatAnchor.periodMs > 0
-        ? sim.beatAnchor.phaseRad(sim.timeMs) / (Math.PI * 2)
-        : null));
-    const drawBroshiBody = (c) => withNarrativeAlpha(c, presence.broshi, d => sim.broshi.draw(d, pose, companionLights, sim.focus ? sim.focus.mul('burrow') : 1));
-    const drawMidasusBody = (c) => withNarrativeAlpha(c, presence.midasus, d => sim.midasus.draw(d, particleMul, worldLights));
-    const voyageMul = sim.focus ? sim.focus.mul('voyage') : 1;
-    // Range v2 wet reflections (Task 12): a performer over a pool draws its
-    // body once, into a capture layer that both its reflection (here, under
-    // the cast) and its composite (at its usual slot below) reuse.
-    const cast = this._captureCastForReflections(ctx, sim, pose, biomeManager, perf, { drawMidioBody, drawBroshiBody, drawMidasusBody, voyageMul });
-
-    // Contact shadows: grounds the trio to the terrain instead of letting
-    // them read as floating. Drawn just before each character so the
-    // shadow always sits directly underneath its owner in paint order.
-    if (contactShadowsEnabled && sim.broshi && sim.broshi.burrow.depth <= 0.02) {
-      withNarrativeAlpha(ctx, presence.broshi, c => this._drawContactShadow(c, contactShadow(sim.broshi.renderX, sim.broshi.groundY, sim.broshi.hopY, sim.broshi.shadowWidthPx, light)));
-    }
-    if (cast.broshi) this._capture.composite(ctx, cast.broshi);
-    else if (sim.broshi) drawBroshiBody(ctx);
-
-    if (sim.performer && !narrative) {
-      this._drawMidioAfterimages(ctx, sim.performer, pose.midioDrawX, MIDIO_IDENTITY_HUE);
-      this._drawGoldAfterimages(ctx, sim.performer, pose.midioDrawX, sim.timeMs);
-    }
-    const midioWidthPx = sim.midio.halfWidth * 2 * MIDIO_DRAW_SCALE * pose.scaleX;
-    const midioHeightAbove = sim.midio.groundY - pose.midioY;
-    if (contactShadowsEnabled) {
-      withNarrativeAlpha(ctx, presence.midio, c => this._drawContactShadow(c, contactShadow(pose.midioDrawX, sim.midio.groundY, midioHeightAbove, midioWidthPx, light)));
-    }
-    if (cast.midio) this._capture.composite(ctx, cast.midio);
-    else drawMidioBody(ctx);
-
-    // Combo milestones (streaks of 5/10/20) no longer draw their number
-    // above Midio. Under autoplay every song reaches all three in its first
-    // twenty or so jumps, so the "5", "10", "20" arrived back to back at the
-    // start of nearly every song and read as random digits in the sky. The
-    // milestone still earns the gold flash, the victory dance and the meteor
-    // volley.
-
-    // Everything from here down draws under the fixed ground transform
-    // biomeManager.draw() switched to before painting the ground -- see
-    // groundView's own comment above. Sized to groundView.stage (also
-    // fixed), not the zoomed `stage`, so full-bleed effects match the
-    // transform actually in effect.
-    if (!narrative) this._drawDropShockwave(ctx, groundView.stage, sim, pose);
-
-    if (contactShadowsEnabled && sim.midasus && sim.midasus.voyage.depth <= 0) {
-      const heightAbove = sim.midasus.yFloor - sim.midasus.p.y;
-      withNarrativeAlpha(ctx, presence.midasus, c => this._drawContactShadow(c, contactShadow(sim.midasus.p.x, sim.midasus.yFloor, heightAbove, sim.midasus.shadowWidthPx, light)));
-    }
-    if (cast.midasus) {
-      // Captured with the voyage fade already applied (see below).
-      this._capture.composite(ctx, cast.midasus);
-    } else if (sim.midasus) {
-      // Midasus.draw never sets ctx.globalAlpha to an absolute value
-      // internally (verified directly), so an outer multiply here is safe
-      // and cheaper than threading a new param through her whole draw path.
-      if (voyageMul < 1) { ctx.save(); ctx.globalAlpha *= voyageMul; }
-      drawMidasusBody(ctx);
-      if (voyageMul < 1) ctx.restore();
-    }
-    // Faint reflections in the Mirror lake: has to wait until here, after the
-    // trio's live screen positions/hues are known -- the water itself draws
-    // (and reflects the sky/terrain) long before any of them do.
-    if (biomeManager && biomeManager.drawCharacterReflections) {
-      biomeManager.drawCharacterReflections(ctx, groundView.stage, [
-        { x: pose.midioDrawX, hue: MIDIO_IDENTITY_HUE, active: presence.midio > 0, presence: presence.midio },
-        { x: sim.broshi ? sim.broshi.renderX : NaN, hue: sim.broshi ? sim.broshi.hue : 0, active: presence.broshi > 0 && !!sim.broshi && sim.broshi.burrow.depth <= 0.02, presence: presence.broshi },
-        { x: sim.midasus ? sim.midasus.p.x : NaN, hue: sim.midasus ? sim.midasus.hue : 0, active: presence.midasus > 0 && !!sim.midasus && sim.midasus.voyage.depth <= 0, presence: presence.midasus },
-      ]);
-    }
+    // Performer ownership ends here, including stale captures from a prior presentation.
+    this._captureCastForReflections();
     if (biomeManager?.world?.kind === 'alpine' && biomeManager._pass?.('ground-response') !== false) {
-      const lights = [
-        presence.midio > 0 ? characterGlowLight(pose.midioDrawX, pose.midioY, MIDIO_IDENTITY_HUE, .28 * presence.midio) : null,
-        presence.broshi > 0 && sim.broshi?.burrow.depth <= .02 ? characterGlowLight(sim.broshi.renderX, sim.broshi.groundY - 12, sim.broshi.hue, .22 * presence.broshi) : null,
-        midasusGlowLight,
-      ].filter(Boolean);
       this._groundResponse.draw(ctx, { receivers: biomeManager._groundReceivers,
-        lights, nowMs: sim.timeMs,
-        hits: recentConductorHits(sim.conductor?.timeline, sim.timeMs),
-        reducedFlash: !!sim.reducedFlash, reducedMotion: !!sim.reducedMotion,
-        quality: perf?.level ?? 0 });
+        lights: [], nowMs: sim.heardTimeMs ?? sim.timeMs,
+        hits: recentConductorHits(sim.conductor?.timeline, sim.heardTimeMs ?? sim.timeMs),
+        reducedFlash: !!sim.reducedFlash, reducedMotion: !!sim.reducedMotion, quality: perf?.level ?? 0 });
     }
-    if (sim.battle && !narrative) this._drawBattleFX(ctx, sim);
-    if (sim.gnat && !narrative) sim.gnat.draw(ctx, sim.timeMs);
     // drawForeground (the L7 veil + near-field occluders, NearField.js)
     // before fracture: the cracks are the screen's own glass fracturing,
     // so they belong on top of every world layer, near-field props included
@@ -546,19 +385,16 @@ export class Renderer {
       sim.assembly.captureFrame(canvas, sim.timeMs);
     }
 
-    if (sim.fever && !narrative) this._drawFeverAura(ctx, viewStage, sim.fever.level, sim.biomes, sim.reducedFlash);
     if (sim.hype && !narrative) this._drawHypeFrame(ctx, viewStage, sim);
     // Drop impact pack: a chromatic shock + radial speed-lines from Midio,
     // both keyed off the same window as the shockwave rings -- drawn last so
     // they shock the fully composed frame, hype border and highway included.
-    if (sim.hype && !narrative) this._drawDropImpact(ctx, viewStage, sim, pose);
 
     // Post FX that sample the pixel buffer need identity transform + full
     // physical canvas size (bloom / retro / freeze capture). Motion blur
     // first: the accumulation smears the fully composed frame (hype border
     // and drop impact included), and bloom then blooms the smeared result.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (!narrative) this._drawDropMotionBlur(ctx, canvas, sim, camera, sx, sy);
     this._drawBloom(ctx, canvas, sim, salience);
     // After bloom, not before: heat is a lens on the whole scene, so it
     // should bend the glow bloom just added too, not just the world under it.
@@ -643,9 +479,6 @@ export class Renderer {
     if (sim.highlightReel) {
       const reel = sim.highlightReel, t = sim.timeMs;
       reel.notify('drop', Number.isFinite(sim.hype?.dropAtMs) && t - sim.hype.dropAtMs < 100, canvas, t, 'Drop');
-      reel.notify('voyage', sim.midasus?.voyage?.phase === 'WINDUP', canvas, t, 'Sky Voyage');
-      reel.notify('burrow', sim.broshi?.burrow?.phase === 'DIG_IN', canvas, t, 'Burrow');
-      reel.notify('detonation', !!sim._atlasDetonated, canvas, t, 'Supernova');
       reel.notify('freeze', !!(fracture && fracture.isAboutToFreeze), canvas, t, 'Finale');
     }
   }
@@ -656,56 +489,11 @@ export class Renderer {
    *  frame and draw their reflections. Returns the layers by performer; a
    *  null entry means that body draws directly. Nothing is captured outside
    *  an active v2 frame with pools on the stage. */
-  _captureCastForReflections(ctx, sim, pose, biomeManager, perf, { drawMidioBody, drawBroshiBody, drawMidasusBody, voyageMul }) {
-    const out = { broshi: null, midio: null, midasus: null };
-    const presence = sim.rangeNarrativeAt?.()?.cast || { broshi: 1, midio: 1, midasus: 1 };
-    const pres = biomeManager?.rangePresentation;
-    const receivers = biomeManager?._groundReceivers;
-    if (!this.reflectionsEnabled || !biomeManager?._rangeV2Active || !pres?.frame || !receivers?.pools?.length || !rangeQuality(perf?.level ?? 0).poolReflections) return out;
-    const spans = receivers.pools.map((p) => {
-      let lo = Infinity, hi = -Infinity;
-      for (const q of p.polygon) { lo = Math.min(lo, q.x); hi = Math.max(hi, q.x); }
-      return [lo, hi];
-    });
-    const overPool = (b) => !!b && spans.some(([lo, hi]) => b.x < hi && b.x + b.w > lo);
-    const cap = this._capture || (this._capture = new PerformerCapture({ residency: sharedResidency() }));
-    const frameId = pres.frame.frameId;
-    if (sim.broshi && presence.broshi > 0) {
-      const bounds = sim.broshi.drawBounds();
-      if (overPool(bounds)) out.broshi = cap.capture(ctx, frameId, { id: 'broshi', bounds, hue: sim.broshi.hue, visible: true,
-        contactY: sim.broshi.groundY, airbornePx: sim.broshi.hopY, draw: drawBroshiBody });
-    }
-    if (presence.midio > 0) {
-      // Midio's mesh spans about +-45 x -80..+20 local units around
-      // (midioDrawX, midioY); scale headroom covers breathe, pulse, the
-      // Apotheosis growth and melt, the pads his glow and hover.
-      const s = MIDIO_DRAW_SCALE * Math.max(Math.abs(pose.scaleX || 1), Math.abs(pose.scaleY || 1)) * 1.6;
-      const bounds = { x: pose.midioDrawX - 45 * s - 70, y: pose.midioY - 80 * s - 100, w: 90 * s + 140, h: 100 * s + 190 };
-      if (overPool(bounds)) out.midio = cap.capture(ctx, frameId, { id: 'midio', bounds, hue: MIDIO_IDENTITY_HUE, visible: true,
-        contactY: sim.midio.groundY, airbornePx: sim.midio.groundY - pose.midioY, draw: drawMidioBody });
-    }
-    // Midasus reflects only while she is down near the cast: out of a
-    // voyage AND within reflection range of the ground (she usually flies
-    // far above it, where a pool shows nothing of her).
-    if (presence.midasus > 0 && sim.midasus && sim.midasus.voyage.depth <= 0 && sim.midasus.yFloor - sim.midasus.p.y < 220) {
-      const bounds = sim.midasus.drawBounds();
-      if (overPool(bounds)) {
-        ctx.save();
-        if (voyageMul < 1) ctx.globalAlpha *= voyageMul;
-        out.midasus = cap.capture(ctx, frameId, { id: 'midasus', bounds, hue: sim.midasus.hue, visible: true,
-          contactY: sim.midasus.yFloor, airbornePx: sim.midasus.yFloor - sim.midasus.p.y, draw: drawMidasusBody });
-        ctx.restore();
-      }
-    }
-    const layers = [out.broshi, out.midio, out.midasus].filter(Boolean);
-    if (layers.length) {
-      const drawn = drawWetReflections(ctx, { frame: pres.frame, layers, receivers, quality: perf?.level ?? 0, capture: cap });
-      const m = ctx.getTransform();
-      this.reflectionStats = { frameId, drawn, layers: layers.map((l) => ({ id: l.id, device: { ...l.device } })),
-        transform: [m.a, m.b, m.c, m.d, m.e, m.f], pools: receivers.pools.map((p) => ({ id: p.id, polygon: p.polygon, dropPx: p.dropPx, alpha: p.alpha })),
-        contacts: layers.map((l) => ({ id: l.id, contactY: l.contactY, bounds: l.bounds })) };
-    }
-    return out;
+  _captureCastForReflections() {
+    this._capture?.dispose?.();
+    this._capture = null;
+    this.reflectionStats = null;
+    return { broshi: null, midio: null, midasus: null };
   }
 
   _drawTranspositionWave(ctx, canvas, keyDirector) {
@@ -747,9 +535,9 @@ export class Renderer {
     if (!hype) return;
     const u = hype.ringU(sim.timeMs);
     if (u == null) return;
-    const cx = pose.midioDrawX, cy = sim.midio.groundY - 60;
+    const cx = pose.midioDrawX, cy = (sim.stageAnchor?.groundY ?? pose.groundY ?? 625) - 60;
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75;
-    const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
+    const focusMul = 1;
     ctx.save();
     ctx.globalCompositeOperation = flashCompositeOp(sim.reducedFlash);
     for (const [lag, alphaMul, lw] of [[0, 1, 3.5], [0.12, 0.5, 1.8]]) {
@@ -881,7 +669,7 @@ export class Renderer {
    *  gradeAlpha has no percussive term at all), so this deliberately never
    *  routes through capFlashAlpha. */
   _drawFilmFinish(ctx, canvas, sim) {
-    const narrative = sim.rangeNarrativeAt?.() || null;
+    const narrative = null;
     if (!narrative && sim.biomes?._pass?.('film') === false) return;
     const ff = sim.filmFinish || { warmth: .3, vignetteDepth: 0 };
     const heavy = (sim.perf?.heavyPostFx ?? true) && sim.biomes?._pass?.('film') !== false;
@@ -973,7 +761,7 @@ export class Renderer {
     // This IS the drop's own vocabulary, so folding focusMul into the
     // source strength scales every downstream alpha in this function at
     // once (the RGB-split shock and the speed-lines both derive from `s`).
-    const s = dropImpactStrength(sim.timeMs, hype.dropAtMs) * (sim.focus ? sim.focus.mul('drop') : 1);
+    const s = dropImpactStrength(sim.timeMs, hype.dropAtMs) * (1);
     if (s <= 0) return;
     const perf = sim.perf;
     if (perf && perf.particleMul < 1) return;
@@ -1017,7 +805,7 @@ export class Renderer {
     // Radial speed-lines from Midio.
     const count = Math.max(6, Math.round(SPEED_LINE_COUNT * (perf ? perf.particleMul : 1)));
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.42;
-    const cx = pose.midioDrawX, cy = sim.midio.groundY - 60;
+    const cx = pose.midioDrawX, cy = (sim.stageAnchor?.groundY ?? pose.groundY ?? 625) - 60;
     const segs = speedLineSegments(cx, cy, count, s, hype.dropCount, maxR);
     const lineAlpha = capFlashAlpha(SPEED_LINE_MAX_ALPHA * s, reducedFlash);
     ctx.save();
@@ -1076,13 +864,13 @@ export class Renderer {
     const cols = Math.ceil(canvas.width / cell) + 1;
     const rows = Math.ceil(canvas.height / cell) + 1;
     const t = sim.timeMs / 1000;
-    // pose.midioDrawX / sim.midio.groundY are logical (viewStage) coords;
+    // pose.midioDrawX / (sim.stageAnchor?.groundY ?? pose.groundY ?? 625) are logical (viewStage) coords;
     // this pass runs post identity-reset against the full physical canvas,
     // so rescale by the same sx/sy the rest of draw() uses for that jump.
     const scaleX = viewStage && viewStage.width ? canvas.width / viewStage.width : 1;
     const scaleY = viewStage && viewStage.height ? canvas.height / viewStage.height : 1;
     const originX = pose ? pose.midioDrawX * scaleX : canvas.width / 2;
-    const originY = sim.midio ? sim.midio.groundY * scaleY : canvas.height * 0.7;
+    const originY = (sim.stageAnchor?.groundY ?? pose?.groundY ?? (viewStage?.height ?? canvas.height) * .7) * scaleY;
 
     ctx.save();
     // NOT 'copy'. Under 'copy' each drawImage discards the ENTIRE destination
@@ -1191,7 +979,7 @@ export class Renderer {
     const style = hypeFrameStyle(hype, calmLevel);
     // This IS the drop's own vocabulary, so it reads full strength when
     // focus picks 'drop' and dampens like everything else otherwise.
-    const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
+    const focusMul = 1;
 
     // Frame echo: on hard hits the previous frame ghosts outward once.
     // The Reel: reduced-flash disables it outright (a rapid self-blit
@@ -1306,7 +1094,7 @@ export class Renderer {
       : 0;
     // This IS the drop's own vocabulary, so it reads full strength when
     // focus picks 'drop' and dampens like everything else otherwise.
-    const focusMul = sim.focus ? sim.focus.mul('drop') : 1;
+    const focusMul = 1;
 
     // Ghost offsets run AGAINST the camera's travel: raising shakeX shifts
     // content right, so frame t-k's content sits k*vx px to the LEFT of where

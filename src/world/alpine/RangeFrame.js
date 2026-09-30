@@ -11,7 +11,6 @@ import { ridgeEnvelope } from './Ridge.js';
 import { ridgeKickEnv } from '../MountainChoreo.js';
 import { dayNight, celestialYFracFor, celestialXFracFor } from '../DayNight.js';
 import { recentConductorHits } from './GroundResponse.js';
-import { MIDIO_IDENTITY_HUE } from '../../render/ColorLaw.js';
 import { glacierStateAt } from './GlacierField.js';
 import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
@@ -174,7 +173,8 @@ export function buildRangeFrame({
   const biomeFrom = nameOf(blend.from), biomeTo = nameOf(blend.to);
   const choice = (b) => forcedView || sceneAssignments?.get?.(b) || null;
   const timeMs = sim.heardTimeMs ?? (mgr.tSec || 0) * 1000;
-  const narrative = sim.rangeNarrativeAt?.(timeMs) || null;
+  const narrative = null;
+  const sources = sim.sampleWorldSources?.(timeMs);
   const reducedFlash = !!mgr.reducedFlash;
   const reducedMotion = !!(sim.reducedMotion || mgr.reducedMotion);
   const progress01 = mgr.terrainPreview ? SCENE_PREVIEW_PROGRESS : sceneProgressAt({
@@ -210,50 +210,29 @@ export function buildRangeFrame({
   // musical channels without turning reduced-flash into reduced-motion.
   const sampled = sampleWorldMusic({ nowMs: timeMs, energyCurves: mgr.energyCurves,
     rhythm: mgr.worldRhythm, section, response: mgr.world?.response });
-  const env = ridgeEnvelope({ energy: sampled.energy, bass: sampled.bass, accent: sampled.accent,
+  // Only a distinct analyzed bass lane augments pressure; shared melody
+  // fallbacks remain one source rather than inventing another voice.
+  const bass = Math.max(sampled.bass, sources?.broshi.source === 'lane:BROSHI' ? sources.broshi.activity : 0);
+  const env = ridgeEnvelope({ energy: sampled.energy, bass, accent: sampled.accent,
     reveal: sampled.reveal, lift: boundaryLift01(section, prior) });
   const motif = rangeSectionMotif(section, prior, timeMs, sim.songSeed ?? 0);
   const music = rangeMusicState({
     env, tSec: mgr.tSec || 0, kickAgeMs: timeMs - (mgr._danceKickMs ?? -Infinity), kickAmp: mgr._danceKickAmp || 0,
-    melody: narrative ? { activity: narrative.sources.midio.pitchActivity * narrative.handoff.midio,
-      pitch01: narrative.sources.midio.pitch01 } : sampleRangeMelody(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
+    melody: sources ? { activity: sources.midio.pitchActivity, pitch01: sources.midio.pitch01 }
+      : sampleRangeMelody(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     structural01: section?.provenance === 'detected'
       ? unit(section.relEnergy01) * unit((timeMs - section.startMs) / 4000) : 0,
     reducedMotion, motif,
   });
-  if (narrative) {
-    music.amplitudeM *= .35 + .65 * narrative.handoff.broshi;
-    music.amplitudeM += reducedMotion ? 0 : 10 * narrative.sources.broshi.activity * narrative.handoff.broshi;
-    music.gestureM *= .25 + .75 * narrative.handoff.midasus;
-    music.totalBoundM = music.amplitudeM + music.kickM + music.gestureM + music.melodicM + music.structuralM;
-  }
   // Support curve exactly as the ground painter receives it (render-only
   // ripple/groove/quake included); physics heightAt() is not consulted.
   const gf = mgr.groundField;
   const groundWidth = groundViewport?.logicalWidth ?? sim.stageW ?? 1280;
-  const groundBars = gf ? gf.visibleBars(pose.worldX, pose.midioX, groundWidth).map((b) => ({
+  const groundBars = gf ? gf.visibleBars(pose.worldX, (pose.originX ?? pose.midioX), groundWidth).map((b) => ({
     x: b.x, width: b.width, y: b.y, glow: b.glow || 0,
   })) : [];
   const emitters = [];
-  if (sim.midio) {
-    emitters.push({ id: 'midio', x: pose.midioDrawX, y: pose.midioY, hue: MIDIO_IDENTITY_HUE, visible: true,
-      supportY: sim.midio.groundY, airborneM: Math.max(0, sim.midio.groundY - pose.midioY) });
-  }
-  if (sim.broshi) {
-    const b = sim.broshi;
-    emitters.push({ id: 'broshi', x: b.renderX, y: b.groundY - (b.hopY || 0), hue: b.hue, visible: b.burrow.depth <= 0.02,
-      supportY: b.groundY, airborneM: Math.max(0, b.hopY || 0), burrowed: b.burrow.depth > 0.02 });
-  }
-  if (sim.midasus) {
-    const m = sim.midasus;
-    emitters.push({ id: 'midasus', x: m.p.x, y: m.p.y, hue: m.hue, visible: m.voyage.depth <= 0,
-      supportY: m.yFloor, airborneM: Math.max(0, m.yFloor - m.p.y), voyaging: m.voyage.depth > 0 });
-  }
   const from = choice(biomeFrom), to = choice(biomeTo);
-  for (const e of emitters) {
-    e.presence = narrative?.cast[e.id] ?? 1;
-    e.visible = e.visible && e.presence > .001;
-  }
   return freezeDeep({
     frameId, generation, timeMs, seed: sim.songSeed ?? 0,
     beatTransport: mgr.beatTransport ? { ...mgr.beatTransport } : null,
@@ -267,7 +246,7 @@ export function buildRangeFrame({
     light: lightState, music, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     // World anchoring for fixed-ground dressing (rock stage, pools).
-    worldX: pose.worldX, originX: pose.midioX,
+    worldX: pose.worldX, originX: (pose.originX ?? pose.midioX),
   });
 }
 

@@ -119,3 +119,7 @@ test('overview samples windows so a tone cannot disappear at a matching sample s
     getChannelData: () => samples }, 1);
   assert.equal(shape[0], 1);
 });
+
+test('a legacy revelation preference cannot add a full-song analysis wait', () => {
+  assert.equal(useOpeningAnalysis({ durationSec: 120, rangeListening: true }), true);
+});

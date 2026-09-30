@@ -54,12 +54,12 @@ test('music strengthens the halo while reduced flash keeps a steady bright crest
   assert.ok(reduced.some(s => s.width <= 3 && s.alpha >= .55), 'steady crest survives reduced flash');
 });
 
-test('the crest respects the opening fade without vanishing at the lowest scene budget', () => {
+test('the crest is present immediately even with a stale opening fade and low scene budget', () => {
   const normal = paintedHorizon({ budget: 0 });
   const opening = paintedHorizon({ budget: 0, openingGain: .35 });
   const hidden = paintedHorizon({ budget: 0, openingGain: 0 });
   const crest = strokes => strokes.find(s => s.width <= 3)?.alpha ?? 0;
   assert.ok(crest(normal) >= .6, 'the contour remains visible when decorative effects shed');
-  assert.ok(crest(opening) < crest(normal) * .4, 'the opening still fades the contour in');
-  assert.deepEqual(hidden, [], 'the first opening frame draws no ridge');
+  assert.equal(crest(opening), crest(normal));
+  assert.deepEqual(hidden, normal, 'the opening cannot hide the landscape');
 });
