@@ -48,6 +48,9 @@ export function cameraRailErrors(camera) {
   for (const k of ['eyeStartM', 'eyeEndM', 'targetStartM', 'targetEndM']) {
     if (!isVec3(camera[k])) errors.push(`camera.${k} must be three finite numbers`);
   }
+  for (const k of ['eyeArcM', 'targetArcM']) {
+    if (camera[k] != null && !isVec3(camera[k])) errors.push(`camera.${k} must be three finite metre offsets`);
+  }
   const fov = camera.fovYDeg;
   if (!(Number.isFinite(fov) && fov >= FOV_MIN_DEG && fov <= FOV_MAX_DEG)) {
     errors.push(`camera.fovYDeg must be within ${FOV_MIN_DEG}..${FOV_MAX_DEG}`);
@@ -65,13 +68,21 @@ export function cameraRailErrors(camera) {
   // opposite look directions meet at a zero vector). Check the rail's
   // minimum over the whole segment, not only its ends.
   const d0 = sub(camera.targetStartM, camera.eyeStartM), d1 = sub(camera.targetEndM, camera.eyeEndM);
-  const at = (u) => lerp3(d0, d1, u);
+  const deltaArc = sub(camera.targetArcM || [0, 0, 0], camera.eyeArcM || [0, 0, 0]);
+  const at = u => sub(railPoint(camera.targetStartM, camera.targetEndM, camera.targetArcM, u),
+    railPoint(camera.eyeStartM, camera.eyeEndM, camera.eyeArcM, u));
   const closest = (dims) => {
     const dd = dims.map((k) => d1[k] - d0[k]);
     const den = dd.reduce((acc, v) => acc + v * v, 0);
     return den > 0 ? clamp01(-dims.reduce((acc, k, i) => acc + d0[k] * dd[i], 0) / den) : 0;
   };
   const probes = [closest([0, 1, 2]), closest([0, 2])];
+  // Curves can collapse between the regular stations. Their look vector
+  // is quadratic; test the extrema of both length and verticality exactly.
+  const coeff = d0.map((v, k) => [v, d1[k] - v + 4 * deltaArc[k], -4 * deltaArc[k]]);
+  const lengthSq = squaredPolynomial(coeff), horizontalSq = squaredPolynomial([coeff[0], coeff[2]]);
+  probes.push(...roots01(derivative(lengthSq)), ...roots01(derivative(horizontalSq)),
+    ...roots01(polySubtract(polyProduct(derivative(horizontalSq), lengthSq), polyProduct(horizontalSq, derivative(lengthSq)))));
   for (let k = 0; k <= 64; k++) probes.push(k / 64);
   for (const u of probes) {
     const d = at(u);
@@ -83,6 +94,39 @@ export function cameraRailErrors(camera) {
 }
 
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const railPoint = (a, b, arc, u) => lerp3(a, b, u).map((v, i) => v + (arc?.[i] || 0) * 4 * u * (1 - u));
+const derivative = p => p.slice(1).map((v, i) => v * (i + 1));
+const polyAt = (p, u) => p.reduceRight((s, v) => s * u + v, 0);
+function polyProduct(a, b) {
+  const p = new Array(a.length + b.length - 1).fill(0);
+  a.forEach((v, i) => b.forEach((w, j) => { p[i + j] += v * w; }));
+  return p;
+}
+const polySubtract = (a, b) => Array.from({ length: Math.max(a.length, b.length) }, (_, i) => (a[i] || 0) - (b[i] || 0));
+function squaredPolynomial(vectors) {
+  const p = [0, 0, 0, 0, 0];
+  for (const v of vectors) polyProduct(v, v).forEach((x, i) => { p[i] += x; });
+  return p;
+}
+function roots01(coefficients) {
+  const p = [...coefficients];
+  const scale = Math.max(1, ...p.map(Math.abs));
+  while (p.length > 1 && Math.abs(p.at(-1)) < scale * 1e-13) p.pop();
+  if (p.length < 2) return [];
+  if (p.length === 2) { const u = -p[0] / p[1]; return u > 0 && u < 1 ? [u] : []; }
+  const splits = [0, ...roots01(derivative(p)), 1].sort((a, b) => a - b), roots = [];
+  for (const u of splits) if (Math.abs(polyAt(p, u)) < scale * 1e-11) roots.push(u);
+  for (let i = 1; i < splits.length; i++) {
+    let a = splits[i - 1], b = splits[i], fa = polyAt(p, a);
+    if (fa * polyAt(p, b) >= 0) continue;
+    for (let k = 0; k < 50; k++) {
+      const mid = (a + b) / 2, fm = polyAt(p, mid);
+      if (fa * fm <= 0) b = mid; else { a = mid; fa = fm; }
+    }
+    roots.push((a + b) / 2);
+  }
+  return roots;
+}
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
 function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
 function norm(a) { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; }
@@ -97,8 +141,8 @@ export function cameraPoseAt(view, progress01) {
   if (errors.length) throw new Error(`invalid camera rail for ${view?.id ?? 'view'}: ${errors.join('; ')}`);
   const u = clamp01(Number.isFinite(progress01) ? progress01 : 0);
   return {
-    eyeM: lerp3(camera.eyeStartM, camera.eyeEndM, u),
-    targetM: lerp3(camera.targetStartM, camera.targetEndM, u),
+    eyeM: railPoint(camera.eyeStartM, camera.eyeEndM, camera.eyeArcM, u),
+    targetM: railPoint(camera.targetStartM, camera.targetEndM, camera.targetArcM, u),
     fovYDeg: camera.fovYDeg,
   };
 }

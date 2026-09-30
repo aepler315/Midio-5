@@ -44,7 +44,7 @@ export class WorldAssembly {
     this.h = canvasHeight;
     this.songSeed = songSeed;
     this.state = 'waiting'; // waiting | assembling | done
-    this._captureAtMs = null;
+    this._captureAtMs = CAPTURE_DELAY_MS;
     this.startMs = null;
     this.frame = null;
     this.fragments = new ObjectPool(() => ({}), (o, i) => Object.assign(o, i), 256);
@@ -57,8 +57,8 @@ export class WorldAssembly {
    *  composited (before post-FX/HUD), so the captured image is the clean
    *  scene, not last frame's bloom/vignette or a stale HUD strip. */
   wantsCapture(nowMs) {
+    this.update(nowMs);
     if (this.state !== 'waiting') return false;
-    if (this._captureAtMs == null) this._captureAtMs = nowMs + CAPTURE_DELAY_MS;
     return nowMs >= this._captureAtMs;
   }
 
@@ -109,7 +109,10 @@ export class WorldAssembly {
    *  clock -- the actual shard positions are computed fresh in draw() from
    *  age, so a render call between two update()s never desyncs. */
   update(nowMs) {
-    if (this.state === 'assembling' && nowMs - this.startMs >= ASSEMBLE_TOTAL_MS) {
+    // A seek/export may never draw the opening. Its lifetime belongs to the
+    // song clock, so a first draw minutes later cannot start it again.
+    if ((this.state === 'waiting' && nowMs >= CAPTURE_DELAY_MS + ASSEMBLE_TOTAL_MS)
+      || (this.state === 'assembling' && nowMs - this.startMs >= ASSEMBLE_TOTAL_MS)) {
       this.state = 'done';
       this.frame = null;
       this.fragments.clear();

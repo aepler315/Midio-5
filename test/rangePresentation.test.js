@@ -82,6 +82,35 @@ test('when v2 is not ready the legacy stack draws, with the ridge in its origina
   m.dispose();
 });
 
+test('ordinary v2 ocean remains behind every terrain partition without needing a hazard', () => {
+  const { m, calls } = manager();
+  m._activeWithdrawal = () => 0;
+  m._activeTsunami = () => null;
+  const pres = fakePresentation();
+  m.rangePresentation = pres;
+  pres.drawPartition = (ctx, pass) => { calls.push(`gpu:${pass}`); return true; };
+  m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
+  assert.equal(calls.filter((c) => c === '_drawOcean').length, 1);
+  for (const pass of ['far', 'mid', 'near']) {
+    assert.ok(calls.indexOf('_drawOcean') < calls.indexOf(`gpu:${pass}`), `${pass} terrain occludes sea`);
+  }
+  assert.ok(!calls.includes('_drawOceanLife'), 'inland scene keeps legacy sea fauna off');
+  m.dispose();
+});
+
+test('glacial inland pilot suppresses distant sea throughout a biome handoff', () => {
+  const { m, calls } = manager();
+  m.rangePresentation = fakePresentation();
+  m.rangePresentation.captionViewFor = (name) => name === 'CONIFER' ? { glacier: {} } : {};
+  for (const t of [0, .5, 1]) {
+    m.currentBlend = { from: 'RAINFOREST', to: 'CONIFER', t };
+    calls.length = 0;
+    m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
+    assert.ok(!calls.includes('_drawOcean'), 'inland pilot has its own river/lake receivers');
+  }
+  m.dispose();
+});
+
 test('mode resolution: v2 by default, explicit legacy opt-out and view/diagnostic flags', () => {
   assert.deepEqual(resolveRangeMode(''), { mode: 'v2', forcedViewId: null, diag: null });
   assert.deepEqual(resolveRangeMode('?rangeRenderer=legacy'), { mode: 'legacy', forcedViewId: null, diag: null });

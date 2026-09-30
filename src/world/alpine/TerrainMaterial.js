@@ -8,8 +8,10 @@ import { hexToLinear, RULE_DEFAULTS } from './MaterialPackage.js';
 
 // GLSL twin of RangeFrame.sceneDeformation -- keep the two in step.
 import { MIST_GLSL, MIST_SAMPLES } from './RangeAtmosphere.js';
+import { GLACIER_GLSL } from './GlacierField.js';
 
 export const DEFORM_GLSL = /* glsl */`
+  ${GLACIER_GLSL}
   uniform vec2 uHeightRange;
   uniform vec2 uGridOrigin;
   uniform vec2 uGridExtent;
@@ -52,12 +54,15 @@ export const SCENE_VERT = /* glsl */`
   ${DEFORM_GLSL}
   out vec2 vUv;
   out vec3 vWorld;
+  out vec3 vRenderedWorld;
   out float vViewDepth;
   void main() {
     vec3 p = position;
-    p.y += deformAt(position);
+    vec3 ice = glacierAt(position);
+    p.y += ice.x + deformAt(position) * (1.0 - ice.y);
     vec4 world = modelMatrix * vec4(p, 1.0);
     vWorld = vec3(world.x, position.y, world.z); // source height for masks
+    vRenderedWorld = world.xyz;
     vUv = (position.xz - uGridOrigin) / uGridExtent;
     vec4 view = viewMatrix * world;
     vViewDepth = -view.z;
@@ -95,8 +100,10 @@ export const SCENE_FRAG = /* glsl */`
   uniform float rSnowline; uniform float rSnowFull; uniform float rSnowMaxSlope; uniform float rTreeline;
   uniform float rForestMaxSlope; uniform float rForestDensity; uniform float rMoss; uniform float rStrata;
   uniform float rForestFloor;
+  uniform float uTime;
   in vec2 vUv;
   in vec3 vWorld;
+  in vec3 vRenderedWorld;
   in float vViewDepth;
   out vec4 outColor;
   vec3 linearToSrgb(vec3 c) { return pow(max(c, 0.0), vec3(1.0 / 2.2)); }
@@ -142,14 +149,18 @@ export const SCENE_FRAG = /* glsl */`
     vec4 s = texture(uSurface, uv);
     vec2 nxz = s.rg * 2.0 - 1.0;
     vec3 n = normalize(vec3(nxz.x, sqrt(max(0.0, 1.0 - dot(nxz, nxz))), nxz.y));
+    vec3 ice = glacierAt(vWorld);
     vec3 g = deformGrad(vWorld);
     float invY = 1.0 / max(0.2, 1.0 + g.y);
     n = normalize(vec3(n.x - g.x * n.y * invY, n.y * invY, n.z - g.z * n.y * invY));
-    float dist = length(vWorld - uCameraPos);
+    vec3 iceNormal = normalize(cross(dFdx(vRenderedWorld), dFdy(vRenderedWorld)));
+    if (iceNormal.y < 0.0) iceNormal = -iceNormal;
+    n = normalize(mix(n, iceNormal, ice.y));
+    float dist = length(vRenderedWorld - uCameraPos);
     float slopeDeg = degrees(acos(clamp(n.y, 0.0, 1.0)));
     float curv = (s.b - 0.5) * 2.0;            // + concave gully, - convex ridge
     float flow = s.a * 255.0;
-    bool water = flow > 254.5;
+    bool water = flow > 254.5 && ice.y < 0.01;
     float flowN = clamp(flow / 254.0, 0.0, 1.0);
     float h = vWorld.y;
     vec3 albedo;
@@ -192,7 +203,7 @@ export const SCENE_FRAG = /* glsl */`
       float forest = (1.0 - smoothstep(treeLine - 90.0, treeLine + 60.0, h))
         * (1.0 - smoothstep(rForestMaxSlope - 6.0, rForestMaxSlope + 4.0, slopeDeg))
         * smoothstep(rForestFloor - 60.0, rForestFloor + 60.0, h + (breakup - 0.5) * 200.0)
-        * rForestDensity;
+        * rForestDensity * ice.z;
       float snowLine = rSnowline + (breakup - 0.5) * 260.0 - curv * 180.0;
       float snow = smoothstep(snowLine, max(snowLine + 1.0, snowLine + (rSnowFull - rSnowline)), h);
       snow *= 1.0 - smoothstep(rSnowMaxSlope - 10.0, rSnowMaxSlope + 6.0, slopeDeg - max(curv, 0.0) * 25.0);
@@ -241,6 +252,33 @@ export const SCENE_FRAG = /* glsl */`
       if (uDebugMask == 1) { outColor = vec4(rockMask, crowns, snow, 1.0); if (water) outColor = vec4(0.0, 0.6, 1.0, 1.0); return; }
       if (uDebugMask == 2) { outColor = vec4(vec3(slopeDeg / 90.0), 1.0); return; }
     }
+    // Ice detail is fixed to the lobe. Longitudinal debris bands curve
+    // gently, while transverse crevasses open across the flow. Neither
+    // feature swims with the camera or expands on every drum hit.
+    if (ice.y > 0.0) {
+      vec2 axis = normalize(uGlacierEnd - uGlacierStart);
+      vec2 rel = vWorld.xz - uGlacierStart;
+      float along = dot(rel, axis), across = dot(rel, vec2(-axis.y, axis.x));
+      float crackPhase = along / 105.0 + 0.75 * sin(across / 230.0) + 1.6 * vnoise12(vWorld.xz / 260.0);
+      float crackEdge = abs(fract(crackPhase) - 0.5);
+      float aa = max(0.008, fwidth(crackPhase));
+      float crack = 1.0 - smoothstep(0.018, 0.018 + aa, crackEdge);
+      // Once many fissures fall inside a pixel, preserve their mean area
+      // instead of broadening each dark line into a distant zebra stripe.
+      crack = mix(crack, 0.04, smoothstep(0.15, 0.5, aa));
+      crack *= smoothstep(0.2, 0.55, vnoise12(vec2(across / 310.0, along / 650.0)));
+      float debris = pow(0.5 + 0.5 * sin(across / 145.0 + sin(along / 1350.0)), 18.0);
+      float grain = vnoise12(vWorld.xz / 55.0);
+      vec3 iceColor = mix(vec3(0.42, 0.66, 0.78), vec3(0.84, 0.93, 0.98), grain * 0.5 + 0.5);
+      iceColor = mix(iceColor, vec3(0.025, 0.09, 0.14), crack * 0.8);
+      iceColor = mix(iceColor, vec3(0.10, 0.12, 0.12), debris * 0.38);
+      albedo = mix(albedo, iceColor, ice.y);
+      nShade = normalize(mix(nShade, iceNormal, ice.y));
+      rough = mix(rough, 0.3, ice.y);
+    } else if (uGlacierEnabled > 0.5 && ice.z < 1.0 && !water) {
+      // Newly exposed ground stays dark and wet before its canopy returns.
+      albedo = mix(albedo * 0.58, albedo, ice.z);
+    }
     // Light: the celestial as a soft wrap-diffuse key, sky hemisphere fill,
     // occlusion from curvature and drainage (gullies sit in shade).
     float wrap = 0.18;
@@ -253,21 +291,23 @@ export const SCENE_FRAG = /* glsl */`
     if (uDebugMask == 3) { outColor = vec4(albedo * 4.0, 1.0); return; }
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
     if (uDebugMask == 5) { outColor = vec4(vec3(key), 1.0); return; }
-    vec3 V = normalize(uCameraPos - vWorld);
+    vec3 V = normalize(uCameraPos - vRenderedWorld);
     if (water && uHasMaterial > 0.5) {
+      vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * 0.025;
+      vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(vec3(0.0, 1.0, 0.0), V), 0.0), 5.0);
       vec3 H = normalize(uLightDir + V);
-      float glint = pow(max(H.y, 0.0), 600.0) * 3.0;
+      float glint = pow(max(dot(H, waterNormal), 0.0), 600.0) * 3.0;
       lit = mix(lit, uSkyHorizon * 0.9, fres) + uLightColor * glint;
     }
     // Aerial perspective, applied once here and nowhere else.
-    float heightTerm = exp(-max(0.0, vWorld.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
+    float heightTerm = exp(-max(0.0, vRenderedWorld.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
     float air = 1.0 - exp(-dist * uAirDensity * (0.35 + 0.65 * heightTerm));
     // Air is the displayed sky colour; bring it into the exposed domain so
     // distant terrain converges on the sky the 2D painter draws behind it.
     // Valley mist first (it sits in the near and middle air), then the
     // distance air over everything, mist included.
-    vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, vWorld));
+    vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, vRenderedWorld));
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96));
     outColor = vec4(linearToSrgb(color), 1.0);
     if (uDiag > 0.5) outColor = vec4(1.0, 0.0, 1.0, 1.0);
@@ -284,6 +324,8 @@ export const DEPTH_FRAG = /* glsl */`
 export function sceneUniforms(THREE, base) {
   return {
     ...base,
+    uGlacierEnabled: { value: 0 }, uGlacierStart: { value: new THREE.Vector2() }, uGlacierEnd: { value: new THREE.Vector2(0, -100) },
+    uGlacierWidth: { value: 1 }, uGlacierSurface: { value: new THREE.Vector2() }, uGlacierMaxThickness: { value: 0 }, uGlacierRetreat: { value: 0 },
     uDeformAmp: { value: 0 }, uDeformKick: { value: 0 }, uDeformK: { value: 0 },
     uDeformGesture: { value: 0 }, uDeformMelodic: { value: 0 }, uDeformStructural: { value: 0 },
     uMelodyK: { value: 0 }, uMelodyDir: { value: new THREE.Vector2(1, 0) }, uMelodyPhase: { value: 0 },

@@ -188,3 +188,18 @@ for (const offscreenAvailable of [false, true]) {
     }
   });
 }
+
+// Export/seek can advance the song without drawing its opening frames.
+test('a late first render never starts the opening assembly over a later scene', () => {
+  const wa = new WorldAssembly({ canvasWidth: 1280, canvasHeight: 720, songSeed: 1 });
+  assert.equal(wa.wantsCapture(12000), false);
+  assert.equal(wa.wantsCapture(15000), false);
+  assert.equal(wa.active, false);
+});
+
+test('simulation expires an uncaptured opening on the song clock', () => {
+  const wa = new WorldAssembly({ canvasWidth: 1280, canvasHeight: 720, songSeed: 1 });
+  wa.update(ASSEMBLE_TOTAL_MS + 200);
+  assert.equal(wa.active, false);
+  assert.equal(wa.wantsCapture(150000), false);
+});

@@ -59,7 +59,9 @@ export function slabEdges(wx, seed) {
   const edges = [0];
   let at = 0;
   for (let k = 1; k < STAGE_SLABS; k++) {
-    const span = 0.16 + 0.22 * noise1(wx, 170 + 40 * k, seed + k * 13);
+    const span = k === 1
+      ? 0.07 + 0.06 * noise1(wx, 210, seed + 13)
+      : 0.16 + 0.22 * noise1(wx, 170 + 40 * k, seed + k * 13);
     // Broken edges: a fine wander on top of the slab-scale one.
     const jag = (noise1(wx, 23, seed + k * 7) - 0.5) * 0.05;
     at = Math.min(0.95, at + span + jag);
@@ -75,6 +77,30 @@ function riserPx(wx, k, seed) {
   const h = 7 + 16 * noise1(wx, 90 + 25 * k, seed + 31 * k);
   const present = noise1(wx, 140 + 30 * k, seed + 57 * k);
   return h * Math.min(1, Math.max(0, (present - 0.3) / 0.2));
+}
+
+/** Lower the visual weight of the walking foreground without moving its
+ * support line, pools or character reflections. The thin contact rim stays
+ * readable; the broad lower faces recede into a dark ledge. */
+export function drawRockStageShade(ctx, { bars, width, height }) {
+  if (!bars.length) return;
+  const supportY = Math.min(...bars.map((b) => b.y));
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(0, supportAt(bars, 0));
+  for (const b of bars) ctx.lineTo(b.x + b.width / 2, b.y);
+  ctx.lineTo(width, supportAt(bars, width));
+  ctx.lineTo(width, height);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.clip();
+  const shade = ctx.createLinearGradient(0, supportY, 0, Math.max(supportY + 24, height));
+  shade.addColorStop(0, 'rgba(0,0,0,0)');
+  shade.addColorStop(0.18, 'rgba(0,0,0,0.45)');
+  shade.addColorStop(1, 'rgba(0,0,0,0.68)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, supportY, width, Math.max(0, height - supportY));
+  ctx.restore();
 }
 
 /**

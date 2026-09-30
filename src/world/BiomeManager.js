@@ -75,8 +75,9 @@ import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaStat
 import {
   generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND,
   extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets,
-  generateOpenClusters, perceptualStretch,
+  generateOpenClusters, generateGalacticGranules, perceptualStretch,
 } from './StarCatalogue.js';
+import { drawRockStageShade } from './alpine/RockStage.js';
 import { CHARACTER_SCHEMES } from './dna/ShapeGrammar.js';
 import {
   islands, ships, seaLifeSchedule, monsterSchedule, tsunamiSchedule,
@@ -403,10 +404,10 @@ const KIND_BUDGET_MUL = { chorus: 1.15, bridge: 1.3, instrumental: 1.1, intro: 0
 const LYRIC_GLYPH_FALLBACK_MS = 6000;
 
 // Alpha quantization for the batched star field (see _drawStarfield). Stars
-// are 1-2px dots drawn additively, so a 1/24 step in brightness is well under
-// what the eye resolves on one -- and it is what lets hundreds of them share
+// are 1px dots drawn additively; 1/64 steps preserve faint galactic grains
+// while still letting hundreds of stars share
 // a single fillStyle/globalAlpha pair instead of each setting their own.
-const STAR_ALPHA_STEPS = 24;
+const STAR_ALPHA_STEPS = 64;
 const OCEAN_WATER_BLUE = '#3ec8f5'; // vivid teal-cyan sea (ocean vibe first)
 const OCEAN_DEEP_BLUE = '#0d3a5c'; // abyssal under-tint
 const NIGHT_SKY_COLOR = '#060814'; // near-black space, slightly cool
@@ -673,7 +674,7 @@ export class BiomeManager {
     this.deepSky = toFrac(generateDeepSky(hashSeed(`${songSeed}:deepsky`), 16, this.w, skyH))
       .map((o) => ({ ...o, rFrac: o.r / skyH }));
     this.planets = toFrac(generatePlanets(hashSeed(`${songSeed}:planets`), 4, this.w, skyH));
-    for (const cluster of generateOpenClusters(hashSeed(`${songSeed}:ocluster`), 4, this.w, skyH)) {
+    for (const cluster of generateOpenClusters(hashSeed(`${songSeed}:ocluster`), this.world?.kind === 'alpine' ? 9 : 4, this.w, skyH)) {
       for (const s of cluster.members) {
         const { drawSize, drawAlpha: rawAlpha } = subPixelDraw(s.sizePx, s.brightness);
         this.stars.push({
@@ -683,6 +684,18 @@ export class BiomeManager {
           ext: extinction01(s.altitude01), redden: reddening01(s.altitude01),
           parallax: STAR_PARALLAX[1] * 0.85,
           varAmp: 0, varHz: 0.08, companion: null,
+        });
+      }
+    }
+    if (this.world?.kind === 'alpine') {
+      for (const s of generateGalacticGranules(hashSeed(`${songSeed}:galactic`), 800, this.w, skyH)) {
+        const { drawAlpha } = subPixelDraw(s.sizePx, s.brightness);
+        const altitude01 = 1 - s.y / skyH;
+        this.stars.push({
+          xFrac: s.x / this.w, yFrac: s.y / skyH, phase: s.phase,
+          size: 1, bright: drawAlpha, layer: 0, hue: s.hue,
+          altitude01, ext: extinction01(altitude01), redden: reddening01(altitude01),
+          varAmp: 0, companion: null,
         });
       }
     }
@@ -2602,7 +2615,7 @@ export class BiomeManager {
       const retained = this._rangePresentation?.retainedWeaver ?? 1;
       const alpineSky = this.world?.kind === 'alpine';
       const starMul = alpineSky && live > 0.001 ? nightAlphaMul * (retained / live) : nightAlphaMul;
-      this.weaver.draw(ctx, canvas, this.reducedFlash, starMul, alpineSky ? live : 1,
+      this.weaver.draw(ctx, canvas, this.reducedFlash, starMul, alpineSky ? live * this._rangeSky.decorativeAlpha : 1,
         alpineSky ? 2 : 0, this._rangeSky?.weaverOptions);
     }
     if (phenomenaFull) this.meteors.draw(ctx, canvas, this.reducedFlash); // reward volleys, same deep-sky depth, occluded by the ranges drawn below
@@ -2653,7 +2666,12 @@ export class BiomeManager {
     }
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
-    if (phenomenaFull) this.cymatics.draw(ctx, canvas, mandalaColor);
+    if (phenomenaFull) {
+      const prev = this.cymatics.intensity;
+      this.cymatics.intensity = prev * (this._rangeSky?.decorativeAlpha ?? 1);
+      this.cymatics.draw(ctx, canvas, mandalaColor);
+      this.cymatics.intensity = prev;
+    }
     if (phenomenaFull && !this._rangeSky) {
       const ribbonA = Math.max(0.18, skyA);
       const prevR = this.ribbon.intensity;
@@ -2661,20 +2679,19 @@ export class BiomeManager {
       this.ribbon.draw(ctx, canvas.width * 0.22, canvas.height * 0.30, canvas.height * 0.075 * (this._ribbonScaleMul || 1), mandalaColor);
       this.ribbon.intensity = prevR;
     }
-    // Range v2 shows a real inland view: the painted sea, its far shore,
-    // mirage and sea life are legacy scenery faces and stay off. The sea
-    // still rises for a live tsunami or its withdrawal, so that heard-time
-    // hazard remains visible.
+    // The ordinary sea remains a distant background plane. The real terrain
+    // partitions paint over it, and inland lake/river receivers retain their
+    // own level water. Legacy shores, mirages and fauna stay legacy scenery.
     // While the scene is still fading in over legacy scenery these legacy
     // passes keep drawing underneath it, so nothing vanishes on the fade's
     // first frame; they hand over when the fade completes.
     const legacyPasses = !v2 || v2Arriving;
-    const seaHazard = v2 && (this._activeWithdrawal() > 0 || !!this._activeTsunami(canvas.width));
     if (legacyPasses) {
       this._drawFarShore(ctx, canvas, worldX, A, B, t); // beyond the ocean, behind the water itself
       if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     }
-    if (legacyPasses || seaHazard) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
+    const glacialInland = v2 && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.glacier);
+    if (!glacialInland) this._drawOcean(ctx, canvas, worldX, A, B, t, phenomenaFull, dn.night);
     if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     // The horizon EQ belongs to the v2 sequence (between far and mid)
     // whenever v2 draws, arriving or not.
@@ -2726,6 +2743,7 @@ export class BiomeManager {
       const bars = this.groundField.visibleBars(worldX, originX, groundCanvas.width);
       this._groundReceivers = this.rangePresentation.groundReceivers();
       this._lakeReflectGroundY = null;
+      drawRockStageShade(ctx, { bars, width: groundCanvas.width, height: groundCanvas.height });
       this._drawGroundSignatures(ctx, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t);
     } else {
       this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
@@ -2906,7 +2924,7 @@ export class BiomeManager {
     // field fades as the incoming one rises, and the two weights sum to the
     // opening gain. The geographic seam stays on the ridges.
     ctx.save();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = this._rangeSky?.decorativeAlpha ?? 1;
     drawParticleBlend(this, frame, 1, particleLights);
     ctx.restore();
     // Music-reactive weather, same mid-depth as the ambient field above --
@@ -2926,8 +2944,14 @@ export class BiomeManager {
     // with the murmuration wheeling among them. Same optional-phenomena rung
     // as the murmuration it flies with -- 48 individually stroked arcs a
     // frame, atmosphere rather than gameplay.
-    if (phenomenaFull) this.swarm.draw(ctx, canvas, mandalaColor);
-    if (phenomenaFull) this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
+    if (phenomenaFull) {
+      const decorative = this._rangeSky?.decorativeAlpha ?? 1;
+      const prev = this.swarm.intensity;
+      this.swarm.intensity = prev * decorative;
+      this.swarm.draw(ctx, canvas, mandalaColor);
+      this.swarm.intensity = prev;
+      this.murmuration.draw(ctx, this.tSec * 1000, mandalaColor, particleMul * decorative);
+    }
   }
 
   /**
@@ -3842,22 +3866,26 @@ export class BiomeManager {
       // Air path: low stars lose real light before they ever reach the eye,
       // so the field thins and warms toward the ridgeline instead of walling
       // off at full brightness the way a flat scatter does.
-      const a = alpha * s.bright * tw * (atmosphere ? (s.ext ?? 1) : 1) * pulse;
+      let a = alpha * s.bright * tw * (atmosphere ? (s.ext ?? 1) : 1) * pulse;
       // Faint floor: a 0.03 cut used to wipe the dimmer half of the field
       // (especially near the horizon, after extinction), leaving only the
       // brighter mid-sky survivors — another way the stars read as a chunk.
-      if (a < 0.01) continue;
-      const layerDrift = (s.parallax ?? STAR_PARALLAX[s.layer] ?? STAR_PARALLAX[0]) * scroll;
+      if (a < 0.004) continue;
+      // Range stars, including resolved clusters and faint disc grains,
+      // share one angular drift so the constellation structure stays rigid.
+      const layerDrift = this._rangeSky
+        ? this.tSec * canvas.width * 0.00012
+        : (s.parallax ?? STAR_PARALLAX[s.layer] ?? STAR_PARALLAX[0]) * scroll;
       // Rescaled from the cached fraction against the ACTUAL canvas, not the
       // (possibly narrower) field the catalogue was generated over -- a
       // camera pull-back widens the stage BiomeManager draws into, and an
       // absolute pixel baked in at generation time would stay pinned to its
       // original span while the sky around it widened.
       let x = s.xFrac * canvas.width + layerDrift;
-      if (x > canvas.width) x -= canvas.width;
-      else if (x < 0) x += canvas.width;
+      x = ((x % canvas.width) + canvas.width) % canvas.width;
       const y = s.yFrac * skyH;
-      if (this._rangeSky && !this._rangeSky.allowStar(starIndex, x, y)) continue;
+      if (this._rangeSky) a *= this._rangeSky.starBrightnessAt(x, y);
+      if (a < 0.004) continue;
       const sz = 1;
 
       // The same air path that dimmed it also scatters its blue out first,
@@ -3888,7 +3916,7 @@ export class BiomeManager {
         // Reordering is safe because the whole field draws with 'lighter'
         // (set above): additive compositing is commutative, so a star
         // contributes the same light whenever it lands. The quantization is
-        // below the threshold of a 1-2px dot -- alpha to 1/24, hue to 7.5
+        // below the threshold of a 1px dot -- alpha to 1/64, hue to 7.5
         // degrees.
         const aQ = Math.min(STAR_ALPHA_STEPS - 1, (a * STAR_ALPHA_STEPS) | 0);
         const key = useHue

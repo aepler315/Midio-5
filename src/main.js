@@ -15,6 +15,7 @@ import {
 } from './audio/loadLimits.js';
 import { Simulation } from './sim/Simulation.js';
 import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
+import { hitTestComposerStrip } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
 import { designSynthPatches } from './audio/SynthPatchDesigner.js';
@@ -3590,10 +3591,14 @@ function seekSong(ms) {
   const wasPaused = paused;
   const seed = sim.songSeed;
   const buffer = lastAudioBuffer;
-  const selectedSection = renderer?.composer?.selectedSection;
+  const selectedSection = (renderer?.canvasRenderer || renderer)?.composer?.selectedSection;
+  const hudInFrame = !!renderer?.hudInFrame;
+  const showSectionLabels = !!sim.showSectionLabels;
   startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t,
     playBuffer: buffer || undefined, preservePause: wasPaused, fitDiagnostic: sim.fitDiagnostic });
   if (!running || !sim) return;
+  renderer.hudInFrame = hudInFrame;
+  sim.showSectionLabels = showSectionLabels;
   if (buffer) audioEngine.playBuffer(buffer, t / 1000);
   if (wasPaused) {
     paused = true;
@@ -3601,7 +3606,8 @@ function seekSong(ms) {
     updatePauseButtonUI();
   }
   renderer.draw(sim, 1);
-  if (renderer.composer && selectedSection != null) renderer.composer.selectedSection = selectedSection;
+  const composer = (renderer.canvasRenderer || renderer).composer;
+  if (composer && selectedSection != null) composer.selectedSection = selectedSection;
 }
 
 /** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on
@@ -3771,7 +3777,8 @@ canvas.addEventListener('pointerdown', (e) => {
   wakeHud();
   const p = clientToStage(e);
   if (!p) return;
-  const hit = renderer?.composer ? renderer.composer.hitTest(p.x, p.y, { width: STAGE_W, height: STAGE_H }) : null;
+  const hit = hitTestComposerStrip(renderer, p.x, p.y, { width: STAGE_W, height: STAGE_H });
+  const composer = (renderer?.canvasRenderer || renderer)?.composer;
   // Mouse buttons mirror the keys: left pairs with F (low), right with J
   // (high). Anything else (middle, back/forward) stays an unroled tap rather
   // than being silently filed as one of the two hands.
@@ -3780,10 +3787,10 @@ canvas.addEventListener('pointerdown', (e) => {
   if (hit.type === 'strip') {
     // Toggle section detail when re-clicking the same section; always seek.
     if (hit.sectionIndex >= 0) {
-      if (renderer.composer.selectedSection === hit.sectionIndex) {
-        renderer.composer.selectedSection = -1;
+      if (composer.selectedSection === hit.sectionIndex) {
+        composer.selectedSection = -1;
       } else {
-        renderer.composer.selectedSection = hit.sectionIndex;
+        composer.selectedSection = hit.sectionIndex;
       }
     }
     seekSong(hit.tMs);
@@ -3814,8 +3821,9 @@ window.addEventListener('keydown', (e) => {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
     if (filmstripModalEl && !filmstripModalEl.classList.contains('hidden')) closeFilmstripModal();
     // Close section detail overlay on the seekbar.
-    if (renderer?.composer && renderer.composer.selectedSection >= 0) {
-      renderer.composer.selectedSection = -1;
+    const composer = (renderer?.canvasRenderer || renderer)?.composer;
+    if (composer && composer.selectedSection >= 0) {
+      composer.selectedSection = -1;
     }
     return;
   }
@@ -3825,6 +3833,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (!sim) return;
     sim.showSectionLabels = !sim.showSectionLabels;
+    if (renderer) renderer.hudInFrame = !!sim.showSectionLabels;
     if (paramBus) paramBus.showSectionLabels = sim.showSectionLabels;
     return;
   }

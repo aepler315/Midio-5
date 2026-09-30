@@ -412,6 +412,34 @@ export function generateOpenClusters(seed, count, width, height) {
 }
 
 // --- Deep-sky objects ------------------------------------------------------
+
+/** Faint unresolved disc stars in correlated knots. These are point light,
+ * never a large gradient wash. The ordinary catalogue still fills the whole
+ * sky; this secondary population supplies the granular galactic structure. */
+export function generateGalacticGranules(seed, count, width, height) {
+  const rand = mulberry32((seed ^ 0x6a1ac71c) >>> 0 || 1);
+  const out = [];
+  while (out.length < count) {
+    const cx = rand() * width;
+    const cy = galacticBandCenterY(cx / Math.max(1, width), height)
+      + (rand() + rand() - 1) * height * GALACTIC_BAND.halfFrac;
+    const rx = width * (0.008 + rand() * 0.022);
+    const ry = height * (0.018 + rand() * 0.045);
+    const members = Math.min(16 + Math.floor(rand() * 16), count - out.length);
+    for (let k = 0; k < members; k++) {
+      const angle = rand() * Math.PI * 2, r = Math.sqrt(rand());
+      out.push({
+        x: clamp01((cx + Math.cos(angle) * rx * r) / Math.max(1, width)) * width,
+        y: clamp01((cy + Math.sin(angle) * ry * r) / Math.max(1, height)) * height,
+        sizePx: 0.35 + rand() * 0.35,
+        brightness: 0.10 + rand() * 0.22,
+        hue: 205 + rand() * 35,
+        phase: rand() * Math.PI * 2,
+      });
+    }
+  }
+  return out;
+}
 // A handful of faint non-stellar smudges. The astronomy that makes this read
 // as a real sky rather than set dressing is WHERE each kind is allowed to
 // live: open clusters and emission nebulae belong to our own galaxy's disc

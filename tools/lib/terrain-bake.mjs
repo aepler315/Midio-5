@@ -28,6 +28,7 @@
 import { createHash } from 'node:crypto';
 import zlib from 'node:zlib';
 import { cameraPoseAt, boxMayBeVisible, viewDepthToBox, focalPx, cameraRailErrors } from '../../src/world/terrain/SceneTravel.js';
+import { glacierErrors } from '../../src/world/alpine/GlacierField.js';
 
 import { TERRAIN_SCHEMA, TERRAIN_VERSION, STRIDES, WATER_FLOW } from '../../src/world/alpine/TerrainPackage.js';
 
@@ -492,6 +493,21 @@ export async function bakeTerrain(grid, view, options = {}) {
   const cells = options.tileCells || TILE_CELLS;
   const budgets = options.budgets || LOD_BUDGETS;
   const vis = { ...VISIBILITY, ...(options.visibility || {}) };
+  // A shader-raised ice surface can reveal valley floor hidden by the bed.
+  // Keep the source heights/hydrology intact and conservatively expand only
+  // tiles intersecting the glacier's capsule in the visibility calculation.
+  const glacier = view.glacier;
+  const glacierProblems = glacierErrors(glacier);
+  if (glacierProblems.length) throw new Error(`view ${view.id}: ${glacierProblems.join('; ')}`);
+  const displacementFor = (box) => {
+    if (!glacier || box.min[1] >= Math.max(glacier.surfaceStartM, glacier.surfaceEndM)) return 0;
+    const a = glacier.axisStartM, b = glacier.axisEndM;
+    const x = (box.min[0] + box.max[0]) / 2, z = (box.min[2] + box.max[2]) / 2;
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / Math.max(1, dx * dx + dz * dz)));
+    const radius = Math.hypot(box.max[0] - box.min[0], box.max[2] - box.min[2]) / 2;
+    return Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz) <= glacier.halfWidthM + radius ? glacier.maxThicknessM : 0;
+  };
   const bands = { nearM: 1800, midM: 7000, ...(view.bands || {}), ...(options.bands || {}) };
   const { width: w, height: hgt, cellSizeM: cell, originM } = grid;
   const h = grid.heightsM, valid = grid.valid;
@@ -553,6 +569,8 @@ export async function bakeTerrain(grid, view, options = {}) {
         min: [originM[0] + x0 * cell, minY, originM[1] + y0 * cell],
         max: [originM[0] + (x0 + cells) * cell, maxY, originM[1] + (y0 + cells) * cell],
       };
+      const displacementM = displacementFor(box);
+      if (displacementM) box.max[1] = Math.max(box.max[1], Math.min(box.max[1] + displacementM, Math.max(glacier.surfaceStartM, glacier.surfaceEndM)));
       // Closest approach per framing among stations where some sample of
       // the tile is on screen and not hidden behind nearer terrain.
       const samplePts = [];
@@ -569,7 +587,10 @@ export async function bakeTerrain(grid, view, options = {}) {
         stations.forEach((pose, k) => {
           if (!boxMayBeVisible(pose, vis[name].aspect, box, vis[name].fovScale)) return;
           const ob = occluders[name][k];
-          if (!samplePts.some((p) => pointVisible(ob, p, vis.occlusion))) return;
+          // Bed occlusion is not valid across spatially varying retreat:
+          // a foreground ice margin and a distant surface clear at different
+          // times. Keep all in-frustum glacier tiles conservatively.
+          if (!displacementM && !samplePts.some((p) => pointVisible(ob, p, vis.occlusion))) return;
           // View depth, not Euclidean distance: off-axis tiles project
           // larger than their distance suggests. A box reaching behind the
           // eye plane falls to minDistanceM below.
@@ -595,6 +616,11 @@ export async function bakeTerrain(grid, view, options = {}) {
       }
       const strideCap = wetCells && landCells ? SHORE_MAX_STRIDE : Infinity;
       const pick = (budget) => {
+        // GPU ice displacement is nonlinear. A bed-snapped fine-edge
+        // midpoint does not land on its coarse neighbour's displaced edge.
+        // One common grid for the whole glacier view avoids those cracks
+        // at every retreat and quality; report its actual bed error below.
+        if (glacier) return Math.min(2, cells);
         if (!visible) return cells;
         let best = 1;
         for (const s of STRIDES) {
@@ -691,6 +717,7 @@ export async function bakeTerrain(grid, view, options = {}) {
       budgets, fovYDeg: view.camera.fovYDeg, visibility: vis,
       framings: 'core tiles meet the pixel budget at their closest unoccluded approach; extended-only tiles at budgetScale x; hidden tiles are not drawn',
       achievedErrorPx: Object.fromEntries(Object.entries(achieved).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
+      ...(glacier ? { glacierGrid: 'uniform stride 2 for all tiles and quality budgets; nonlinear ice displacement requires shared edge samples' } : {}),
       triangulation: 'quads split along the (0,0)-(1,1) diagonal; finer edges snap to the coarser neighbour',
     },
     hydrology: {
