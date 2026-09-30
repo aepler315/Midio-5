@@ -2,8 +2,8 @@
 import { crestHeightAt } from '../terrain/HorizonRidge.js';
 import { clamp, clamp01 } from '../../utils/math.js';
 
-export const DEFAULT_RIDGE_TUNING = Object.freeze({ maxHeightFrac: .4, advection: .0018,
-  phaseRate: 1.6, crestWavePx: 5, fallbackWavePx: 7, sourceLiftPx: 14, kickLiftPx: 0 });
+export const DEFAULT_RIDGE_TUNING = Object.freeze({ maxHeightFrac: .4, advection: .0054,
+  phaseRate: 4.8, crestWavePx: 18, fallbackWavePx: 24, sourceLiftPx: 14, kickLiftPx: 24 });
 export const DEFAULT_SPACE_RIDGE_TUNING = Object.freeze({ musicHeightFrac: .11, sourceLiftPx: 10,
   depthGain: .45, globalDepthGain: .3 });
 const frozenPoints = pts => Object.freeze(pts.map(p => Object.freeze(p)));
@@ -26,20 +26,32 @@ export function sampleHorizonRidge({ viewport, crest = null, songP = 0, worldX =
   tuning = { ...DEFAULT_RIDGE_TUNING, ...tuning };
   const { width, height } = viewport, scale = height / 720, baseline = height * .6, maxH = height * tuning.maxHeightFrac;
   const shape = u => crest ? crestHeightAt(crest, songP, u) : 1;
+  const wavePx = (crest ? tuning.crestWavePx : tuning.fallbackWavePx) * scale;
+  const designBound = (crest ? .6 : 1) * maxH + wavePx * 1.25 + tuning.sourceLiftPx * scale + tuning.kickLiftPx * scale;
+  const boundPx = designBound * (crest ? Math.max(...crest.heights) : 1);
+  const sourceShape = u => {
+    if (!crest) return 1;
+    const at = clamp01(u) * (crest.heights.length - 1);
+    const i = Math.min(crest.heights.length - 2, Math.floor(at)), f = at - i;
+    return crest.heights[i] * (1 - f) + crest.heights[i + 1] * f;
+  };
   const point = (u, music, at, metric = false) => {
-    const base = shape(u);
+    // Fixed authored source stations share paint's headroom and design bound.
+    const base = metric ? sourceShape(u) : shape(u);
     const p = ((u * 7 + (metric ? 0 : worldX * tuning.advection)) % 7 + 7) % 7;
     const i = Math.floor(p), f = (1 - Math.cos((p - i) * Math.PI)) / 2;
     const v = clamp01((music.bands[i] || 0) * (1 - f) + (music.bands[(i + 1) % 7] || 0) * f);
     const source = music.sources.midio;
-    const wavePx = (crest ? tuning.crestWavePx : tuning.fallbackWavePx) * scale;
     const neutralY = baseline - (crest ? base * .4 * maxH : 0);
-    const bound = base * ((crest ? .6 : 1) * maxH + wavePx * 1.25 + tuning.sourceLiftPx * scale + tuning.kickLiftPx * scale);
+    const bound = base * designBound;
     const lift = base * ((crest ? .6 : 1) * v * maxH
       + Math.sin(u * Math.PI * 7 + at / 1000 * tuning.phaseRate) * wavePx * (music.activity01 > 0 ? .25 + v : v)
       + (source?.activity || 0) * tuning.sourceLiftPx * scale * Math.sin(u * 1280 / 180 + at / 1000 * 2.2 + (source?.pitch01 ?? .5) * 2)
       + music.kick01 * tuning.kickLiftPx * scale);
-    return { x: u * width, y: neutralY - lift, neutralY, normalized: bound > 1e-9 ? lift / bound : 0, bound };
+    // C1 shoulder: loud peaks retain a response while approaching headroom.
+    const floor = height * .12, shoulder = 24 * scale, rawY = neutralY - lift;
+    const y = rawY >= floor + shoulder ? rawY : floor + shoulder * Math.exp((rawY - floor - shoulder) / shoulder);
+    return { x: u * width, y, neutralY, normalized: bound > 1e-9 ? (neutralY - y) / bound : 0, bound };
   };
   const metricAt = at => {
     const music = history?.sample(at) || silent;
@@ -52,7 +64,7 @@ export function sampleHorizonRidge({ viewport, crest = null, songP = 0, worldX =
   const raw = Array.from({ length: count + 3 }, (_, k) => point((k - 1) / count, music, heardTimeMs));
   return Object.freeze({ points: frozenPoints(raw.map(p => ({ x: p.x, y: p.y }))),
     neutralPoints: frozenPoints(raw.map(p => ({ x: p.x, y: p.neutralY }))),
-    boundPx: Math.max(...raw.map(p => p.bound)), ...measured(metricAt, heardTimeMs, reducedMotion) });
+    boundPx, ...measured(metricAt, heardTimeMs, reducedMotion) });
 }
 
 export function sampleSpaceRidge({ viewport, seededGeometry, heardTimeMs = 0, history, reducedMotion = false, tuning = DEFAULT_SPACE_RIDGE_TUNING }) {

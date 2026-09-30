@@ -13,7 +13,7 @@ import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
 import { visualNow } from '../core/ChoreoClock.js';
-import { sampleHorizonRidge } from './alpine/RidgeMotion.js';
+import { DEFAULT_RIDGE_TUNING, sampleHorizonRidge } from './alpine/RidgeMotion.js';
 import { VisualMusicHistory } from './VisualMusicHistory.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
@@ -78,7 +78,7 @@ import { PERSONALITY } from './BiomePersonality.js';
 import { REAL_PERSONALITY } from './RealBiomes.js';
 import { castSongBiomes } from './terrain/BiomeSet.js';
 import { WIRE_LAYERS, wireAmplitude, wireColor, drawCrestWire, CREST_WAVE_PHASE, CrestBeatClock } from './CrestWire.js';
-import { horizonCrest, massifCrest, massifRidgeLift01 } from './terrain/HorizonRidge.js';
+import { HORIZON_SOURCE_SPEED, horizonCrest, massifCrest, massifRidgeLift01 } from './terrain/HorizonRidge.js';
 import { styleDials, shiftLightness, ensureContrast, ensureMinLightness } from '../render/VisualStyle.js';
 import { Atmosphere } from './Atmosphere.js';
 import { CodaDirector } from '../sim/CodaDirector.js';
@@ -456,9 +456,13 @@ export class BiomeManager {
     // keeps the EQ's own smooth shape.
     this.horizonRange = null;
     this._horizonCrest = null;
+    this._horizonTuning = DEFAULT_RIDGE_TUNING;
     if (songTerrain?.horizon?.profile) {
       try {
-        this._horizonCrest = horizonCrest(songTerrain.horizon.profile);
+        const relativeSpeedMul = HORIZON_SOURCE_SPEED[songTerrain.horizon.range?.id] ?? 3;
+        this._horizonTuning = Object.freeze({ ...DEFAULT_RIDGE_TUNING,
+          advection: .0018 * relativeSpeedMul, phaseRate: 1.6 * relativeSpeedMul });
+        this._horizonCrest = horizonCrest(songTerrain.horizon.profile, { speedMul: 3 * relativeSpeedMul });
         this.horizonRange = songTerrain.horizon.range || null;
       } catch (err) {
         console.warn('[terrain] horizon crest rejected; the EQ keeps its own shape', err);
@@ -5252,7 +5256,7 @@ export class BiomeManager {
     this.danceRidgeSample = sampleHorizonRidge({ viewport: canvas, crest: this._horizonCrest,
       songP: this._horizonCrest && this.durationMs > 0 ? clamp01(this.tSec * 1000 / this.durationMs) : 0,
       worldX, heardTimeMs: this.tSec * 1000, history: this.ridgeMusicSession,
-      tuning: { maxHeightFrac: EQ_MAX_HEIGHT_FRAC }, reducedMotion: this.reducedMotion });
+      tuning: { ...this._horizonTuning, maxHeightFrac: EQ_MAX_HEIGHT_FRAC }, reducedMotion: this.reducedMotion });
     return this.danceRidgeSample.points;
   }
 
@@ -5988,7 +5992,7 @@ export class BiomeManager {
     const horizonAt = (songP) => this._horizonCrest ? horizonEqPoints({
       width: stage.width, height: stage.height, crest: this._horizonCrest,
       songP, bands: quietBands, tSec: songP * this.durationMs / 1000,
-      maxHeightFrac: EQ_MAX_HEIGHT_FRAC,
+      maxHeightFrac: EQ_MAX_HEIGHT_FRAC, tuning: this._horizonTuning,
     }).filter((p) => p.x >= stage.viewLeft && p.x <= stage.viewLeft + stage.viewWidth) : null;
     const massifAt = this._massifCrest ? (songP) => {
       const tSec = songP * this.durationMs / 1000;

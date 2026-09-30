@@ -51,6 +51,14 @@ export const HORIZON_RANGES = Object.freeze([
   'waddington-range', // Mount Waddington
 ]);
 
+// Constant source-specific framing choices from start/middle/end review.
+// These shorter scans retain neighboring landmarks at twice reviewed speed.
+export const HORIZON_SOURCE_SPEED = Object.freeze({
+  tetons: 2, rainier: 2, 'oregon-cascades': 2, 'skagit-range': 2,
+  'north-cascades': 2, 'front-range': 2, 'mission-mountains': 2,
+  'canadian-rockies': 2, 'selkirk-mountains': 2, 'garibaldi-ranges': 2, 'waddington-range': 2,
+});
+
 // How much of the range is on screen at once, and how far the view slides
 // along it over a whole song.
 export const HORIZON_WINDOW_M = 28000;
@@ -83,7 +91,7 @@ export function chooseHorizonRange(seed, { exclude = [], ranges = RANGES, salt =
  */
 export function horizonCrest(profile, {
   windowM = HORIZON_WINDOW_M, travelM = HORIZON_TRAVEL_M, stepM = HORIZON_STEP_M,
-  speedMul = 3, zoom = 1.2,
+  speedMul = 9, zoom = 1.2,
 } = {}) {
   const units = profileUnits(profile);
   const n = units.length;
@@ -117,7 +125,7 @@ export function horizonCrest(profile, {
   for (let k = 0; k < count; k++) {
     heights[k] = CREST_FLOOR + (1 - CREST_FLOOR) * (span > 1e-9 ? (heights[k] - lo) / span : 0.5);
   }
-  return { heights, stepM: step, windowM: window, travelM: travel };
+  return { heights, stepM: step, windowM: window, travelM: travel, sourceStartM: start, sourceLengthM: lengthM, relativeSpeedMul: speedMul / 3, travelWindowRatio: shift };
 }
 
 /** Crest height (0..1) at `u` (0 left edge .. 1 right edge of the screen)

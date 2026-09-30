@@ -1,7 +1,7 @@
 // A fixed screen fit for real ranges. The source samples and the song's x
 // travel are never changed: only the height of a whole strip above its foot
 // changes. Preflight runs once per biome-side strip set, not on audio frames.
-import { crestHeightAt, horizonRidgeLift01 } from '../terrain/HorizonRidge.js';
+import { sampleHorizonRidge } from './RidgeMotion.js';
 import { stripOriginX, stripSampleX } from '../SilhouetteGenerator.js';
 
 const STATIONS = 21;
@@ -15,29 +15,11 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 /** Exactly the sampled polyline painted by BiomeManager._drawHorizonEQ. */
 export function horizonEqPoints({ width, height, crest = null, songP = 0, bands, worldX = 0,
-  tSec = 0, maxHeightFrac = 0.4 }) {
-  const baseline = height * 0.60;
-  const maxH = height * maxHeightFrac;
-  const scroll = worldX * 0.0018;
-  const n = crest ? Math.max(64, Math.ceil(width / 4)) : 64;
-  const points = new Array(n + 3);
-  for (let k = 0; k < points.length; k++) {
-    const u = (k - 1) / n;
-    const p = ((u * 7 + scroll) % 7 + 7) % 7;
-    const i0 = Math.floor(p), i1 = (i0 + 1) % 7;
-    const f = p - i0;
-    const c = (1 - Math.cos(f * Math.PI)) / 2;
-    const v = clamp01((Number(bands?.[i0]) || 0) * (1 - c) + (Number(bands?.[i1]) || 0) * c);
-    if (crest) {
-      const base = crestHeightAt(crest, songP, u);
-      const wave = Math.sin(u * Math.PI * 7 + tSec * 1.6) * 5 * (0.25 + v) * base;
-      points[k] = { x: u * width, y: baseline - (horizonRidgeLift01(base, v) * maxH + wave) };
-    } else {
-      const wave = Math.sin(u * Math.PI * 7 + tSec * 1.6) * 7 * (0.25 + v);
-      points[k] = { x: u * width, y: baseline - (v * maxH + wave) };
-    }
-  }
-  return points;
+  tSec = 0, maxHeightFrac = 0.4, tuning = {}, activity01 = null, kick01 = 0 }) {
+  const music = { bands: bands || Array(7).fill(0), sources: {}, kick01,
+    activity01: activity01 ?? Math.max(0, ...(bands || [])) };
+  return sampleHorizonRidge({ viewport: { width, height }, crest, songP, worldX,
+    heardTimeMs: tSec * 1000, tuning: { ...tuning, maxHeightFrac }, history: { sample: () => music } }).points;
 }
 
 /** Project the exact baked terrain contour with one foot-anchored draw height. */
