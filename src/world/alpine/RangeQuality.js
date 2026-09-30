@@ -22,5 +22,6 @@ export function rangeQuality(level = 0) {
     forestKeep: forestKeepFraction(q),
     mistSteps: MIST_STEPS[q],
     poolReflections: q < 6,
+    sunShafts: q < 3,
   };
 }

@@ -18,6 +18,7 @@ import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromH
 import { terrainFeatureSegments } from './TerrainFeatures.js';
 import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS } from './MaterialPackage.js';
 import { placeForestAsync } from './ForestCover.js';
+import { SunShaftGL, SHAFT_KEY, shaftSize, shaftSource } from './SunShaftGL.js';
 import { rangeQuality } from './RangeQuality.js';
 import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
@@ -94,8 +95,8 @@ export class RangeScene {
     // that straddles either built GPU objects (and dropped the surface
     // texture's CPU pixels) in a context that is gone, so it must not publish.
     this.contextEpoch = 0;
-    this.canvas.addEventListener?.('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; this.contextEpoch++; });
-    this.canvas.addEventListener?.('webglcontextrestored', () => { this.contextLost = false; this.contextEpoch++; this._restore(); });
+    this.canvas.addEventListener?.('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; this.contextEpoch++; this._invalidateContext(); });
+    this.canvas.addEventListener?.('webglcontextrestored', () => { this.contextLost = false; this.contextEpoch++; });
   }
 
   _createCopy() {
@@ -119,9 +120,10 @@ export class RangeScene {
     const w = Math.max(2, Math.round(widthPx)), h = Math.max(2, Math.round(heightPx));
     this.pixelRatio = pixelRatio;
     if (w === this.size.width && h === this.size.height && this.target) return;
+    this.releaseShafts();
     const key = 'range:render-target';
-    this.residency?.release(key);
-    this.target?.dispose();
+    if (this.residency) this.residency.release(key);
+    else this.target?.dispose();
     this.target = null;
     // Colour RGBA8 + 24/8 depth-stencil ~ 8 bytes per pixel, plus the
     // drawing buffer (4) -- reserved before creation.
@@ -149,6 +151,7 @@ export class RangeScene {
     if (side !== 'B') return !!this.target;
     if (this.sideTargets.B) return true;
     if (!this.target) return false;
+    this.releaseShafts();
     const { width: w, height: h } = this.size;
     const key = 'range:render-target-B';
     const res = this.residency?.reserve({ key, bytes: w * h * 8, owner: 'range-targets' });
@@ -167,10 +170,49 @@ export class RangeScene {
   /** Free the incoming side's target once no transition needs it. */
   releaseSide(side = 'B') {
     if (side !== 'B' || !this.sideTargets?.B) return;
+    this.releaseShafts();
     const t = this.sideTargets.B;
     if (this.residency) this.residency.release('range:render-target-B');
     else t.dispose();
     this.sideTargets.B = null;
+  }
+
+  /** Optional attachments are admitted only after all active base targets,
+   * views and travel scratch. No partial A/B bundle can be published. */
+  prepareShafts(frame, viewIds) {
+    if (this.contextLost || !rangeQuality(frame.qualityLevel).sunShafts || !shaftSource(frame) || !this.target) {
+      this.releaseShafts(); return false;
+    }
+    const ids = [].concat(viewIds);
+    const targets = ids.length > 1 && this.sideTargets.B ? { A: this.target, B: this.sideTargets.B } : { A: this.target };
+    const identity = `${ids.join('|')}:${this.size.width}:${this.size.height}:${this.contextEpoch}`;
+    if (this.shafts && this.shaftIdentity === identity) return true;
+    this.releaseShafts();
+    const { width, height } = shaftSize(this.size.width, this.size.height);
+    const bytes = width * height * 4 * Object.keys(targets).length + 36;
+    // Protect every currently resident essential range entry, including an
+    // upcoming view. Optional light cannot evict a view to make itself fit.
+    const protect = [...(this.residency?.entries.keys() || [])];
+    const res = this.residency?.reserve({ key: SHAFT_KEY, bytes, owner: 'range-shafts', protect });
+    if (this.residency && !res) return false;
+    const shafts = new SunShaftGL(this.THREE, targets);
+    const dispose = (effect) => {
+      effect.dispose();
+      if (this.shafts === effect) { this.shafts = null; this.shaftIdentity = null; }
+      if (this.depthCache) this.depthCache.A.frame = this.depthCache.B.frame = -1;
+    };
+    if (res && !this.residency.commit(res, shafts, dispose)) return false;
+    this.shafts = shafts; this.shaftIdentity = identity; this.shaftViews = ids;
+    this.depthCache.A.frame = this.depthCache.B.frame = -1;
+    return true;
+  }
+
+  releaseShafts() {
+    if (!this.shafts) return;
+    if (this.residency) this.residency.release(SHAFT_KEY);
+    else { this.shafts.dispose(); this.shafts = null; }
+    if (this.depthCache) this.depthCache.A.frame = this.depthCache.B.frame = -1;
+    this.shaftIdentity = null;
   }
 
   /** The one drawing buffer is shared by scenic and ground images of
@@ -339,6 +381,7 @@ export class RangeScene {
   /** A prepared view's GPU entry was released (evicted, cancelled or
    *  explicitly): drop it from the cache and free what it holds. */
   _retire(viewId, p) {
+    if (this.shaftViews?.includes(viewId)) this.releaseShafts();
     if (this.prepared.get(viewId) === p) {
       this.prepared.delete(viewId);
       this.residency?.release(p.cpuKey);
@@ -443,6 +486,7 @@ export class RangeScene {
 
   /** Release one view's GPU and CPU ownership. */
   release(viewId) {
+    if (this.shaftViews?.includes(viewId)) this.releaseShafts();
     const p = this.prepared.get(viewId);
     if (!p) return;
     this.prepared.delete(viewId);
@@ -579,11 +623,16 @@ export class RangeScene {
     r.clear(true, false, false);
     p.uniforms.uDiag.value = this.diag === 'markers' && pass === 'far' ? 1 : 0;
     r.render(p.scenes[pass], this.camera);
+    // Far is the single solar boundary, before the inserted Dancing Ridge.
+    // During travel its depth was just rebuilt with this side's real columns.
+    const source = pass === 'far' && rangeQuality(frame.qualityLevel).sunShafts ? shaftSource(frame) : null;
+    const scattering = source && this.shafts?.render(r, side, source, this.camera, frame.scenicViewport);
     r.setRenderTarget(null);
     this._setCanvasSize(this.size.width, this.size.height);
     r.clear(true, true, false);
     this._copy.mesh.material.uniforms.uColor.value = target.texture;
     r.render(this._copy.scene, this._copy.camera);
+    if (scattering) this.shafts.compositeToScreen(r, side, source);
     this.stats.partitions++;
     this.stats.lastPartitionMs = performance.now() - t0;
     return this.canvas;
@@ -601,8 +650,9 @@ export class RangeScene {
     const w = Math.max(2, Math.round(vp.backingWidth)), h = Math.max(2, Math.round(vp.backingHeight));
     if (!this.groundTarget || this.groundTarget.width !== w || this.groundTarget.height !== h) {
       const key = 'range:ground-target';
-      this.residency?.release(key);
-      this.groundTarget?.dispose();
+      this.releaseShafts();
+      if (this.residency) this.residency.release(key);
+      else this.groundTarget?.dispose();
       const res = this.residency?.reserve({ key, bytes: w * h * 8, owner: 'range-targets' });
       if (this.residency && !res) return null;
       const THREE = this.THREE;
@@ -640,9 +690,18 @@ export class RangeScene {
     return { canvas: this.canvas, stage };
   }
 
-  _restore() {
-    // Context restored: GPU objects are gone. Drop preparations so the
-    // presentation re-prepares them; legacy draws meanwhile.
+  _invalidateContext() {
+    this.releaseShafts();
+    if (this.residency) this.residency.release('range:render-target');
+    else this.target?.dispose();
+    if (this.residency) this.residency.release('range:ground-target');
+    else this.groundTarget?.dispose();
+    this.groundTarget = null;
+    this._copy?.mesh.geometry.dispose();
+    this._copy?.mesh.material.dispose();
+    // Retire handles during the lost event, before Three creates the next
+    // context epoch. Deleting old buffers/VAOs after restoration is an
+    // INVALID_OPERATION on real drivers. Legacy draws while we re-prepare.
     for (const id of [...this.prepared.keys()]) this.release(id);
     this.size = { width: 0, height: 0 };
     this.target = null;
@@ -658,12 +717,12 @@ export class RangeScene {
   }
 
   dispose() {
+    this.releaseShafts();
     for (const id of [...this.prepared.keys()]) this.release(id);
     this.releaseSide('B');
     this.residency?.release('range:render-target');
     this.residency?.release('range:ground-target');
-    this.target?.dispose();
-    this.groundTarget?.dispose();
+    if (!this.residency) { this.target?.dispose(); this.groundTarget?.dispose(); }
     this._copy.mesh.geometry.dispose();
     this._copy.mesh.material.dispose();
     this.renderer.dispose();
