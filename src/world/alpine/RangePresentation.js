@@ -727,6 +727,7 @@ export class RangePresentation {
       generation: this.generation, runtime: this.runtimeState, arrival: this.arrival, incomingFade: this.incomingFade, incomingViewId: this.active ? this.incomingViewId : null, seamP: this.seamP ?? null,
       failures: Object.fromEntries(this.failures), deferred: [...this.deferred.keys()], frameId: this.frameId, progress01: this.frame?.progress01 ?? null,
       scene: this.scene?.snapshot?.() || null, residency: this.residency?.snapshot?.() || null,
+      narrative: this.frame?.narrative || null,
       timings: { ...this.timings }, catalogVersion: this.catalog.catalogVersion,
     };
   }

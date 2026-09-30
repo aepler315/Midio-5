@@ -264,6 +264,19 @@ const paramBus = new ParamBus();
 let audioEngine = null;
 let synth = null;
 let sim = null;
+const rangeListeningEl = document.getElementById('rangeListening');
+const rangeNavigationEl = document.getElementById('rangeNavigation');
+const rangeSeekEl = document.getElementById('rangeSeek');
+rangeSeekEl?.addEventListener('change', () => { if (sim) seekSong(Number(rangeSeekEl.value) * 1000); });
+document.getElementById('rangeRestart')?.addEventListener('click', () => { if (sim) seekSong(0); });
+let rangeListening = new URLSearchParams(location.search).get('rangeExperience') === 'revelation';
+if (rangeListeningEl) {
+  rangeListeningEl.value = rangeListening ? 'revelation' : 'gameplay';
+  rangeListeningEl.addEventListener('change', () => {
+    rangeListening = rangeListeningEl.value === 'revelation';
+  if (sim) sim.rangeListening = rangeListening && !sim.analysisOpening;
+  });
+}
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
@@ -1632,6 +1645,21 @@ function confirmWorld(id) {
 }
 
 function startConfirmedWorld(pending, id) {
+  // A setting changed while the picker was open may have selected the pilot
+  // after an opening-only load. Wait before starting audio or the show.
+  if (rangeListening && pending.data.opening) {
+    if (fullAnalysisPending) {
+      const gen = loadGen;
+      showProgress('Finishing the full-song listening analysis…');
+      fullAnalysisPending.then(() => {
+        progressEl.classList.add('hidden');
+        if (gen !== loadGen) return;
+        if (pending.data.opening) { showErrorBanner('Full-song analysis is needed for this listening presentation.'); return; }
+        startConfirmedWorld(pending, id);
+      });
+    } else showErrorBanner('Full-song analysis is needed for this listening presentation.');
+    return;
+  }
   stopWorldPreview();
   lastWorldId = id;
   pending.data.worldId = id;
@@ -1796,6 +1824,8 @@ function startTimeline(timelineData, extra = {}) {
   try {
     sim = new Simulation(conductor, paramBus, {
       bpm: timelineData.bpm || 120,
+      rangeListening,
+      rangeNarrative: timelineData.rangeNarrative || null,
       energyCurves: timelineData.energyCurves || null,
       // Logical stage always 1280×720 — canvas buffer may be 4K.
       canvasWidth: STAGE_W,
@@ -1843,6 +1873,8 @@ function startTimeline(timelineData, extra = {}) {
   }
   sim.audioOverview = timelineData.audioOverview || null;
   sim.analysisOpening = timelineData.opening || null;
+  // This snapshot belongs to the song, beyond Simulation teardown/rebuild.
+  if (!timelineData.opening) timelineData.rangeNarrative = sim.rangeNarrative;
   if (sim.biomes.chapterPlan) timelineData.chapterState = {
     seed: sim.songSeed, previous: sim.biomes.chapterPlan, committedThroughMs: timelineData.durationMs,
   };
@@ -1953,6 +1985,8 @@ function startTimeline(timelineData, extra = {}) {
   progressEl.classList.add('hidden');
   loaderEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
+  rangeNavigationEl?.classList.toggle('hidden', !sim.rangeNarrativeAt());
+  if (rangeSeekEl) { rangeSeekEl.max = String((conductor.durationMs || 0) / 1000); rangeSeekEl.value = String(startedAt / 1000); }
   wakeHud();
   // Name the real range behind The Range. The renderer draws it on the
   // canvas, so recordings and bulk exports carry it. Chrome must never stop
@@ -2482,6 +2516,7 @@ async function loadAudioFiles(files) {
     // (OpeningAnalysis.js). The first pass is then just the opening.
     const openingFirst = useOpeningAnalysis({
       durationSec: audioBuffer.duration, stemDrop: isStemDrop, exporting: !!readBulkExportFromUrl(),
+      rangeListening,
     });
     const analysis = audioToTimeline(openingFirst ? sliceAudioBuffer(audioBuffer, OPENING_SECONDS) : audioBuffer, {
       userStems: isStemDrop ? decoded : null,
@@ -4048,7 +4083,7 @@ function replaySong({ songSeed } = {}) {
   if (!lastTimelineData) { window.location.reload(); return; }
   // A full-song recording is the whole song: wait for its analysis rather
   // than record the part past the opening with nothing driving it.
-  if (pendingExportPresetId && lastTimelineData.opening && fullAnalysisPending) {
+  if ((pendingExportPresetId || rangeListening) && lastTimelineData.opening && fullAnalysisPending) {
     const waitingOn = lastTimelineData;
     showProgress('Finishing the analysis…');
     fullAnalysisPending.finally(() => {

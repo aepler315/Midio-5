@@ -64,6 +64,7 @@ import { DisasterDirector } from './DisasterDirector.js';
 import { FloodDirector } from './FloodDirector.js';
 import { CueDirector } from './CueDirector.js';
 import { CueKind } from '../core/ConductorTrack.js';
+import { compileRangeNarrative } from '../world/alpine/RangeNarrative.js';
 
 const WORLD_SPEED_PX_S = 220;
 const CLEAN_WINDOW_MS = 90;
@@ -82,6 +83,8 @@ export class Simulation {
     songTerrain = null,
     residency = null,
     chapterState = null,
+    rangeListening = false,
+    rangeNarrative = null,
   } = {}) {
     this.conductor = conductor;
     this.paramBus = paramBus;
@@ -122,6 +125,7 @@ export class Simulation {
       midio: this._midioLeadLane ? 'lead-lane' : 'bass',
       counts: lanes,
     };
+    this.rangeListening = !!rangeListening;
     this._midioAccentFilter = this._midioLeadLane
       ? (e) => e.lane === Lane.MIDIO
       : (e) => e.role === Role.BASS;
@@ -276,6 +280,9 @@ export class Simulation {
       // The page's graphics ledger (GraphicsResidency); null in tests.
       residency,
     });
+    this.rangeNarrative = rangeNarrative || compileRangeNarrative({ durationMs: conductor.durationMs,
+      energyCurves, timeline: conductor.timeline, sections: this.biomes.sections,
+      barGrid: conductor.barGrid, casting: this.casting });
     this.reducedFlash = false;
     this.visualStyle = 'rendered';
     this.biomes.reducedFlash = this.reducedFlash;
@@ -671,6 +678,11 @@ export class Simulation {
   }
 
   /** Global graphics presentation: classic (SMW-flat) or rendered (DKC-CGI). */
+  rangeNarrativeAt(timeMs = this.heardTimeMs ?? this.timeMs ?? 0) {
+    return this.rangeListening && this.biomes?.world?.kind === 'alpine' && !this.biomes.terrainPreview
+      ? this.rangeNarrative.sample(timeMs) : null;
+  }
+
   setVisualStyle(v) {
     this.visualStyle = v === 'classic' ? 'classic' : 'rendered';
     this.biomes?.setVisualStyle?.(this.visualStyle);
@@ -1057,7 +1069,7 @@ export class Simulation {
     // She's off on a voyage -> the ensemble's Kuramoto math should feel the
     // hole (this takes effect next frame; the weight eases over ~1.5s
     // regardless, so the one-step lag is inaudible/invisible).
-    this.ensemble.setPresence(2, this.midasus.voyage.active ? 0 : 1);
+    this.ensemble.setPresence(2, (this.midasus.voyage.active ? 0 : 1) * (this.rangeNarrativeAt(this.heardTimeMs)?.cast.midasus ?? 1));
     if (this.midasus.voyage.justLanded) {
       this.camera.shake(4);
       // Reentry burn: her screen position converts to the same world-x
@@ -1124,7 +1136,8 @@ export class Simulation {
       this._reentryBurst(nowMs, this.broshi.burrow.surfaceWorldX, this.midio.groundY, colorRgb);
     }
     // He's underground -> same presence handoff as Midasus's voyage.
-    this.ensemble.setPresence(1, this.broshi.burrow.active ? 0 : 1);
+    this.ensemble.setPresence(1, (this.broshi.burrow.active ? 0 : 1) * (this.rangeNarrativeAt(this.heardTimeMs)?.cast.broshi ?? 1));
+    this.ensemble.setPresence(0, this.rangeNarrativeAt(this.heardTimeMs)?.cast.midio ?? 1);
     // Enemy-wave combat: fixed defender join order (Midasus, Broshi, Midio)
     // matches BattleDirector.DEFENDER_ORDER.
     this.battle.update(nowMs, dtMs, [

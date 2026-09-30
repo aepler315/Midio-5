@@ -4,7 +4,7 @@
 // here only when a runtime module actually needs it.
 export {
   WebGLRenderer, WebGLRenderTarget, DepthTexture,
-  Scene, Group, Mesh, InstancedMesh, Points,
+  Scene, Group, Mesh, InstancedMesh, Points, LineSegments,
   PerspectiveCamera, OrthographicCamera,
   BufferGeometry, BufferAttribute, InstancedBufferGeometry, InstancedBufferAttribute, Float32BufferAttribute, Uint32BufferAttribute,
   ShaderMaterial, RawShaderMaterial, MeshBasicMaterial,

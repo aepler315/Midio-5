@@ -3,6 +3,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildRangeFrame, viewportState, sceneDeformation, rangeMusicState } from '../src/world/alpine/RangeFrame.js';
 import { LerpCache } from '../src/utils/color.js';
+import { compileRangeNarrative } from '../src/world/alpine/RangeNarrative.js';
+
+test('narrative frames remove all emitters and retain source activity at final heard time', () => {
+  const sim = fakeSim(90);
+  const schedule = compileRangeNarrative({ durationMs: 100000, timeline: [
+    { tMs: 0, durMs: 100000, vel: 1, role: 'BASS', lane: 'MIDIO', src: 'midi', pitch: 72 },
+  ], casting: { midio: 'lead-lane', broshi: 'melody', midasus: 'melody' } });
+  sim.rangeNarrativeAt = at => schedule.sample(at);
+  const f = buildRangeFrame({ frameId: 1, sim, pose, scenicViewport: vp(1280, 720, 1280, 720), groundViewport: vp(1280, 720, 1280, 720) });
+  assert.equal(f.narrative.revelation, 1);
+  assert.ok(f.emitters.every(e => !e.visible && e.presence === 0));
+  assert.ok(f.music.melodicM > 0, 'lead lane transfers even when its role is BASS');
+  sim.biomes.tSec = 0;
+  const opening = buildRangeFrame({ frameId: 2, sim, pose });
+  assert.equal(opening.narrative.revelation, 0);
+  assert.equal(opening.light.sky.top, '#fff3db');
+});
 
 function fakeSim(tSec = 30, { reducedFlash = false, preview = false } = {}) {
   const profile = { name: 'RAINFOREST', sky: ['#102030', '#304050', '#607080'] };

@@ -88,6 +88,7 @@ const SHADE = /* glsl */`
   uniform vec3 pForestNear;
   uniform vec3 pForestFar;
   uniform float uDiag;
+  uniform vec4 uNarrative;
   ${MIST_GLSL}
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   vec4 shadeTree(vec3 n, vec3 world, float core) {
@@ -106,6 +107,7 @@ const SHADE = /* glsl */`
     vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, world));
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96));
     if (uDiag > 0.5) return vec4(1.0, 0.0, 1.0, 1.0);
+    color = mix(uSkyHorizon, color, uNarrative.z);
     return vec4(pow(max(color, 0.0), vec3(1.0 / 2.2)), 1.0);
   }
 `;
