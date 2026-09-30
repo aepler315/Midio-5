@@ -7,51 +7,9 @@ import { clamp01, hashSeed } from '../../utils/math.js';
 import { buildSongProfile, PROFILE_VERSION } from '../../audio/SongProfile.js';
 import { Role } from '../../core/NoteEvent.js';
 
-// Krumhansl-Schmuckler key profiles — duration-weighted pitch-class
-// correlation, the standard tonal-hierarchy model for key finding.
-const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
-const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
-
-// Circle-of-fifths order starting at C — the synaesthetic hue convention:
-// keys a fifth apart (which sound related) land 30° apart on the wheel.
+export { estimateKey } from '../../audio/TonalEvidence.js';
+import { isAuthoredPitch } from '../../audio/TonalEvidence.js';
 export const FIFTHS_ORDER = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
-
-function correlate(hist, profile) {
-  const n = 12;
-  const meanH = hist.reduce((a, b) => a + b, 0) / n;
-  const meanP = profile.reduce((a, b) => a + b, 0) / n;
-  let num = 0, dh = 0, dp = 0;
-  for (let i = 0; i < n; i++) {
-    const h = hist[i] - meanH, p = profile[i] - meanP;
-    num += h * p; dh += h * h; dp += p * p;
-  }
-  const denom = Math.sqrt(dh * dp);
-  return denom > 1e-9 ? num / denom : 0;
-}
-
-/** Krumhansl-Schmuckler key estimate from a duration+velocity weighted
- *  pitch-class histogram. Returns { tonicPc, isMajor, confidence 0..1 }. */
-export function estimateKey(histogram) {
-  let bestMajor = { pc: 0, corr: -Infinity };
-  let bestMinor = { pc: 0, corr: -Infinity };
-  for (let pc = 0; pc < 12; pc++) {
-    const rot = (profile) => {
-      const r = new Array(12);
-      for (let i = 0; i < 12; i++) r[i] = profile[(i - pc + 12) % 12];
-      return r;
-    };
-    const cMaj = correlate(histogram, rot(MAJOR_PROFILE));
-    const cMin = correlate(histogram, rot(MINOR_PROFILE));
-    if (cMaj > bestMajor.corr) bestMajor = { pc, corr: cMaj };
-    if (cMin > bestMinor.corr) bestMinor = { pc, corr: cMin };
-  }
-  const isMajor = bestMajor.corr >= bestMinor.corr;
-  const winner = isMajor ? bestMajor : bestMinor;
-  const gap = Math.abs(bestMajor.corr - bestMinor.corr);
-  // Correlation coefficients rarely exceed ~0.85 for real music; squash to 0..1.
-  const confidence = clamp01(0.5 * clamp01(winner.corr / 0.85) + 0.5 * clamp01(gap / 0.3));
-  return { tonicPc: winner.pc, isMajor, confidence };
-}
 
 // Coarse GM program-number -> shape-grammar family. Independent of
 // MidiParser's role-classification table; this one only needs to answer
@@ -171,7 +129,7 @@ export function buildSongDNA(data = {}) {
   // that actually carry a pitch -- see isPitched. A drum-only timeline has a
   // rhythm to report but no key, and saying so is better than reporting the
   // drum map's own pitch classes as the song's harmony.
-  const pitched = timeline.filter(isPitched);
+  const pitched = timeline.filter(isAuthoredPitch);
   const hasTonal = pitched.length >= 4;
 
   if (timeline.length >= 4) {
@@ -215,7 +173,6 @@ export function buildSongDNA(data = {}) {
   }
 
   if (hasTonal) {
-    const hist = new Array(12).fill(0);
     let pitchSum = 0, pitchSqSum = 0;
     // Register trajectory: mean pitch of the song's first third vs its last
     // third, so particle direction can read whether the song climbs or
@@ -224,14 +181,12 @@ export function buildSongDNA(data = {}) {
     const firstCut = dur / 3, lastCut = (dur * 2) / 3;
     for (const e of pitched) {
       const pitch = e.pitch ?? 60;
-      hist[((pitch % 12) + 12) % 12] += Math.max(0.05, (e.durMs ?? 90)) * Math.max(0.05, e.vel ?? 0.5);
       pitchSum += pitch;
       pitchSqSum += pitch ** 2;
       if (e.tMs <= firstCut) { firstSum += pitch; firstN++; }
       else if (e.tMs >= lastCut) { lastSum += pitch; lastN++; }
     }
-    const key = estimateKey(hist);
-    tonicPc = key.tonicPc; isMajor = key.isMajor; keyConfidence = key.confidence;
+    tonicPc = profile.tonal.tonic; isMajor = profile.tonal.mode !== 'minor'; keyConfidence = profile.tonal.confidence;
 
     const meanPitch = pitchSum / pitched.length;
     const variance = Math.max(0, pitchSqSum / pitched.length - meanPitch * meanPitch);

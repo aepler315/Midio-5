@@ -471,7 +471,7 @@ export class Renderer {
       this._groundResponse.draw(ctx, { receivers: biomeManager._groundReceivers,
         lights, nowMs: sim.timeMs,
         hits: recentConductorHits(sim.conductor?.timeline, sim.timeMs),
-        reducedFlash: !!sim.reducedFlash,
+        reducedFlash: !!sim.reducedFlash, reducedMotion: !!sim.reducedMotion,
         quality: perf?.level ?? 0 });
     }
     if (sim.battle) this._drawBattleFX(ctx, sim);

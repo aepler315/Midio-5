@@ -14,6 +14,8 @@ import {
 import { getWorld, DEFAULT_WORLD_ID } from './Worlds.js';
 import { WORLD_SIGNATURES, WORLD_RENDERERS } from './WorldRegistry.js';
 import { sampleWorldMusic } from './WorldMusic.js';
+import { visualNow } from '../core/ChoreoClock.js';
+import { VisualMusicHistory } from './VisualMusicHistory.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
@@ -100,6 +102,7 @@ import { celestialApproach } from './CelestialApproach.js';
 import { snapCutsToReleases } from './BoundarySnap.js';
 import { applyConductorSchedule } from '../core/ConductorTrack.js';
 import { analyzeSongForm } from './SongForm.js';
+import { planChapters, sectionsWithChapters } from './ChapterPlanner.js';
 import {
   MIN_SECTION_CUT_GAP_MS, SECTION_CUT_BUDGET_MS, MIN_SECTION_CUTS, sectionCutBudget,
 } from '../audio/sectionBudget.js';
@@ -470,7 +473,7 @@ export { travelSeam };
 let BIOME_MANAGER_SERIAL = 0;
 
 export class BiomeManager {
-  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null, residency = null }) {
+  constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null, residency = null, chapterState = null }) {
     this.conductor = conductor;
     this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
@@ -586,6 +589,8 @@ export class BiomeManager {
     this._ribbonScaleMul = 1;
     this.lerpCache = new LerpCache();
     this.tSec = 0;
+    this.visualLagMs = 0;
+    this._visualHistory = new VisualMusicHistory(conductor.timeline);
     this.worldRhythm = null;
     this._starSeed = mulberry32(9001);
     // Layered starfield generated from a real catalogue (StarCatalogue.js):
@@ -805,6 +810,7 @@ export class BiomeManager {
     this.groundScatter = new GroundScatter(songSeed);
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
+    if (chapterState?.previous) this.refineChapterPlan(chapterState.previous, chapterState.committedThroughMs || 0);
     // Strips are baked AFTER the schedule exists (moved here from right
     // after construction's field init) so _buildStripSet can key each
     // profile's per-label variant (lithology/landform/landmarks/heightMul --
@@ -981,6 +987,9 @@ export class BiomeManager {
       ? barGrid.map((b) => b.ms)
       : this._evenSplit(durationMs, Math.max(ANALYSIS_MIN_POINTS, Math.round(durationMs / ANALYSIS_TARGET_STEP_MS)));
     if (barTimes.length < 2) barTimes = [0, durationMs];
+    // A downbeat phase need not coincide with the start of the recording.
+    // The visual schedule still covers the entire song from time zero.
+    if (barTimes[0] > 0) barTimes.unshift(0);
 
     const vectors = barTimes.map((ms) => (energyCurves ? energyCurves.sampleAll(ms) : new Array(7).fill(0)));
     // Hotspot bar times (top-2 by scalar bar energy) -- anchors for things
@@ -1102,10 +1111,25 @@ export class BiomeManager {
     // A decorative cut's exact index can move under the snap above; carry its
     // status forward by nearest match rather than exact value.
     const decorativeSet = new Set();
+    const decorativeParentByCut = new Map();
     for (const d of rawDecorative) {
       let best = cuts[0], bestD = Infinity;
       for (const c of cuts) { const dist = Math.abs(c - d); if (dist < bestD) { bestD = dist; best = c; } }
       decorativeSet.add(best);
+      let parent = chosen[0];
+      for (const c of chosen) { if (c <= d) parent = c; else break; }
+      decorativeParentByCut.set(best, parent);
+    }
+    // Only real detector starts are inverted through nearest-grid snapping.
+    // Decorative subdivisions inherit the original containing segment.
+    const sourceIndexByCut = new Map();
+    if (ssmUsable) for (const c of chosen.slice(0, -1)) {
+      let index = 0, distance = Infinity;
+      structure.boundariesMs.forEach((ms, k) => {
+        const d = Math.abs(ms - barTimes[c]);
+        if (d < distance) { index = k; distance = d; }
+      });
+      sourceIndexByCut.set(c, index);
     }
     // The SSM read is "kept" whenever the schedule is still built from its
     // boundaries -- which is now always true once `ssmUsable`, since the
@@ -1144,6 +1168,8 @@ export class BiomeManager {
     this.sections = [];
     const meanEnergies = [];
     const shapes = []; // per-section mean 7-band spectral vector -- timbral fingerprint
+    const materialPowers = [];
+    const hasPhysicalPower = !!energyCurves?.rmsBands && typeof energyCurves.sampleRms === 'function';
     const maxNovelty = Math.max(...novelty, 1e-9);
     for (let i = 0; i < cuts.length - 1; i++) {
       if (cuts[i + 1] <= cuts[i]) continue;
@@ -1151,12 +1177,29 @@ export class BiomeManager {
       // vector (its timbral shape, for form recognition -- see SongForm).
       let e = 0, count = 0;
       const shape = new Array(7).fill(0);
+      const powers = new Array(7).fill(0);
+      let powerDurationMs = 0;
       for (let b = cuts[i]; b < cuts[i + 1]; b++, count++) {
         for (let k = 0; k < 7; k++) { e += vectors[b][k] / 7; shape[k] += vectors[b][k]; }
+        if (hasPhysicalPower) {
+          const spanMs = Math.max(0, barTimes[b + 1] - barTimes[b]);
+          powerDurationMs += spanMs;
+          for (let k = 0; k < 7; k++) powers[k] += (energyCurves.sampleRms(k, barTimes[b]) ?? 0) ** 2 * spanMs;
+        }
       }
       if (count > 0) for (let k = 0; k < 7; k++) shape[k] /= count;
       meanEnergies.push(count > 0 ? e / count : 0);
       shapes.push(shape);
+      materialPowers.push(hasPhysicalPower ? powers.map(p => p / Math.max(1, powerDurationMs)) : null);
+      let parentCut = decorativeParentByCut.get(cuts[i]) ?? cuts[i];
+      if (!sourceIndexByCut.has(parentCut)) {
+        parentCut = chosen[0];
+        for (const c of chosen) { if (c <= cuts[i]) parentCut = c; else break; }
+      }
+      const sourceSegmentIndex = ssmKept ? sourceIndexByCut.get(parentCut) ?? 0 : null;
+      const isDecorative = decorativeSet.has(cuts[i]);
+      const boundaryEvidence = !isDecorative && ssmKept
+        ? structure.boundaryEvidence?.[sourceSegmentIndex] ?? null : null;
       this.sections.push({
         startMs: barTimes[cuts[i]],
         endMs: i === cuts.length - 2 ? durationMs : barTimes[cuts[i + 1]],
@@ -1178,12 +1221,19 @@ export class BiomeManager {
         provenance: decorativeSet.has(cuts[i])
           ? 'decorative'
           : (ssmKept ? 'detected' : (peakSet.has(cuts[i]) ? 'inferred' : 'decorative')),
+        sourceSegmentIndex,
+        sourceSegmentId: ssmKept
+          ? structure.segmentIds?.[sourceSegmentIndex] ?? `detected:${structure.boundariesMs[sourceSegmentIndex]}`
+          : `energy:${barTimes[parentCut]}`,
+        confidence: boundaryEvidence?.confidence ?? 0,
+        boundaryEvidence,
       });
     }
     if (this.sections.length === 0) {
       this.sections = [{ startMs: 0, endMs: durationMs, transition: 'fade', barMs: 500, provenance: 'decorative' }];
       meanEnergies.push(0.5);
       shapes.push(new Array(7).fill(1));
+      materialPowers.push(null);
     }
 
     // Song-form recognition: which sections are the SAME music (SongForm).
@@ -1204,8 +1254,8 @@ export class BiomeManager {
     // repetition read -- the better half of the SSM, and the only thing in the
     // pipeline that knows a returning chorus is literally the same music --
     // falling back to band-shape clustering with no signal that it happened.
-    // Map each section back to its nearest SSM boundary instead, so a dropped
-    // or merged boundary costs one label rather than all of them.
+    // Keep the immutable source index through grid snapping and decorative
+    // padding, so a dropped boundary costs one label rather than all of them.
     const ssmLabels = ssmKept ? this._labelsFromSsm(structure) : null;
     const labels = ssmLabels
       || analyzeSongForm(this.sections.map((_, i) => ({ energy: meanEnergies[i], shape: shapes[i] })));
@@ -1255,22 +1305,42 @@ export class BiomeManager {
       for (let k = 0; k < 7; k++) shape[k] /= Math.max(1, idxs.length);
       return [lab, shape];
     }));
+    const labelMaterialShares = new Map(uniqueLabels.map(lab => {
+      if (!hasPhysicalPower) return [lab, labelShape.get(lab)];
+      const powers = new Array(7).fill(0);
+      labels.forEach((label, i) => {
+        if (label !== lab || !materialPowers[i]) return;
+        const duration = Math.max(0, this.sections[i].endMs - this.sections[i].startMs);
+        for (let k = 0; k < 7; k++) powers[k] += materialPowers[i][k] * duration;
+      });
+      const total = powers.reduce((sum, power) => sum + power, 0);
+      return [lab, powers.map(power => total > 1e-12 ? power / total : 0)];
+    }));
     const worldKindForVariants = this.world?.kind || 'alpine';
     const buildVariant = worldKindForVariants === 'alpine' ? (lab) => {
-      const shape = labelShape.get(lab);
+      const shares = labelMaterialShares.get(lab);
       const rel = relEnergyByLabel.get(lab) ?? 0.5;
       let wsum = 0, wtot = 0;
-      for (let k = 0; k < 7; k++) { wsum += shape[k] * k; wtot += shape[k]; }
+      for (let k = 0; k < 7; k++) { wsum += shares[k] * k; wtot += shares[k]; }
       const spectralPos01 = wtot > 1e-9 ? clamp01(wsum / (6 * wtot)) : 0.5;
       const firstIdx = labels.indexOf(lab);
       const window = firstIdx >= 0
         ? { startMs: this.sections[firstIdx].startMs, endMs: this.sections[firstIdx].endMs }
         : null;
       const windowedPortrait = extractRidgePortrait(energyCurves, durationMs, window);
-      const litho = lithologyFromShares(shape);
-      if (windowedPortrait) windowedPortrait.lithology = litho;
+      const litho = lithologyFromShares(shares);
+      if (windowedPortrait) {
+        windowedPortrait.lithology = litho;
+        if (hasPhysicalPower) {
+          windowedPortrait.shares = Float32Array.from(shares);
+          windowedPortrait.centroid01 = spectralPos01;
+          windowedPortrait.spread01 = clamp01((1 - shares.reduce((sum, share) => sum + share ** 2, 0)) / (1 - 1 / 7));
+        }
+      }
       return {
         lithology: litho,
+        materialShares: shares,
+        materialSource: hasPhysicalPower ? 'power' : 'activity',
         character: landformWindow(spectralPos01, rel),
         portrait: windowedPortrait,
         heightMul: lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], rel),
@@ -1278,17 +1348,15 @@ export class BiomeManager {
         snowLine01: snowLine01For(litho.crest, rel),
       };
     } : null;
-    // Keyed by BIOME NAME, not label: biomeByLabel maps labels 1:1 to a
-    // cast biome in the common case, so a variant per name costs exactly
-    // what the cast already implies. On the rare tie (two labels casting
-    // the same biome), the first label to claim the name wins -- an
-    // acceptable, deterministic edge case rather than a second keying
-    // scheme threaded through every strip consumer.
+    // Fine variants are keyed by label even when the whole song stays home.
+    // The baked geographic strips use a representative variant per biome;
+    // height, snow, portrait and motif metadata remain available per section.
     this._profileVariants = buildVariant ? new Map() : null;
+    this._sectionVariants = buildVariant ? new Map(uniqueLabels.map(lab => [lab, buildVariant(lab)])) : null;
     if (buildVariant) {
       for (const lab of uniqueLabels) {
         const name = biomeByLabel.get(lab);
-        if (!this._profileVariants.has(name)) this._profileVariants.set(name, buildVariant(lab));
+        if (!this._profileVariants.has(name)) this._profileVariants.set(name, this._sectionVariants.get(lab));
       }
     }
 
@@ -1300,9 +1368,10 @@ export class BiomeManager {
       s.meanEnergy = meanEnergies[i];
       s.shape = shapes[i];
       s.relEnergy01 = relEnergyByLabel.get(labels[i]) ?? 0.5;
-      s.heightMul = this._profileVariants?.get(s.profile)?.heightMul
+      s.variant = this._sectionVariants?.get(labels[i]) ?? null;
+      s.heightMul = s.variant?.heightMul
         ?? lerp(SECTION_HEIGHT_MUL[0], SECTION_HEIGHT_MUL[1], s.relEnergy01);
-      s.snowLine01 = this._profileVariants?.get(s.profile)?.snowLine01 ?? 1;
+      s.snowLine01 = s.variant?.snowLine01 ?? 1;
       // Recognition: re-entering a label seen earlier snaps back into the
       // familiar place (a cut of recognition) rather than fading somewhere
       // new. First occurrence keeps its novelty-derived transition.
@@ -1316,6 +1385,14 @@ export class BiomeManager {
     // schedule -- synced lyrics can insert/merge boundaries snapped to the
     // beat grid, plain lyrics only add labels. Absent lyricSections is a
     // true no-op (fuseSections returns the exact same array).
+    // Geography is independent of the fine section/motif schedule. Only
+    // evidence-bearing macro boundaries can activate the reserved places.
+    if (this.world?.realBiomes && this.songTerrain?.biomes?.length) {
+      this._chapterInputs = { durationMs, biomes: this.songTerrain.biomes, barGrid, freeTime: !this._beatSec };
+      this.chapterPlan = planChapters({ ...this._chapterInputs, sections: this.sections });
+      this.sections = sectionsWithChapters(this.sections, this.chapterPlan);
+      this._refreshChapterVariants();
+    }
     this.sections = fuseSections(this.sections, lyricSections, barGrid, durationMs);
 
     // The conductor track has the last word (ConductorTrack.js). Everything
@@ -1325,6 +1402,25 @@ export class BiomeManager {
     // authored boundary or biome overrides whatever was detected there.
     // Absent cues is a true no-op (the same array reference comes back).
     this.sections = applyConductorSchedule(this.sections, conductorSchedule, barGrid, durationMs);
+  }
+
+  /** Called before drawing a full-analysis replacement. Its home and reached
+   * chapter starts are frozen; section details may still improve. */
+  refineChapterPlan(previous, committedThroughMs) {
+    if (!this._chapterInputs || !previous?.length) return;
+    this.chapterPlan = planChapters({ ...this._chapterInputs, sections: this.sections, previous, committedThroughMs });
+    this.sections = sectionsWithChapters(this.sections, this.chapterPlan);
+    this._refreshChapterVariants();
+  }
+
+  _refreshChapterVariants() {
+    if (!this._sectionVariants) return;
+    this._profileVariants = new Map();
+    for (const section of this.sections) {
+      if (!this._profileVariants.has(section.profile)) {
+        this._profileVariants.set(section.profile, this._sectionVariants.get(section.label));
+      }
+    }
   }
 
   _evenSplit(durationMs, n) {
@@ -1362,15 +1458,8 @@ export class BiomeManager {
 
   /**
    * One structural label per built section, read off the SSM's repetition
-   * pass by nearest boundary.
-   *
-   * Nearest rather than containment: a section's startMs is `barTimes[cut]`,
-   * i.e. the SSM boundary already snapped to the nearest point of THIS
-   * schedule's grid (_cutsFromTimes), so it can land a few milliseconds
-   * either side of the boundary it came from. Containment would hand a
-   * section that rounded down the previous segment's label; nearest is the
-   * exact inverse of the snap that produced it, and reproduces the old 1:1
-   * mapping whenever the counts do line up.
+   * pass by immutable source segment index. Detector starts may round onto
+   * this schedule's grid; decorative children retain their containing parent.
    *
    * @returns {?number[]} null when the analyzer's own labels/boundaries are
    *   missing or disagree with each other -- caller falls back to SongForm.
@@ -1380,9 +1469,12 @@ export class BiomeManager {
     if (!Array.isArray(bounds) || !Array.isArray(labels) || !bounds.length
       || bounds.length !== labels.length) return null;
     return this.sections.map((s) => {
+      if (Number.isInteger(s.sourceSegmentIndex)) return labels[s.sourceSegmentIndex];
+      // Legacy callers without source metadata use containment. A genuine
+      // rounded detector start gets its immutable index during construction.
       let best = 0, bestD = Infinity;
       for (let k = 0; k < bounds.length; k++) {
-        const d = Math.abs(bounds[k] - s.startMs);
+        const d = s.startMs >= bounds[k] ? s.startMs - bounds[k] : Infinity;
         if (d < bestD) { bestD = d; best = k; }
       }
       return labels[best];
@@ -2011,6 +2103,11 @@ export class BiomeManager {
   }
 
   update(nowMs, dtSec, energyCurves, calmLevel = 0, worldX = 0) {
+    nowMs = visualNow(nowMs, this.visualLagMs);
+    const history = this._visualHistory.sample(nowMs);
+    this.worldRhythm = history.rhythm;
+    this._danceKickMs = history.kickMs;
+    this._danceKickAmp = history.kickAmp;
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
     this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim

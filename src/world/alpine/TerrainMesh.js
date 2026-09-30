@@ -280,3 +280,52 @@ export function buildSurfaceTexture(data) {
   }
   return { width: W, height: H, data: out, waterValue: WATER_FLOW };
 }
+
+
+/** Conservative dry-receiver field. Water and two grid cells of shore pin;
+ * a two-cell shoulder reconnects smoothly to moving uplands. Water's special
+ * 255 marker is checked exactly; high flow accumulation is not a lake. */
+export function buildReceiverMask(surface) {
+  const { width: W, height: H, data } = surface;
+  const mask = new Uint8Array(W * H).fill(255);
+  for (let i = 0; i < mask.length; i++) if (data[i * 4 + 3] === 255) mask[i] = 0;
+  // Two linear sweeps compute chessboard distance without repeated scans of
+  // large lake interiors; the same byte array becomes the final field.
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const i = z * W + x;
+    let d = mask[i];
+    if (x > 0) d = Math.min(d, mask[i - 1] + 1);
+    if (z > 0) {
+      d = Math.min(d, mask[i - W] + 1);
+      if (x > 0) d = Math.min(d, mask[i - W - 1] + 1);
+      if (x < W - 1) d = Math.min(d, mask[i - W + 1] + 1);
+    }
+    mask[i] = d;
+  }
+  for (let z = H - 1; z >= 0; z--) for (let x = W - 1; x >= 0; x--) {
+    const i = z * W + x;
+    let d = mask[i];
+    if (x < W - 1) d = Math.min(d, mask[i + 1] + 1);
+    if (z < H - 1) {
+      d = Math.min(d, mask[i + W] + 1);
+      if (x > 0) d = Math.min(d, mask[i + W - 1] + 1);
+      if (x < W - 1) d = Math.min(d, mask[i + W + 1] + 1);
+    }
+    mask[i] = d;
+  }
+  for (let i = 0; i < mask.length; i++) {
+    const t = Math.min(1, Math.max(0, (mask[i] - 2) / 2));
+    mask[i] = Math.round(255 * t * t * (3 - 2 * t));
+  }
+  return { width: W, height: H, data: mask };
+}
+
+/** Bilinear receiver read at grid sample coordinates, matching GL texture. */
+export function sampleReceiverMask(mask, x, z) {
+  const W = mask.width, H = mask.height;
+  const xx = Math.min(W - 1, Math.max(0, x)), zz = Math.min(H - 1, Math.max(0, z));
+  const x0 = Math.floor(xx), z0 = Math.floor(zz), tx = xx - x0, tz = zz - z0;
+  const at = (u, v) => mask.data[Math.min(H - 1, v) * W + Math.min(W - 1, u)] / 255;
+  return at(x0, z0) * (1 - tx) * (1 - tz) + at(x0 + 1, z0) * tx * (1 - tz)
+    + at(x0, z0 + 1) * (1 - tx) * tz + at(x0 + 1, z0 + 1) * tx * tz;
+}

@@ -82,7 +82,11 @@ export function asOpening(result, fullDurationMs) {
     // songProfile stays the opening's own, built over the opening's length:
     // rebuilt against the song's length it would read the silence past the
     // opening as part of the song. It is what the world is chosen from.
-    opening: { analyzedMs: result.durationMs },
+    opening: {
+      analyzedMs: result.durationMs, provisional: true,
+      informative: !result.freeTime && (result.confidence ?? 0) >= .3,
+      evidenceScope: 'opening',
+    },
   };
 }
 

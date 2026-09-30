@@ -93,6 +93,13 @@ export function analyzeSongForm(sectionFeatures, { simThreshold = 0.9, energyTol
   const centroids = []; // { shapeSum:number[], energySum:number, count:number }
 
   for (const feat of sectionFeatures) {
+    // Unknown spectra carry no evidence of a new identity. Inherit the
+    // previous safe label without polluting any measured centroid.
+    if (!Number.isFinite(feat.energy) || !Array.isArray(feat.shape)
+      || !feat.shape.every(Number.isFinite) || !feat.shape.some(v => v > 1e-9)) {
+      labels.push(labels.at(-1) ?? 0);
+      continue;
+    }
     let best = -1, bestSim = -Infinity;
     for (let c = 0; c < centroids.length; c++) {
       const cen = centroids[c];

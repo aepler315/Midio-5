@@ -219,7 +219,7 @@ export function chromaHistogram(features) {
 // (12*log2(k), rounded): 2nd harmonic an octave up, 3rd an octave+fifth, etc.
 const HARMONIC_SEMITONE_OFFSETS = [0, 12, 19, 24, 28, 31];
 
-export function melodyPitchAt(features, tMs, { loMidi = 52, hiMidi = SEMITONE_HI, spanMs = 120 } = {}) {
+export function melodyPitchAt(features, tMs, { loMidi = 52, hiMidi = SEMITONE_HI, spanMs = 120, returnEstimate = false } = {}) {
   const f0 = Math.max(0, Math.floor((tMs / 1000) * features.rate));
   const f1 = Math.min(features.frames.length - 1, Math.ceil(((tMs + spanMs) / 1000) * features.rate));
   if (f0 >= features.frames.length) return null;
@@ -265,7 +265,8 @@ export function melodyPitchAt(features, tMs, { loMidi = 52, hiMidi = SEMITONE_HI
   // as before: a harmonically-plausible but energy-negligible bin (silence,
   // unpitched percussion smeared across many semitones) still isn't a pitch.
   if (energy[bestIdx] < 1e-6 || energy[bestIdx] < totalE * 0.04) return null;
-  return SEMITONE_LO + bestIdx;
+  const pitch = SEMITONE_LO + bestIdx;
+  return returnEstimate ? { pitch, confidence: clamp01(energy[bestIdx] / totalE) } : pitch;
 }
 
 /**
@@ -280,7 +281,7 @@ export function melodyPitchAt(features, tMs, { loMidi = 52, hiMidi = SEMITONE_HI
  * clears the confidence floor (silence, pure noise, a kick thump).
  */
 export function estimateBassPitchAt(samples, sampleRate, tMs, {
-  loMidi = 28, hiMidi = 52, winLen = 2048, targetRate = 9000,
+  loMidi = 28, hiMidi = 52, winLen = 2048, targetRate = 9000, returnEstimate = false,
 } = {}) {
   const channels = sampleChannels(samples);
   const length = sharedLength(channels);
@@ -302,6 +303,7 @@ export function estimateBassPitchAt(samples, sampleRate, tMs, {
   const lagMin = Math.max(2, Math.floor(analysisRate / midiToHz(hiMidi)));
   const lagMax = Math.min(winLen - 1, Math.ceil(analysisRate / midiToHz(loMidi)));
   let bestLag = 0, bestR = 0;
+  const correlations = new Float64Array(lagMax + 2);
   for (let lag = lagMin; lag <= lagMax; lag++) {
     let r = 0, leftEnergy = 0, rightEnergy = 0;
     for (const channel of channels) {
@@ -315,13 +317,27 @@ export function estimateBassPitchAt(samples, sampleRate, tMs, {
     }
     const denom = Math.sqrt(leftEnergy * rightEnergy);
     const norm = denom > 1e-9 ? r / denom : 0;
+    correlations[lag] = norm;
     if (norm > bestR) { bestR = norm; bestLag = lag; }
   }
   if (bestR < 0.25 || bestLag === 0) return null;
 
-  const hz = analysisRate / bestLag;
+  // Prefer the first strong periodic peak. Later multiples are often
+  // microscopically higher for finite windows and must not win an octave.
+  for (let lag = lagMin; lag <= lagMax; lag++) {
+    if (correlations[lag] >= Math.max(.5, bestR * .9)
+      && (lag === lagMin || correlations[lag] >= correlations[lag - 1])
+      && (lag === lagMax || correlations[lag] >= correlations[lag + 1])) {
+      bestLag = lag; break;
+    }
+  }
+  const left = correlations[bestLag - 1] ?? 0, center = correlations[bestLag], right = correlations[bestLag + 1] ?? 0;
+  const denom = left - 2 * center + right;
+  const offset = bestLag > lagMin && bestLag < lagMax && Math.abs(denom) > 1e-9 ? clamp(.5 * (left - right) / denom, -.5, .5) : 0;
+  const hz = analysisRate / (bestLag + offset);
   const midi = Math.round(69 + 12 * Math.log2(hz / 440));
-  return clamp(midi, loMidi, hiMidi);
+  const pitch = clamp(midi, loMidi, hiMidi);
+  return returnEstimate ? { pitch, confidence: clamp01(correlations[bestLag]), hz } : pitch;
 }
 
 // Krumhansl-Kessler key profiles: how strongly each scale degree implies a

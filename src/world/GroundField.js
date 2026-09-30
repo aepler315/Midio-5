@@ -306,13 +306,14 @@ export class GroundField {
     return Math.min(1, sum);
   }
 
-  update(nowMs, dtSec, worldX, energyCurves, calmLevel = 0) {
+  update(nowMs, dtSec, worldX, energyCurves, calmLevel = 0, heardTimeMs = nowMs) {
     this.justRecovered = false;
     this._nowMs = nowMs;
+    this._renderNowMs = heardTimeMs;
     this._calmLevel = calmLevel; // visibleBars() reads this for the groove wave's shape
-    if (this._ripples.length) this._ripples = this._ripples.filter((r) => nowMs - r.startMs < RIPPLE_TOTAL_LIFE_MS);
-    if (this._glows.length) this._glows = this._glows.filter((g) => nowMs - g.startMs < GLOW_TOTAL_LIFE_MS);
-    const globalEnergy = energyCurves ? clamp01(energyCurves.globalEnergy(nowMs, FLAT_WEIGHTS)) : 0;
+    if (this._ripples.length) this._ripples = this._ripples.filter((r) => heardTimeMs - r.startMs < RIPPLE_TOTAL_LIFE_MS);
+    if (this._glows.length) this._glows = this._glows.filter((g) => heardTimeMs - g.startMs < GLOW_TOTAL_LIFE_MS);
+    const globalEnergy = energyCurves ? clamp01(energyCurves.globalEnergy(heardTimeMs, FLAT_WEIGHTS)) : 0;
     this._groove += (1 - Math.exp(-dtSec / GROOVE_TAU_SEC)) * (globalEnergy - this._groove);
     this._spawnSlicesUpTo(worldX + LOOKAHEAD_PX);
     this._trimBehind(worldX);
@@ -378,14 +379,15 @@ export class GroundField {
    * same line (a 13 Hz buzz previously desynced them, reading as jitter). */
   visibleBars(worldX, originX, screenWidth) {
     const bars = [];
+    const renderNowMs = this._renderNowMs ?? this._nowMs;
     const settle = 1 - clamp01(this.flatten);
     const { wavelengthMul, rateMul } = calmGrooveParams(this._calmLevel || 0);
     for (const s of this.slices) {
       const screenXStart = s.worldXStart - worldX + originX;
       const screenXEnd = screenXStart + this.sliceWidth;
       if (screenXEnd < -20 || screenXStart > screenWidth + 20) continue;
-      const ripple = this._rippleOffset(s.worldXStart, this._nowMs);
-      const glow = this._glowAt(s.worldXStart, this._nowMs);
+      const ripple = this._rippleOffset(s.worldXStart, renderNowMs);
+      const glow = this._glowAt(s.worldXStart, renderNowMs);
       const quakeOffset = this.quake ? this.quake.groundOffsetAt(s.worldXStart) : 0;
       // Groove wave: a slow traveling ripple keyed off the song's global
       // energy, phase-driven by world-x so it visibly rolls with scroll
@@ -393,7 +395,7 @@ export class GroundField {
       // track between individual band/kick events.
       const groove = this._groove > 0.02
         ? GROOVE_WAVE_AMPLITUDE_PX * this._groove * Math.sin(
-          s.worldXStart / (GROOVE_WAVELENGTH_PX * wavelengthMul) + this._nowMs / 1000 * GROOVE_HZ * rateMul * 2 * Math.PI,
+          s.worldXStart / (GROOVE_WAVELENGTH_PX * wavelengthMul) + renderNowMs / 1000 * GROOVE_HZ * rateMul * 2 * Math.PI,
         )
         : 0;
       bars.push({ x: screenXStart, width: this.sliceWidth, y: this.baseGroundY + (s.offset + ripple + groove + quakeOffset) * settle, glow, groove: this._groove });
@@ -413,7 +415,7 @@ export class GroundField {
     if (!this._glows.length) return [];
     const out = [];
     for (const g of this._glows) {
-      const intensity = kickGlowAt(g.originWorldX, this._nowMs, g);
+      const intensity = kickGlowAt(g.originWorldX, this._renderNowMs ?? this._nowMs, g);
       if (intensity > 0.02) {
         out.push({ x: g.originWorldX - worldX + originX, y: this.heightAt(g.originWorldX), intensity });
       }

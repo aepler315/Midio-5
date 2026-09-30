@@ -11,30 +11,44 @@ import { MIST_GLSL, MIST_SAMPLES } from './RangeAtmosphere.js';
 
 export const DEFORM_GLSL = /* glsl */`
   uniform vec2 uHeightRange;
+  uniform vec2 uGridOrigin;
+  uniform vec2 uGridExtent;
+  uniform vec2 uTexel;
+  uniform sampler2D uReceiver;
   uniform float uDeformAmp;
   uniform float uDeformKick;
+  uniform float uDeformGesture;
+  uniform float uDeformMelodic;
+  uniform float uDeformStructural;
   uniform float uDeformK;
   uniform vec2 uDeformDir;
   uniform float uDeformPhase;
-  float deformLift(float y) {
-    float h01 = clamp((y - uHeightRange.x) / max(1.0, uHeightRange.y - uHeightRange.x), 0.0, 1.0);
-    return h01 * h01;
+  uniform float uMelodyK;
+  uniform vec2 uMelodyDir;
+  uniform float uMelodyPhase;
+  float deformField(float h, float along, float across) {
+    return h * h * (uDeformAmp * sin(along * uDeformK - uDeformPhase)
+      + uDeformKick + uDeformStructural + uDeformMelodic * sin(across * uMelodyK - uMelodyPhase)
+      + h * h * uDeformGesture);
   }
   float deformAt(vec3 p) {
-    float along = dot(p.xz, uDeformDir);
-    return deformLift(p.y) * (uDeformAmp * sin(along * uDeformK - uDeformPhase) + uDeformKick);
+    vec2 uv = (p.xz - uGridOrigin) / uGridExtent;
+    float receiver = texture(uReceiver, uv * (1.0 - uTexel) + 0.5 * uTexel).r;
+    float h = clamp((p.y - uHeightRange.x) / max(1.0, uHeightRange.y - uHeightRange.x), 0.0, 1.0);
+    return receiver * deformField(h, dot(p.xz, uDeformDir), dot(p.xz, uMelodyDir));
   }
-  // Horizontal gradient of the deformation (lift treated as locally flat).
-  vec2 deformGrad(vec3 p) {
-    float along = dot(p.xz, uDeformDir);
-    return deformLift(p.y) * uDeformAmp * cos(along * uDeformK - uDeformPhase) * uDeformK * uDeformDir;
+  // Full field derivatives include the receiver shoulder and height lift.
+  // The inverse Jacobian carries terrain normals through the same field.
+  vec3 deformGrad(vec3 p) {
+    float e = 1.0;
+    return vec3(deformAt(p + vec3(e, 0.0, 0.0)) - deformAt(p - vec3(e, 0.0, 0.0)),
+      deformAt(p + vec3(0.0, e, 0.0)) - deformAt(p - vec3(0.0, e, 0.0)),
+      deformAt(p + vec3(0.0, 0.0, e)) - deformAt(p - vec3(0.0, 0.0, e))) / (2.0 * e);
   }
 `;
 
 export const SCENE_VERT = /* glsl */`
   invariant gl_Position;
-  uniform vec2 uGridOrigin;
-  uniform vec2 uGridExtent;
   ${DEFORM_GLSL}
   out vec2 vUv;
   out vec3 vWorld;
@@ -54,7 +68,6 @@ export const SCENE_VERT = /* glsl */`
 export const SCENE_FRAG = /* glsl */`
   precision highp float;
   uniform sampler2D uSurface;
-  uniform vec2 uTexel;
   ${DEFORM_GLSL}
   uniform vec3 uLightDir;
   uniform vec3 uLightColor;
@@ -129,8 +142,9 @@ export const SCENE_FRAG = /* glsl */`
     vec4 s = texture(uSurface, uv);
     vec2 nxz = s.rg * 2.0 - 1.0;
     vec3 n = normalize(vec3(nxz.x, sqrt(max(0.0, 1.0 - dot(nxz, nxz))), nxz.y));
-    vec2 g = deformGrad(vWorld);
-    n = normalize(n + vec3(-g.x, 0.0, -g.y));
+    vec3 g = deformGrad(vWorld);
+    float invY = 1.0 / max(0.2, 1.0 + g.y);
+    n = normalize(vec3(n.x - g.x * n.y * invY, n.y * invY, n.z - g.z * n.y * invY));
     float dist = length(vWorld - uCameraPos);
     float slopeDeg = degrees(acos(clamp(n.y, 0.0, 1.0)));
     float curv = (s.b - 0.5) * 2.0;            // + concave gully, - convex ridge
@@ -271,6 +285,8 @@ export function sceneUniforms(THREE, base) {
   return {
     ...base,
     uDeformAmp: { value: 0 }, uDeformKick: { value: 0 }, uDeformK: { value: 0 },
+    uDeformGesture: { value: 0 }, uDeformMelodic: { value: 0 }, uDeformStructural: { value: 0 },
+    uMelodyK: { value: 0 }, uMelodyDir: { value: new THREE.Vector2(1, 0) }, uMelodyPhase: { value: 0 },
     uDeformDir: { value: new THREE.Vector2(0.8, -0.6) }, uDeformPhase: { value: 0 },
     uLightDir: { value: new THREE.Vector3(0, 1, 0) },
     uLightColor: { value: new THREE.Color(1, 1, 1) },

@@ -3,7 +3,7 @@
 // (src/dev/range-scene-review.html), so both draw the same mesh through the
 // same camera. `THREE` is the local bundle (src/vendor/range), passed in so
 // this module stays importable (and testable) without a GPU.
-import { buildTerrainGeometry, buildSurfaceTexture, BANDS } from './TerrainMesh.js';
+import { buildTerrainGeometry, buildSurfaceTexture, buildReceiverMask, BANDS } from './TerrainMesh.js';
 
 export const REVIEW_MODES = Object.freeze({ neutral: 0, silhouette: 1, depth: 2, normals: 3, edges: 4 });
 
@@ -74,6 +74,18 @@ const FRAG_REVIEW = /* glsl */`
 /** Upload the grid-resolution surface texture (normals/curvature/flow). */
 export function createSurfaceTexture(THREE, data) {
   const surface = buildSurfaceTexture(data);
+  const receiver = buildReceiverMask(surface);
+  const receiverTexture = new THREE.DataTexture(receiver.data, surface.width, surface.height, THREE.RedFormat, THREE.UnsignedByteType);
+  receiverTexture.colorSpace = THREE.NoColorSpace;
+  receiverTexture.wrapS = receiverTexture.wrapT = THREE.ClampToEdgeWrapping;
+  receiverTexture.magFilter = receiverTexture.minFilter = THREE.LinearFilter;
+  receiverTexture.generateMipmaps = false;
+  receiverTexture.flipY = false;
+  receiverTexture.needsUpdate = true;
+  receiverTexture.onUpdate = () => {
+    receiverTexture.image = { data: null, width: surface.width, height: surface.height };
+    receiverTexture.onUpdate = null;
+  };
   const tex = new THREE.DataTexture(surface.data, surface.width, surface.height, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.colorSpace = THREE.NoColorSpace;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -90,7 +102,7 @@ export function createSurfaceTexture(THREE, data) {
     tex.image = { data: null, width: surface.width, height: surface.height };
     tex.onUpdate = null;
   };
-  return { texture: tex, width: surface.width, height: surface.height, bytes: Math.round(surface.data.byteLength * 4 / 3) };
+  return { texture: tex, receiverTexture, width: surface.width, height: surface.height, bytes: Math.round(surface.data.byteLength * 4 / 3) + receiver.data.byteLength };
 }
 
 /** Uniforms every terrain material shares. */
@@ -98,6 +110,7 @@ export function terrainUniforms(THREE, data, surface) {
   const g = data.grid;
   return {
     uSurface: { value: surface.texture },
+    uReceiver: { value: surface.receiverTexture },
     uTexel: { value: new THREE.Vector2(1 / surface.width, 1 / surface.height) },
     // Extent between the first and last sample centres.
     uGridOrigin: { value: new THREE.Vector2(g.originM[0], g.originM[1]) },

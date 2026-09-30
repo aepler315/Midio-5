@@ -80,6 +80,6 @@ test('deformation is bounded, holds valleys still and is a pure function of time
   assert.ok(bound < 60, `macro geology kept: ${bound} m`);
   assert.deepEqual(rangeMusicState({ env: { groove: 1, sustain: 1, scaleMul: 1.22, kickMul: 1 }, tSec: 12, kickAgeMs: 50, kickAmp: 1 }), m);
   const reduced = rangeMusicState({ env: { groove: 1, sustain: 1, scaleMul: 1.22, kickMul: 1 }, tSec: 12, kickAgeMs: 50, kickAmp: 1, reducedFlash: true });
-  assert.ok(reduced.amplitudeM < m.amplitudeM);
+  assert.equal(reduced.amplitudeM, m.amplitudeM, 'reduced flash is a lighting policy');
   assert.equal(sceneDeformation(null, 0, 0, 0, range), 0);
 });

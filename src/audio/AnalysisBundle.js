@@ -32,13 +32,13 @@ import { EnergyCurves } from './EnergyCurves.js';
 import { BANDS } from './bands.js';
 import { Role } from '../core/NoteEvent.js';
 import { Lane } from '../core/Casting.js';
-import { buildSongProfile, snapshotSongProfile, PROFILE_VERSION } from './SongProfile.js';
+import { buildSongProfile, snapshotSongProfile, PROFILE_VERSION, validSongProfileSnapshot } from './SongProfile.js';
 
 /** Bump when the shape changes incompatibly. `unpackBundle` refuses a
  *  version it does not know rather than misreading it, because a bundle
  *  silently decoded under the wrong layout produces a show that is subtly,
  *  inexplicably wrong instead of an error anyone can act on. */
-export const BUNDLE_VERSION = 3;
+export const BUNDLE_VERSION = 4;
 
 const ROLES = [Role.MELODY, Role.RHYTHM, Role.BASS, Role.PAD];
 const LANES = [null, Lane.MIDASUS, Lane.MIDIO, Lane.BROSHI];
@@ -147,6 +147,8 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
     durationMs: data.durationMs || 0,
     bpm: data.bpm || 0,
     beatPeriodMs: data.beatPeriodMs || 0,
+    firstBarMs: data.firstBarMs ?? data.barGrid?.[0]?.ms ?? 0,
+    localTempo: data.localTempo || [],
     confidence: data.confidence ?? 0,
     freeTime: !!data.freeTime,
     // Restoring only bar times used to silently turn a detected 3/4 audio
@@ -173,13 +175,14 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
     structure: data.structure
       ? {
         boundariesMs: packF32(data.structure.boundariesMs || []),
-        boundaryStrengths: packF32(data.structure.boundaryStrengths || []),
+        boundaryStrengths: packF32(data.structure.boundaryStrengths || (data.structure.boundariesMs || []).map(() => 0)),
         fineBoundariesMs: packF32(data.structure.fineBoundariesMs || []),
         fineBoundaryStrengths: packF32(
           data.structure.fineBoundaryEvidence
             ? data.structure.fineBoundaryEvidence.map((b) => b?.strength ?? 0)
             : (data.structure.fineBoundariesMs || []).map(() => 0),
         ),
+        boundaryEvidence: data.structure.boundaryEvidence || null,
         labels: data.structure.labels || [],
         confidence: data.structure.confidence ?? 0,
       }
@@ -190,11 +193,17 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
         rateHz: curves.rateHz,
         n: curves.n,
         bands: curves.bands.map((b) => bytesToB64(quantize01(b))),
+        rmsBands: curves.rmsBands ? curves.rmsBands.map(packF32) : null,
+        hasPhysicalRms: !!curves.rmsBands,
+        units: { bands: 'normalized-activity', rmsBands: 'rms-amplitude', shares: 'squared-power' },
       }
       : null,
 
     notes: {
       count: n,
+      provenance: timeline.map(e => e.pitchProvenance || (e.src === 'midi' ? 'authored' : e.role === Role.RHYTHM ? 'unpitched' : 'inferred')),
+      pitchConfidence: timeline.map(e => e.pitchConfidence ?? (e.src === 'midi' ? 1 : 0)),
+      source: timeline.map(e => e.src || 'audio'),
       tMs: packF32(tMs),
       durMs: packF32(durMs),
       pitch: bytesToB64(pitch),
@@ -204,8 +213,9 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
       pan: bytesToB64(new Uint8Array(pan.buffer, pan.byteOffset, pan.length)),
       lane: bytesToB64(lane),
     },
-    // Optional. Old v3 bundles omit it and unpack still works; a mismatched
+    // Optional. Current bundles may omit it; a mismatched
     // profile version is dropped so the caller rebuilds from the analysis.
+    // Malformed snapshots at the current version reject the whole bundle.
     songProfile: (() => {
       try {
         const live = data.songProfile?.version === PROFILE_VERSION
@@ -250,6 +260,45 @@ export function packBundle(data, { fingerprint, name = '', identity = null } = {
 export function unpackBundle(bundle) {
   if (!bundle || bundle.v !== BUNDLE_VERSION) return null;
   try {
+    const encoded = (value, byteLength = null) => typeof value === 'string'
+      && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
+      && (byteLength == null || b64ToBytes(value).length === byteLength);
+    const ordered = (values, max, strict = false) => Array.from(values).every((v,i) => Number.isFinite(v) && v >= 0 && v <= max && (!i || (strict ? v > values[i-1] : v >= values[i-1])));
+    const duration = bundle.durationMs;
+    for (const snapshot of [bundle.songProfile,bundle.songIdentity?.songProfile]) {
+      if (snapshot?.version === PROFILE_VERSION && !validSongProfileSnapshot(snapshot)) return null;
+    }
+    if (!Number.isFinite(bundle.firstBarMs) || bundle.firstBarMs < 0 || bundle.firstBarMs > duration) return null;
+    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(bundle.bpm) || !Number.isFinite(bundle.beatPeriodMs) || !Number.isFinite(bundle.confidence)) return null;
+    if (!encoded(bundle.barGrid?.ms) || b64ToBytes(bundle.barGrid.ms).length % 4) return null;
+    const barCount = b64ToBytes(bundle.barGrid.ms).length / 4;
+    if (!encoded(bundle.barGrid.tick, barCount * 4) || !encoded(bundle.barGrid.numerator, barCount) || !encoded(bundle.barGrid.denominator, barCount)) return null;
+    if (!ordered(unpackF32(bundle.barGrid.ms), duration, true) || !ordered(unpackF32(bundle.barGrid.tick), Infinity, true)) return null;
+    if (bundle.localTempo && (!Array.isArray(bundle.localTempo) || !ordered(bundle.localTempo.map(t => t.tMs), duration) || bundle.localTempo.some(t => !Number.isFinite(t.beatPeriodMs) || t.beatPeriodMs <= 0 || !Number.isFinite(t.confidence)))) return null;
+    if (bundle.tonalityTimeline && (!Array.isArray(bundle.tonalityTimeline) || !ordered(bundle.tonalityTimeline.map(k => k.tMs), duration) || bundle.tonalityTimeline.some(k => !Number.isFinite(k.tonic) || k.tonic < 0 || k.tonic > 11 || !['major','minor'].includes(k.mode) || !Number.isFinite(k.confidence)))) return null;
+    if (bundle.curves) {
+      const c = bundle.curves;
+      if (!Number.isFinite(c.rateHz) || c.rateHz <= 0 || !Number.isInteger(c.n) || c.n !== Math.max(2, Math.ceil(duration / 1000 * c.rateHz) + 1) || !Array.isArray(c.bands) || c.bands.length !== 7 || c.bands.some(b => !encoded(b,c.n))) return null;
+      if (typeof c.hasPhysicalRms !== 'boolean' || c.hasPhysicalRms !== !!c.rmsBands) return null;
+      if (c.rmsBands && (!Array.isArray(c.rmsBands) || c.rmsBands.length !== 7 || c.rmsBands.some(b => !encoded(b,c.n * 4) || Array.from(unpackF32(b)).some(v => !Number.isFinite(v) || v < 0)))) return null;
+    }
+    if (bundle.structure) {
+      const st = bundle.structure;
+      if (!encoded(st.boundariesMs) || b64ToBytes(st.boundariesMs).length % 4 || !encoded(st.fineBoundariesMs) || b64ToBytes(st.fineBoundariesMs).length % 4) return null;
+      const starts = unpackF32(st.boundariesMs), fine = unpackF32(st.fineBoundariesMs);
+      if (!starts.length || starts[0] !== 0 || !ordered(starts, duration, true) || starts.at(-1) >= duration || !ordered(fine, duration, true) || !Array.isArray(st.labels) || st.labels.length !== starts.length || st.labels.some(l => !['number','string'].includes(typeof l) || typeof l === 'number' && !Number.isFinite(l)) || !Number.isFinite(st.confidence)) return null;
+      if (!encoded(st.boundaryStrengths, starts.length * 4) || !encoded(st.fineBoundaryStrengths, fine.length * 4) || [...unpackF32(st.boundaryStrengths),...unpackF32(st.fineBoundaryStrengths)].some(v => !Number.isFinite(v) || v < 0 || v > 1)) return null;
+      if (st.boundaryEvidence && (!Array.isArray(st.boundaryEvidence) || st.boundaryEvidence.length !== starts.length || st.boundaryEvidence.some((e,i) => !Number.isFinite(e.timeMs) || Math.abs(e.timeMs - starts[i]) > .1 || !Number.isFinite(e.strength)))) return null;
+    }
+    const count = bundle.notes?.count;
+    if (!Number.isInteger(count) || count < 0) return null;
+    for (const field of ['tMs','durMs','pitch','vel','flags','channel','pan','lane']) {
+      if (!encoded(bundle.notes[field], count * (['tMs','durMs'].includes(field) ? 4 : 1))) return null;
+    }
+    if (!ordered(unpackF32(bundle.notes.tMs), duration) || Array.from(unpackF32(bundle.notes.durMs)).some(v => !Number.isFinite(v) || v < 0)) return null;
+    if (['provenance','pitchConfidence','source'].some(field => !Array.isArray(bundle.notes[field]) || bundle.notes[field].length !== count)) return null;
+    if (bundle.notes.provenance.some(p => !['authored','tracked','inferred','synthetic','unpitched'].includes(p)) || bundle.notes.pitchConfidence.some(c => !Number.isFinite(c) || c < 0 || c > 1) || bundle.notes.source.some(p => !['audio','midi'].includes(p))) return null;
+    if (Array.from(b64ToBytes(bundle.notes.flags)).some(f => (f & 0x7f) >= ROLES.length) || Array.from(b64ToBytes(bundle.notes.pitch)).some(p => p > 127) || Array.from(b64ToBytes(bundle.notes.lane)).some(l => l >= LANES.length)) return null;
     const barMs = unpackF32(bundle.barGrid?.ms || '');
     const barTicks = unpackF32(bundle.barGrid?.tick || '');
     const numerators = b64ToBytes(bundle.barGrid?.numerator || '');
@@ -272,6 +321,7 @@ export function unpackBundle(bundle) {
         for (let i = 0; i < out.length; i++) out[i] = (bytes[i] || 0) / 255;
         return out;
       });
+      energyCurves.rmsBands = bundle.curves.rmsBands ? bundle.curves.rmsBands.map(unpackF32) : null;
       energyCurves._calCache = new Map();
     }
 
@@ -296,13 +346,16 @@ export function unpackBundle(bundle) {
         tMs: tMs[i], durMs: durMs[i], pitch: pitch[i], vel: vel[i] / 255,
         role: ROLES[flags[i] & 0x7f] || Role.MELODY,
         kick: !!(flags[i] & 0x80),
-        src: 'audio', channel: channel[i], pan: (pan8 || 0) / 127, program: -1, lane: LANES[lane[i]] || null,
+        pitchProvenance: bundle.notes.provenance[i], pitchConfidence: bundle.notes.pitchConfidence[i],
+        src: bundle.notes.source[i], channel: channel[i], pan: (pan8 || 0) / 127, program: -1, lane: LANES[lane[i]] || null,
       };
     }
 
     return {
       timeline, barGrid,
       durationMs: bundle.durationMs || 0,
+      firstBarMs: bundle.firstBarMs ?? 0,
+      localTempo: bundle.localTempo || [],
       bpm: bundle.bpm || 0,
       beatPeriodMs: bundle.beatPeriodMs || 0,
       confidence: bundle.confidence ?? 0,
@@ -319,7 +372,7 @@ export function unpackBundle(bundle) {
           return {
             boundariesMs,
             boundaryStrengths,
-            boundaryEvidence: boundariesMs.map((timeMs, index) => ({
+            boundaryEvidence: bundle.structure.boundaryEvidence || boundariesMs.map((timeMs, index) => ({
               timeMs,
               strength: boundaryStrengths[index] ?? 0,
               source: index === 0 ? 'start' : 'ssm',

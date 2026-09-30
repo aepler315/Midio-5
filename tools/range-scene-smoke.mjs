@@ -311,7 +311,9 @@ async function suiteMotion(ctx) {
   const s = await openSong(browser, { url: args.url, wav, width: 1280, height: 720, params: { rangeRenderer: 'v2', rangeView: view } });
   // Software GL renders a 1280x720 frame in ~9 s (the cost lands at pixel
   // readback, not in the draw call), so the frame rate is an option.
-  const fps = Number(args.fps || 12), seconds = Number(args.seconds || 20), n = Math.round(fps * seconds);
+  const fps = Number(args.fps || 12), seconds = Number(args.seconds || 52), n = Math.round(fps * seconds);
+  assert.ok(Number.isInteger(fps) && fps > 0 && fps <= 60, '--fps must be an integer from 1 to 60');
+  assert.ok(seconds >= 48 && seconds <= 60, 'motion capture must include calm, hot and final calm (48-60 seconds)');
   const dir = path.join(out, 'motion-frames');
   await fs.rm(dir, { recursive: true, force: true });
   await fs.mkdir(dir, { recursive: true });
@@ -341,8 +343,11 @@ async function suiteMotion(ctx) {
   execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-framerate', String(fps), '-i', path.join(dir, 'f%05d.jpg'),
     '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', mp4]);
   report.motion.mp4 = path.relative(root, mp4);
-  // Stills: calm (from the sequence) and energetic (ahead on the clock).
+  // All three phases are included in the moving sequence.
   report.motion.calmStill = path.relative(root, path.join(dir, `f${String(10 * fps).padStart(5, '0')}.jpg`));
+  report.motion.finalCalmStill = path.relative(root, path.join(dir, `f${String(47 * fps).padStart(5, '0')}.jpg`));
+  assert.ok(report.motion.samples.some(x => x.t >= 21000 && x.t < 45000), 'energetic section captured');
+  assert.ok(report.motion.samples.some(x => x.t >= 45000), 'return to calm captured');
   const hot = await grab(32000);
   report.motion.energeticStill = path.relative(root, await writePng(out, `motion-${view}-32000-energetic.png`, hot.img));
   // One backward seek, to the sequence's 8 s frame.
@@ -355,6 +360,9 @@ async function suiteMotion(ctx) {
   }, seekT);
   const after = await grab(seekT);
   const seqFile = path.join(dir, `f${String(Math.round((seekT / 1000) * fps)).padStart(5, '0')}.jpg`);
+  const paused = await grab(seekT);
+  report.motion.pausedFrameEqual = sha256(Buffer.from(after.img, 'base64')) === sha256(Buffer.from(paused.img, 'base64'));
+  assert.ok(report.motion.pausedFrameEqual, 'held export time must render identical pixels');
   const afterPng = await writePng(out, `motion-${view}-after-seek-${seekT}.png`, after.img);
   const seqSample = report.motion.samples.find((x) => x.t === seekT);
   report.motion.backwardSeek = { fromMs: 32000, toMs: seekT, afterSeek: after.range, sequence: seqSample, ready: seek.ready,

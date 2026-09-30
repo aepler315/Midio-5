@@ -1,6 +1,7 @@
 // The unified event timeline (spec §0.3). MIDI and raw audio are both
-// adapters that emit these — nothing downstream knows or cares which
-// produced the show.
+// adapters emit the same shape. Musical evidence consumers retain source
+// and pitch provenance so inferred choreography never overrides authored
+// notes or measured recording chroma.
 //
 // @typedef {Object} NoteEvent
 // @property {number} tMs      absolute onset, milliseconds
@@ -10,6 +11,8 @@
 // @property {'MELODY'|'RHYTHM'|'BASS'|'PAD'} role
 // @property {boolean} kick    true -> may drive a Midio jump
 // @property {'midi'|'audio'} src
+// @property {'authored'|'tracked'|'inferred'|'synthetic'|'unpitched'} pitchProvenance
+// @property {number} pitchConfidence measured support 0..1; zero for placeholders
 // @property {number} channel  midi channel or band index
 // @property {number} pan      stereo placement, -1 (hard left) .. 1 (hard right), 0 = center
 // @property {number} program  GM instrument 0-127 from the source MIDI, -1 if unknown/non-MIDI
@@ -35,11 +38,13 @@ export const GM_DRUM = Object.freeze({
 
 /** @returns {NoteEvent} */
 export function makeNoteEvent({
-  tMs, durMs = 90, pitch, vel, role, kick = false, src, channel = 0, pan = 0, program = -1, lane = null,
+  tMs, durMs = 90, pitch, vel, role, kick = false, src, channel = 0, pan = 0, program = -1, lane = null, pitchProvenance = null, pitchConfidence = null,
 }) {
   return {
     tMs, durMs, pitch, vel: Math.max(0, Math.min(1, vel)), role, kick, src, channel,
     pan: Math.max(-1, Math.min(1, pan)), program, lane,
+    pitchProvenance: pitchProvenance ?? (src === 'midi' ? 'authored' : role === Role.RHYTHM ? 'unpitched' : 'inferred'),
+    pitchConfidence: pitchConfidence ?? (src === 'midi' ? 1 : 0),
   };
 }
 

@@ -37,8 +37,9 @@ function polygonBox(poly) {
 export class GroundResponse {
   constructor() { this.disposed = false; }
 
-  draw(ctx, { receivers, lights = [], nowMs = 0, hits = [], reducedFlash = false, quality = 0 } = {}) {
+  draw(ctx, { receivers, lights = [], nowMs = 0, hits = [], reducedFlash = false, reducedMotion = false, quality = 0 } = {}) {
     if (this.disposed || quality >= 6 || !receivers) return;
+    if (reducedMotion) hits = [];
     const { wetMasks = [], litEdges = [] } = receivers;
     if ((!wetMasks.length && !litEdges.length) || (!lights.length && !hits.length)) return;
     ctx.save();
@@ -77,7 +78,7 @@ export class GroundResponse {
       for (const hit of hits.slice(0, 2)) {
         const age = (nowMs - hit.tMs) / 1000;
         if (age < 0 || age > 2) continue;
-        const opacity = Math.min(.07, Math.exp(-age / .45) * .07 * maskAlpha
+        const opacity = Math.min(.07, Math.exp(-age / .45) * .07 * maskAlpha * Math.min(1, Math.max(0, hit.strength ?? 1))
           * (reducedFlash ? .35 : 1));
         if (opacity < .003) continue;
         ctx.strokeStyle = `rgba(212,229,224,${opacity.toFixed(3)})`;

@@ -45,7 +45,7 @@ import { DrawErrorLog } from './render/DrawErrorLog.js';
 import { ROLE_LOW, ROLE_HIGH, GrooveFingerprint } from './sim/GrooveFingerprint.js';
 import { generateCustomBiomeFromMidi, rememberCustomBiome } from './world/BiomeImporter.js';
 import {
-  getReducedFlash, setReducedFlash, getLyricsDisabled, setLyricsDisabled,
+  getReducedFlash, setReducedFlash, getReducedMotion, setReducedMotion, getLyricsDisabled, setLyricsDisabled,
   getBtLatencyTrimMs, setBtLatencyTrimMs, BT_LATENCY_TRIM_MS,
   getStoredGroove, setStoredGroove,
 } from './ui/Accessibility.js';
@@ -286,6 +286,20 @@ let rafHandle = null; // tracks the pending frame() call so a mid-song file
                        // second one alongside it
 let fontModalView = 'list'; // 'list' (visible fonts, click-to-hide) | 'hidden' (hidden fonts, click-to-unhide)
 let reducedFlash = getReducedFlash(); // The Reel (Movement VI): persisted accessibility toggle
+let reducedMotion = getReducedMotion();
+const reducedMotionBtn = document.getElementById('reducedMotionBtn');
+function syncMotionButton() {
+  if (!reducedMotionBtn) return;
+  reducedMotionBtn.textContent = `Reduced motion: ${reducedMotion ? 'on' : 'off'}`;
+  reducedMotionBtn.setAttribute('aria-pressed', String(reducedMotion));
+}
+syncMotionButton();
+reducedMotionBtn?.addEventListener('click', () => {
+  reducedMotion = !reducedMotion;
+  setReducedMotion(reducedMotion);
+  sim?.setReducedMotion(reducedMotion);
+  syncMotionButton();
+});
 let lyricsDisabled = getLyricsDisabled(); // "No lyrics": persisted opt-out from the lyric fetch/prompt
 let btLatencyTrimMs = getBtLatencyTrimMs(); // manual Bluetooth output-latency correction, player-entered ms; 0 = off
 /** Derives that trim from tapping during a Sync pass. See SyncCalibrator.js:
@@ -1716,7 +1730,7 @@ function startTimeline(timelineData, extra = {}) {
     startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode: captureModeFlag = false,
     exportMode: exportModeFlag = false, exportSize = null, keepAudio = false,
   } = extra;
-  lastStartExtra = { ...extra, keepAudio: false, startAtMs: 0, startAtWallMs: 0 };
+  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0 };
   const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
   const exportMode = !!(exportModeFlag || fromUrl);
   if (exportMode) {
@@ -1817,6 +1831,7 @@ function startTimeline(timelineData, extra = {}) {
       terrainProfiles: timelineData.terrain?.profiles || null,
       songTerrain: timelineData.terrain || null,
       residency: sharedResidency(),
+      chapterState: extra.chapterState || (timelineData.chapterState?.seed === pinned ? timelineData.chapterState : null),
     });
   } catch (err) {
     console.error('[world build failed]', err);
@@ -1827,6 +1842,9 @@ function startTimeline(timelineData, extra = {}) {
   }
   sim.audioOverview = timelineData.audioOverview || null;
   sim.analysisOpening = timelineData.opening || null;
+  if (sim.biomes.chapterPlan) timelineData.chapterState = {
+    seed: sim.songSeed, previous: sim.biomes.chapterPlan, committedThroughMs: timelineData.durationMs,
+  };
   lastSongSeed = sim.songSeed;
   setSeedInput(sim.songSeed);
   sim.perf = perfGovernor;
@@ -1834,6 +1852,7 @@ function startTimeline(timelineData, extra = {}) {
   // that hitch vote on the shed level -- see PerfGovernor.WARMUP_MS.
   perfGovernor.beginWarmup(performance.now());
   sim.setReducedFlash(reducedFlash);
+  sim.setReducedMotion(reducedMotion);
   sim.setVisualStyle(visualStyle);
   // Prime one sim step so BiomeManager/update dials (haze, calm, etc.) are
   // initialized before the first paint — a zero-dt first rAF used to draw
@@ -3554,6 +3573,7 @@ function adoptFullAnalysisLive(data) {
     keepAudio: true,
     preservePause: wasPaused,
     fitDiagnostic: sim.fitDiagnostic,
+    chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs },
   });
   if (!running || !sim) return;
   if (wasPaused) { paused = true; updatePauseButtonUI(); }

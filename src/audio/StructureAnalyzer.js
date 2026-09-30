@@ -28,6 +28,8 @@
 // semitone energies fold straight into chroma. Pure and DOM-free -- it takes
 // plain arrays, so it is directly testable.
 import { SEMITONE_LO } from './PitchTracker.js';
+import { throwIfAborted } from './loadLimits.js';
+import { createYielder } from '../utils/yieldToMain.js';
 import { clamp, clamp01 } from '../utils/math.js';
 
 // Checkerboard kernel half-width, in analysis steps (bars, or ~2s slices when
@@ -164,8 +166,11 @@ function averageBands(energyCurves, from, to, samples = TIMBRE_SAMPLES_PER_POINT
   const span = Math.max(1, to - from);
   for (let s = 0; s < n; s++) {
     const t = from + ((s + 0.5) / n) * span;
-    const v = energyCurves.sampleAll(t);
-    for (let k = 0; k < 7; k++) acc[k] += v[k];
+    const physical = energyCurves.rmsBands && typeof energyCurves.sampleRms === 'function';
+    const v = physical ? null : energyCurves.sampleAll(t);
+    // Measured filter-bank power is comparable across bands. Activity is
+    // retained only for MIDI/generated curves with no physical envelope.
+    for (let k = 0; k < 7; k++) acc[k] += physical ? energyCurves.sampleRms(k,t) ** 2 : v[k];
   }
   for (let k = 0; k < 7; k++) acc[k] /= n;
   return acc;
@@ -190,7 +195,7 @@ const DYNAMICS_SCALE = Math.sqrt(DYNAMICS_WEIGHT);
  * falls off monotonically as the levels diverge, with no wraparound to
  * worry about across so narrow a range.
  */
-function buildFeatures(pointsMs, features, energyCurves, durationMs = null) {
+function* featureSteps(pointsMs, features, energyCurves, durationMs = null) {
   const rawLevels = new Float64Array(pointsMs.length);
   const timbreDirs = [];
   let maxLevel = 0;
@@ -203,6 +208,7 @@ function buildFeatures(pointsMs, features, energyCurves, durationMs = null) {
     rawLevels[i] = level;
     if (level > maxLevel) maxLevel = level;
     timbreDirs.push(l2normalize(raw));
+    yield;
   }
 
   const out = [];
@@ -222,10 +228,22 @@ function buildFeatures(pointsMs, features, energyCurves, durationMs = null) {
     for (let k = 0; k < 7; k++) v[12 + k] = timbre[k] * TIMBRE_SCALE;
     v[19] = Math.cos(angle) * dynScale;
     v[20] = Math.sin(angle) * dynScale;
+    // Zero harmonic/timbre content is unknown, including a silent frame
+    // whose dynamics encoding otherwise contributes cos(0).
+    if (!chroma.some(x => x > 0) && !timbre.some(x => x > 0)) v.fill(0);
     out.push(v);
+    yield;
   }
   return out;
 }
+
+function finishSteps(iterator) {
+  let step;
+  do { step = iterator.next(); } while (!step.done);
+  return step.value;
+}
+
+function buildFeatures(...args) { return finishSteps(featureSteps(...args)); }
 
 /** Cosine similarity with the chroma block circularly rotated before it is
  * compared. The other feature blocks (timbre and dynamics) stay fixed. */
@@ -251,12 +269,12 @@ function transpositionInvariantCosine(a, b, chromaLength) {
  * while repeat labelling may ask for an octave/transposition-invariant chroma
  * comparison so a returned chorus shifted up a key still keeps its identity.
  */
-export function selfSimilarity(feats, { chromaLength = 0, transpositionInvariant = false } = {}) {
+function* similaritySteps(feats, { chromaLength = 0, transpositionInvariant = false } = {}) {
   const n = feats.length;
   const S = Array.from({ length: n }, () => new Float64Array(n));
   const rotateChroma = transpositionInvariant && chromaLength > 1;
   for (let i = 0; i < n; i++) {
-    S[i][i] = 1;
+    S[i][i] = feats[i].some(x => x !== 0) ? 1 : 0;
     for (let j = i + 1; j < n; j++) {
       const s = rotateChroma
         ? transpositionInvariantCosine(feats[i], feats[j], chromaLength)
@@ -264,9 +282,12 @@ export function selfSimilarity(feats, { chromaLength = 0, transpositionInvariant
       S[i][j] = s;
       S[j][i] = s;
     }
+    yield;
   }
   return S;
 }
+
+export function selfSimilarity(...args) { return finishSteps(similaritySteps(...args)); }
 
 /**
  * Foote novelty: slide a Gaussian-tapered checkerboard kernel down the SSM's
@@ -489,11 +510,12 @@ export function repeatThresholdFor(pairs) {
 export function analyzeStructure({
   pointsMs, pitchFeatures, energyCurves, durationMs,
   minGapMs = 11000, minGapPoints = null, maxCuts = 12,
+  preparedFeatures = null, preparedMatrices = null,
 } = {}) {
   if (!Array.isArray(pointsMs) || pointsMs.length < MIN_POINTS) return null;
   if (!pitchFeatures || !pitchFeatures.frames || pitchFeatures.frames.length === 0) return null;
 
-  const feats = buildFeatures(pointsMs, pitchFeatures, energyCurves, durationMs);
+  const feats = preparedFeatures || buildFeatures(pointsMs, pitchFeatures, energyCurves, durationMs);
   // Degenerate input (digital silence, a single sustained tone) produces
   // all-zero feature vectors. Their SSM is an identity matrix, and running a
   // checkerboard kernel over an identity matrix yields a perfectly real-
@@ -505,8 +527,8 @@ export function analyzeStructure({
   // Keep absolute harmony for boundaries: a real modulation can be a section
   // turn. Repeats use a second, transposition-invariant SSM so the same
   // chorus shifted up a key keeps its label instead of becoming a new biome.
-  const boundaryS = selfSimilarity(feats);
-  const repeatS = selfSimilarity(feats, { chromaLength: 12, transpositionInvariant: true });
+  const boundaryS = preparedMatrices?.boundary || selfSimilarity(feats);
+  const repeatS = preparedMatrices?.repeat || selfSimilarity(feats, { chromaLength: 12, transpositionInvariant: true });
   const novelty = footeNovelty(boundaryS);
 
   const peak = Math.max(...novelty);
@@ -539,7 +561,7 @@ export function analyzeStructure({
   const labels = labelByRepetition(repeatS, cutIndices);
 
   const boundariesMs = [];
-  for (let i = 0; i < cutIndices.length - 1; i++) boundariesMs.push(pointsMs[cutIndices[i]]);
+  for (let i = 0; i < cutIndices.length - 1; i++) boundariesMs.push(i === 0 ? 0 : pointsMs[cutIndices[i]]);
 
   // Confidence: how far the chosen peaks stand above the typical novelty. A
   // through-composed piece with no repeats and no clear boundaries scores
@@ -567,6 +589,9 @@ export function analyzeStructure({
     strength: boundaryStrengths[index] ?? 0,
     source: index === 0 ? 'start' : 'ssm',
     scale: 'coarse',
+    ...localBoundaryEvidence(feats, pointsMs, cutIndices[index], durationMs, {
+      startIndex: cutIndices[Math.max(0,index-1)], endIndex: cutIndices[index+1],
+    }),
   }));
   const fineBoundaryEvidence = findFineBoundaries(boundaryS, pointsMs, cutIndices, minGapIdx, lastIdx);
   const fineBoundariesMs = fineBoundaryEvidence.map((b) => b.timeMs);
@@ -611,4 +636,88 @@ function findFineBoundaries(S, pointsMs, cutIndices, minGapIdx, lastIdx) {
     source: 'ssm',
     scale: 'fine',
   }));
+}
+
+/** Separate musical groups around a boundary; silence is missing evidence.
+ * Compare four intervals on each side, and require the changed regime to
+ * persist. Dynamics supports mood but cannot duplicate timbral evidence. */
+function localBoundaryEvidence(feats, pointsMs, index, durationMs, { startIndex = 0, endIndex = feats.length } = {}) {
+  const empty = { confidence: 0, groups: { harmony: 0, timbre: 0, dynamics: 0 }, persistenceMs: 0, beforePersistenceMs: 0 };
+  if (index < 0 || index >= feats.length) return empty;
+  const mean = (lo,hi) => {
+    const v = new Float64Array(21); let n = 0;
+    for (let i=lo;i<hi;i++) {
+      if (!feats[i].some(x => x > 0)) continue;
+      for (let k=0;k<v.length;k++) v[k] += feats[i][k];
+      n++;
+    }
+    return n ? Array.from(v,x => x/n) : null;
+  };
+  const before = mean(Math.max(startIndex,index-4),index), after = mean(index,Math.min(endIndex,index+4));
+  if (index === 0 && after) return { ...empty, afterDescriptors: { harmony: after.slice(0,12), timbre: after.slice(12,19), dynamics: after.slice(19,21) } };
+  if (!before || !after) return empty;
+  const difference = (a,b,lo,hi) => {
+    const av=a.slice(lo,hi), bv=b.slice(lo,hi);
+    if (!av.some(x=>x>0) || !bv.some(x=>x>0)) return 0;
+    return clamp01(1-cosine(av,bv));
+  };
+  const groups = { harmony: difference(before,after,0,12), timbre: difference(before,after,12,19), dynamics: difference(before,after,19,21) };
+  const strong = Object.entries(groups).filter(([,v])=>v>=.3);
+  if (!strong.length) return { ...empty, groups };
+  const slots = { harmony:[0,12], timbre:[12,19], dynamics:[19,21] };
+  let end=index;
+  for (;end<feats.length;end++) {
+    const v=feats[end];
+    if (!v.some(x=>x>0)) break;
+    if (strong.some(([key]) => difference(before,v,...slots[key]) < .3 || difference(after,v,...slots[key]) > .25)) break;
+  }
+  const persistenceMs = Math.max(0,(pointsMs[end] ?? durationMs)-pointsMs[index]);
+  // Local validity and separation own this confidence; recurrence is not
+  // required of a new musical regime, and peak height alone is not trust.
+  let start=index-1;
+  for (;start>=0;start--) {
+    const v=feats[start];
+    if (!v.some(x=>x>0)) break;
+    if (strong.some(([key]) => difference(after,v,...slots[key]) < .3 || difference(before,v,...slots[key]) > .25)) break;
+  }
+  const beforePersistenceMs = Math.max(0,pointsMs[index]-pointsMs[start+1]);
+  const descriptors = {
+    before: { harmony: before.slice(0,12), timbre: before.slice(12,19), dynamics: before.slice(19,21) },
+    after: { harmony: after.slice(0,12), timbre: after.slice(12,19), dynamics: after.slice(19,21) },
+  };
+  const confidence = strong.length >= 2 ? clamp01(.65 + .35 * Math.min(...strong.map(([,v])=>v))) : .4;
+  return { confidence, groups, persistenceMs, beforePersistenceMs, beforeDescriptors: descriptors.before, afterDescriptors: descriptors.after };
+}
+
+// Cap quadratic work/memory in both worker and fallback. Features retain
+// song coverage; minGapPoints is rescaled with the grid, preserving pacing.
+export const MAX_STRUCTURE_POINTS = 192;
+export function boundedStructureInput(input) {
+  const original = input.pointsMs || [];
+  if (original.length <= MAX_STRUCTURE_POINTS) return input;
+  const pointsMs = Array.from({length:MAX_STRUCTURE_POINTS}, (_,i) => original[Math.round(i*(original.length-1)/(MAX_STRUCTURE_POINTS-1))]);
+  return { ...input, pointsMs, minGapPoints: Number.isFinite(input.minGapPoints) ? Math.max(1,Math.round(input.minGapPoints * pointsMs.length / original.length)) : null };
+}
+
+async function finishAsync(iterator, signal, maybeYield) {
+  let step;
+  do {
+    throwIfAborted(signal);
+    step=iterator.next();
+    await maybeYield();
+  } while (!step.done);
+  return step.value;
+}
+
+/** Worker-free fallback: yield between feature/matrix rows. The remaining
+ * novelty/repetition work is bounded by MAX_STRUCTURE_POINTS and maxCuts. */
+export async function analyzeStructureAsync(input, { signal = null, maybeYield = createYielder(4) } = {}) {
+  throwIfAborted(signal);
+  const bounded=boundedStructureInput(input);
+  if (!bounded.pointsMs?.length || !bounded.pitchFeatures?.frames?.length || bounded.pointsMs.length < MIN_POINTS) return null;
+  const feats=await finishAsync(featureSteps(bounded.pointsMs,bounded.pitchFeatures,bounded.energyCurves,bounded.durationMs),signal,maybeYield);
+  const boundary=await finishAsync(similaritySteps(feats),signal,maybeYield);
+  const repeat=await finishAsync(similaritySteps(feats,{chromaLength:12,transpositionInvariant:true}),signal,maybeYield);
+  throwIfAborted(signal);
+  return analyzeStructure({...bounded,preparedFeatures:feats,preparedMatrices:{boundary,repeat}});
 }
