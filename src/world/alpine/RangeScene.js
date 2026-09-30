@@ -504,21 +504,25 @@ export class RangeScene {
     const night = frame.light.night01;
     const strength = c.body ? c.intensity : 0;
     hexToLinear(THREE, c.colorHex, u.uLightColor.value).multiplyScalar(strength);
+    // Receiver fill fades once; sky radiance also feeds air and water's
+    // reflection, so it keeps the frame's authored environment colors.
+    u.uAmbientScale.value = 2.5 * (frame.light.ambientMultiplier ?? 1);
+    u.uSolarTransmission.value = c.body === 'sun' && strength > 0 ? .18 : 0;
     if (frame.light.sky) {
-      hexToLinear(THREE, frame.light.sky.top, u.uSkyZenith.value).multiplyScalar(0.9 * (frame.light.ambientMultiplier ?? 1));
-      hexToLinear(THREE, frame.light.sky.horizon, u.uSkyHorizon.value).multiplyScalar(0.9 * (frame.light.ambientMultiplier ?? 1));
+      hexToLinear(THREE, frame.light.sky.top, u.uSkyZenith.value).multiplyScalar(0.9);
+      hexToLinear(THREE, frame.light.sky.horizon, u.uSkyHorizon.value).multiplyScalar(0.9);
       hexToLinear(THREE, frame.light.sky.air || frame.light.sky.horizon, u.uAirColor.value);
     }
     if (frame.motif) {
       // A restrained, steady colour recipe marks repeated verses/choruses.
-      // It acts through the shared local light, so forest and water inherit
-      // it without changing geological material masks or sky ownership.
+      // Environment tint stays separate from the resolved physical body
+      // color. Air, mist and reflected sky share the same recipe.
       const tone = new THREE.Color().setHSL(frame.motif.hueDeg / 360, .65, .65);
       const amount = frame.motif.intensity01 * (frame.reducedFlash ? .5 : 1);
       const tint = new THREE.Color(1, 1, 1).lerp(tone, amount);
-      u.uLightColor.value.multiply(tint);
       u.uSkyZenith.value.multiply(tint);
       u.uSkyHorizon.value.multiply(tint);
+      u.uAirColor.value.multiply(tint);
     }
     u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night) * (p.rules?.airScale ?? RULE_DEFAULTS.airScale);
     // Valley mist: anchored at the view's water level, thicker in calm.

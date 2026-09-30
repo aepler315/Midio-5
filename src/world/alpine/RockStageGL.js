@@ -101,6 +101,7 @@ const FRAG = /* glsl */`
 
 const WATER_FRAG = /* glsl */`
   precision highp float;
+  uniform vec3 uKeyDir; uniform vec3 uKeyColor;
   uniform vec3 uSkyZenith; uniform vec3 uSkyHorizon; uniform vec3 pWater; uniform vec3 pWaterDeep;
   uniform float uExposure; uniform float uTime;
   uniform vec2 uNarrativeStage;
@@ -119,6 +120,14 @@ const WATER_FRAG = /* glsl */`
     // The sky it mirrors is seen at a grazing angle and darkened by the
     // shallow bed; kept below the lit rock so pools read as water, not glare.
     vec3 c = mix(pWaterDeep, sky * 0.1, 0.5);
+    // Rough shallow water at the stage's grazing view. The same resolved
+    // key used by the slabs supplies direction and visibility-weighted
+    // radiance. The water mesh clips this response to real pool polygons.
+    vec3 waterNormal = normalize(vec3(0.16 * cos(vXY.x * 0.09 + uTime * 1.3), 1.0,
+      0.2 * sin(vXY.y * 0.4 - uTime * 0.9)));
+    vec3 halfVector = normalize(uKeyDir + normalize(vec3(0.0, 0.25, 1.0)));
+    float glint = pow(max(dot(waterNormal, halfVector), 0.0), 24.0);
+    c += uKeyColor * glint * 1.2;
     for (int i = 0; i < 3; i++) {
       vec4 e = uEmitters[i];
       if (e.w <= 0.0) continue;
@@ -249,6 +258,9 @@ export class RockStageGL {
     if (lightDir) u.uKeyDir.value.copy(lightDir);
     if (skyZenith) u.uSkyZenith.value.copy(skyZenith);
     if (skyHorizon) u.uSkyHorizon.value.copy(skyHorizon);
+    // Stage legibility is independently calibrated: keep sheltered fill
+    // at night while the open terrain uses the full ambient reduction.
+    u.uAmbientScale.value = .45 * (.65 + .35 * (frame.light?.ambientMultiplier ?? 1));
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     this.bytes = stage.positions.byteLength * 3 + stage.indices.byteLength + (wp.length + wa.length + wc.length) * 4;
   }

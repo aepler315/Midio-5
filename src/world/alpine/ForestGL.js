@@ -84,6 +84,7 @@ const SHADE = /* glsl */`
   uniform float uAirDensity;
   uniform float uAirHeightFalloff;
   uniform float uAmbientScale;
+  uniform float uSolarTransmission;
   uniform float uExposure;
   uniform vec3 pForestNear;
   uniform vec3 pForestFar;
@@ -102,6 +103,15 @@ const SHADE = /* glsl */`
     float key = max((dot(n, uLightDir) + wrap) / (1.0 + wrap), 0.0);
     vec3 hemi = mix(uSkyHorizon * 0.55, uSkyZenith, 0.5 + 0.5 * n.y) * uAmbientScale;
     vec3 lit = base * (hemi * (0.55 + 0.45 * core) + uLightColor * key);
+    // Thin crown edges transmit a solar backlight. Both real conifers and
+    // alpha-tested silhouettes use their own normal/core with this shared
+    // response; key radiance already contains visibility exactly once.
+    vec3 toViewer = normalize(uCameraPos - world);
+    float backlight = pow(max(dot(-uLightDir, toViewer), 0.0), 2.0);
+    float backface = max(-dot(n, uLightDir), 0.0);
+    float crown = smoothstep(0.15, 0.8, vLocal.y);
+    float thin = mix(0.35, 1.0, 1.0 - core);
+    lit += base * uLightColor * (uSolarTransmission * backlight * backface * crown * thin);
     float heightTerm = exp(-max(0.0, world.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
     float air = 1.0 - exp(-dist * uAirDensity * (0.35 + 0.65 * heightTerm));
     vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, world));
