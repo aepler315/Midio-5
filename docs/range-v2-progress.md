@@ -200,6 +200,17 @@ Brainstorm section 6, the "presence ladder" Ashton chose: light is the floor, co
 - **Peaks.** `compileActorScore` finds each lane's own swells (its 1.5 s average crossing from the song's median 65% of the way to its 97th percentile), none in the first 8 s and at most one per actor every 20 s. The swarm of 72 motes around the lantern then gathers into the actor's outline (points along `meshes.js` edges) over 0.8 s, holds 1.5-4 s and dissolves over 2.5 s. `biomes.actorPeakOverride` holds a peak for review.
 - Evidence: `teton-jackson-lake-cast-45s.jpg` (pilot song, no peak), `teton-jackson-lake-cast-peak.jpg`, `muncho-lake-south-cast-peak.jpg` (peak held, figures reflected), `tombstone-north-klondike-cast-gathering.jpg` (peak at 0.6, no lake).
 
+## One day per song (2026-10-01)
+
+Ashton asked for songs to open just before sunrise in near-total darkness, with a dramatic sunrise, and to end on a dramatic sunset.
+
+- **Clock.** `songSkyClock` (DayNight.js) replaces the repeating day/night cycle for any song of 30 s or more. It runs 7% of the song (9-22 s) in the dark before dawn, the sun's arc for the body of the song (lingering near the horizon: its pace runs at 1 - 0.6 cos 2 pi u of the mean), sunset 6% (8-18 s) before the end, then afterglow into dark with no moon. Every `cycle` consumer takes the clock in place of a length, so the legacy painters follow the same day.
+- **Darkness.** A night with no moon up (`darkness01`) cuts 80% of the night fill and pulls every Range sky stop, the air and the haze 85% toward space; the crest light (alpenglow) dims by 75%.
+- **Sunrise and sunset.** `twilightAt` burns from just before the sun crosses the horizon until it is well up: dawn in gold and rose, dusk in red-orange and magenta, as a glow around the sun in the 2D sky and as a tint on the sky stops and air (so distant ranges take the same light). The sun's own colour sinks toward red below altitude 0.35, which lights the peaks in alpenglow.
+- **Day.** With the sun high the Range sky opens 60% toward a clear blue.
+- **The cast.** The actors' light is strongest in the dark (gain x1.6 at night, x0.45 at noon) and the lanterns soften by day. Broshi starts from the far end of his route so he and Midio do not move as one, and Midasus has her three baby stars, small lights trailing her.
+- Evidence (Teton, 90 s song): `teton-jackson-lake-day-{02,09,13,45,80,83,89}s.jpg`.
+
 ## Task 16: resource, lifecycle and performance
 
 ### Fixes found by exercising real (unforced) play

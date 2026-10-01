@@ -62,7 +62,7 @@ import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO, scatterBiomeLayers } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
-import { cycleMs as dayNightCycleMs, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
+import { cycleMs as dayNightCycleMs, songSkyClock, twilightAt, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
 import { celestialApproach, approachScale } from './CelestialApproach.js';
@@ -88,7 +88,7 @@ import { capFlashAlpha } from '../ui/Accessibility.js';
 import { superformula, ModalRing } from '../render/oscillators.js';
 import { computeLight, groundGlowLights, CELESTIAL_DEFAULT_XFRAC } from '../render/LightField.js';
 import { clamp01, smoothstep, mulberry32, hashSeed, lerpHue, lerp } from '../utils/math.js';
-import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl } from '../utils/color.js';
+import { LerpCache, rotateHueHex, hexToRgb, rgbToHsl, hexLerp } from '../utils/color.js';
 import { spectralShiftDeg, easeSpectralShift } from '../render/spectral.js';
 import { Role } from '../core/NoteEvent.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
@@ -436,6 +436,8 @@ let BIOME_MANAGER_SERIAL = 0;
 // instead. Other worlds paint the director's kind as-is.
 // Crest light (_drawCrestLight): the band's nominal width, the factor it is
 // drawn reduced by, its blur at that reduced size, and its alpenglow tint.
+/** How much of the crest light a moonless night takes away. */
+const CREST_LIGHT_DARK_CUT = 0.75;
 const CREST_LIGHT_WIDTH = 46;
 const CREST_LIGHT_DOWNSCALE = 8;
 const CREST_LIGHT_BLUR_PX = 3;
@@ -468,7 +470,11 @@ export class BiomeManager {
     this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
-    this._dayNightCycleMs = dayNightCycleMs(this.durationMs);
+    // The sky's clock: one day across the song (dark before dawn, sunset at
+    // the end), or the repeating cycle for a song too short to hold one.
+    // Every `cycle` consumer (dayNight, cyclePhase01, celestial state)
+    // takes either.
+    this._dayNightCycleMs = songSkyClock(this.durationMs) || dayNightCycleMs(this.durationMs);
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.groundY = groundY;
@@ -2469,6 +2475,8 @@ export class BiomeManager {
     // the celestial itself, the mandala/light-rig anchor, and the ocean's
     // reflection glint, so everything tracks the same body.
     const dn = dayNight(this.tSec * 1000, this._dayNightCycleMs);
+    // Sunrise and sunset colour, for the Range's sky and air (rangeSkyState).
+    this._twilight = twilightAt(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
     const sunUp = dn.sunAlt > 0.001;
     const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
     // Cast shadow (Stage 5 of the mountain overhaul): a near range can only
@@ -3639,6 +3647,22 @@ export class BiomeManager {
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
       gradient.addColorStop(0, sky.top); gradient.addColorStop(.5, sky.mid); gradient.addColorStop(1, sky.horizon);
       ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // The sky burns brightest around the sun as it rises and sets.
+      const tw = this._twilight;
+      if (tw && tw.amount01 > 0.01) {
+        const x = tw.xFrac * canvas.width, y = canvas.height * OCEAN_HORIZON_FRAC;
+        const r = canvas.width * 0.7;
+        const glow = ctx.createRadialGradient(x, y, 0, x, y, r);
+        glow.addColorStop(0, tw.colors.glow);
+        glow.addColorStop(0.35, tw.colors.horizon);
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.55 * tw.amount01 * (this.reducedFlash ? 0.7 : 1);
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
       return;
     }
     // Water and vault ceilings retain local light effects, not astronomy.
@@ -5417,8 +5441,11 @@ export class BiomeManager {
     if (presence < 0.005) return;
     const activity = clamp01(this._eqSmoothed.reduce((sum, value) => sum + value, 0) / BAND_COUNT);
     // Fades in with the terrain it lands on while a scene is arriving.
+    // Alpenglow follows the day: faint in the moonless dark, and warmed
+    // into the sunrise or sunset's own colour while one burns.
+    const darkness = this.celestialState?.darkness01 ?? 0;
     const strength = presence * (0.55 + 0.45 * activity) * (this.reducedFlash ? 0.5 : 1)
-      * clamp01(mask.arrival ?? 1);
+      * clamp01(mask.arrival ?? 1) * (1 - CREST_LIGHT_DARK_CUT * darkness);
     if (strength < 0.005) return;
     const W = mask.width, H = mask.height;
     // The band is drawn small and blurred, then enlarged: a smooth falloff
@@ -5428,8 +5455,10 @@ export class BiomeManager {
     if (!buffers) return;
     const { light, band } = buffers;
     const bctx = band.getContext('2d');
-    const color = this.lerpCache.get(ensureMinLightness(
+    let color = this.lerpCache.get(ensureMinLightness(
       this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)), .72), ALPENGLOW, 0.5);
+    const tw = this._twilight;
+    if (tw?.amount01 > 0.01) color = hexLerp(color, tw.colors.glow, 0.7 * tw.amount01);
     const k = canvas.height / 720;
     bctx.setTransform(1, 0, 0, 1, 0, 0);
     bctx.filter = 'none';

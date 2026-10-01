@@ -9,6 +9,8 @@
 import { ACTOR_IDS, ACTOR_MOTES, ACTOR_OUTLINES } from './RangeActors.js';
 
 export const ACTOR_COUNT = 3;
+/** Small lights that follow an actor along its route. */
+export const ACTOR_COMPANIONS = Object.freeze({ midasus: 3 });
 
 /** Shared light, wake and parting uniforms (merged into the terrain's). */
 export function actorUniforms(THREE) {
@@ -181,6 +183,7 @@ export class ActorsGL {
     this.THREE = THREE;
     this.groups = {};
     this.uniforms = {};
+    this.companions = {};
     this._geometries = [];
     this._materials = [];
     const blend = {
@@ -222,6 +225,16 @@ export class ActorsGL {
       for (const m of [lantern, motes]) { m.frustumCulled = false; m.renderOrder = 3; this._materials.push(m.material); }
       const group = new THREE.Group();
       group.add(motes, lantern);
+      // Midasus's three baby stars: tiny lanterns trailing her.
+      this.companions[id] = Array.from({ length: ACTOR_COMPANIONS[id] || 0 }, () => {
+        const cu = { ...u, uCenter: { value: new THREE.Vector3() }, uMpp: { value: 1 }, uHaloPx: { value: 9 }, uGlow: { value: 0 } };
+        const m = new THREE.Mesh(quad, new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms: cu,
+          vertexShader: LANTERN_VERT, fragmentShader: LANTERN_FRAG, ...blend }));
+        m.frustumCulled = false; m.renderOrder = 3;
+        this._materials.push(m.material);
+        group.add(m);
+        return cu;
+      });
       group.visible = false;
       this.groups[id] = group;
       this.uniforms[id] = u;
