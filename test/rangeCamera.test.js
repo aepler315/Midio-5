@@ -1,0 +1,132 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  applyCameraMoves, cameraMoveKeys, rangeCameraMoveAt, RangeUserCamera,
+  NEUTRAL_MOVE, MOVE_LIMITS, MIN_MOVE_MS, USER_FX_MAX,
+} from '../src/world/alpine/RangeCamera.js';
+import { wheelZoomFactor } from '../src/ui/RangeZoomInput.js';
+import { cameraBasis, projectPoint } from '../src/world/terrain/SceneTravel.js';
+
+const SECTIONS = [0, 20000, 24000, 50000, 90000, 140000].map((startMs, i) => ({ startMs, relEnergy01: (i % 3) / 2 }));
+const DUR = 180000;
+const POSE = { eyeM: [0, 1500, 20000], targetM: [0, 2500, 0], fovYDeg: 35 };
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+test('moves start neutral, end on the wide risen finale, and stay inside their limits', () => {
+  const keys = cameraMoveKeys(SECTIONS, DUR, 7);
+  assert.deepEqual({ ...keys[0], tMs: 0 }, { tMs: 0, ...NEUTRAL_MOVE });
+  const last = keys.at(-1);
+  assert.equal(last.tMs, DUR);
+  assert.equal(last.kind, 'finale');
+  assert.equal(last.dolly, 0);
+  assert.ok(last.crane > 0);
+  for (const k of keys) {
+    for (const [name, [lo, hi]] of Object.entries(MOVE_LIMITS)) {
+      assert.ok(k[name] >= lo - 1e-9 && k[name] <= hi + 1e-9, `${name} ${k[name]} outside ${lo}..${hi}`);
+    }
+  }
+});
+
+test('a short section rides along with the move in progress', () => {
+  const keys = cameraMoveKeys(SECTIONS, DUR, 7);
+  for (let i = 1; i < keys.length; i++) assert.ok(keys[i].tMs - keys[i - 1].tMs >= MIN_MOVE_MS);
+  assert.ok(!keys.some((k) => k.tMs === 24000), 'the 4 s section at 20 s must not start its own move');
+});
+
+test('the move is a continuous pure function of heard time', () => {
+  const at = (t) => rangeCameraMoveAt({ timeMs: t, sections: SECTIONS, durationMs: DUR, seed: 7 });
+  assert.deepEqual(at(61234), at(61234));
+  for (let t = 0; t < DUR; t += 250) {
+    const a = at(t), b = at(t + 250);
+    for (const k of ['dolly', 'yaw', 'crane', 'truck']) assert.ok(Math.abs(a[k] - b[k]) < 0.004, `${k} jumps at ${t}`);
+  }
+});
+
+test('reduced motion and previews hold the authored camera', () => {
+  assert.equal(rangeCameraMoveAt({ timeMs: 50000, sections: SECTIONS, durationMs: DUR, reducedMotion: true }), NEUTRAL_MOVE);
+  assert.equal(rangeCameraMoveAt({ timeMs: 50000, sections: SECTIONS, durationMs: DUR, preview: true }), NEUTRAL_MOVE);
+  assert.equal(rangeCameraMoveAt({ timeMs: 50000, sections: SECTIONS, durationMs: 0 }), NEUTRAL_MOVE);
+});
+
+test('a neutral move and no zoom leave the rail pose alone', () => {
+  const out = applyCameraMoves(POSE, NEUTRAL_MOVE, null);
+  assert.deepEqual(out.eyeM, POSE.eyeM);
+  assert.deepEqual(out.targetM, POSE.targetM);
+});
+
+test('a push brings the eye toward the target; an orbit keeps its distance', () => {
+  const D = dist(POSE.eyeM, POSE.targetM);
+  const push = applyCameraMoves(POSE, { dolly: 0.1, yaw: 0, crane: 0, truck: 0 }, null);
+  assert.ok(Math.abs(dist(push.eyeM, push.targetM) - 0.9 * D) < 1e-6);
+  const orbit = applyCameraMoves(POSE, { dolly: 0, yaw: 0.05, crane: 0, truck: 0 }, null);
+  assert.ok(Math.abs(dist(orbit.eyeM, orbit.targetM) - D) < 1e-6);
+  assert.notEqual(orbit.eyeM[0], POSE.eyeM[0]);
+});
+
+test('a move never sinks the eye into a hillside', () => {
+  // Open valley under the rail, a ridge just beside it.
+  const ridge = (x) => (Math.abs(x) > 100 ? 1480 : 1000);
+  const out = applyCameraMoves(POSE, { dolly: 0, yaw: 0, crane: 0, truck: 0.02 }, null, { heightAt: ridge });
+  assert.ok(Math.abs(out.eyeM[0]) > 100);
+  assert.ok(out.eyeM[1] >= 1480 + 80 - 1e-9);
+});
+
+test('the zoom flies along the pointer ray, so the point under the pointer stays put', () => {
+  const cam = new RangeUserCamera({ now: () => 0 });
+  const tanY = Math.tan((35 * Math.PI) / 360);
+  cam.noteFrame({ tanX: tanY * 16 / 9, tanY });
+  cam.zoomAt(1.5, 0.4, -0.3);
+  const user = { ...cam.target };
+  const out = applyCameraMoves(POSE, null, user);
+  // A point on the original pointer ray, far beyond the zoom distance.
+  const { forward, right, up } = cameraBasis(POSE);
+  const ray = forward.map((f, i) => f + right[i] * 0.4 * tanY * 16 / 9 + up[i] * -0.3 * tanY);
+  const far = POSE.eyeM.map((v, i) => v + ray[i] * 60000);
+  const before = projectPoint(POSE, 16 / 9, far), after = projectPoint(out, 16 / 9, far);
+  assert.ok(Math.abs(before.x - after.x) < 1e-6 && Math.abs(before.y - after.y) < 1e-6);
+  assert.ok(Math.abs(after.x - 0.4) < 1e-6 && Math.abs(after.y + 0.3) < 1e-6);
+});
+
+test('the zoom stays inside the authored view cone, so the frame never leaves the map', () => {
+  const cam = new RangeUserCamera({ now: () => 0 });
+  for (let i = 0; i < 40; i++) cam.zoomAt(1.3, 1, 1);
+  const { fx, rx, uy } = cam.target;
+  assert.ok(fx <= USER_FX_MAX + 1e-9);
+  assert.ok(Math.abs(rx) <= fx * cam.tan.x + 1e-9 && Math.abs(uy) <= fx * cam.tan.y + 1e-9);
+  for (let i = 0; i < 80; i++) cam.zoomAt(1 / 1.3, -1, 0);
+  assert.deepEqual(cam.target, { fx: 0, rx: 0, uy: 0 });
+});
+
+test('the zoom stops short of the ground instead of flying into it', () => {
+  const slope = (x, z) => 1000 + Math.max(0, 15000 - z) * 0.2; // rising toward the target
+  const out = applyCameraMoves(POSE, null, { fx: USER_FX_MAX, rx: 0, uy: -0.1 }, { heightAt: slope });
+  assert.ok(out.userScale < 1);
+  assert.ok(out.eyeM[1] >= slope(out.eyeM[0], out.eyeM[2]) + 79);
+  assert.ok(out.userScale > 0);
+});
+
+test('the zoom eases instead of snapping', () => {
+  let now = 0;
+  const cam = new RangeUserCamera({ now: () => now });
+  cam.sample();
+  cam.zoomAt(2);
+  now = 16;
+  const a = cam.sample();
+  assert.ok(a.fx > 0 && a.fx < cam.target.fx);
+  now = 5000;
+  assert.equal(cam.sample().fx, cam.target.fx);
+});
+
+test('wheel deltas map to gentle zoom factors in every delta mode', () => {
+  assert.ok(wheelZoomFactor({ deltaY: -100 }) > 1);
+  assert.ok(wheelZoomFactor({ deltaY: 100 }) < 1);
+  assert.equal(wheelZoomFactor({ deltaY: -3, deltaMode: 1 }), wheelZoomFactor({ deltaY: -48 }));
+  assert.equal(wheelZoomFactor({ deltaY: -100000 }), 2);
+});
+
+test('a loud section pushes in', () => {
+  const keys = cameraMoveKeys([{ startMs: 0, relEnergy01: 0.2 }, { startMs: 30000, relEnergy01: 1 }, { startMs: 80000, relEnergy01: 0.2 }], DUR, 3);
+  const loud = keys.find((k) => k.tMs === 80000);
+  assert.equal(loud.kind, 'push');
+  assert.ok(loud.dolly > 0.1);
+});

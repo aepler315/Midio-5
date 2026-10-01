@@ -101,6 +101,8 @@ import {
   formatBytes, formatElapsed, exportFileName, describeResult,
 } from './render/VideoExport.js';
 import { stepExportClock, evenExportSize } from './render/BulkExport.js';
+import { rangeUserCamera } from './world/alpine/RangeCamera.js';
+import { attachRangeZoomInput } from './ui/RangeZoomInput.js';
 import { MusicLibrary } from './library/MusicLibrary.js';
 import { LibraryPanel } from './ui/LibraryPanel.js';
 import { recentlyPlayed, displayTitle, displayArtist, untaggedTracks } from './library/TrackIndex.js';
@@ -1844,6 +1846,11 @@ function startTimeline(timelineData, extra = {}) {
     return;
   }
   sim.audioOverview = timelineData.audioOverview || null;
+  // The listener's zoom (scroll wheel, pinch) is live-only: exports and
+  // captures draw the authored camera. A new song starts unzoomed; a seek
+  // or a mid-song rebuild keeps the zoom where it is.
+  sim.userCameraEnabled = !captureMode;
+  if (!(extra.startAtMs > 0)) rangeUserCamera.reset();
   sim.analysisOpening = timelineData.opening || null;
   // This snapshot belongs to the song, beyond Simulation teardown/rebuild.
   if (!timelineData.opening) timelineData.rangeNarrative = sim.rangeNarrative;
@@ -3530,11 +3537,17 @@ function stopTitleBackdrop() {
   }
 }
 
-// Zoom has been removed from the game: there is no player Lens control and
-// no automatic camera zoom. The pointer is still tracked, but only so the
-// star-children can notice where the user is (they're aware of the user); it
-// never moves the camera. Client coords are mapped through the canvas rect
-// into the 1280x720 stage space the sim draws in.
+// The legacy stage has no player zoom. Range views do: the scroll wheel and
+// a two-finger pinch fly the camera toward the pointer (RangeZoomInput.js).
+// The pointer is also tracked so the star-children can notice where the
+// user is. Client coords are mapped through the canvas rect into the
+// 1280x720 stage space the sim draws in.
+const rangeZoomInput = attachRangeZoomInput(canvas, {
+  camera: rangeUserCamera,
+  enabled: () => !!(running && sim?.userCameraEnabled),
+  toStage: (e) => clientToStage(e),
+  stageW: STAGE_W, stageH: STAGE_H,
+});
 canvas.addEventListener('pointermove', (e) => {
   if (!running || !sim || !sim.setPointer) return;
   const p = clientToStage(e);
@@ -3754,6 +3767,8 @@ canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDef
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!running || !sim) return;
+  // The second finger of a pinch is a zoom, not a beat tap.
+  if (rangeZoomInput.pinching(e)) { e.preventDefault(); return; }
   // Every canvas tap prevents default -- previously only the seekbar-hit
   // branch below did, so a plain tap-to-beat-tap (the common case, and the
   // only input touch has at all) left double-tap-to-zoom and the ~300ms

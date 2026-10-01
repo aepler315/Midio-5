@@ -26,7 +26,8 @@ import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
 import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
-import { BANDS, terrainFringeBytes } from './TerrainMesh.js';
+import { applyCameraMoves, rangeUserCamera } from './RangeCamera.js';
+import { BANDS, terrainFringeBytes, terrainHeightAt } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
 import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT } from './WaterMirror.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
@@ -689,10 +690,17 @@ export class RangeScene {
   /** Camera for this frame: the view's rail pose, projected onto the whole
    *  padded scenic stage so the Canvas transform (zoom, shake, roll) applies
    *  once when the partition is composited. */
-  _setCamera(view, frame) {
-    const pose = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+  _setCamera(view, frame, p = null) {
+    const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+    // Cinematic section moves and the listener's zoom (RangeCamera.js).
+    const pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
+      heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM });
     const cam = this.camera;
     const proj = scenicProjection(pose.fovYDeg, frame.scenicViewport);
+    if (frame.userCamera) {
+      const tanY = Math.tan((proj.fovYDeg * Math.PI) / 360);
+      rangeUserCamera.noteFrame({ tanX: tanY * proj.aspect, tanY, userScale: pose.userScale });
+    }
     cam.fov = proj.fovYDeg;
     cam.aspect = proj.aspect;
     cam.position.set(pose.eyeM[0], pose.eyeM[1], pose.eyeM[2]);
@@ -871,7 +879,7 @@ export class RangeScene {
     const r = this.renderer;
     // The camera is shared: set this side's pose for every pass, even when
     // its depth pre-pass (kept per side) is reused.
-    this._setCamera(p.view, frame);
+    this._setCamera(p.view, frame, p);
     this._setUniforms(p, frame);
     this._prepareMirror(p, frame, side, viewId);
     // The backdrop holds the far partition itself: far water reflecting it
