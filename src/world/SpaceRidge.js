@@ -13,11 +13,17 @@ import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { capFlashAlpha } from '../ui/Accessibility.js';
 import { kickEnv } from './MountainChoreo.js';
 import { sampleSpaceRidge } from './alpine/RidgeMotion.js';
-import { hexToRgb } from '../utils/color.js';
+import { hexToRgb, hexLerp } from '../utils/color.js';
 
 // +3 joints past each edge (was +1 vs. the old 24-on-screen packing) so the
 // widened depth spread never pulls the outermost joints on-screen.
 export const N_NODES = 30;
+// Aurora (drawAurora): its hem and crown colours, ray columns per ridge
+// segment, and how far below the hem it fades (in curtain heights).
+const AURORA_GREEN = '#59ffb4';
+const AURORA_VIOLET = '#a86bff';
+const AURORA_COLUMNS = 6;
+const AURORA_SKIRT = 0.12;
 const ATTACK_SEC = 0.05;
 const RELEASE_SEC = 0.25;
 const FLASH_ON_THRESHOLD = 0.55;
@@ -255,14 +261,17 @@ export class SpaceRidge {
     return { pts, y0, maxH };
   }
 
-  /** The space occupied by the actual live structure, for secondary sky paint. */
+  /** The space the live aurora occupies, for secondary sky paint: from just
+   *  under its hem up through the height its curtain usually reaches. The
+   *  sky below the hem stays ordinary sky. */
   corridorAt(canvas, x) {
     return this.corridor(canvas)(x);
   }
 
   corridor(canvas) {
-    const { pts: raw, y0 } = this._samples(canvas);
+    const { pts: raw, maxH } = this._samples(canvas);
     const pts = raw.slice().sort((a, b) => a.x - b.x);
+    const reach = canvas.height * 0.09 + maxH * 0.5;
     return (x) => {
       let y = pts[0].y;
       for (let i = 1; i < pts.length; i++) {
@@ -272,16 +281,13 @@ export class SpaceRidge {
         y = pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t;
         break;
       }
-      return { top: Math.min(y, y0) - 18, bottom: y0 + 15 };
+      return { top: y - reach, bottom: y + 15 };
     };
   }
 
-  draw(ctx, canvas, color, tSec, reducedFlash = false, presentation = 1, inheritedActivity = 0, reducedMotion = false, satellitePresence = 1) {
-    const { pts, y0, maxH } = this._samples(canvas, reducedMotion);
-    if (!this.history && inheritedActivity > 0 && !reducedMotion) {
-      for (const p of pts) p.y -= 10 * inheritedActivity * Math.sin(p.x / 370 + tSec * .42);
-    }
-
+  /** Each node's current flash (0..1): the song history's band flash, or
+   *  the live flashes still fading. */
+  _flashLevels(tSec) {
     const flashSet = new Map();
     if (this.history) {
       const sample = this.history.sample(this._tSec * 1000);
@@ -292,6 +298,70 @@ export class SpaceRidge {
       const u = clamp01((nowMs - f.atMs) / FLASH_LIFE_MS);
       flashSet.set(f.i, 1 - u);
     }
+    return flashSet;
+  }
+
+  /**
+   * The same musical skyline worn as an aurora: a curtain whose bright lower
+   * hem follows the ridge, rising in rays where its bands are loud and
+   * flaring where a node flashes. Brightest at night; a faint veil by day.
+   * Rays drift slowly in time; reduced motion holds them still.
+   */
+  drawAurora(ctx, canvas, color, tSec, { reducedFlash = false, reducedMotion = false, presentation = 1, night01 = 1 } = {}) {
+    const { pts, maxH } = this._samples(canvas, reducedMotion);
+    if (pts.length < 2) return;
+    const flashSet = this._flashLevels(tSec);
+    const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+    const present = Number.isFinite(presentation) ? clamp01(presentation) : 1;
+    const paint = inherited * present * (0.3 + 0.7 * clamp01(night01));
+    if (paint < 0.005) return;
+    const t = reducedMotion ? 0 : tSec;
+    const hem = hexLerp(color, AURORA_GREEN, 0.55);
+    const crown = hexLerp(color, AURORA_VIOLET, 0.7);
+    const h = hexToRgb(hem), c = hexToRgb(crown);
+    // One unit-space gradient: y = 0 is the hem, y = -1 the curtain's top.
+    const g = ctx.createLinearGradient(0, AURORA_SKIRT, 0, -1);
+    g.addColorStop(0, `rgba(${h.r},${h.g},${h.b},0)`);
+    g.addColorStop(0.12, `rgba(${h.r},${h.g},${h.b},0.9)`);
+    g.addColorStop(0.3, `rgba(${h.r},${h.g},${h.b},0.38)`);
+    g.addColorStop(0.7, `rgba(${c.r},${c.g},${c.b},0.16)`);
+    g.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+    ctx.save();
+    ctx.globalCompositeOperation = reducedFlash ? 'source-over' : 'lighter';
+    ctx.fillStyle = g;
+    const k = canvas.height / 720;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const flash = Math.max(flashSet.get(a.i) || 0, flashSet.get(b.i) || 0);
+      const level = (a.level + b.level) / 2;
+      const dm = (a.depthMul + b.depthMul) / 2;
+      const w = (b.x - a.x) / AURORA_COLUMNS;
+      for (let j = 0; j < AURORA_COLUMNS; j++) {
+        const u = (j + 0.5) / AURORA_COLUMNS;
+        const x = a.x + (b.x - a.x) * u;
+        const y = a.y + (b.y - a.y) * u;
+        // Two slow interfering folds give the curtain its rays.
+        const fold = (0.5 + 0.5 * Math.sin(x * 0.045 + t * 0.35)) * (0.55 + 0.45 * Math.sin(x * 0.13 - t * 0.9));
+        const height = (canvas.height * 0.09 + maxH * 0.5 * level + 40 * k * flash)
+          * (0.75 + 0.25 * Math.sin(x * 0.021 + t * 0.22)) * dm;
+        ctx.save();
+        ctx.globalAlpha = paint * capFlashAlpha((0.1 + 0.22 * fold + 0.18 * level + 0.3 * flash) * dm, reducedFlash);
+        ctx.translate(x - w / 2, y);
+        ctx.scale(1, height);
+        ctx.fillRect(0, -1, w + 0.6, 1 + AURORA_SKIRT);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  draw(ctx, canvas, color, tSec, reducedFlash = false, presentation = 1, inheritedActivity = 0, reducedMotion = false, satellitePresence = 1) {
+    const { pts, y0, maxH } = this._samples(canvas, reducedMotion);
+    if (!this.history && inheritedActivity > 0 && !reducedMotion) {
+      for (const p of pts) p.y -= 10 * inheritedActivity * Math.sin(p.x / 370 + tSec * .42);
+    }
+
+    const flashSet = this._flashLevels(tSec);
 
     const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
     const present = Number.isFinite(presentation) ? Math.min(1, Math.max(0, presentation)) : 1;

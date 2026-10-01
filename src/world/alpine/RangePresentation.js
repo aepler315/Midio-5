@@ -562,6 +562,7 @@ export class RangePresentation {
   /** Composite one partition into `ctx` over the scenic stage, under the
    *  transform currently in effect (applied exactly once). */
   drawPartition(ctx, pass, stage) {
+    this.lastPartition = null;
     if (!this.active || !this.frame) return false;
     const t0 = performance.now();
     if (this.incomingViewId) {
@@ -576,6 +577,7 @@ export class RangePresentation {
         timed(() => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A', bandColumns: cols.A })),
         timed(() => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B', bandColumns: cols.B })));
       this._noteTiming(renderMs, performance.now() - t0 - renderMs);
+      if (drawn) this.lastPartition = { pass, ...this._lastComposite };
       return drawn;
     }
     const img = this.scene.renderPartition(this.frame, pass, this.viewId);
@@ -586,6 +588,9 @@ export class RangePresentation {
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(img, 0, 0, stage.width, stage.height);
     ctx.restore();
+    // The partition's own pixels, valid until the next partition renders:
+    // light that belongs on this terrain can use them as its mask.
+    this.lastPartition = { pass, image: img, width: img.width, height: img.height };
     this._noteTiming(t1 - t0, performance.now() - t1);
     return true;
   }
@@ -675,6 +680,7 @@ export class RangePresentation {
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(out, 0, 0, W, H, 0, 0, stage.width, stage.height);
     ctx.restore();
+    this._lastComposite = { image: out, width: W, height: H };
     return true;
   }
 
