@@ -14,9 +14,13 @@ export const TOPO_STEP_MS = 100;
 export const TOPO_WINDOW_MS = 3000;
 export const TOPO_QUIET_FRAC = 0.30;
 export const TOPO_EDGE_FRAC = 0.45;
-/** Below this p10..p90 span the song has no quiet passages to speak of (a
- *  wall of sound, a steady groove, a drone): its map stays under the land. */
+/** Below this span the song has no quiet passages to speak of (a wall of
+ *  sound, a steady groove, a drone): its map stays under the land. A steady
+ *  song with one short breakdown has its p10 on the loud level too, so
+ *  when p10..p90 is too narrow the floor drops to the TOPO_BRIEF_PCT
+ *  percentile, where a breakdown of a few percent of the song still lands. */
 export const TOPO_MIN_SPAN = 0.15;
+export const TOPO_BRIEF_PCT = 0.01;
 /** A passage must stay quiet this long before the map starts to show: a
  *  single soft bar between hits is not a breakdown. */
 export const TOPO_HOLD_MS = 1500;
@@ -52,9 +56,12 @@ export function compileTopoReveal({ energyCurves = null, durationMs = 0 } = {}) 
   }
   const sorted = Float32Array.from(avg.subarray(Math.min(n - 1, window))).sort();
   const pct = (p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))];
-  const p10 = pct(0.1), span = pct(0.9) - p10;
+  const p90 = pct(0.9);
+  let floor = pct(0.1);
+  if (p90 - floor < TOPO_MIN_SPAN) floor = pct(TOPO_BRIEF_PCT);
+  const span = p90 - floor;
   if (!(span >= TOPO_MIN_SPAN)) return Object.freeze({ at: () => 0, durationMs });
-  const lo = p10 + TOPO_QUIET_FRAC * span, hi = p10 + TOPO_EDGE_FRAC * span;
+  const lo = floor + TOPO_QUIET_FRAC * span, hi = floor + TOPO_EDGE_FRAC * span;
   const env = new Float32Array(n);
   let quietRun = 0, level = 0;
   for (let i = 0; i < n; i++) {

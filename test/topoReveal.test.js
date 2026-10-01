@@ -30,6 +30,14 @@ test('a breakdown brings the map up, and the song lifting sinks it again', () =>
   assert.equal(r.at(90000), 0);
 });
 
+test('a short breakdown in an otherwise steady song still brings the map up', () => {
+  // 10 s at 0.1 inside 240 s at 0.8: p10 sits on the loud level.
+  const r = compileTopoReveal({ energyCurves: curves((t) => (t >= 100000 && t < 110000 ? 0.1 : 0.8)), durationMs: 240000 });
+  assert.equal(r.at(90000), 0);
+  assert.ok(r.at(109000) > 0.9, `up by the end of the dip (${r.at(109000)})`);
+  assert.equal(r.at(130000), 0);
+});
+
 test('the opening belongs to the arrival, not the map', () => {
   // A soft intro, then the song proper.
   const r = compileTopoReveal({ energyCurves: curves((t) => (t < 30000 ? 0.1 : 0.7)), durationMs: 120000 });
