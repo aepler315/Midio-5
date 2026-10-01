@@ -29,10 +29,12 @@ import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { BANDS, terrainFringeBytes } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
 import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT } from './WaterMirror.js';
-
-const BACKDROP_KEY = 'range:water-backdrop';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors } from './GlacierField.js';
+import { ActorsGL } from './ActorsGL.js';
+import { ACTOR_IDS, ACTOR_HUES, ACTOR_LOOK, actorRoutes, routePosition } from './RangeActors.js';
+
+const BACKDROP_KEY = 'range:water-backdrop';
 
 const COPY_VERT = /* glsl */`
   out vec2 vUv;
@@ -416,7 +418,7 @@ export class RangeScene {
         // geometry built), so the one reservation covers them and a view
         // that cannot fit is denied before the mesh is built.
         const fringeBytes = terrainFringeBytes(cpu.data, { budget: this.budget });
-        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
+        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes();
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
@@ -485,6 +487,11 @@ export class RangeScene {
         if (resolveRangeComposition(view)?.foreground !== 'none') stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
         for (const band of BANDS) for (const m of forest.byBand[band]) scenes[band].add(m);
         for (const d of forest.depth) depthScene.add(d);
+        // The cast: lanterns and swarms, moved between band scenes as they
+        // travel (RangeActors.js picks their routes from what the rail sees).
+        const waterLevelM = waterLevel(cpu.data);
+        const actors = new ActorsGL(THREE, uniforms);
+        const routes = actorRoutes(cpu.data, view, { waterLevelM, seed: hashSeed(`${view.id}:cast`) });
         // Per-band depth scenes for travel frames, where a side's nearer
         // bands are drawn only in some columns (same geometry and material;
         // a mesh has one parent, so these are separate mesh objects).
@@ -499,13 +506,12 @@ export class RangeScene {
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
-        const waterLevelM = waterLevel(cpu.data);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
           forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
-          rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key,
+          rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key, actors, actorRoutes: routes,
         };
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         // Eviction (or any release) of the GPU entry also retires the view
@@ -658,6 +664,7 @@ export class RangeScene {
     p.featureMaterial?.dispose();
     for (const g of Object.values(p.featureGeometries || {})) g.dispose();
     p.forest?.dispose();
+    p.actors?.dispose();
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
     for (const g of Object.values(p.fringes || {})) g.dispose();
@@ -769,6 +776,86 @@ export class RangeScene {
     u.uMistColor.value.g = Math.min(0.9, u.uMistColor.value.g);
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
     u.uCameraPos.value.copy(this.camera.position);
+    this._setActors(p, frame);
+  }
+
+  /**
+   * Place the cast for this frame: each actor's lantern and swarm on its
+   * route (in the band scene that owns the ground under it), its light in
+   * the shared uniforms, Midio's wake and Broshi's parting. Absent actors
+   * (no route, no score yet, before the scene arrives) give no light.
+   */
+  _setActors(p, frame) {
+    const THREE = this.THREE;
+    const u = p.uniforms;
+    const cast = frame.actors;
+    const cam = this.camera;
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    // Metres per stage pixel (the looks are sized for a 720 px stage).
+    const tanHalf = Math.tan((cam.fov * Math.PI) / 360);
+    const materials = frame.narrative?.materials ?? 1;
+    const tSec = frame.reducedMotion ? 0 : frame.timeMs / 1000;
+    u.uWakeAmt.value = 0;
+    u.uParting.value.w = 0;
+    ACTOR_IDS.forEach((id, k) => {
+      const group = p.actors?.groups[id];
+      const route = p.actorRoutes?.[id];
+      const s = cast?.[id];
+      const look = ACTOR_LOOK[id];
+      const presence = (cast?.presence ?? 0) * (materials > .01 ? materials : 0);
+      const pos = route && s && presence > 0.001
+        ? routePosition(route, s.travel, { data: p.data, waterLevelM: p.waterLevelM, hoverM: look.hoverM, bobSec: tSec + k * 2.1 }) : null;
+      u.uActorColor.value[k].set(0, 0, 0);
+      if (!group) return;
+      if (!pos) { group.visible = false; return; }
+      const at = new THREE.Vector3(pos[0], pos[1], pos[2]);
+      const dist = Math.max(1, at.distanceTo(cam.position));
+      const peak = frame.reducedFlash ? s.peak * 0.7 : s.peak;
+      const display = new THREE.Color().setHSL(ACTOR_HUES[id] / 360, 0.85, 0.62);
+      // Light: linear, stronger as the lane plays and at its peak.
+      const lin = display.clone().convertSRGBToLinear();
+      const gain = look.lightGain * (0.35 + 0.65 * s.glow + 0.5 * peak) * presence;
+      u.uActorPos.value[k].copy(at);
+      u.uActorColor.value[k].set(lin.r * gain, lin.g * gain, lin.b * gain);
+      u.uActorRadius.value[k] = look.lightM;
+      // The lantern and swarm draw a little toward the camera from the
+      // light itself, so the ground it hovers over does not cut its halo.
+      const mpp0 = (2 * dist * tanHalf) / 720;
+      const push = Math.min(dist * 0.25, 3 * look.haloPx * mpp0);
+      const toCam = cam.position.clone().sub(at).normalize();
+      const v = group.children[0].material.uniforms;
+      v.uCenter.value.copy(at).addScaledVector(toCam, push);
+      v.uRight.value.copy(right);
+      v.uUp.value.copy(up);
+      v.uMpp.value = mpp0 * (dist - push) / dist;
+      v.uHaloPx.value = look.haloPx;
+      v.uColor.value.copy(display);
+      v.uGlow.value = s.glow;
+      v.uPresence.value = presence;
+      v.uCohere.value = peak;
+      v.uTime.value = tSec + k * 37;
+      v.uWanderPx.value = look.wanderPx * (1 + 0.5 * s.glow);
+      v.uShapePx.value = look.shapePx;
+      v.uShapeLift.value = route.kind === 'air' ? 0 : 0.6;
+      group.visible = true;
+      const tile = this._tileAt(p.data, pos[0], pos[2]);
+      const band = BANDS.includes(tile?.band) ? tile.band : 'far';
+      if (group.parent !== p.scenes[band]) p.scenes[band].add(group);
+      if (id === 'midio' && route.kind === 'water' && Number.isFinite(cast.midio.trail)) {
+        const tail = routePosition(route, cast.midio.trail, { data: p.data, waterLevelM: p.waterLevelM });
+        u.uWake.value.set(pos[0], pos[2], tail[0], tail[2]);
+        u.uWakeAmt.value = presence * (0.3 + 0.7 * s.glow);
+      }
+      if (id === 'broshi') u.uParting.value.set(pos[0], pos[2], 90, presence * (0.35 + 0.65 * s.glow));
+    });
+  }
+
+  _tileAt(data, x, z) {
+    const { grid, cells } = data;
+    const ix = Math.floor((x - grid.originM[0]) / grid.cellSizeM / cells);
+    const iz = Math.floor((z - grid.originM[1]) / grid.cellSizeM / cells);
+    return data.byIndex.get(`${ix},${iz}`) || null;
   }
 
   /**

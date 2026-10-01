@@ -190,6 +190,16 @@ Next item from the landscape brainstorm: lakes hold the land around them, as sti
 - **Known limits.** Gentle slopes seen from below the water plane face away from the mirror camera, so a shallow far shore reflects in patches. The far partition's own water gets the ground mirror only (it is part of the backdrop it would sample).
 - Evidence: `teton-jackson-lake-mirror-20s.jpg`, `teton-jackson-lake-mirror-60s.jpg` (pilot song), `muncho-lake-south-mirror-20s.jpg`.
 
+## The cast as lights (2026-10-01)
+
+Brainstorm section 6, the "presence ladder" Ashton chose: light is the floor, consequence the body, a brief recognisable figure the peak. Under Range v2 nothing drew Midio, Broshi or Midasus before this.
+
+- **Light.** Each actor is a small lantern in its hue (Midio teal 178, Broshi coral 16, Midasus violet 276) drawn inside the band passes: land in front hides it, the air dims it, and the lake mirror reflects it. Its light reaches the ground and trees (`actorLight`) and lays a path of glints on water. Brightness follows the actor's own lane (`narrative.sources[id].activity`, fast attack, slow release).
+- **Where.** `actorRoutes` picks five anchors per actor from tile samples the rail sees, in frame at three rail stations, 0.7-12 km away: Midio skims the lake (else the valley floor), Broshi follows the shore (else low open ground), Midasus drifts in the sky above the land. Each walks its route back and forth; it moves faster while its lane plays (`travel` is integrated per song, so seeks agree).
+- **Consequence.** Midio leaves a wake on the water (two opening arms that roughen and break the mirror, catching his light). Trees lean away from Broshi and show their pale sides as he passes. Midasus's light washes the peaks below her.
+- **Peaks.** `compileActorScore` finds each lane's own swells (its 1.5 s average crossing from the song's median 65% of the way to its 97th percentile), none in the first 8 s and at most one per actor every 20 s. The swarm of 72 motes around the lantern then gathers into the actor's outline (points along `meshes.js` edges) over 0.8 s, holds 1.5-4 s and dissolves over 2.5 s. `biomes.actorPeakOverride` holds a peak for review.
+- Evidence: `teton-jackson-lake-cast-45s.jpg` (pilot song, no peak), `teton-jackson-lake-cast-peak.jpg`, `muncho-lake-south-cast-peak.jpg` (peak held, figures reflected), `tombstone-north-klondike-cast-gathering.jpg` (peak at 0.6, no lake).
+
 ## Task 16: resource, lifecycle and performance
 
 ### Fixes found by exercising real (unforced) play

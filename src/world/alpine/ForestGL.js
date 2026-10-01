@@ -11,6 +11,7 @@ import { DEFORM_GLSL, TOPO_GLSL, gustUniforms } from './TerrainMaterial.js';
 import { GUST_FRONTS, GUST_SWEEP_SEC } from './Gust.js';
 
 import { MIST_GLSL } from './RangeAtmosphere.js';
+import { ACTOR_GLSL, actorUniforms } from './ActorsGL.js';
 
 const GUST_ATTACK_SEC = 0.7;
 const GUST_DECAY_SEC = 2.4;
@@ -19,6 +20,8 @@ const GUST_LEAN = 0.08;
 /** Crown brightening at a full gust: needles turning their pale sides up. */
 const GUST_SHEEN = 0.05;
 const GUST_SHEEN_DECAY_SEC = 1.0;
+/** Crown lean away from Broshi as he passes, as a fraction of height. */
+const PARTING_LEAN = 0.2;
 
 export const TREE_COMMON = /* glsl */`
   ${DEFORM_GLSL}
@@ -31,6 +34,9 @@ export const TREE_COMMON = /* glsl */`
   uniform float uGustDir[${GUST_FRONTS}];
   uniform float uForestKeep;
   uniform vec3 uCameraPos;
+  // Broshi passing: xz, radius (m), amount. Crowns lean away and show
+  // their pale sides, as in a gust.
+  uniform vec4 uParting;
   in vec3 iPos;
   in vec2 iSize;   // height, width (metres)
   in vec2 iVar;    // variant, id 0..1
@@ -74,8 +80,12 @@ export const TREE_COMMON = /* glsl */`
     vec2 sway = vec2(s, s * 0.4) * 0.012;
     // The gust leans crowns the way the front travels (camera right in xz).
     vec2 gust = gustAt();
-    vGust = gust.y;
+    vec2 away = iPos.xz - uParting.xy;
+    float dAway = length(away);
+    float part = uParting.w * (1.0 - smoothstep(uParting.z * 0.3, uParting.z, dAway));
+    vGust = max(gust.y, part * 0.8);
     vec2 lean = normalize(vec2(viewMatrix[0][0], viewMatrix[2][0]) + 1e-5) * gust.x * ${GUST_LEAN.toFixed(3)};
+    lean += away / max(dAway, 1.0) * part * ${PARTING_LEAN.toFixed(3)};
     return (sway + lean) * iSize.x * y01 * y01;
   }
 `;
@@ -141,6 +151,7 @@ const SHADE = /* glsl */`
   uniform vec4 uNarrative;
   in float vGust;
   ${MIST_GLSL}
+  ${ACTOR_GLSL}
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   vec4 shadeTree(vec3 n, vec3 world, float core) {
     float dist = length(world - uCameraPos);
@@ -153,6 +164,7 @@ const SHADE = /* glsl */`
     float key = max((dot(n, uLightDir) + wrap) / (1.0 + wrap), 0.0);
     vec3 hemi = mix(uSkyHorizon * 0.55, uSkyZenith, 0.5 + 0.5 * n.y) * uAmbientScale;
     vec3 lit = base * (hemi * (0.55 + 0.45 * core) + uLightColor * key);
+    lit += base * actorLight(world, n);
     // Thin crown edges transmit a solar backlight. Both real conifers and
     // alpha-tested silhouettes use their own normal/core with this shared
     // response; key radiance already contains visibility exactly once.
@@ -302,7 +314,7 @@ function instanced(THREE, base, instances, stride, indices) {
  */
 export function createForest(THREE, placed, uniforms, { partitioned = true } = {}) {
   const u = { ...uniforms, uTime: uniforms.uTime || { value: 0 }, uForestKeep: uniforms.uForestKeep || { value: 1 }, uTopo: uniforms.uTopo || { value: 0 },
-    ...(uniforms.uGustAge ? {} : gustUniforms()) };
+    ...(uniforms.uGustAge ? {} : gustUniforms()), ...(uniforms.uActorPos ? {} : actorUniforms(THREE)) };
   const mat = (vert, frag, depth = false) => {
     const m = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vert, fragmentShader: frag, uniforms: u });
     if (depth) m.colorWrite = false;
