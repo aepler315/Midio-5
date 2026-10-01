@@ -361,6 +361,7 @@ export class Renderer {
     }
     if (biomeManager) {
       biomeManager.salience = salience;
+      biomeManager.deferFlood = !!presentation.inhabitants && biomeManager.world?.kind === 'alpine';
       biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
@@ -380,18 +381,23 @@ export class Renderer {
     // The inhabited shore: near sea over the bottom third, with Midio's
     // ship, Broshi on the beach and Midasus in the sky. Nominal stage space
     // on the fixed ground transform's scale, screen-anchored like the HUD.
-    if (biomeManager && presentation.inhabitants && biomeManager.world?.kind === 'alpine') {
+    if (biomeManager && biomeManager.deferFlood) {
+      // Heard time, like the rest of the world, so latency compensation
+      // keeps the residents (and Broshi's kick hop) on the audible beat.
+      const heardMs = sim.heardTimeMs ?? sim.timeMs;
       ctx.save();
       ctx.setTransform(sxFixed, 0, 0, syFixed, 0, 0);
       ctx.translate(camera.shakeX || 0, camera.shakeY || 0);
       drawInhabitedShore(ctx, {
-        W: nominalW, H: nominalH, tSec: sim.timeMs / 1000,
-        bands: biomeManager._eqSmoothed, kick: kickHop01(recentConductorHits(sim.conductor?.timeline, sim.timeMs), sim.timeMs),
+        W: nominalW, H: nominalH, tSec: heardMs / 1000,
+        bands: biomeManager._eqSmoothed, kick: kickHop01(recentConductorHits(sim.conductor?.timeline, heardMs), heardMs),
         airColor: biomeManager._airColor || '#2a3850', landColor: biomeManager._landTint || '#3a3024',
         haloColor: biomeManager.currentHaloColor(), night01: biomeManager.celestialState?.night01 ?? 0.5,
         celestial: biomeManager.celestialState, reducedMotion: !!sim.reducedMotion, reducedFlash: !!sim.reducedFlash,
       });
       ctx.restore();
+      // The flood rises over the shore, not under it.
+      biomeManager._drawFlood(ctx, groundView.stage);
     }
     if (sim.battle && presentation.performers) this._drawBattleFX(ctx, sim);
     if (sim.gnat && presentation.performers) sim.gnat.draw(ctx, sim.timeMs);

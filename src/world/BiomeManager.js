@@ -2751,7 +2751,9 @@ export class BiomeManager {
       // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
       this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
     }
-    this._drawFlood(ctx, groundCanvas);
+    // The inhabited shore paints over the bottom third after this pass, so
+    // the Renderer draws the flood itself, above the shore, when deferred.
+    if (!this.deferFlood) this._drawFlood(ctx, groundCanvas);
     // In FRONT of the ground: as the camera pulls back, the near water comes
     // into frame and the strip they run along turns out to be an isthmus.
     this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);

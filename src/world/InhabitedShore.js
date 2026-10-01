@@ -14,6 +14,7 @@ import { computeRestLengths, drawMeshEdges, drawGlowHalo, applyTransform } from 
 import { MIDIO_IDENTITY_HUE } from '../render/ColorLaw.js';
 import { clamp, clamp01, mulberry32 } from '../utils/math.js';
 import { hexToRgb, hexLerp } from '../utils/color.js';
+import { capFlashAlpha } from '../ui/Accessibility.js';
 
 /** Where the sea begins, as a fraction of frame height (rule of thirds). */
 export const SEA_TOP_FRAC = 2 / 3;
@@ -259,7 +260,8 @@ function drawSea(ctx, { W, H, tSec, bass, treble, airColor, landColor, haloColor
   const lit = bodyName ? celestial[bodyName] : null;
   if (lit && lit.visibility > 0.02) {
     const cx = lit.xFrac * W;
-    const rand = mulberry32(0x5ea + Math.floor(tSec * 6));
+    // Reduced flash holds one glint layout instead of reshuffling 6x/s.
+    const rand = mulberry32(0x5ea + (reducedFlash ? 0 : Math.floor(tSec * 6)));
     const color = hexLerp(lit.colorHex || '#ffffff', '#ffffff', 0.3);
     const glints = reducedFlash ? 26 : 60;
     ctx.fillStyle = color;
@@ -269,7 +271,7 @@ function drawSea(ctx, { W, H, tSec, bass, treble, airColor, landColor, haloColor
       const spread = (18 + 120 * d) * k;
       const x = cx + (rand() * 2 - 1) * spread * (0.4 + 0.6 * rand());
       const w = (3 + 12 * d) * k * (0.5 + rand());
-      ctx.globalAlpha = lit.visibility * (0.18 + 0.4 * (1 - Math.abs(x - cx) / (spread + 1))) * (0.6 + 0.4 * clamp01(treble));
+      ctx.globalAlpha = capFlashAlpha(lit.visibility * (0.18 + 0.4 * (1 - Math.abs(x - cx) / (spread + 1))) * (0.6 + 0.4 * clamp01(treble)), reducedFlash);
       ctx.fillRect(x - w / 2, y, w, Math.max(1, 1.4 * k));
     }
     ctx.globalAlpha = 1;
