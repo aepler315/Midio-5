@@ -56,7 +56,7 @@ function manager(overrides = {}) {
     '_drawTerrainFooting', '_drawFlood', '_drawForegroundSwell', '_drawTransitionOverlays',
   ]) mgr[name] = noop;
   mgr._moonPhase01 = () => 0.5;
-  mgr.spaceRidge = Object.assign(new SpaceRidge(1), { draw: noop,
+  mgr.spaceRidge = Object.assign(new SpaceRidge(1), { draw: noop, drawAurora: noop,
     corridor: () => () => ({ top: -Infinity, bottom: -Infinity }) });
   mgr.lightning = { draw: noop };
   mgr.lightRig = { draw: noop };

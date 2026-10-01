@@ -636,6 +636,9 @@ export class RangeScene {
     this._copy.mesh.material.uniforms.uColor.value = target.texture;
     r.render(this._copy.scene, this._copy.camera);
     if (scattering) this.shafts.compositeToScreen(r, side, source);
+    // Whether translucent sky light now shares the returned image with the
+    // terrain: an alpha mask taken from it must not trust faint pixels.
+    this.lastShafted = !!scattering;
     this.stats.partitions++;
     this.stats.lastPartitionMs = performance.now() - t0;
     return this.canvas;

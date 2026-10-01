@@ -6,7 +6,7 @@ import { BiomeManager } from '../src/world/BiomeManager.js';
 import * as catalogue from '../src/world/StarCatalogue.js';
 import { ParticleField } from '../src/world/ParticleField.js';
 
-test('Range attenuates stars locally near the live ridge and keeps the rest of the field', () => {
+test('Range attenuates stars locally behind the aurora and keeps the rest of the field', () => {
   const canvas = { width: 1280, height: 720 };
   const ridge = new SpaceRidge(315);
   const plan = createRangeSkyComposition(ridge, canvas);
@@ -15,7 +15,8 @@ test('Range attenuates stars locally near the live ridge and keeps the rest of t
   assert.ok(plan.starBrightnessAt(640, centerY) > 0);
   assert.ok(plan.starBrightnessAt(640, centerY) < 0.2);
   assert.equal(plan.allowPoint(640, centerY), false);
-  assert.equal(plan.starBrightnessAt(640, 20), 1);
+  assert.equal(plan.starBrightnessAt(640, corridor.top - canvas.height * 0.03), 1, 'clear sky above the curtain');
+  assert.equal(plan.starBrightnessAt(640, corridor.bottom + canvas.height * 0.03), 1, 'clear sky below the hem');
   assert.equal(createRangeSkyComposition(ridge, canvas).starBrightnessAt(640, centerY), plan.starBrightnessAt(640, centerY));
   assert.ok(plan.starBrightnessAt(640, corridor.top - 3) < plan.starBrightnessAt(640, corridor.top - 18));
   assert.equal(plan.weaverOptions.maxFigures, 1);
@@ -41,13 +42,16 @@ test('Range moon stays present without dominating the entire upper sky late in a
   assert.ok(rangeMoonRadius(720, 3.4) >= 45);
 });
 
-test('the shared star painter retains faint ridge stars and all upper sky stars', () => {
+test('the shared star painter retains faint aurora stars and the clear sky around it', () => {
   const canvas = { width: 1280, height: 720 };
   const ridge = new SpaceRidge(315);
   const plan = createRangeSkyComposition(ridge, canvas);
-  const topYFrac = 20 / (720 * 0.3781);
+  const corridor = ridge.corridor(canvas)(640);
+  const skyPx = 720 * 0.3781;
+  const insideYFrac = (corridor.top + corridor.bottom) / 2 / skyPx;
+  const clearYFrac = (corridor.bottom + canvas.height * 0.03) / skyPx;
   const stars = Array.from({ length: 6 }, (_, i) => ({
-    xFrac: 0.5, yFrac: i === 0 ? 0.85 : topYFrac,
+    xFrac: 0.5, yFrac: i === 0 ? insideYFrac : clearYFrac,
     size: 1, layer: 2, bright: 1, phase: 0, ext: 1, hue: 0, varAmp: 0,
   }));
   const draws = [];
@@ -64,7 +68,7 @@ test('the shared star painter retains faint ridge stars and all upper sky stars'
   };
   BiomeManager.prototype._drawStarfield.call(manager, ctx, canvas, { fx: '' }, { fx: '' }, 0, 1);
   assert.equal(draws.length, 6, 'no blanket star rejection');
-  assert.ok(draws[0][2] < draws[1][2] * 0.2, 'live ridge has locally reduced light');
+  assert.ok(draws[0][2] < draws[1][2] * 0.2, 'the aurora has locally reduced starlight');
   draws.length = 0;
   manager._rangeSky = null;
   BiomeManager.prototype._drawStarfield.call(manager, ctx, canvas, { fx: '' }, { fx: '' }, 0, 1);

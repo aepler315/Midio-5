@@ -432,6 +432,13 @@ let BIOME_MANAGER_SERIAL = 0;
 // The Range is a real landscape: drifting orange embers over snow and
 // conifers read as a stray effect, so its epic weather is driven air
 // instead. Other worlds paint the director's kind as-is.
+// Crest light (_drawCrestLight): the band's nominal width, the factor it is
+// drawn reduced by, its blur at that reduced size, and its alpenglow tint.
+const CREST_LIGHT_WIDTH = 46;
+const CREST_LIGHT_DOWNSCALE = 8;
+const CREST_LIGHT_BLUR_PX = 3;
+const ALPENGLOW = '#ffb08a';
+const CREST_LIGHT_SHAFT_MASK_PASSES = 4;
 const WORLD_WEATHER_KINDS = Object.freeze({ alpine: Object.freeze({ embers: 'wind' }) });
 export function drawnWeatherKindFor(worldKind, kind) {
   return WORLD_WEATHER_KINDS[worldKind]?.[kind] ?? kind;
@@ -747,7 +754,8 @@ export class BiomeManager {
     // Legacy strips share the page's graphics budget when one is given, so
     // a fallback never holds a second, independent allowance.
     this.residency = residency;
-    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}`,
+    this._serial = ++BIOME_MANAGER_SERIAL;
+    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${this._serial}`,
       // Sets for biomes Range v2 draws are fallback: the ledger may evict
       // them when the scene reserves room (else a legacy frame drawn while a
       // view prepared re-bakes them and keeps the view out).
@@ -947,6 +955,7 @@ export class BiomeManager {
     for (const unsub of this._unsub) unsub();
     this._unsub.length = 0;
     this.strips.clear();
+    this._releaseCrestLight();
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {
@@ -2588,8 +2597,9 @@ export class BiomeManager {
       const n = this.rangeNarrative;
       if (n) spaceCol = this.lerpCache.get('#000000', spaceCol, n.skyDark);
       const authority = n ? .15 + .85 * n.spaceAuthority : 1;
-      if (this._pass('space-ridge')) this.spaceRidge.draw(ctx, canvas, spaceCol, this.tSec, this.reducedFlash,
-        authority, n ? n.sources.midasus.activity : 0, this.reducedMotion, 0);
+      // Worn as an aurora: the same musical skyline, given a natural body.
+      if (this._pass('space-ridge')) this.spaceRidge.drawAurora(ctx, canvas, spaceCol, this.tSec, {
+        reducedFlash: this.reducedFlash, reducedMotion: this.reducedMotion, presentation: authority, night01: dn.night || 0 });
     }
 
     // Dawn/dusk tint washes bracket the sun's own rise and set.
@@ -2884,7 +2894,7 @@ export class BiomeManager {
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     const farTint = this.lerpCache.get(tint, skyHorizonNight, AERIAL_PULL.L2 || 0);
     pres.drawPartition(ctx, 'far', canvas);
-    this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
+    this._drawCrestLight(ctx, canvas, worldX, A, B, t, pres.lastPartition);
     this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, farTint);
     pres.drawPartition(ctx, 'mid', canvas);
     this._drawMidDepthLife(ctx, canvas, frame, { worldX, originX, phenomenaFull, particleMul, mandalaColor });
@@ -5361,6 +5371,99 @@ export class BiomeManager {
       ctx.stroke();
     }
     ctx.restore();
+  }
+
+  /**
+   * The Dancing Ridge worn as light on the far range: a soft band of
+   * alpenglow along the same musical contour, kept only where the far
+   * terrain partition has rock (`mask`, the partition just drawn). Where the
+   * contour leaves the mountains it simply finds no surface to light.
+   * Without a mask (no GPU partition this frame) the light is not drawn.
+   */
+  _drawCrestLight(ctx, canvas, worldX, A, B, t, mask) {
+    const pts = this._horizonEqPoints(canvas, worldX);
+    if (this._landscapeGeometry) this._landscapeGeometry.horizon = pts;
+    if (!mask?.image || !(mask.width > 0) || !(mask.height > 0) || pts.length < 2) return;
+    const presence = clamp01(this.openingGain ?? 1) * (styleDials(this.visualStyle).horizonEqAlpha ?? 1)
+      * (this.rangeNarrative ? this.rangeNarrative.materials : 1);
+    if (presence < 0.005) return;
+    const activity = clamp01(this._eqSmoothed.reduce((sum, value) => sum + value, 0) / BAND_COUNT);
+    // Fades in with the terrain it lands on while a scene is arriving.
+    const strength = presence * (0.55 + 0.45 * activity) * (this.reducedFlash ? 0.5 : 1)
+      * clamp01(mask.arrival ?? 1);
+    if (strength < 0.005) return;
+    const W = mask.width, H = mask.height;
+    // The band is drawn small and blurred, then enlarged: a smooth falloff
+    // with no visible stroke edges, at a fraction of the fill cost.
+    const bw = Math.max(1, Math.round(W / CREST_LIGHT_DOWNSCALE)), bh = Math.max(1, Math.round(H / CREST_LIGHT_DOWNSCALE));
+    const buffers = this._crestLightBuffers(W, H, bw, bh);
+    if (!buffers) return;
+    const { light, band } = buffers;
+    const bctx = band.getContext('2d');
+    const color = this.lerpCache.get(ensureMinLightness(
+      this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)), .72), ALPENGLOW, 0.5);
+    const k = canvas.height / 720;
+    bctx.setTransform(1, 0, 0, 1, 0, 0);
+    bctx.filter = 'none';
+    bctx.globalAlpha = 1;
+    bctx.clearRect(0, 0, bw, bh);
+    bctx.setTransform(bw / canvas.width, 0, 0, bh / canvas.height, 0, 0);
+    bctx.filter = `blur(${CREST_LIGHT_BLUR_PX}px)`;
+    bctx.strokeStyle = color;
+    bctx.lineJoin = 'round';
+    bctx.lineCap = 'round';
+    bctx.lineWidth = CREST_LIGHT_WIDTH * k;
+    bctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) bctx.moveTo(p.x, p.y); else bctx.lineTo(p.x, p.y); });
+    bctx.stroke();
+    bctx.filter = 'none';
+    const lctx = light.getContext('2d');
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
+    lctx.globalCompositeOperation = 'source-over';
+    lctx.globalAlpha = 1;
+    lctx.clearRect(0, 0, W, H);
+    lctx.imageSmoothingEnabled = true;
+    lctx.drawImage(band, 0, 0, bw, bh, 0, 0, W, H);
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
+    lctx.globalAlpha = 1;
+    lctx.globalCompositeOperation = 'destination-in';
+    // Rock is opaque; sun shafts composited into the same image are faint.
+    // Repeating the mask raises its alpha to a power, keeping the rock and
+    // dropping light that would otherwise land on shafts in open sky.
+    for (let i = mask.shafted ? CREST_LIGHT_SHAFT_MASK_PASSES : 1; i > 0; i--) lctx.drawImage(mask.image, 0, 0, W, H, 0, 0, W, H);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = Math.min(1, strength);
+    ctx.drawImage(light, 0, 0, W, H, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  /** The crest light's two offscreen canvases, sized W x H and bw x bh.
+   *  Their bytes are owned in the shared graphics budget before they are
+   *  sized; a refusal skips the light (null), never overcommits. */
+  _crestLightBuffers(W, H, bw, bh) {
+    if (typeof document === 'undefined') return null;
+    let light = this._crestLightCanvas, band = this._crestBandCanvas;
+    const resized = !light || light.width !== W || light.height !== H || band.width !== bw || band.height !== bh;
+    if (!resized) return { light, band };
+    if (this.residency) {
+      const key = `crest-light#${this._serial}`;
+      this.residency.release(key);
+      const res = this.residency.reserve({ key, bytes: (W * H + bw * bh) * 4, owner: 'crest-light', evictable: false });
+      if (!res) { this._releaseCrestLight(); return null; }
+      this.residency.commit(res, null);
+    }
+    if (!light) light = this._crestLightCanvas = document.createElement('canvas');
+    if (!band) band = this._crestBandCanvas = document.createElement('canvas');
+    light.width = W; light.height = H;
+    band.width = bw; band.height = bh;
+    return { light, band };
+  }
+
+  _releaseCrestLight() {
+    for (const c of [this._crestLightCanvas, this._crestBandCanvas]) if (c) { c.width = 0; c.height = 0; }
+    this._crestLightCanvas = this._crestBandCanvas = null;
+    this.residency?.release(`crest-light#${this._serial}`);
   }
 
   _drawOneCelestial(ctx, cx, cy, c, alpha, haloMul = 1) {

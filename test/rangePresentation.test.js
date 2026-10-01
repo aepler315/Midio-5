@@ -32,14 +32,14 @@ function manager() {
   });
   const calls = [];
   const rec = (name) => function () { calls.push(name); };
-  for (const name of ['_drawSky', '_drawSpectrumMassif', '_drawHorizonEQ', '_drawFarVignettes', '_drawMidDepthLife',
+  for (const name of ['_drawSky', '_drawSpectrumMassif', '_drawHorizonEQ', '_drawCrestLight', '_drawFarVignettes', '_drawMidDepthLife',
     '_drawGround', '_drawTerrainFooting', '_drawFlood', '_drawForegroundSwell', '_drawTransitionOverlays',
     '_drawFarShore', '_drawOcean', '_drawOceanLife', '_drawFataMorgana', 'drawDeepSky', '_drawCelestial', '_drawMoon']) {
     m[name] = rec(name);
   }
   const legacy = m._drawLegacyScenic;
   m._drawLegacyScenic = function (...args) { calls.push('_drawLegacyScenic'); void legacy; return '#334455'; };
-  m.spaceRidge.draw = rec('spaceRidge');
+  m.spaceRidge.drawAurora = rec('spaceRidge');
   m.stripsFor = () => ({});
   return { m, calls };
 }
@@ -63,11 +63,12 @@ test('v2 draws its partitions at the retained pass boundaries, legacy scenery no
   const order = [];
   pres.drawPartition = (ctx, pass) => { order.push(`gpu:${pass}`); calls.push(`gpu:${pass}`); return true; };
   m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
-  const seq = calls.filter((c) => /gpu:|_draw(HorizonEQ|SpectrumMassif|FarVignettes|MidDepthLife|Ground|LegacyScenic)|spaceRidge|_drawSky/.test(c));
-  assert.deepEqual(seq, ['_drawSky', 'spaceRidge', '_drawSpectrumMassif', 'gpu:far', '_drawHorizonEQ', '_drawFarVignettes',
+  const seq = calls.filter((c) => /gpu:|_draw(HorizonEQ|CrestLight|SpectrumMassif|FarVignettes|MidDepthLife|Ground|LegacyScenic)|spaceRidge|_drawSky/.test(c));
+  assert.deepEqual(seq, ['_drawSky', 'spaceRidge', '_drawSpectrumMassif', 'gpu:far', '_drawCrestLight', '_drawFarVignettes',
     'gpu:mid', '_drawMidDepthLife', 'gpu:near', '_drawGround']);
   assert.ok(!calls.includes('_drawLegacyScenic'), 'no double-painted terrain');
-  assert.equal(calls.filter((c) => c === '_drawHorizonEQ').length, 1, 'the Dancing Ridge draws exactly once');
+  assert.equal(calls.filter((c) => c === '_drawCrestLight').length, 1, 'the Dancing Ridge lights the far range exactly once');
+  assert.ok(!calls.includes('_drawHorizonEQ'), 'its drawn line belongs to the legacy stack only');
   assert.equal(m._rangeV2Active, true);
   m.dispose();
 });
