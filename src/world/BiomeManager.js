@@ -438,6 +438,7 @@ const CREST_LIGHT_WIDTH = 46;
 const CREST_LIGHT_DOWNSCALE = 8;
 const CREST_LIGHT_BLUR_PX = 3;
 const ALPENGLOW = '#ffb08a';
+const CREST_LIGHT_SHAFT_MASK_PASSES = 4;
 const WORLD_WEATHER_KINDS = Object.freeze({ alpine: Object.freeze({ embers: 'wind' }) });
 export function drawnWeatherKindFor(worldKind, kind) {
   return WORLD_WEATHER_KINDS[worldKind]?.[kind] ?? kind;
@@ -5385,7 +5386,10 @@ export class BiomeManager {
       * (this.rangeNarrative ? this.rangeNarrative.materials : 1);
     if (presence < 0.005) return;
     const activity = clamp01(this._eqSmoothed.reduce((sum, value) => sum + value, 0) / BAND_COUNT);
-    const strength = presence * (0.55 + 0.45 * activity) * (this.reducedFlash ? 0.5 : 1);
+    // Fades in with the terrain it lands on while a scene is arriving.
+    const strength = presence * (0.55 + 0.45 * activity) * (this.reducedFlash ? 0.5 : 1)
+      * clamp01(mask.arrival ?? 1);
+    if (strength < 0.005) return;
     const W = mask.width, H = mask.height;
     let light = this._crestLightCanvas;
     if (!light) {
@@ -5427,7 +5431,10 @@ export class BiomeManager {
     lctx.setTransform(1, 0, 0, 1, 0, 0);
     lctx.globalAlpha = 1;
     lctx.globalCompositeOperation = 'destination-in';
-    lctx.drawImage(mask.image, 0, 0, W, H, 0, 0, W, H);
+    // Rock is opaque; sun shafts composited into the same image are faint.
+    // Repeating the mask raises its alpha to a power, keeping the rock and
+    // dropping light that would otherwise land on shafts in open sky.
+    for (let i = mask.shafted ? CREST_LIGHT_SHAFT_MASK_PASSES : 1; i > 0; i--) lctx.drawImage(mask.image, 0, 0, W, H, 0, 0, W, H);
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
     ctx.globalAlpha = Math.min(1, strength);

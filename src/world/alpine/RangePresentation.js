@@ -577,7 +577,7 @@ export class RangePresentation {
         timed(() => this.scene.renderPartition(this.frame, pass, this.viewId, { side: 'A', bandColumns: cols.A })),
         timed(() => this.scene.renderPartition(this.frame, pass, this.incomingViewId, { side: 'B', bandColumns: cols.B })));
       this._noteTiming(renderMs, performance.now() - t0 - renderMs);
-      if (drawn) this.lastPartition = { pass, ...this._lastComposite };
+      if (drawn) this.lastPartition = { pass, ...this._lastComposite, arrival: this.arrival, shafted: !!this.scene.lastShafted };
       return drawn;
     }
     const img = this.scene.renderPartition(this.frame, pass, this.viewId);
@@ -590,7 +590,8 @@ export class RangePresentation {
     ctx.restore();
     // The partition's own pixels, valid until the next partition renders:
     // light that belongs on this terrain can use them as its mask.
-    this.lastPartition = { pass, image: img, width: img.width, height: img.height };
+    this.lastPartition = { pass, image: img, width: img.width, height: img.height,
+      arrival: this.arrival, shafted: !!this.scene.lastShafted };
     this._noteTiming(t1 - t0, performance.now() - t1);
     return true;
   }

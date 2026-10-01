@@ -271,18 +271,31 @@ export class SpaceRidge {
   corridor(canvas) {
     const { pts: raw, maxH } = this._samples(canvas);
     const pts = raw.slice().sort((a, b) => a.x - b.x);
-    const reach = canvas.height * 0.09 + maxH * 0.5;
+    const flashSet = this._flashLevels(this._tSec);
+    // The tallest each segment's rays can stand this frame (their sway
+    // factor never exceeds 1), so nothing painted later reaches the crown.
+    const reach = [];
+    for (let i = 0; i < pts.length - 1; i++) reach.push(this._curtainHeight(canvas, maxH, pts[i], pts[i + 1], flashSet, 1));
     return (x) => {
-      let y = pts[0].y;
+      let y = pts[0].y, r = reach[0] ?? 0;
       for (let i = 1; i < pts.length; i++) {
-        if (x > pts[i].x) { y = pts[i].y; continue; }
+        if (x > pts[i].x) { y = pts[i].y; r = reach[Math.min(i, reach.length - 1)] ?? r; continue; }
         const dx = pts[i].x - pts[i - 1].x;
         const t = dx > 0 ? clamp01((x - pts[i - 1].x) / dx) : 0;
         y = pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t;
+        r = reach[i - 1];
         break;
       }
-      return { top: y - reach, bottom: y + 15 };
+      return { top: y - r, bottom: y + 15 };
     };
+  }
+
+  /** One ridge segment's curtain height, scaled by its rays' sway (0..1). */
+  _curtainHeight(canvas, maxH, a, b, flashSet, sway) {
+    const flash = Math.max(flashSet.get(a.i) || 0, flashSet.get(b.i) || 0);
+    const level = (a.level + b.level) / 2;
+    const dm = (a.depthMul + b.depthMul) / 2;
+    return (canvas.height * 0.09 + maxH * 0.5 * level + 40 * (canvas.height / 720) * flash) * sway * dm;
   }
 
   /** Each node's current flash (0..1): the song history's band flash, or
@@ -329,7 +342,6 @@ export class SpaceRidge {
     ctx.save();
     ctx.globalCompositeOperation = reducedFlash ? 'source-over' : 'lighter';
     ctx.fillStyle = g;
-    const k = canvas.height / 720;
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
       const flash = Math.max(flashSet.get(a.i) || 0, flashSet.get(b.i) || 0);
@@ -342,8 +354,7 @@ export class SpaceRidge {
         const y = a.y + (b.y - a.y) * u;
         // Two slow interfering folds give the curtain its rays.
         const fold = (0.5 + 0.5 * Math.sin(x * 0.045 + t * 0.35)) * (0.55 + 0.45 * Math.sin(x * 0.13 - t * 0.9));
-        const height = (canvas.height * 0.09 + maxH * 0.5 * level + 40 * k * flash)
-          * (0.75 + 0.25 * Math.sin(x * 0.021 + t * 0.22)) * dm;
+        const height = this._curtainHeight(canvas, maxH, a, b, flashSet, 0.75 + 0.25 * Math.sin(x * 0.021 + t * 0.22));
         ctx.save();
         ctx.globalAlpha = paint * capFlashAlpha((0.1 + 0.22 * fold + 0.18 * level + 0.3 * flash) * dm, reducedFlash);
         ctx.translate(x - w / 2, y);

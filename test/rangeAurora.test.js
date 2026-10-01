@@ -54,3 +54,17 @@ test('crest light draws nothing without terrain to land on', () => {
   BiomeManager.prototype._drawCrestLight.call(mgr, ctx, canvas, 0, null, null, 1, { image: null, width: 0, height: 0 });
   assert.equal(drawn, 0);
 });
+
+test('nothing painted after the aurora can reach into its tallest flaring rays', () => {
+  const ridge = new SpaceRidge(315);
+  ridge._tSec = 10;
+  ridge._flashes = ridge.nodes.map((_, i) => ({ i, atMs: 10000 }));
+  const { pts, maxH } = ridge._samples(canvas);
+  const flashes = ridge._flashLevels(10);
+  const corridor = ridge.corridor(canvas);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const x = (pts[i].x + pts[i + 1].x) / 2, y = (pts[i].y + pts[i + 1].y) / 2;
+    const tallest = ridge._curtainHeight(canvas, maxH, pts[i], pts[i + 1], flashes, 1);
+    assert.ok(corridor(x).top <= y - tallest + 1e-6, `segment ${i} crown stays inside the corridor`);
+  }
+});
