@@ -359,9 +359,13 @@ export class Renderer {
     } else if (biomeManager) {
       biomeManager.rangePresentation = null;
     }
+    let scenicMatrix = null;
     if (biomeManager) {
       biomeManager.salience = salience;
-      biomeManager.deferFlood = !!presentation.inhabitants && biomeManager.world?.kind === 'alpine';
+      biomeManager.inhabitedShore = !!presentation.inhabitants && biomeManager.world?.kind === 'alpine';
+      // The scenic transform the celestial bodies are painted with, so the
+      // shore's glitter path can sit under the sun or moon on screen.
+      scenicMatrix = ctx.getTransform();
       biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
@@ -381,10 +385,15 @@ export class Renderer {
     // The inhabited shore: near sea over the bottom third, with Midio's
     // ship, Broshi on the beach and Midasus in the sky. Nominal stage space
     // on the fixed ground transform's scale, screen-anchored like the HUD.
-    if (biomeManager && biomeManager.deferFlood) {
+    if (biomeManager && biomeManager.inhabitedShore) {
       // Heard time, like the rest of the world, so latency compensation
       // keeps the residents (and Broshi's kick hop) on the audible beat.
       const heardMs = sim.heardTimeMs ?? sim.timeMs;
+      const cs = biomeManager.celestialState;
+      const lit = cs?.activeBody ? cs[cs.activeBody] : null;
+      const glitterX = lit && scenicMatrix
+        ? scenicMatrix.transformPoint({ x: lit.xFrac * stage.width, y: lit.yFrac * stage.height }).x / sxFixed - (camera.shakeX || 0)
+        : null;
       ctx.save();
       ctx.setTransform(sxFixed, 0, 0, syFixed, 0, 0);
       ctx.translate(camera.shakeX || 0, camera.shakeY || 0);
@@ -393,7 +402,7 @@ export class Renderer {
         bands: biomeManager._eqSmoothed, kick: kickHop01(recentConductorHits(sim.conductor?.timeline, heardMs), heardMs),
         airColor: biomeManager._airColor || '#2a3850', landColor: biomeManager._landTint || '#3a3024',
         haloColor: biomeManager.currentHaloColor(), night01: biomeManager.celestialState?.night01 ?? 0.5,
-        celestial: biomeManager.celestialState, reducedMotion: !!sim.reducedMotion, reducedFlash: !!sim.reducedFlash,
+        celestial: cs, glitterX, reducedMotion: !!sim.reducedMotion, reducedFlash: !!sim.reducedFlash,
       });
       ctx.restore();
       // The flood rises over the shore, not under it.

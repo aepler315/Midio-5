@@ -160,7 +160,7 @@ function rgba(hex, a) {
  */
 export function drawInhabitedShore(ctx, {
   W, H, tSec, bands = null, kick = 0, airColor = '#2a3850', landColor = '#3a3024', haloColor = '#ffffff',
-  night01 = 0.5, celestial = null, reducedMotion = false, reducedFlash = false,
+  night01 = 0.5, celestial = null, glitterX = null, reducedMotion = false, reducedFlash = false,
 }) {
   const eq = bands || [];
   const avg = (i, j) => { let s = 0, n = 0; for (let b = i; b <= j; b++) { s += eq[b] || 0; n++; } return n ? s / n : 0; };
@@ -172,7 +172,8 @@ export function drawInhabitedShore(ctx, {
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  drawSea(ctx, { W, H, tSec, bass, treble, airColor, landColor, haloColor, night01, celestial, reducedFlash, k });
+  // Reduced motion holds the sea still: one fixed wave phase, no swell.
+  drawSea(ctx, { W, H, tSec: reducedMotion ? 0 : tSec, bass: reducedMotion ? 0 : bass, treble, airColor, landColor, haloColor, night01, celestial, glitterX, reducedFlash, k });
 
   // Midasus first: she is the farthest resident, up in the sky third.
   const midasus = midasusPose(tSec, W, H, motion);
@@ -182,7 +183,7 @@ export function drawInhabitedShore(ctx, {
   ctx.restore();
 }
 
-function drawSea(ctx, { W, H, tSec, bass, treble, airColor, landColor, haloColor, night01, celestial, reducedFlash, k }) {
+function drawSea(ctx, { W, H, tSec, bass, treble, airColor, landColor, haloColor, night01, celestial, glitterX, reducedFlash, k }) {
   const seaTop = H * SEA_TOP_FRAC;
   const N = 48;
   // Beach: a strip of land in front of the sea, so the earth third ends on
@@ -259,7 +260,8 @@ function drawSea(ctx, { W, H, tSec, bass, treble, airColor, landColor, haloColor
   const bodyName = celestial?.activeBody;
   const lit = bodyName ? celestial[bodyName] : null;
   if (lit && lit.visibility > 0.02) {
-    const cx = lit.xFrac * W;
+    // The body's on-screen x (the caller maps it from the scenic stage).
+    const cx = Number.isFinite(glitterX) ? glitterX : lit.xFrac * W;
     // Reduced flash holds one glint layout instead of reshuffling 6x/s.
     const rand = mulberry32(0x5ea + (reducedFlash ? 0 : Math.floor(tSec * 6)));
     const color = hexLerp(lit.colorHex || '#ffffff', '#ffffff', 0.3);

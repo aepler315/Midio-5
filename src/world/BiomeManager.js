@@ -2753,7 +2753,7 @@ export class BiomeManager {
     }
     // The inhabited shore paints over the bottom third after this pass, so
     // the Renderer draws the flood itself, above the shore, when deferred.
-    if (!this.deferFlood) this._drawFlood(ctx, groundCanvas);
+    if (!this.inhabitedShore) this._drawFlood(ctx, groundCanvas);
     // In FRONT of the ground: as the camera pulls back, the near water comes
     // into frame and the strip they run along turns out to be an isthmus.
     this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
@@ -3473,7 +3473,10 @@ export class BiomeManager {
       // this much, and that is what finally gives the ground a read on how
       // fast the world is going past. Sheds on the same perf rung as the
       // rest of the foreground (this whole method is already gated on it).
-      const scatterLayers = this.world?.kind === 'alpine'
+      // With the inhabited shore, the old ground line is under the sea:
+      // ground-locked scatter and wildfire have nowhere to stand there.
+      const scatterLayers = this.inhabitedShore ? []
+        : this.world?.kind === 'alpine'
         ? scatterBiomeLayers(this._profile(this.currentBlend?.from)?.landmarkKey || this.currentBlend?.from,
           this._profile(this.currentBlend?.to)?.landmarkKey || this.currentBlend?.to,
           this.currentBlend?.t ?? 1)
@@ -3490,7 +3493,7 @@ export class BiomeManager {
       }
     }
 
-    this._drawWildfire(ctx, canvas, worldX);
+    if (!this.inhabitedShore) this._drawWildfire(ctx, canvas, worldX);
   }
 
   /** Wildfire: near flames tracking the burn front's real world-x extent,
