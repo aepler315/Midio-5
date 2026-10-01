@@ -130,3 +130,22 @@ test('a loud section pushes in', () => {
   assert.equal(loud.kind, 'push');
   assert.ok(loud.dolly > 0.1);
 });
+
+test('a narrow ridge between coarse samples still stops the zoom', () => {
+  // A 40 m wide wall halfway along a long flight.
+  const wall = (x, z) => (Math.abs(z - 9000) < 20 ? 5000 : 0);
+  const out = applyCameraMoves(POSE, null, { fx: USER_FX_MAX, rx: 0, uy: 0 }, { heightAt: wall, sampleStepM: 30 });
+  assert.ok(out.userScale < 1);
+  assert.ok(out.eyeM[2] > 9000);
+});
+
+test('a narrower view re-clamps an edge zoom into its cone', () => {
+  const cam = new RangeUserCamera({ now: () => 0 });
+  cam.noteFrame({ tanX: 0.56, tanY: 0.315 });
+  for (let i = 0; i < 10; i++) cam.zoomAt(1.3, 1, 1);
+  cam.current = { ...cam.target };
+  cam.noteFrame({ tanX: 0.25, tanY: 0.14 });
+  for (const o of [cam.target, cam.current]) {
+    assert.ok(Math.abs(o.rx) <= o.fx * 0.25 + 1e-9 && Math.abs(o.uy) <= o.fx * 0.14 + 1e-9);
+  }
+});

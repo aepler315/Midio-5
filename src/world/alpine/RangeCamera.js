@@ -43,7 +43,11 @@ const USER_EASE_SEC = 0.18;
 // camera's 20 m near plane, more from far up.
 const CLEARANCE_MIN_M = 80;
 const CLEARANCE_FRAC = 0.004;
-const CLEARANCE_SAMPLES = 16;
+// The zoom path is checked at least every terrain cell (so no ridge slips
+// between samples), within these bounds.
+const CLEARANCE_SAMPLES_MIN = 16;
+const CLEARANCE_SAMPLES_MAX = 4096;
+const DEFAULT_SAMPLE_STEP_M = 30;
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const smoother = (u) => u * u * u * (u * (u * 6 - 15) + 10);
@@ -143,7 +147,7 @@ function groundAt(heightAt, waterLevelM, x, z) {
  * Returns { eyeM, targetM, fovYDeg, userScale } where userScale (0..1) is
  * how much of the user offset the terrain allowed.
  */
-export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevelM = null } = {}) {
+export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevelM = null, sampleStepM = DEFAULT_SAMPLE_STEP_M } = {}) {
   const T0 = pose.targetM;
   const d0 = sub(T0, pose.eyeM);
   const D = Math.hypot(...d0);
@@ -178,12 +182,14 @@ export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevel
     // that would put the eye under its clearance stops the flight there.
     const start = eye[1] - floorAt(eye);
     if (heightAt || Number.isFinite(waterLevelM)) {
-      for (let i = 1; i <= CLEARANCE_SAMPLES; i++) {
-        const s = i / CLEARANCE_SAMPLES, p = add(eye, v, s);
+      const step = Number.isFinite(sampleStepM) && sampleStepM > 0 ? sampleStepM : DEFAULT_SAMPLE_STEP_M;
+      const n = Math.min(CLEARANCE_SAMPLES_MAX, Math.max(CLEARANCE_SAMPLES_MIN, Math.ceil(Math.hypot(...v) / step)));
+      for (let i = 1; i <= n; i++) {
+        const s = i / n, p = add(eye, v, s);
         if (p[1] - floorAt(p) >= Math.min(0, start)) continue;
         // Refine between the last clear sample and this one, so an easing
-        // zoom slows to a stop instead of stepping in sixteenths.
-        let lo = (i - 1) / CLEARANCE_SAMPLES, hi = s;
+        // zoom slows to a stop instead of stepping sample to sample.
+        let lo = (i - 1) / n, hi = s;
         for (let k = 0; k < 8; k++) {
           const mid = (lo + hi) / 2, q = add(eye, v, mid);
           if (q[1] - floorAt(q) >= Math.min(0, start)) lo = mid; else hi = mid;
@@ -226,7 +232,13 @@ export class RangeUserCamera {
   /** The scene's frame report: the drawn frustum's half-angle tangents and
    *  the fraction of the user offset the terrain allowed. */
   noteFrame({ tanX, tanY, userScale = 1 } = {}) {
-    if (Number.isFinite(tanX) && tanX > 0 && Number.isFinite(tanY) && tanY > 0) this.tan = { x: tanX, y: tanY };
+    if (Number.isFinite(tanX) && tanX > 0 && Number.isFinite(tanY) && tanY > 0
+      && (tanX !== this.tan.x || tanY !== this.tan.y)) {
+      // A new view (or a resize) can narrow the cone: re-clamp both offsets.
+      this.tan = { x: tanX, y: tanY };
+      this._clampToCone(this.target);
+      this._clampToCone(this.current);
+    }
     this.userScale = clamp(Number.isFinite(userScale) ? userScale : 1, 0, 1);
     this.lastFrameAt = this._now();
   }
@@ -255,10 +267,14 @@ export class RangeUserCamera {
       t.uy += step * ny * this.tan.y;
     }
     if (t.fx < 1e-4) { t.fx = 0; t.rx = 0; t.uy = 0; }
-    // Stay inside the authored view cone (see header), a hair inside it.
-    const cx = t.fx * this.tan.x * 0.98, cy = t.fx * this.tan.y * 0.98;
-    t.rx = clamp(t.rx, -cx, cx);
-    t.uy = clamp(t.uy, -cy, cy);
+    this._clampToCone(t);
+  }
+
+  /** Keep an offset inside the authored view cone (see header), a hair in. */
+  _clampToCone(o) {
+    const cx = o.fx * this.tan.x * 0.98, cy = o.fx * this.tan.y * 0.98;
+    o.rx = clamp(o.rx, -cx, cx);
+    o.uy = clamp(o.uy, -cy, cy);
   }
 
   /** The eased offset for this frame. */

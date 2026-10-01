@@ -512,6 +512,8 @@ let lastDrawMs = 0;
  *  Display-fit and the perf ladder both stand aside for it. */
 let bulkExportSize = null;
 let bulkExportArmed = false;
+// The song whose timeline the listener's Range zoom belongs to.
+let zoomTimeline = null;
 
 /** `?bulkExport=1&exportW=&exportH=` arms export on the next song start.
  *  An odd or unusable size reads as not armed (evenExportSize -> null);
@@ -1850,7 +1852,10 @@ function startTimeline(timelineData, extra = {}) {
   // captures draw the authored camera. A new song starts unzoomed; a seek
   // or a mid-song rebuild keeps the zoom where it is.
   sim.userCameraEnabled = !captureMode;
-  if (!(extra.startAtMs > 0)) rangeUserCamera.reset();
+  // Seeks (to 0 too) rebuild on the same timeline object; a mid-song
+  // full-analysis adoption carries a nonzero start. Only a new song resets.
+  if (timelineData !== zoomTimeline && !(extra.startAtMs > 0)) rangeUserCamera.reset();
+  zoomTimeline = timelineData;
   sim.analysisOpening = timelineData.opening || null;
   // This snapshot belongs to the song, beyond Simulation teardown/rebuild.
   if (!timelineData.opening) timelineData.rangeNarrative = sim.rangeNarrative;

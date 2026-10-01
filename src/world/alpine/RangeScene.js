@@ -694,12 +694,17 @@ export class RangeScene {
     const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
     // Cinematic section moves and the listener's zoom (RangeCamera.js).
     const pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
-      heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM });
+      heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM,
+      sampleStepM: p?.data?.grid?.cellSizeM });
     const cam = this.camera;
     const proj = scenicProjection(pose.fovYDeg, frame.scenicViewport);
     if (frame.userCamera) {
-      const tanY = Math.tan((proj.fovYDeg * Math.PI) / 360);
-      rangeUserCamera.noteFrame({ tanX: tanY * proj.aspect, tanY, userScale: pose.userScale });
+      // Report the VISIBLE frame's frustum (the overscan margin excluded):
+      // the pointer is normalised against the visible stage.
+      const vp = frame.scenicViewport, m = vp.overscanPx || 0;
+      const visW = Math.max(1, vp.logicalWidth - 2 * m), visH = Math.max(1, vp.logicalHeight - 2 * m);
+      const tanY = Math.tan((proj.fovYDeg * Math.PI) / 360) * (visH / vp.logicalHeight);
+      rangeUserCamera.noteFrame({ tanX: tanY * (visW / visH), tanY, userScale: pose.userScale });
     }
     cam.fov = proj.fovYDeg;
     cam.aspect = proj.aspect;

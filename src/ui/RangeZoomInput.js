@@ -62,9 +62,11 @@ export function attachRangeZoomInput(canvas, { camera, enabled, toStage, stageW 
     lastSpan = touches.size === 2 ? pinchState().span : 0;
   };
 
-  // Without this the browser takes a two-finger pinch on the canvas as a
-  // page zoom before any pointer event reaches the page.
-  canvas.style.touchAction = 'none';
+  // Over a Range view, a two-finger touch is ours: stop the browser taking
+  // it as a page zoom. Anywhere else touch keeps its native behaviour.
+  const onTouch = (e) => { if (e.touches.length >= 2 && live()) e.preventDefault(); };
+  canvas.addEventListener('touchstart', onTouch, { passive: false });
+  canvas.addEventListener('touchmove', onTouch, { passive: false });
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
@@ -72,6 +74,8 @@ export function attachRangeZoomInput(canvas, { camera, enabled, toStage, stageW 
   return {
     pinching: (e) => e.pointerType === 'touch' && touches.size >= 2 && touches.has(e.pointerId),
     detach() {
+      canvas.removeEventListener('touchstart', onTouch);
+      canvas.removeEventListener('touchmove', onTouch);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
