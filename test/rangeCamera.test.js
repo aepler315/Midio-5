@@ -68,7 +68,7 @@ test('a move never sinks the eye into a hillside', () => {
   const ridge = (x) => (Math.abs(x) > 100 ? 1480 : 1000);
   const out = applyCameraMoves(POSE, { dolly: 0, yaw: 0, crane: 0, truck: 0.02 }, null, { heightAt: ridge });
   assert.ok(Math.abs(out.eyeM[0]) > 100);
-  assert.ok(out.eyeM[1] >= 1480 + 80 - 1e-9);
+  assert.ok(out.eyeM[1] >= 1480 + 250 - 1e-9);
 });
 
 test('the zoom flies along the pointer ray, so the point under the pointer stays put', () => {
@@ -101,7 +101,7 @@ test('the zoom stops short of the ground instead of flying into it', () => {
   const slope = (x, z) => 1000 + Math.max(0, 15000 - z) * 0.2; // rising toward the target
   const out = applyCameraMoves(POSE, null, { fx: USER_FX_MAX, rx: 0, uy: -0.1 }, { heightAt: slope });
   assert.ok(out.userScale < 1);
-  assert.ok(out.eyeM[1] >= slope(out.eyeM[0], out.eyeM[2]) + 79);
+  assert.ok(out.eyeM[1] >= slope(out.eyeM[0], out.eyeM[2]) + 249);
   assert.ok(out.userScale > 0);
 });
 

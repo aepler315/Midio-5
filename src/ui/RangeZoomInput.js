@@ -22,8 +22,9 @@ export function wheelZoomFactor({ deltaY = 0, deltaMode = 0, ctrlKey = false } =
  *   camera     RangeUserCamera
  *   enabled()  whether a live song is playing with the user camera on
  *   toStage(e) client event -> { x, y } in stage pixels, or null
- * Returns { pinching(e), detach() }. pinching(e) is true for a pointerdown
- * that joins a multi-touch gesture, so the caller can skip its tap.
+ * Returns { live(), pinching(e), detach() }. live() says whether zoom input
+ * is active now; pinching(e) is true for a pointerdown that joins a
+ * multi-touch gesture, so the caller can drop its tap.
  */
 export function attachRangeZoomInput(canvas, { camera, enabled, toStage, stageW = 1280, stageH = 720 }) {
   const touches = new Map();
@@ -72,6 +73,7 @@ export function attachRangeZoomInput(canvas, { camera, enabled, toStage, stageW 
   canvas.addEventListener('pointermove', onMove);
   for (const type of ['pointerup', 'pointercancel', 'pointerleave']) canvas.addEventListener(type, onUp);
   return {
+    live,
     pinching: (e) => e.pointerType === 'touch' && touches.size >= 2 && touches.has(e.pointerId),
     detach() {
       canvas.removeEventListener('touchstart', onTouch);

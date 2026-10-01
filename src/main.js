@@ -3617,9 +3617,10 @@ function seekSong(ms) {
 /** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on
  *  the clock the EAR is on (visualNow), same discipline as every other
  *  beat-anchored cue in the sim. */
-function beatTap(role = null) {
+function beatTap(role = null, atMs = null) {
   if (!running || !sim || paused || !audioEngine) return;
-  const tapMs = visualNow(audioEngine.nowMs, effectiveOutputLatencyMs());
+  // A deferred touch tap (see the canvas handler) keeps its own moment.
+  const tapMs = atMs ?? visualNow(audioEngine.nowMs, effectiveOutputLatencyMs());
   const eyePhase = recalibration.active && recalibration.phase === PHASE_EYE;
   // An eye-phase tap is aimed at a ring on the screen, not at the groove.
   // Feeding it to the anchor would teach BeatAnchor the display delay:
@@ -3770,25 +3771,45 @@ hudLeftEl?.addEventListener('pointerdown', wakeHud);
 // the way -- otherwise every high tap on the canvas pops it open.
 canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDefault(); });
 
+// Over a Range view a touch may be the first finger of a pinch, so its
+// tap waits this long for a second finger before it counts (the beat tap
+// keeps the moment the finger landed).
+const PINCH_TAP_WAIT_MS = 140;
+let pendingTouchTap = null;
+function cancelPendingTouchTap() {
+  if (pendingTouchTap) { clearTimeout(pendingTouchTap); pendingTouchTap = null; }
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   if (!running || !sim) return;
-  // The second finger of a pinch is a zoom, not a beat tap.
-  if (rangeZoomInput.pinching(e)) { e.preventDefault(); return; }
   // Every canvas tap prevents default -- previously only the seekbar-hit
   // branch below did, so a plain tap-to-beat-tap (the common case, and the
   // only input touch has at all) left double-tap-to-zoom and the ~300ms
   // synthetic-click delay in play on mobile.
   e.preventDefault();
+  // A second finger makes it a pinch: neither finger is a tap.
+  if (rangeZoomInput.pinching(e)) { cancelPendingTouchTap(); return; }
+  if (e.pointerType === 'touch' && rangeZoomInput.live()) {
+    cancelPendingTouchTap();
+    const p = clientToStage(e), button = e.button;
+    const atMs = audioEngine ? visualNow(audioEngine.nowMs, effectiveOutputLatencyMs()) : null;
+    pendingTouchTap = setTimeout(() => { pendingTouchTap = null; canvasTap(p, button, atMs); }, PINCH_TAP_WAIT_MS);
+    return;
+  }
+  canvasTap(clientToStage(e), e.button);
+});
+
+function canvasTap(p, button, atMs = null) {
+  if (!running || !sim) return;
   if (!hudAwake) { wakeHud(); return; }
   wakeHud();
-  const p = clientToStage(e);
   if (!p) return;
   const hit = hitTestComposerStrip(renderer, p.x, p.y, { width: STAGE_W, height: STAGE_H });
   const composer = (renderer?.canvasRenderer || renderer)?.composer;
   // Mouse buttons mirror the keys: left pairs with F (low), right with J
   // (high). Anything else (middle, back/forward) stays an unroled tap rather
   // than being silently filed as one of the two hands.
-  if (!hit) { beatTap(e.button === 2 ? ROLE_HIGH : e.button === 0 ? ROLE_LOW : null); return; }
+  if (!hit) { beatTap(button === 2 ? ROLE_HIGH : button === 0 ? ROLE_LOW : null, atMs); return; }
   if (hit.type === 'detail') return; // keep overlay open
   if (hit.type === 'strip') {
     // Toggle section detail when re-clicking the same section; always seek.
@@ -3801,7 +3822,7 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     seekSong(hit.tMs);
   }
-});
+}
 
 // The keys a player unfamiliar with the autoplay premise reaches for
 // expecting direct control -- see the keydown handler below.

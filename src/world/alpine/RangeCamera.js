@@ -8,7 +8,7 @@
 //                         pinch). The eye flies along the ray under the
 //                         pointer, so the place under the cursor stays put.
 //   applyCameraMoves()    both applied to a rail pose, clamped so the eye
-//                         never sinks into terrain or water and the frame
+//                         never sinks into terrain, trees or water and the frame
 //                         never shows more than the authored frame does.
 //
 // The zoom is a dolly (the eye moves), not a lens zoom: the canvas sky,
@@ -39,10 +39,12 @@ const FINALE = Object.freeze({ dolly: 0, crane: 0.03, truck: 0 });
 // User zoom: each unit of `fx` moves the eye one rail distance D forward.
 export const USER_FX_MAX = 0.72;
 const USER_EASE_SEC = 0.18;
-// Eye clearance over ground or water, metres: comfortably past the
-// camera's 20 m near plane, more from far up.
-const CLEARANCE_MIN_M = 80;
-const CLEARANCE_FRAC = 0.004;
+// Eye clearance over the static ground or water, metres. The rendered land
+// sits higher than the DEM: the musical deformation lifts ridges by up to
+// ~180 m (calibrateRangeMusic) and trees stand on top, so the eye keeps
+// well above both. More from far up.
+const CLEARANCE_MIN_M = 250;
+const CLEARANCE_FRAC = 0.01;
 // The zoom path is checked at least every terrain cell (so no ridge slips
 // between samples), within these bounds.
 const CLEARANCE_SAMPLES_MIN = 16;
