@@ -470,3 +470,22 @@ test('a view built across a context loss is retried, not failed; a refused rende
   assert.match(q.snapshot().reason, /budget/);
   assert.equal(refusals, 1);
 });
+
+test('migrated no-stage final manager path suppresses opaque foreground painters even during arrival', () => {
+  for (const arriving of [false, true]) for (const groundAvailable of [false, true]) {
+    const { m, calls } = manager();
+    m.groundField = { visibleBars: () => [{ x: 0, width: 1408, y: 500 }] };
+    m._groundReceivers = { wetMasks: ['stale'] };
+    m._lakeReflectGroundY = 500;
+    m.rangePresentation = { ...fakePresentation(), arriving, hasViewComposition: true,
+      stage: null, drawGround: () => groundAvailable, groundReceivers: () => null };
+    m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
+    for (const painter of ['_drawGround', '_drawTerrainFooting', '_drawFlood', '_drawForegroundSwell']) {
+      assert.ok(!calls.includes(painter), `${painter} cannot cover revealed terrain`);
+    }
+    assert.equal(m._groundReceivers, null);
+    assert.equal(m._lakeReflectGroundY, null);
+    assert.equal(calls.filter(c => c === '_drawTransitionOverlays').length, 1);
+    m.dispose();
+  }
+});

@@ -1,7 +1,7 @@
 // Assembled landscape correctness. Use installed Chrome explicitly for hardware
 // pixels; this fixed-step matrix never measures live playback performance.
 // node tools/landscape-performance-smoke.mjs --url URL --fixtures DIR --output DIR
-//   [--suite matrix|handoff|shared|midi-travel|all] [--source-root DIR]
+//   [--suite matrix|motion|handoff|shared|midi-travel|all] [--source-root DIR]
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -11,10 +11,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { openSong, captureFrame, landscapeOwnership, assertLandscapeOwnership } from './range-scene-smoke.mjs';
 import { seedBrowserConstruction, installSeedReceiver } from './lib/landscape-browser.mjs';
+import { measureTerrainSnapshot } from './lib/range-motion-evidence.mjs';
 const args = {};
 for (let i = 2; i < process.argv.length; i += 2) args[process.argv[i].slice(2)] = process.argv[i + 1];
 assert.ok(args.url && args.fixtures && args.output, '--url, --fixtures, --output required');
-assert.ok(['all', 'matrix', 'handoff', 'shared', 'midi-travel'].includes(args.suite || 'all'), 'unknown suite');
+assert.ok(['all', 'matrix', 'motion', 'handoff', 'shared', 'midi-travel'].includes(args.suite || 'all'), 'unknown suite');
 const root = path.resolve(args['source-root'] || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
 const out = path.resolve(args.output), fixtures = path.resolve(args.fixtures);
 await fs.mkdir(out, { recursive: true });
@@ -22,6 +23,10 @@ const hash = b => createHash('sha256').update(b).digest('hex');
 const report = { classification: 'Assembled correctness and fixed-step pixels; no device timing claim',
   instrumentation: 'Construction RNG315; hidden seedInput restores existing URL receiver before module evaluation. Served source bytes unchanged. Export clock rebuilt before descending sequences.',
   seed: 2917029651, sources: {}, fixtures: {}, cases: [], unavailable: ['Android hardware', 'real-recording pop/metal/progressive/ambient artistic matrix'] };
+report.evidenceSources = {};
+for (const file of ['tools/lib/range-motion-metrics.mjs', 'tools/lib/range-motion-evidence.mjs']) {
+  report.evidenceSources[file] = hash(await fs.readFile(path.join(root, file)));
+}
 report.sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 report.sourceChanges = execFileSync('git', ['status', '--porcelain', '--', 'src', 'tools', 'test'], { cwd: root, encoding: 'utf8' }).trim();
 const pending = [];
@@ -52,7 +57,7 @@ const trackedBrowser = { async newContext(options) {
   }));
   return c;
 } };
-async function row(page, label, t, { reducedMotion = false, reducedFlash = false, quality = 0 } = {}) {
+async function row(page, label, t, { reducedMotion = false, reducedFlash = false, quality = 0, measureMotion = false } = {}) {
   await page.evaluate(({ reducedMotion, reducedFlash, quality }) => {
     const app = window.__SMW;
     app.sim.setReducedMotion(reducedMotion); app.sim.setReducedFlash(reducedFlash);
@@ -60,7 +65,7 @@ async function row(page, label, t, { reducedMotion = false, reducedFlash = false
   }, { reducedMotion, reducedFlash, quality });
   const frame = await captureFrame(page, t);
   const ownership = await landscapeOwnership(page); assertLandscapeOwnership(ownership);
-  const state = await page.evaluate(() => {
+  const state = await page.evaluate(measureMotion => {
     const app = window.__SMW, m = app.sim.biomes, p = m.rangePresentation, s = p?.scene, f = p?.frame;
     const gl = s?.renderer?.getContext(), e = gl?.getExtension('WEBGL_debug_renderer_info');
     // Read the actual scenic/stage receiver uniforms after the draw, rather
@@ -72,7 +77,9 @@ async function row(page, label, t, { reducedMotion = false, reducedFlash = false
       stageKeyColor: stage.uKeyColor.value.toArray(), stageKeyDir: stage.uKeyDir.value.toArray(),
     } : null;
     const shaftEntry = s?.residency?.entries.get('range:sun-shafts');
-    return { stateKey: app.ridgeStateKey, music: f?.music, ridges: f?.ridges && {
+    const motionSnapshot = measureMotion && prepared && f ? { view: prepared.view, frame: f, budget: s.budget,
+      camera: { world: s.camera.matrixWorld.toArray(), projection: s.camera.projectionMatrix.toArray() } } : null;
+    return { motionSnapshot, stateKey: app.ridgeStateKey, music: f?.music, ridges: f?.ridges && {
       dance: { displacement01: f.ridges.dance.displacement01, velocity01: f.ridges.dance.velocity01 },
       space: { displacement01: f.ridges.space.displacement01, velocity01: f.ridges.space.velocity01 } },
     celestial: m.celestialState, camera: s?.camera?.matrixWorld?.elements, viewport: f?.scenicViewport,
@@ -83,7 +90,14 @@ async function row(page, label, t, { reducedMotion = false, reducedFlash = false
     midiEvents: app.conductor.timeline.filter(e => e.src === 'midi').length,
     renderer: e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : app.renderer.backend,
     actualTime: app.sim.heardTimeMs, stage: [document.querySelector('#stage').width, document.querySelector('#stage').height] };
-  });
+  }, measureMotion);
+  if (measureMotion) {
+    assert.ok(state.motionSnapshot, 'motion evidence requires prepared v2 terrain');
+    state.projectedMotion = await measureTerrainSnapshot({ root, ...state.motionSnapshot,
+      outputWidth: state.stage[0], outputHeight: state.stage[1] });
+    assert.equal(state.projectedMotion.waterMaxDisplacementM, 0, 'hydro receivers must remain pinned');
+  }
+  delete state.motionSnapshot;
   assert.equal(frame.seed, report.seed);
   assert.ok(Math.abs(state.actualTime - t) <= 17);
   if (frame.range?.residency) {
@@ -162,6 +176,30 @@ async function matrix() {
     await Promise.all(pending);
     await opened.context.close();
     await fs.writeFile(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
+  }
+}
+
+// These rows retain the actual source-derived music snapshot and the exact
+// painted camera. The paired neutral geometry changes no clock or light. The
+// CPU probe tool supplies separately labeled isolated channel measurements;
+// source passages here are never renamed "kick" or "bass" without evidence.
+async function motion() {
+  report.motion = [];
+  for (const view of ['teton-jackson-lake-coherent', 'monument-valley-163-coherent', 'pend-oreille-valley']) {
+    for (const wav of ['pilot-120s.wav', 'quiet-120s.wav']) {
+      const opened = await openSong(trackedBrowser, { url: args.url, wav: path.join(fixtures, wav), width: 1280, height: 720,
+        params: { rangeRenderer: 'v2', rangeView: view, seed: String(report.seed) } });
+      const rows = [];
+      for (const timeMs of wav.startsWith('quiet') ? [21000] : [21000, 42000, 42500]) {
+        const result = await row(opened.page, `motion-${view}-${wav}-${timeMs}`, timeMs, { measureMotion: true });
+        assert.ok(result.range.active, 'motion capture cannot count legacy fallback as v2 evidence');
+        rows.push(result);
+      }
+      assert.deepEqual(opened.errors, []);
+      report.motion.push({ view, wav, rows });
+      await Promise.all(pending); await opened.context.close();
+      await fs.writeFile(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
+    }
   }
 }
 
@@ -368,6 +406,7 @@ async function handoff() {
 }
 try {
   if (!args.suite || ['all', 'matrix'].includes(args.suite)) await matrix();
+  if (!args.suite || ['all', 'motion'].includes(args.suite)) await motion();
   if (!args.suite || ['all', 'midi-travel'].includes(args.suite)) await midiAndTravel();
   if (!args.suite || ['all', 'shared'].includes(args.suite)) await sharedWorlds();
   if (!args.suite || ['all', 'handoff'].includes(args.suite)) await handoff();

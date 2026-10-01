@@ -21,7 +21,7 @@ function measured(evaluate, timeMs, reducedMotion) {
 }
 const silent = Object.freeze({ bands: Array(7).fill(0), spaceLevels: Array(7).fill(0), spaceDepths: Array(7).fill(0), activity01: 0, kick01: 0, sources: {} });
 
-export function sampleHorizonRidge({ viewport, crest = null, songP = 0, worldX = 0, heardTimeMs = 0,
+export function sampleHorizonRidge({ viewport, crest = null, songP = 0, advectionPx = 0, heardTimeMs = 0,
   history, tuning = DEFAULT_RIDGE_TUNING, reducedMotion = false }) {
   tuning = { ...DEFAULT_RIDGE_TUNING, ...tuning };
   const { width, height } = viewport, scale = height / 720, baseline = height * .6, maxH = height * tuning.maxHeightFrac;
@@ -38,7 +38,7 @@ export function sampleHorizonRidge({ viewport, crest = null, songP = 0, worldX =
   const point = (u, music, at, metric = false) => {
     // Fixed authored source stations share paint's headroom and design bound.
     const base = metric ? sourceShape(u) : shape(u);
-    const p = ((u * 7 + (metric ? 0 : worldX * tuning.advection)) % 7 + 7) % 7;
+    const p = ((u * 7 + (metric ? 0 : advectionPx * tuning.advection)) % 7 + 7) % 7;
     const i = Math.floor(p), f = (1 - Math.cos((p - i) * Math.PI)) / 2;
     const v = clamp01((music.bands[i] || 0) * (1 - f) + (music.bands[(i + 1) % 7] || 0) * f);
     const source = music.sources.midio;

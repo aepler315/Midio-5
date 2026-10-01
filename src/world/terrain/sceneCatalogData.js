@@ -1698,6 +1698,10 @@ export default {
      0
     ]
    },
+   "composition": {
+    "foreground": "none",
+    "nearLedgeMaxFrac": 0
+   },
    "glacier": {
     "axisStartM": [
      10417.2,
@@ -1727,6 +1731,133 @@ export default {
      "b7f07453b28eaa5404e75822c23e23c2ac32d4a93a315a34071bcd466ba9ca7e",
      "448aa74ee0a45435316c7292f4323876cc47d9f1ebd9ca752cf9d55e95c770cc",
      "d51e69acee4988f501b56feaee699dd6fb3e7b087b530ba103dfa89f7270cf32"
+    ]
+   }
+  },
+  {
+   "id": "teton-jackson-lake-coherent",
+   "terrainSourceId": "teton-jackson-lake",
+   "regionId": "tetons",
+   "biome": "CONIFER",
+   "status": "candidate",
+   "catalogVersion": 17,
+   "title": "Teton Range",
+   "place": "Jackson Lake, Wyoming",
+   "credit": "Elevation: USGS 3DEP 1/3 arc-second DEM",
+   "terrainManifestUrl": "terrain/teton-jackson-lake.terrain.json",
+   "terrainManifestSha256": "bd3b57442d203981a66be4e1e23df677116f9a562d7a39497f0a0e0e01b429b1",
+   "materialManifestUrl": "materials/dry-conifer.json",
+   "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
+   "materialRules": {
+    "waterSkyMix": 0.65,
+    "waterGlintGain": 1.5
+   },
+   "camera": {
+    "eyeStartM": [
+     4078.8,
+     2416.8,
+     -2783.4
+    ],
+    "eyeEndM": [
+     3156.6,
+     2405.4,
+     -4329.6
+    ],
+    "targetStartM": [
+     -7588.1,
+     2371,
+     4102.3
+    ],
+    "targetEndM": [
+     -8506.8,
+     2371,
+     2554.5
+    ],
+    "fovYDeg": 29.9
+   },
+   "composition": {
+    "foreground": "ledge",
+    "nearLedgeMaxFrac": 0.12
+   },
+   "characterScores": {
+    "energy": 0.282,
+    "rawness": 0.26,
+    "grandeur": 0.293,
+    "dominance": 0.6
+   },
+   "archetype": "brooding",
+   "evidence": {
+    "reviewPath": "docs/evidence/terrain-continuation/README.md",
+    "review": "Shallow-foreground composition pilot. Final compositor, music and device review pending; source camera and terrain unchanged.",
+    "approval": null,
+    "sourceHashes": [
+     "09930a44096be83c6023c6d853c12d1571f428878691e4bfba81cdd17d9077b9",
+     "a19a985ea1d6370572bfaac2b7850bd90b49f28e9d10e3ad37c5ac17d4880e8f",
+     "4d6c2aae717cba1c485d3533ac0406e21ab14733c459b065eec71cdbbcead4f2"
+    ]
+   }
+  },
+  {
+   "id": "monument-valley-163-coherent",
+   "terrainSourceId": "monument-valley-163",
+   "regionId": "monument-valley",
+   "biome": "CANYON",
+   "status": "candidate",
+   "catalogVersion": 17,
+   "title": "Monument Valley",
+   "place": "Navajo Nation, Utah and Arizona",
+   "credit": "Elevation: USGS 3DEP 1/3 arc-second DEM",
+   "terrainManifestUrl": "terrain/monument-valley-163.terrain.json",
+   "terrainManifestSha256": "78779fcd2a016e3777d524969955edb225e64db416ca02ee1708c8cb9825720e",
+   "materialManifestUrl": "materials/canyon.json",
+   "materialManifestSha256": "ca6259b1e0cd2b10e4aae9e84abbe9c95b32976767ef372aa3caac4e73c326ce",
+   "materialRules": {
+    "forestFloorM": 1900
+   },
+   "camera": {
+    "eyeStartM": [
+     -8.9,
+     1612.3,
+     315.2
+    ],
+    "eyeEndM": [
+     -992.8,
+     1669.5,
+     -375.2
+    ],
+    "targetStartM": [
+     -3959.9,
+     1700,
+     5893.1
+    ],
+    "targetEndM": [
+     -4942.4,
+     1700,
+     5202.3
+    ],
+    "fovYDeg": 16
+   },
+   "composition": {
+    "foreground": "ledge",
+    "nearLedgeMaxFrac": 0.12
+   },
+   "characterScores": {
+    "energy": 0.059,
+    "rawness": 0.072,
+    "grandeur": 0.073,
+    "dominance": 0.184
+   },
+   "archetype": "serene",
+   "evidence": {
+    "reviewPath": "docs/evidence/terrain-continuation/README.md",
+    "review": "Shallow-foreground composition pilot. Final compositor, music and device review pending; source camera and terrain unchanged.",
+    "approval": null,
+    "sourceHashes": [
+     "44ac5e6091ea8cbdc717221309402d6dc89e8318d6e6ede132699d8c93d09a03",
+     "dc7c415a970682759cd65907ee0b68e9c216e0f2af0acbc12e3d1d74b8f5b806",
+     "ec7dcd2d11304f041b9d91672873fd3b81c0ed7728d30650588fc1ac5351fe64",
+     "169278ce11a8a7b813f83819d8a0636ffc537d69bd774f990495c9f4e8460562",
+     "9a60ac6d2118690f9c0db529cdad9ca52c6a75d731b813df25496dfc640df677"
     ]
    }
   }

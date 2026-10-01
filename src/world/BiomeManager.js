@@ -1,3 +1,4 @@
+import { ridgeAdvectionPxAt } from './RidgeMotionHistory.js';
 import { RidgeMotionHistory, createRidgeMusicSampler } from './RidgeMotionHistory.js';
 import { resolveLandscapePresentation } from './LandscapePresentation.js';
 import { identityAllows } from './WorldIdentity.js';
@@ -2451,7 +2452,7 @@ export class BiomeManager {
     if (this.world?.kind === 'alpine') {
       this.danceRidgeSample = sampleHorizonRidge({ viewport: canvas, crest: this._horizonCrest,
         songP: this.durationMs > 0 ? clamp01(heardTimeMs / this.durationMs) : 0,
-        worldX, heardTimeMs, history: this.ridgeMusicSession, tuning: this._horizonTuning, reducedMotion: this.reducedMotion });
+        advectionPx: ridgeAdvectionPxAt(heardTimeMs, this.reducedMotion), heardTimeMs, history: this.ridgeMusicSession, tuning: this._horizonTuning, reducedMotion: this.reducedMotion });
       const space = sampleSpaceRidge({ viewport: canvas, seededGeometry: this.spaceRidge,
         heardTimeMs, history: this.ridgeMusicSession, reducedMotion: this.reducedMotion });
       this.spaceRidge.frameSample = { sample: space, width: canvas.width, height: canvas.height, heardTimeMs, reducedMotion: !!this.reducedMotion };
@@ -2734,18 +2735,18 @@ export class BiomeManager {
     // Range v2: the rock stage on the rendered support curve replaces the
     // legacy ground fill, footing and ground materials; the ground's musical
     // signatures still draw over it. Legacy ground otherwise.
-    if (v2Arriving) {
+    if (v2Arriving && !this.rangePresentation.hasViewComposition) {
       // Legacy ground under the arriving rock stage; receivers stay legacy
       // until the fade completes.
       this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
       this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
       if (this.groundField) this.rangePresentation.drawGround(ctx, groundCanvas);
-    } else if (v2 && this.groundField && this.rangePresentation.drawGround(ctx, groundCanvas)) {
-      const bars = this.groundField.visibleBars(worldX, originX, groundCanvas.width);
+    } else if (v2 && this.groundField && (this.rangePresentation.drawGround(ctx, groundCanvas) || this.rangePresentation.hasViewComposition)) {
+      const bars = this.rangePresentation.stage?.bars || [];
       this._groundReceivers = this.rangePresentation.groundReceivers();
       this._lakeReflectGroundY = null;
-      withNarrativeAlpha(ctx, this.rangeNarrative?.relief ?? 1, c => drawRockStageShade(c, { bars, width: groundCanvas.width, height: groundCanvas.height }));
-      withNarrativeAlpha(ctx, this.rangeNarrative?.materials ?? 1, c => this._drawGroundSignatures(c, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t));
+      if (bars.length && !this.rangePresentation.hasViewComposition) withNarrativeAlpha(ctx, this.rangeNarrative?.relief ?? 1, c => drawRockStageShade(c, { bars, width: groundCanvas.width, height: groundCanvas.height }));
+      if (bars.length && !this.rangePresentation.hasViewComposition) withNarrativeAlpha(ctx, this.rangeNarrative?.materials ?? 1, c => this._drawGroundSignatures(c, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t));
     } else {
       this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
       // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
@@ -2753,10 +2754,10 @@ export class BiomeManager {
     }
     // The inhabited shore paints over the bottom third after this pass, so
     // the Renderer draws the flood itself, above the shore, when deferred.
-    if (!this.inhabitedShore) this._drawFlood(ctx, groundCanvas);
+    if (!this.inhabitedShore && !this.rangePresentation?.hasViewComposition) this._drawFlood(ctx, groundCanvas);
     // In FRONT of the ground: as the camera pulls back, the near water comes
     // into frame and the strip they run along turns out to be an isthmus.
-    this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
+    if (!this.rangePresentation?.hasViewComposition) this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
     // Deferred like the flood: a cut flash must cover the shore too.
     if (!this.inhabitedShore) this._drawTransitionOverlays(ctx, groundCanvas, B);
   }
@@ -5302,7 +5303,7 @@ export class BiomeManager {
     if (this._frameRidges && this._frameWorldX === worldX) return this._frameRidges.dance.points;
     this.danceRidgeSample = sampleHorizonRidge({ viewport: canvas, crest: this._horizonCrest,
       songP: this._horizonCrest && this.durationMs > 0 ? clamp01(this.tSec * 1000 / this.durationMs) : 0,
-      worldX, heardTimeMs: this.tSec * 1000, history: this.ridgeMusicSession,
+      advectionPx: ridgeAdvectionPxAt(this.tSec * 1000, this.reducedMotion), heardTimeMs: this.tSec * 1000, history: this.ridgeMusicSession,
       tuning: { ...this._horizonTuning, maxHeightFrac: EQ_MAX_HEIGHT_FRAC }, reducedMotion: this.reducedMotion });
     return this.danceRidgeSample.points;
   }

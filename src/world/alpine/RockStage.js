@@ -115,7 +115,7 @@ export function drawRockStageShade(ctx, { bars, width, height }) {
  *   surfaces: top faces 0 (back edge) .. 0.45 (front edge), risers 1;
  *   uv: world-anchored material coords (px).
  */
-export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, seed = 0, overscan = 48 }) {
+export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, seed = 0, overscan = 48, slabCount = STAGE_SLABS }) {
   const cols = Math.ceil((width + 2 * overscan) / COLUMN_PX) + 1;
   const bottom = height + overscan;
   const pos = [], nor = [], srf = [], uv = [], idx = [];
@@ -127,20 +127,20 @@ export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, s
     const x = colX(c);
     const wx = x + worldX - originX;
     const S = supportAt(bars, x);
-    const edges = slabEdges(wx, seed);
+    const edges = slabCount === 1 ? [0] : slabEdges(wx, seed);
     const span = Math.max(8, bottom - S);
     const rows = [];
     let drop = 0;
-    for (let k = 0; k < STAGE_SLABS; k++) {
+    for (let k = 0; k < slabCount; k++) {
       const top0 = S + edges[k] * span + drop;
-      const next = k + 1 < STAGE_SLABS ? edges[k + 1] : 1.05;
+      const next = k + 1 < slabCount ? edges[k + 1] : 1.05;
       const top1 = S + next * span + drop;
       // Elevation (screen px, y down) of this slab top relative to its
       // neighbours: the support profile attenuated by the slab's depth. The
       // edge wander and riser drops shape its outline, not its tilt.
-      const elev = S * (1 - (k + 0.5) / STAGE_SLABS);
+      const elev = S * (1 - (k + 0.5) / slabCount);
       rows.push({ kind: 0, y0: top0, y1: top1, d0: edges[k], d1: next, k, elev, drop });
-      if (k + 1 < STAGE_SLABS) {
+      if (k + 1 < slabCount) {
         const r = riserPx(wx, k, seed);
         rows.push({ kind: 1, y0: top1, y1: top1 + r, d0: next, d1: next, k });
         drop += r;
@@ -179,7 +179,7 @@ export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, s
   const pools = [];
   const wx0 = -overscan + worldX - originX, wx1 = width + overscan + worldX - originX;
   const cell = 210;
-  for (let i = Math.floor(wx0 / cell); i * cell < wx1; i++) {
+  for (let i = Math.floor(wx0 / cell); slabCount > 1 && i * cell < wx1; i++) {
     const h = hash2(i, seed, 404);
     if (u01(h) > 0.62) continue;
     const pw = 55 + 75 * u01(hash2(i, seed, 405)); // fits its 210 px cell
@@ -241,7 +241,7 @@ export function buildRockStage({ bars, width, height, worldX = 0, originX = 0, s
     positions: Float32Array.from(pos), normals: Float32Array.from(nor), surfaces: Float32Array.from(srf),
     uv: Float32Array.from(uv), indices: Uint32Array.from(idx),
     pools, wetMasks: pools.map((p) => ({ id: p.id, polygon: p.polygon, surfacePolygon: p.surfacePolygon, dropPx: p.dropPx, alpha: p.alpha })),
-    contactY: (x) => supportAt(bars, x),
+    bars, contactY: (x) => supportAt(bars, x),
     vertexCount: v,
   };
 }

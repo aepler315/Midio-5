@@ -8,10 +8,15 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { clamp01, smoothstep } from '../utils/math.js';
 
 const freeze = a => Object.freeze(a);
-const zero = () => ({ bands: Array(7).fill(0), levels: Array(7).fill(0), depths: Array(7).fill(0), armed: Array(7).fill(true), flashMs: Array(7).fill(-Infinity), energy: 0 });
-const copy = s => ({ bands: [...s.bands], levels: [...s.levels], depths: [...s.depths], armed: [...s.armed], flashMs: [...s.flashMs], energy: s.energy });
+const zero = () => ({ bands: Array(7).fill(0), levels: Array(7).fill(0), depths: Array(7).fill(0), armed: Array(7).fill(true), flashMs: Array(7).fill(-Infinity), energy: 0, motionPresence01: 0, melodyActivity: 0, melodyPitchWeight: 0 });
+const copy = s => ({ bands: [...s.bands], levels: [...s.levels], depths: [...s.depths], armed: [...s.armed], flashMs: [...s.flashMs], energy: s.energy, motionPresence01: s.motionPresence01, melodyActivity: s.melodyActivity, melodyPitchWeight: s.melodyPitchWeight });
 const follow = (v, raw, dt, attack, release) => v + (1 - Math.exp(-dt / (raw > v ? attack : release))) * (raw - v);
 let sessionId = 0;
+
+/** Musical scrolling belongs to heard time, never a Simulation's reset origin. */
+export function ridgeAdvectionPxAt(heardTimeMs, reducedMotion = false) {
+  return reducedMotion || !Number.isFinite(heardTimeMs) ? 0 : 220 * Math.max(0, heardTimeMs) / 1000;
+}
 
 export class RidgeMotionHistory {
   #curves; #events; #visual; #sources; #checkpoints; #floor; #cal; #cues; #midi; #ends; #cache = new Map();
@@ -86,6 +91,17 @@ export class RidgeMotionHistory {
       const end = Math.min(to, edge);
       const raw = this.#raw(at), dt = (end - at) / 1000;
       state.energy = follow(state.energy, raw.energy, dt, .4, .4);
+      state.motionPresence01 = follow(state.motionPresence01, raw.activity01 > 0 ? 1 : 0, dt, .08, .45);
+      if (state.motionPresence01 < 1e-5) state.motionPresence01 = 0;
+      // Retain a causal physical melody tail independently of raw source
+      // ownership. Decay its weighted pitch with the same coefficient so
+      // silence cannot reset the spatial wavelength before activity releases.
+      const melody = raw.activity01 > 0 ? this.#sources.sample(at).sources.midio : null;
+      const targetActivity = melody?.pitchActivity || 0;
+      const tau = targetActivity > state.melodyActivity ? .08 : .45;
+      state.melodyActivity = follow(state.melodyActivity, targetActivity, dt, tau, tau);
+      state.melodyPitchWeight = follow(state.melodyPitchWeight, targetActivity * (melody?.pitch01 ?? .5), dt, tau, tau);
+      if (state.melodyActivity < 1e-5) { state.melodyActivity = 0; state.melodyPitchWeight = 0; }
       let calm = 1 - smoothstep(.25, .55, state.energy);
       for (const cue of this.#cues) {
         const age = at - cue.tMs;
@@ -127,7 +143,8 @@ export class RidgeMotionHistory {
       .map(([id, s]) => [id, freeze({ ...s, activity: 0, pitchActivity: 0, pitch01: .5 })])));
     const sample = freeze({ generation: this.generation, pressureEnergy01, bassPressure01, rhythmAccent01, spaceFlash01: freeze(state.flashMs.map(ms => Math.max(0, 1 - (at - ms) / 300))), bands: freeze(state.bands), spaceLevels: freeze(state.levels), spaceDepths: freeze(state.depths),
       kickMs: kick.kickMs, kickAmp: kick.kickAmp, kick01: ridgeKickEnv(at - kick.kickMs) * kick.kickAmp,
-      activity01: raw.activity01, sources: gatedSources });
+      activity01: raw.activity01, motionPresence01: state.motionPresence01,
+      motionMelody: freeze({ activity: state.melodyActivity, pitch01: state.melodyActivity ? clamp01(state.melodyPitchWeight / state.melodyActivity) : .5 }), sources: gatedSources });
     // Small query memo only; checkpoints remain the musical authority.
     if (this.#cache.size >= 64) this.#cache.delete(this.#cache.keys().next().value);
     this.#cache.set(at, sample);
@@ -161,10 +178,14 @@ export function createRidgeMusicSampler({ primary, previous = null, handoffStart
       return [id, freeze({ source: x.source === y.source ? x.source : null, activity, pitchActivity, pitch01, contributors })];
     })));
     const sourceContributions = freeze(contributionIndex);
-    return freeze({ ...b, bands: freeze(b.bands.map((v, i) => lerp(a.bands[i], v))),
+    const melodyActivity = lerp(a.motionMelody.activity, b.motionMelody.activity);
+    const motionMelody = freeze({ activity: melodyActivity, pitch01: melodyActivity
+      ? lerp(a.motionMelody.activity * a.motionMelody.pitch01, b.motionMelody.activity * b.motionMelody.pitch01) / melodyActivity : .5 });
+    return freeze({ ...b, motionMelody, bands: freeze(b.bands.map((v, i) => lerp(a.bands[i], v))),
       spaceFlash01: freeze(b.spaceFlash01.map((v, i) => lerp(a.spaceFlash01[i], v))),
       spaceLevels: freeze(b.spaceLevels.map((v, i) => lerp(a.spaceLevels[i], v))), spaceDepths: freeze(b.spaceDepths.map((v, i) => lerp(a.spaceDepths[i], v))),
       pressureEnergy01: lerp(a.pressureEnergy01, b.pressureEnergy01), bassPressure01: lerp(a.bassPressure01, b.bassPressure01),
+      motionPresence01: lerp(a.motionPresence01, b.motionPresence01),
       rhythmAccent01: lerp(a.rhythmAccent01, b.rhythmAccent01), activity01: lerp(a.activity01, b.activity01), kick01: lerp(a.kick01, b.kick01), kickAmp: lerp(a.kickAmp, b.kickAmp),
       kickMs: mix < 1 ? a.kickMs : b.kickMs, sources, sourceContributions });
   } });

@@ -81,3 +81,7 @@ Fewer fog samples keep the frame's overall haze within 3% of full quality (`test
 | Date | Device / GPU | Browser | Run | Steady p95 | Travel p95 | Stalls | Peak MiB | Levels | Report |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | — | not yet run | | | | | | | | |
+
+## Coherent terrain continuation — 2026-10-01
+
+No current-source desktop or physical Android run was available for `codex/coherent-terrain-performance-20261001`. Hardware acceptance is **pending**; prior device results do not validate this branch. CPU geometry measurements and unit tests are not frame-time evidence. Use the procedure and gates above on the three forced candidates and ordinary approved views; see [the continuation record](evidence/terrain-continuation/README.md).

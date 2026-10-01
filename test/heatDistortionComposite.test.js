@@ -111,3 +111,21 @@ for (const [height, groundY] of [[720, 616], [1440, 308]]) {
     assert.ok(maxima.get(700) <= 1.4 + 1e-9, 'below-ground cells stay bounded');
   });
 }
+
+test('portrait output heat grid and shock origin use the fitted picture offsets', () => {
+  const blits = [];
+  const ctx = makeCtx([]);
+  ctx.drawImage = (_src, sx, sy, sw, sh, dx, dy) => blits.push({ sx, sy, dx, dy });
+  Renderer.prototype._drawHeatDistortion.call({ _heatCanvas: makeHeatCanvas() }, ctx,
+    { width: 560, height: 960 }, makeSim(), { midioDrawX: 300 }, { width: 1280, height: 720 },
+    { x: 10, y: 328.125, width: 540, height: 303.75 });
+  const first = blits[0];
+  assert.equal(first.sx, 4, 'first source cell starts six pixels before the picture');
+  assert.equal(first.sy, 322.125);
+  assert.ok(blits.every(b => b.sy >= 322.125 && b.sy < 632), 'grid excludes the large portrait bars');
+  // First cell centre (38,356.125); fitted shock centre (136.5625,591.796875).
+  const dx = -98.5625, dy = -235.671875, dist = Math.hypot(dx, dy);
+  const radial = Math.sin(dist * .05 - 9) * 5;
+  assert.ok(Math.abs(first.dx - first.sx - radial * dx / dist) < 1e-9);
+  assert.ok(Math.abs(first.dy - first.sy - radial * dy / dist) < 1e-9);
+});

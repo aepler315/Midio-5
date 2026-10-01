@@ -119,6 +119,30 @@ test('the real fallback renderer paints terrain without body, shadow, brush, lig
   } finally { sim.biomes = biomes; sim.dispose(); renderer.dispose(); }
 });
 
+for (const silent of [false, true]) test(`alpine compositor never enables the inhabited sea pass (silent=${silent})`, () => {
+  const canvas = { width: 1280, height: 720 };
+  const ctx = new Proxy({ canvas, globalAlpha: 1,
+    getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+    createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }),
+    measureText: () => ({ width: 0 }) }, { get: (o, p) => p in o ? o[p] : () => {} });
+  canvas.getContext = () => ctx;
+  const renderer = new Renderer(canvas), sim = scene('alpine', silent);
+  let sceneryDraws = 0;
+  // Keep the actual manager and production Renderer branch. Only the raster
+  // boundary is replaced: it requires offscreen/browser surfaces.
+  sim.biomes.draw = function () {
+    sceneryDraws++;
+    assert.equal(this.inhabitedShore, false, 'default scene must not authorize an opaque resident/sea overlay');
+  };
+  sim.perf = { particleMul: 1, heavyPostFx: false, bloomEnabled: false, fullFrameFxEnabled: false };
+  sim.highlightReel = null;
+  try {
+    for (const at of [0, 30000, 0]) { sim.startAt(at); renderer.draw(sim, 1); }
+    assert.equal(sceneryDraws, 3);
+    assert.equal(renderer.inhabitedShoreDraws, 0);
+  } finally { sim.dispose(); renderer.dispose(); }
+});
+
 test('source lookup preserves causal lanes and confidence without a performer handoff', async () => {
   const { compileLandscapeSources } = await import('../src/world/alpine/RangeNarrative.js');
   const compiled = compileLandscapeSources({ durationMs: 60000, casting: { midio: 'lead-lane', broshi: 'bass-lane', midasus: 'clean-lane' }, timeline: [

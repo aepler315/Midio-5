@@ -121,6 +121,7 @@ export class RangePresentation {
   /** A new song (or world): new generation, new assignments. Pending work
    *  of the previous generation is cancelled; its late results never land. */
   setSong({ terrain = null, generation = this.generation + 1, exportMode = false } = {}) {
+    this.stage = null;
     const previous = this.generation;
     this.generation = generation;
     // Export draws frames on request and waits for readiness: never fades,
@@ -382,6 +383,7 @@ export class RangePresentation {
   }
 
   _beginScenic() {
+    this.stage = null;
     this.active = false;
     this.incomingViewId = null;
     this.frame = null;
@@ -489,7 +491,7 @@ export class RangePresentation {
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
-      sceneAssignments: this.sceneByBiome, forcedView: this.forced,
+      sceneAssignments: this.sceneByBiome, forcedView: this.forced, renderedViews: [view, incoming].filter(Boolean),
     });
     this.scene.prepareShafts?.(this.frame, incoming ? [view.id, incoming.id] : [view.id]);
     this.viewId = view.id;
@@ -628,7 +630,7 @@ export class RangePresentation {
    * leave the bands up to 25% see-through. Each render returns the shared
    * drawing buffer, so A is fully drawn before B is rendered.
    */
-  _compositeSides(ctx, stage, layerKey, renderA, renderB) {
+  _compositeSides(ctx, stage, layerKey, renderA, renderB, backing = null) {
     const { lo, hi, bands } = travelSpans(stage.width, layerKey, this.seamP ?? 0, V2_TRAVEL_BANDS);
     const fadeB = this.incomingFade ?? 1;
     const far = stage.width * 2;
@@ -642,7 +644,7 @@ export class RangePresentation {
     // of the buffer (reserved at the scenic backing size, which the ground
     // image -- same scale, smaller stage -- never exceeds), so the buffer is
     // not reallocated between the two composites of one frame.
-    const W = Math.min(out.width, a?.width || out.width), H = Math.min(out.height, a?.height || out.height);
+    const W = Math.min(out.width, backing?.backingWidth || a?.width || out.width), H = Math.min(out.height, backing?.backingHeight || a?.height || out.height);
     const sctx = out.getContext('2d');
     const sx = W / stage.width;
     sctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -678,7 +680,12 @@ export class RangePresentation {
 
   /** Composite the rock stage under the fixed-ground transform. */
   drawGround(ctx, stage) {
+    this.stage = null;
     if (!this.active || !this.frame) return false;
+    const needsGround = id => this.frame.compositions?.[id]?.foreground !== 'none';
+    const needsA = needsGround(this.viewId), needsB = this.incomingViewId && needsGround(this.incomingViewId);
+    if (!needsA && !needsB) { this.scene.releaseGroundTarget?.(); return true; }
+    const render = id => needsGround(id) ? this.scene.renderGround(this.frame, id) : null;
     if (this.incomingViewId) {
       // The rock stage wears each side's material through the nearest seam;
       // its receivers (pools) come from whichever side holds the centre.
@@ -686,8 +693,8 @@ export class RangePresentation {
       const g0 = performance.now();
       const timed = (fn) => () => { const r0 = performance.now(); const r = fn(); renderMs += performance.now() - r0; return r; };
       const drawn = this._compositeSides(ctx, stage, 'L5',
-        timed(() => (outA = this.scene.renderGround(this.frame, this.viewId))?.canvas),
-        timed(() => (outB = this.scene.renderGround(this.frame, this.incomingViewId))?.canvas));
+        timed(() => (outA = render(this.viewId))?.canvas),
+        timed(() => (outB = render(this.incomingViewId))?.canvas), this.frame.groundViewport);
       this.timings.frameRenderMs += renderMs;
       this.timings.frameCopyMs += performance.now() - g0 - renderMs;
       // Receivers (pools, wet masks) follow the side that visibly holds the
@@ -696,11 +703,11 @@ export class RangePresentation {
       const cx = stage.width / 2;
       const seamW = cx < lo ? 0 : cx >= hi ? 1 : (bands.find((b) => cx >= b.x0 && cx < b.x1)?.weightB ?? 0.5);
       const bHolds = seamW * (this.incomingFade ?? 1) >= 0.5;
-      this.stage = (bHolds ? outB : outA)?.stage || outA?.stage || outB?.stage || null;
+      this.stage = (bHolds ? outB : outA)?.stage || null;
       return drawn;
     }
     const g0 = performance.now();
-    const out = this.scene.renderGround(this.frame, this.viewId);
+    const out = render(this.viewId);
     const g1 = performance.now();
     if (!out) return false;
     ctx.save();
@@ -712,6 +719,11 @@ export class RangePresentation {
     this.timings.frameCopyMs += performance.now() - g1;
     this.stage = out.stage;
     return true;
+  }
+
+  /** Any actual travel side has adopted geographic foreground ownership. */
+  get hasViewComposition() {
+    return this.active && [this.viewId, this.incomingViewId].some(id => id && this.frame?.compositions?.[id]);
   }
 
   /** Wet receivers for GroundResponse / reflections: exact pool polygons

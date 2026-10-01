@@ -79,6 +79,7 @@ export function localCamera(view, points) {
 const round = (v) => Math.round(v * 10) / 10;
 
 export async function buildView(view, { outDir, cell = null, log = console.log } = {}) {
+  if (view.terrainSourceId) throw new Error(`${view.id}: shared terrain; rebuild ${view.terrainSourceId}, then regenerate --catalog`);
   const dem = { ...view.dem, cellM: cell || view.dem.cellM };
   const points = viewPoints(view);
   const key = sha(JSON.stringify({ dem, points })).slice(0, 16);
@@ -171,7 +172,7 @@ export async function buildCatalog(doc) {
   for (const v of doc.views) {
     if (v.status === 'rejected') continue;
     let build;
-    try { build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.id}.build.json`), 'utf8')); }
+    try { build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.terrainSourceId || v.id}.build.json`), 'utf8')); }
     catch { continue; } // not published yet
     // An approval holds only for the assets it reviewed: if the terrain
     // package, material pack or camera changed since, the view ships as a
@@ -183,7 +184,7 @@ export async function buildCatalog(doc) {
     let status = v.status;
     if (status === 'approved') {
       const a = v.approval || {};
-      const keys = [...APPROVAL_KEYS, ...(v.glacier || a.glacierSha256 ? ['glacierSha256'] : [])];
+      const keys = [...APPROVAL_KEYS, ...(v.glacier || a.glacierSha256 ? ['glacierSha256'] : []), ...(Object.hasOwn(v, 'composition') || a.compositionSha256 ? ['compositionSha256'] : [])];
       const stale = keys.filter((k) => !a[k] || a[k] !== hashes[k]);
       if (stale.length) {
         console.warn(`${v.id}: approval is stale (${stale.join(', ')} changed); shipping as candidate`);
@@ -191,15 +192,16 @@ export async function buildCatalog(doc) {
       }
     }
     views.push({
-      id: v.id, regionId: v.regionId, biome: v.biome, status, catalogVersion: doc.catalogVersion,
+      id: v.id, ...(v.terrainSourceId ? { terrainSourceId: v.terrainSourceId } : {}), regionId: v.regionId, biome: v.biome, status, catalogVersion: doc.catalogVersion,
       title: v.title || v.id, place: v.place || '',
       credit: build.credit || null,
-      terrainManifestUrl: `terrain/${v.id}.terrain.json`,
+      terrainManifestUrl: `terrain/${v.terrainSourceId || v.id}.terrain.json`,
       terrainManifestSha256: hashes.terrainManifestSha256,
       materialManifestUrl: `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`,
       materialManifestSha256: hashes.materialManifestSha256,
       materialRules: v.materialRules || {},
       camera: build.view.camera,
+      ...(Object.hasOwn(v, 'composition') ? { composition: v.composition } : {}),
       ...(v.glacier ? { glacier: v.glacier } : {}),
       characterScores: build.characterScores,
       archetype: build.archetype,
@@ -229,10 +231,11 @@ const canonical = (x) => (Array.isArray(x) ? `[${x.map(canonical).join(',')}]`
 export async function approvalHashes(v, build) {
   const matUrl = `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`;
   const mat = await fs.readFile(path.join(RUNTIME_DIR, matUrl));
-  const terrain = await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.id}.terrain.json`));
+  const terrain = await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.terrainSourceId || v.id}.terrain.json`));
   return {
     terrainManifestSha256: sha(terrain), materialManifestSha256: sha(mat),
     materialRulesSha256: sha(canonical(v.materialRules || {})), cameraSha256: sha(JSON.stringify(build.view.camera)),
+    ...(Object.hasOwn(v, 'composition') || v.approval?.compositionSha256 ? { compositionSha256: sha(canonical(v.composition ?? null)) } : {}),
     ...(v.glacier ? { glacierSha256: sha(canonical(v.glacier)) } : {}),
   };
 }
@@ -247,16 +250,15 @@ export async function approveView(doc, id, { evidence = [] } = {}) {
   for (const file of evidence) {
     try { await fs.access(path.resolve(root, file)); } catch { throw new Error(`${id}: evidence file ${file} does not exist`); }
   }
-  const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${id}.build.json`), 'utf8'));
+  const build = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.terrainSourceId || id}.build.json`), 'utf8'));
   // Legacy parity: the far range stays readable at every rail station.
   const { viewExposure, pairExposure, MIN_FAR_EXPOSED, MIN_FAR_CREST_COLUMNS } = await import('./lib/range-exposure.mjs');
-  const byId = new Map(doc.views.map((x) => [x.id, x]));
-  const exposureOf = (x) => viewExposure(RUNTIME_DIR, {
-    ...x, terrainManifestUrl: `terrain/${x.id}.terrain.json`,
-    materialManifestUrl: `materials/${byId.get(x.id)?.materialPack || DEFAULT_PACKS[x.biome]}.json`,
-    materialRules: byId.get(x.id)?.materialRules || {},
+  const exposureOf = (x, authored) => viewExposure(RUNTIME_DIR, {
+    ...x, ...authored, camera: x.camera, terrainManifestUrl: `terrain/${authored.terrainSourceId || authored.id}.terrain.json`,
+    materialManifestUrl: `materials/${authored.materialPack || DEFAULT_PACKS[x.biome]}.json`,
+    materialRules: authored.materialRules || {},
   });
-  const exposure = await exposureOf(build.view);
+  const exposure = await exposureOf(build.view, v);
   if (exposure.min < MIN_FAR_EXPOSED) {
     throw new Error(`${id}: far crest only ${exposure.min.toFixed(2)} exposed at its worst station (needs ${MIN_FAR_EXPOSED}); not approved`);
   }
@@ -268,8 +270,8 @@ export async function approveView(doc, id, { evidence = [] } = {}) {
   console.log(`${id}: far crest exposure ${exposure.stations.map((s) => s.fraction.toFixed(2)).join(' ')}`);
   // Travel to and from every view already approved, at the shared progress.
   for (const other of doc.views.filter((x) => x.status === 'approved' && x.id !== id)) {
-    const ob = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${other.id}.build.json`), 'utf8'));
-    const oe = await exposureOf(ob.view);
+    const ob = JSON.parse(await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${other.terrainSourceId || other.id}.build.json`), 'utf8'));
+    const oe = await exposureOf(ob.view, other);
     for (const [a, b, name] of [[exposure, oe, `${id} -> ${other.id}`], [oe, exposure, `${other.id} -> ${id}`]]) {
       const r = pairExposure(a, b);
       if (r.min < MIN_FAR_EXPOSED) {
@@ -309,7 +311,7 @@ async function main() {
   }
   const id = opt('--view');
   const doc = await readAuthoring();
-  const views = id === 'all' ? doc.views : doc.views.filter((v) => v.id === id);
+  const views = id === 'all' ? doc.views.filter(v => !v.terrainSourceId) : doc.views.filter((v) => v.id === id);
   if (!views.length) throw new Error(`no view ${id} in scenic-views.json`);
   const publish = args.includes('--publish');
   for (const view of views) {

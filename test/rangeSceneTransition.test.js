@@ -53,7 +53,7 @@ function recordingCtx() {
     restore() { [clip, this.globalAlpha, this.globalCompositeOperation] = stack.pop(); },
     beginPath() {}, rect(x, y, w) { clip = [x, x + w]; }, clip() {}, setTransform() {},
     clearRect() { draws.length = 0; },
-    drawImage(img) { draws.push({ id: img.id, clip, alpha: this.globalAlpha, op: this.globalCompositeOperation }); },
+    drawImage(img, ...args) { draws.push({ id: img.id, args, clip, alpha: this.globalAlpha, op: this.globalCompositeOperation }); },
   };
 }
 
@@ -406,5 +406,50 @@ test('the v2 seam feathers in fine whole-pixel bands; the legacy strips keep the
   const { lo, hi } = travelSpans(W, 'L2', p.seamP, V2_TRAVEL_BANDS);
   for (let x = Math.ceil(Math.max(0, lo)); x < Math.min(W, hi); x += 3) {
     assert.ok(Math.abs(coverageAt(draws, x).total - 1) < 1e-9);
+  }
+});
+
+test('intentional no-stage owns ground without rendering, stale receivers or target retention', async () => {
+  const { p, scene } = await presentation();
+  const none = { foreground: 'none', nearLedgeMaxFrac: 0 };
+  const a = { ...catalog.views[0], composition: none };
+  p.sceneByBiome.set('RAINFOREST', { view: a });
+  p.sceneByBiome.set('TAIGA', { view: { ...catalog.views[1], composition: none } });
+  let renders = 0, releases = 0;
+  scene.renderGround = () => { renders++; throw Error('no stage should be built'); };
+  scene.releaseGroundTarget = () => releases++;
+  for (const t of [0, .5, 1, 1]) {
+    p.stage = { pools: ['stale'], wetMasks: ['stale'] };
+    p.setFrameInputs(inputs(t));
+    assert.equal(p.beginScenic(), true);
+    assert.equal(p.drawGround(recordingCtx(), { width: W, height: H }), true);
+    assert.equal(p.stage, null);
+    assert.equal(p.groundReceivers(), null);
+    assert.equal(p.frame.compositions[p.viewId].foreground, 'none');
+  }
+  assert.equal(renders, 0);
+  assert.ok(releases > 0);
+});
+
+test('none and ledge travel use ground backing dimensions and never borrow the other side receivers', async () => {
+  for (const reverse of [false, true]) {
+    const { p, scene } = await presentation();
+    const noneId = reverse ? 'b' : 'a';
+    for (const v of catalog.views) p.sceneByBiome.set(v.biome, { view: { ...v, composition: { foreground: v.id === noneId ? 'none' : 'ledge', nearLedgeMaxFrac: v.id === noneId ? 0 : .12 } } });
+    let releases = 0;
+    scene.releaseGroundTarget = () => releases++;
+    scene.renderGround = (frame, id) => {
+      assert.notEqual(id, noneId);
+      return { canvas: { id, width: 700, height: 400 }, stage: { id, wetMasks: [], pools: [] } };
+    };
+    for (const t of [.1, .9]) {
+      const i = inputs(t);
+      i.groundViewport = { logicalWidth: 1400, logicalHeight: 800, backingWidth: 700, backingHeight: 400 };
+      p.setFrameInputs(i); p.beginScenic();
+      assert.equal(p.drawGround(recordingCtx(), { width: 1400, height: 800 }), true);
+      assert.equal(p.stage?.id ?? null, (t < .5 ? 'a' : 'b') === noneId ? null : (t < .5 ? 'a' : 'b'));
+      for (const d of scratches.at(-1).ctx.draws) assert.deepEqual(d.args, [0, 0, 700, 400], 'incoming ledge keeps ground backing size when A is empty');
+    }
+    assert.equal(releases, 0, 'one side still requires the shared ground target');
   }
 });
