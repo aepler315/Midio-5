@@ -1,4 +1,5 @@
 import { resolveLandscapePresentation } from '../world/LandscapePresentation.js';
+import { drawInhabitedShore, kickHop01 } from '../world/InhabitedShore.js';
 // Canvas 2D compositor. Draws sky -> parallax biome layers -> ground ->
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
@@ -375,6 +376,22 @@ export class Renderer {
         hits: recentConductorHits(sim.conductor?.timeline, sim.timeMs),
         reducedFlash: !!sim.reducedFlash, reducedMotion: !!sim.reducedMotion,
         quality: perf?.level ?? 0 });
+    }
+    // The inhabited shore: near sea over the bottom third, with Midio's
+    // ship, Broshi on the beach and Midasus in the sky. Nominal stage space
+    // on the fixed ground transform's scale, screen-anchored like the HUD.
+    if (biomeManager && presentation.inhabitants && biomeManager.world?.kind === 'alpine') {
+      ctx.save();
+      ctx.setTransform(sxFixed, 0, 0, syFixed, 0, 0);
+      ctx.translate(camera.shakeX || 0, camera.shakeY || 0);
+      drawInhabitedShore(ctx, {
+        W: nominalW, H: nominalH, tSec: sim.timeMs / 1000,
+        bands: biomeManager._eqSmoothed, kick: kickHop01(recentConductorHits(sim.conductor?.timeline, sim.timeMs), sim.timeMs),
+        airColor: biomeManager._airColor || '#2a3850', landColor: biomeManager._landTint || '#3a3024',
+        haloColor: biomeManager.currentHaloColor(), night01: biomeManager.celestialState?.night01 ?? 0.5,
+        celestial: biomeManager.celestialState, reducedMotion: !!sim.reducedMotion, reducedFlash: !!sim.reducedFlash,
+      });
+      ctx.restore();
     }
     if (sim.battle && presentation.performers) this._drawBattleFX(ctx, sim);
     if (sim.gnat && presentation.performers) sim.gnat.draw(ctx, sim.timeMs);

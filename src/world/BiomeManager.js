@@ -2714,6 +2714,7 @@ export class BiomeManager {
       : v2
       ? this._drawRangeV2Scenic(ctx, canvas, frame, { worldX, originX, A, B, t, phenomenaFull, particleMul, mandalaColor, skyHorizonNight })
       : this._drawLegacyScenic(ctx, canvas, frame, { worldX, originX, A, B, t, arc, phenomenaFull, particleMul, mandalaColor, skyHorizonNight });
+    this._landTint = tint;
 
     // Ground view: switch to the fixed, never-zoomed transform for the
     // ground and everything painted from here on (see Renderer.draw's
