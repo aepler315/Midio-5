@@ -429,6 +429,14 @@ export { travelSeam };
 
 let BIOME_MANAGER_SERIAL = 0;
 
+// The Range is a real landscape: drifting orange embers over snow and
+// conifers read as a stray effect, so its epic weather is driven air
+// instead. Other worlds paint the director's kind as-is.
+const WORLD_WEATHER_KINDS = Object.freeze({ alpine: Object.freeze({ embers: 'wind' }) });
+export function drawnWeatherKindFor(worldKind, kind) {
+  return WORLD_WEATHER_KINDS[worldKind]?.[kind] ?? kind;
+}
+
 export class BiomeManager {
   constructor({ conductor, energyCurves, durationMs, canvasWidth, canvasHeight, groundY, songSeed, groundField = null, fire = null, flood = null, customBiome = null, lyricSections = null, syncedLyrics = null, structure = null, conductorSchedule = null, worldId = null, terrainProfiles = null, songTerrain = null, residency = null, chapterState = null, ridgeMusicSession = null, ridgeCasting, ridgeCalmCues }) {
     this.conductor = conductor;
@@ -2281,7 +2289,8 @@ export class BiomeManager {
     // rains, ARCTIC already snows, SAKURA already sheds petals, EMBER
     // already lofts embers, so this layer would just double them up there.
     const activeProfile = this._profile(t > 0.5 ? to : from);
-    const suppressTarget = activeProfile.particles.kind === this.weatherState.kind ? 0 : 1;
+    const weatherKind = this.drawnWeatherKind();
+    const suppressTarget = activeProfile.particles.kind === weatherKind ? 0 : 1;
     this._weatherSuppress += (1 - Math.exp(-dtSec / 1.0)) * (suppressTarget - this._weatherSuppress);
     this._activeWeatherIntensity = this.weatherState.intensity * this._weatherSuppress;
     // Rain (and any other ground-colliding particle) lands on the real
@@ -2294,7 +2303,7 @@ export class BiomeManager {
       : null;
 
     if (this._activeWeatherIntensity > 0.01) {
-      const weatherField = this.weatherFields.get(this.weatherState.kind);
+      const weatherField = this.weatherFields.get(weatherKind);
       if (weatherField) weatherField.update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
     }
 
@@ -2391,6 +2400,13 @@ export class BiomeManager {
     this._glitchActiveMs -= dtSec * 1000;
     this._glitchTimer -= dtSec;
     if (this._glitchTimer <= 0) { this._glitchActiveMs = 60; this._glitchTimer = 2.5 + this._starSeed() * 3.5; }
+  }
+
+  /** The weather field this world paints for WeatherDirector's kind. The
+   *  director's state (dryness, wildfire gating) is untouched; only the
+   *  picture changes. */
+  drawnWeatherKind() {
+    return drawnWeatherKindFor(this.world?.kind, this.weatherState.kind);
   }
 
   _pass(id, layerKey = null) {
@@ -2543,7 +2559,9 @@ export class BiomeManager {
     }
 
     this._drawSky(ctx, canvas, A, B, t, dn.night);
-    drawNarrativeMarks(ctx, this.rangeNarrative, this.tSec * 1000, canvas, this.songSeed, this.reducedMotion);
+    // The Range's sky is real sky: the narrative's coloured glyph arcs read
+    // as marks on a chart, so they only draw where there is no Range sky.
+    if (!this._rangeSky) drawNarrativeMarks(ctx, this.rangeNarrative, this.tSec * 1000, canvas, this.songSeed, this.reducedMotion);
 
     // Planets + astral artifacts, behind everything else in the heavens --
     // purely atmospheric, first to go on the deepest perf rung.
@@ -2667,12 +2685,9 @@ export class BiomeManager {
     }
     // Phenomena layer, deep sky: cymatic dust settling into Chladni
     // figures, and the chaos ribbon opposite the celestial for balance.
-    if (phenomenaFull) {
-      const prev = this.cymatics.intensity;
-      this.cymatics.intensity = prev * (this._rangeSky?.decorativeAlpha ?? 1);
-      this.cymatics.draw(ctx, canvas, mandalaColor);
-      this.cymatics.intensity = prev;
-    }
+    // Chladni dust is abstract geometry with no natural body; the Range's
+    // sky keeps to phenomena a real landscape could have.
+    if (phenomenaFull && !this._rangeSky) this.cymatics.draw(ctx, canvas, mandalaColor);
     if (phenomenaFull && !this._rangeSky) {
       const ribbonA = Math.max(0.18, skyA);
       const prevR = this.ribbon.intensity;
@@ -2936,7 +2951,7 @@ export class BiomeManager {
     // density (and thus fever's boost) comes free from `particleMul`, hue
     // convergence at the coda comes free from `this.unravel`.
     if (this._activeWeatherIntensity > 0.01) {
-      const weatherField = this.weatherFields.get(this.weatherState.kind);
+      const weatherField = this.weatherFields.get(this.drawnWeatherKind());
       if (weatherField) {
         ctx.save();
         ctx.globalAlpha = openA;
@@ -2949,13 +2964,10 @@ export class BiomeManager {
     // with the murmuration wheeling among them. Same optional-phenomena rung
     // as the murmuration it flies with -- 48 individually stroked arcs a
     // frame, atmosphere rather than gameplay.
-    if (phenomenaFull) {
-      const decorative = this._rangeSky?.decorativeAlpha ?? 1;
-      const prev = this.swarm.intensity;
-      this.swarm.intensity = prev * decorative;
+    // Abstract math motes: not drawn under the Range's real sky.
+    if (phenomenaFull && !this._rangeSky) {
       this.swarm.draw(ctx, canvas, mandalaColor);
-      this.swarm.intensity = prev;
-      this.murmuration?.draw(ctx, this.tSec * 1000, mandalaColor, particleMul * decorative);
+      this.murmuration?.draw(ctx, this.tSec * 1000, mandalaColor, particleMul);
     }
   }
 

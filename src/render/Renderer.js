@@ -938,7 +938,10 @@ export class Renderer {
     const perf = sim.perf;
     if (perf && !perf.heavyPostFx) return;
 
-    const dropS = sim.hype ? dropImpactStrength(sim.timeMs, sim.hype.dropAtMs) : 0;
+    // The drop shock radiates from the performer's position; the Range has
+    // no performer, so a drop there would ripple the mountains around an
+    // empty point. Fire and ember heat still shimmer as real heat does.
+    const dropS = sim.hype && sim.biomes?.world?.kind !== 'alpine' ? dropImpactStrength(sim.timeMs, sim.hype.dropAtMs) : 0;
     const emberFxAlpha = sim.biomes && sim.biomes.currentFxAlpha ? sim.biomes.currentFxAlpha('emberGlow') : 0;
     const ambient = heatAmbient01(!!(sim.fire && sim.fire.active), sim.fire ? sim.fire.intensity01 : 0, emberFxAlpha);
     if (dropS <= 0.02 && ambient <= 0.02) return;
