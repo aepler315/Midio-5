@@ -449,6 +449,13 @@ const SKYLINE_ROWS = 54;
 const SKYLINE_PERIOD_SEC = 0.25;
 const SKYLINE_BLUR_COLS = 6;
 const WORLD_WEATHER_KINDS = Object.freeze({ alpine: Object.freeze({ embers: 'wind' }) });
+// Wind streaks cross a stylised stage in ~6 s; over a real range that
+// reads as a gale tearing past distant peaks, so the Range slows them to
+// a drift that takes ~25 s to cross the frame.
+const WORLD_WIND_SPEED = Object.freeze({ alpine: 0.25 });
+export function windSpeedScaleFor(worldKind) {
+  return WORLD_WIND_SPEED[worldKind] ?? 1;
+}
 export function drawnWeatherKindFor(worldKind, kind) {
   return WORLD_WEATHER_KINDS[worldKind]?.[kind] ?? kind;
 }
@@ -2321,6 +2328,8 @@ export class BiomeManager {
       ? (sx) => this.groundField.heightAt(worldX + (sx - originX))
       : null;
 
+    const windScale = windSpeedScaleFor(this.world?.kind);
+    for (const f of [this.weatherFields.get(weatherKind), this.fields.get(from), this.fields.get(to)]) if (f) f.windSpeedScale = windScale;
     if (this._activeWeatherIntensity > 0.01) {
       const weatherField = this.weatherFields.get(weatherKind);
       if (weatherField) weatherField.update(dtSec, this.tSec, energyCurves, nowMs, calmLevel, wind, groundYAt);
