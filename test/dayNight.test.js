@@ -205,3 +205,54 @@ test('cyclePhase01 wraps to [0,1) and matches the phase dayNight works in', () =
     assert.ok(v >= 0 && v < 1, `out of [0,1) for t=${t}: ${v}`);
   }
 });
+
+// One day per song: dark before dawn, sunrise, the sun's arc, sunset, then
+// afterglow to the end (songSkyClock).
+test('a song opens in darkness before dawn and closes after sunset', async () => {
+  const { songSkyClock, SONG_DAY_MIN_MS } = await import('../src/world/DayNight.js');
+  const clock = songSkyClock(180000);
+  assert.ok(clock.sunriseMs >= 9000 && clock.sunriseMs <= 22000);
+  assert.ok(clock.sunsetMs < 180000 && clock.sunsetMs >= 180000 - 18000);
+  const at = (ms) => dayNight(ms, clock);
+  assert.equal(at(0).night, 1);
+  assert.equal(at(0).sunAlt, 0);
+  assert.equal(at(0).moonAlt, 0);
+  // The sky pales before the sun is up, and the sun is up just after.
+  assert.ok(at(clock.sunriseMs - 2000).night < at(1000).night);
+  assert.ok(at(clock.sunriseMs + 2000).sunAlt > 0);
+  // Noon mid-song; the sun lingers low (slower near the horizon).
+  const mid = (clock.sunriseMs + clock.sunsetMs) / 2;
+  assert.ok(at(mid).sunAlt > 0.99);
+  const early = at(clock.sunriseMs + 10000).sunAlt, later = at(mid - 10000).sunAlt;
+  assert.ok(early < 0.35, `${early}`);
+  assert.ok(later > 0.9);
+  // Sunset at sunsetMs, then dark with no moon to the end.
+  assert.ok(at(clock.sunsetMs - 2000).sunAlt > 0);
+  assert.equal(at(clock.sunsetMs + 1000).sunAlt, 0);
+  for (const t of [clock.sunsetMs + 4000, 180000, 200000]) {
+    assert.equal(at(t).night, 1);
+    assert.equal(at(t).moonAlt, 0);
+  }
+  // The sun rises screen right and sets screen left, as in the cycle.
+  assert.ok(at(clock.sunriseMs + 500).sunAz01 < 0.05);
+  assert.ok(at(clock.sunsetMs - 500).sunAz01 > 0.95);
+  // A clock stands in for a cycle length wherever one is taken.
+  assert.equal(cyclePhase01(0, clock), MOON_SET_PHASE);
+  // Short or unknown songs keep the repeating cycle.
+  assert.equal(songSkyClock(SONG_DAY_MIN_MS - 1), null);
+  assert.equal(songSkyClock(0), null);
+});
+
+test('twilight burns around the sun as it crosses the horizon, dawn and dusk in their own colours', async () => {
+  const { songSkyClock, twilightAt, TWILIGHT } = await import('../src/world/DayNight.js');
+  const clock = songSkyClock(120000);
+  const tw = (ms) => twilightAt(clock.phaseAt(ms));
+  assert.ok(tw(0).amount01 < 0.05, 'the opening is dark');
+  assert.ok(tw(clock.sunriseMs).amount01 > 0.9, 'sunrise burns');
+  assert.equal(tw(clock.sunriseMs).colors, TWILIGHT.dawn);
+  assert.ok(tw(60000).amount01 < 0.01, 'none at noon');
+  assert.ok(tw(clock.sunsetMs).amount01 > 0.9, 'sunset burns');
+  assert.equal(tw(clock.sunsetMs).colors, TWILIGHT.dusk);
+  assert.ok(tw(clock.sunsetMs).xFrac < tw(clock.sunriseMs).xFrac, 'set on the left, rise on the right');
+  assert.ok(tw(120000).amount01 < tw(clock.sunsetMs).amount01);
+});

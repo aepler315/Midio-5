@@ -23,6 +23,7 @@ import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
 import { topoRevealAt } from './TopoReveal.js';
 import { rangeActorsAt } from './RangeActors.js';
+import { hexLerp } from '../../utils/color.js';
 
 const NIGHT_SKY = '#05060d';
 
@@ -178,19 +179,47 @@ export function calibrateRangeMusic(music, { view = null, progress01 = .5, depth
   return m;
 }
 
+/** Clear daylight sky the Range opens toward at midday, and how far. */
+export const RANGE_DAYLIGHT = Object.freeze({ top: '#3a6fb8', mid: '#78a8d8', horizon: '#b4cde0' });
+export const RANGE_DAYLIGHT_MIX = 0.6;
+/** How far a moonless night pulls every sky stop (and the air) toward space. */
+export const RANGE_MOONLESS_PULL = 0.85;
+
 /** Sky colours the scene's atmosphere must agree with (same stops and
  *  night pull as BiomeManager._drawSky's three-stop case). */
 export function rangeSkyState(mgr, A, B, t, night, narrative = null) {
+  // A moonless night (before dawn, after sunset) pulls nearly to space.
+  // The horizon (and the air with it) goes dark too, not only the zenith.
+  const darkness = mgr.celestialState?.darkness01 ?? 0;
   const pull = 0.62 * night + (styleDials(mgr.visualStyle).spaceWash ? .14 : 0);
   const stop = (i, k) => {
     const c = mgr._rotated(mgr.lerpCache.get(A.sky[i], B.sky[i], t));
-    return pull * k > 0.02 ? mgr.lerpCache.get(c, NIGHT_SKY, pull * k) : c;
+    const amount = Math.min(0.97, pull * k + RANGE_MOONLESS_PULL * darkness);
+    return amount > 0.02 ? mgr.lerpCache.get(c, NIGHT_SKY, amount) : c;
   };
   if (!narrative) return { top: stop(0, 1), mid: stop(1, .75), horizon: stop(2, .45), air: mgr._airColor || stop(2, .45) };
   const dark = narrative.skyDark;
-  const top = mgr.lerpCache.get('#fff3db', stop(0, 1), dark);
-  const mid = mgr.lerpCache.get('#f8e5ca', stop(1, .75), dark);
-  const horizon = mgr.lerpCache.get('#eed7ba', stop(2, .45), dark);
+  let top = mgr.lerpCache.get('#fff3db', stop(0, 1), dark);
+  let mid = mgr.lerpCache.get('#f8e5ca', stop(1, .75), dark);
+  let horizon = mgr.lerpCache.get('#eed7ba', stop(2, .45), dark);
+  // Daylight: with the sun high the sky opens toward clear blue, so the
+  // song's day reads as day between its dawn and its dusk.
+  const sunAlt = mgr.celestialState?.sun?.altitude01 ?? 0;
+  const day = (1 - night) * smoothstep(0.12, 0.6, sunAlt) * RANGE_DAYLIGHT_MIX;
+  if (day > 0.01) {
+    top = hexLerp(top, RANGE_DAYLIGHT.top, day);
+    mid = hexLerp(mid, RANGE_DAYLIGHT.mid, day);
+    horizon = hexLerp(horizon, RANGE_DAYLIGHT.horizon, day);
+  }
+  // Sunrise and sunset colour the whole sky, horizon most, and the air
+  // with it, so distant ranges glow in the same light.
+  const tw = mgr._twilight;
+  if (tw?.amount01 > 0.01) {
+    const a = tw.amount01;
+    top = hexLerp(top, tw.colors.top, 0.35 * a);
+    mid = hexLerp(mid, tw.colors.mid, 0.6 * a);
+    horizon = hexLerp(horizon, tw.colors.horizon, 0.8 * a);
+  }
   return { top, mid, horizon, air: horizon };
 }
 

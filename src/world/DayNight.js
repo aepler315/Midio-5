@@ -51,8 +51,7 @@ export const MOON_SET_PHASE = 1 - CELESTIAL_GAP;
  *  sunset through the whole of the moon's reign, smoothstepped through both
  *  ends so the sky darkens/lightens gradually, not on a hard cut. */
 export function dayNight(nowMs, cycle) {
-  const c = Math.max(1, cycle);
-  const p = cyclePhase01(nowMs, c); // 0..1 phase within the cycle
+  const p = cyclePhase01(nowMs, cycle); // 0..1 phase within the cycle
   const sunSpan = SUN_SET_PHASE;            // [0, sunSpan)
   const moonSpan = MOON_SET_PHASE - 0.5;    // [0.5, MOON_SET_PHASE)
   const sunAlt = p < sunSpan ? Math.sin(Math.PI * (p / sunSpan)) : 0;
@@ -153,8 +152,51 @@ export function sunScreenFrac(p01) {
 /** Cycle phase 0..1 for `nowMs`, the same term dayNight() works in --
  *  exported so callers can feed sunScreenFrac without re-deriving it. */
 export function cyclePhase01(nowMs, cycle) {
+  if (typeof cycle?.phaseAt === 'function') return cycle.phaseAt(nowMs);
   const c = Math.max(1, cycle);
   return ((nowMs % c) + c) % c / c;
+}
+
+// One day per song (Ashton, 2026-10-01): a song opens in near-total
+// darkness just before dawn, the sun rises dramatically, crosses the sky
+// for the body of the song, and sets as it ends, leaving the last seconds
+// in afterglow. A song clock stands in for the repeating cycle anywhere a
+// `cycle` is taken (dayNight, cyclePhase01, resolveCelestialState).
+/** The dark before dawn: this fraction of the song, within [min, max]. */
+export const SONG_PREDAWN = Object.freeze({ frac: 0.07, minMs: 9000, maxMs: 22000 });
+/** After sunset, to the end. */
+export const SONG_AFTERGLOW = Object.freeze({ frac: 0.06, minMs: 8000, maxMs: 18000 });
+/** The sun lingers low: its arc runs at (1 - k cos 2*pi*u) of its mean
+ *  pace, so rise and set take longer than the climb past noon. */
+export const SONG_SUN_LINGER = 0.6;
+/** Songs shorter than this keep the repeating cycle. */
+export const SONG_DAY_MIN_MS = 30000;
+
+/**
+ * The song's sky clock: { durationMs, sunriseMs, sunsetMs, phaseAt(ms) }
+ * in dayNight's phase (MOON_SET_PHASE..1 before dawn, 0..SUN_SET_PHASE
+ * for the sun, then the empty sky before moonrise). Null for a song too
+ * short (or of unknown length) to hold a day.
+ */
+export function songSkyClock(durationMs) {
+  const d = Number(durationMs);
+  if (!(d >= SONG_DAY_MIN_MS)) return null;
+  const span = (r) => Math.min(r.maxMs, Math.max(r.minMs, d * r.frac));
+  const sunriseMs = span(SONG_PREDAWN), sunsetMs = d - span(SONG_AFTERGLOW);
+  const day = sunsetMs - sunriseMs;
+  const END_PHASE = 0.5 - CELESTIAL_GAP * 0.15; // dark, the moon not yet up
+  return Object.freeze({
+    durationMs: d, sunriseMs, sunsetMs,
+    phaseAt(ms) {
+      const t = Math.min(d, Math.max(0, Number.isFinite(ms) ? ms : 0));
+      if (t < sunriseMs) return MOON_SET_PHASE + (1 - MOON_SET_PHASE) * (t / sunriseMs);
+      if (t < sunsetMs) {
+        const u = (t - sunriseMs) / day;
+        return SUN_SET_PHASE * (u - SONG_SUN_LINGER * Math.sin(2 * Math.PI * u) / (2 * Math.PI));
+      }
+      return SUN_SET_PHASE + (END_PHASE - SUN_SET_PHASE) * ((t - sunsetMs) / (d - sunsetMs));
+    },
+  });
 }
 
 /** Screen-height fraction for a body at altitude `alt` (0 at the horizon,
@@ -170,4 +212,26 @@ export function celestialYFracFor(alt) {
 const FADE_BAND = 0.08;
 export function horizonFade(alt) {
   return clamp01(alt / FADE_BAND);
+}
+
+// Twilight colour: how strongly the sky burns around the sun as it nears
+// the horizon, and in what colours. Dawn runs gold and rose; dusk runs
+// red-orange and magenta.
+export const TWILIGHT = Object.freeze({
+  dawn: Object.freeze({ horizon: '#ff7a3a', mid: '#d4627c', top: '#34386e', glow: '#ffb24a' }),
+  dusk: Object.freeze({ horizon: '#ff4a1c', mid: '#b83e78', top: '#271f5c', glow: '#ff7a2a' }),
+});
+
+/**
+ * Twilight for a cycle phase: { amount01, rising, xFrac, colors }. The
+ * amount builds while the sun is still below the horizon, peaks as it
+ * crosses, and fades as it climbs (sunScreenFrac's signed altitude).
+ */
+export function twilightAt(p01) {
+  const p = ((p01 % 1) + 1) % 1;
+  const { altSigned: a, xFrac } = sunScreenFrac(p);
+  const amount01 = smoothstep(-0.24, -0.02, a) * (1 - smoothstep(0.1, 0.42, a));
+  // Rising: the sun's morning half and the dark before it.
+  const rising = p < SUN_SET_PHASE / 2 || p >= 0.5 + (MOON_SET_PHASE - 0.5) / 2;
+  return { amount01, rising, xFrac, colors: rising ? TWILIGHT.dawn : TWILIGHT.dusk };
 }
