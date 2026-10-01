@@ -2757,7 +2757,8 @@ export class BiomeManager {
     // In FRONT of the ground: as the camera pulls back, the near water comes
     // into frame and the strip they run along turns out to be an isthmus.
     this._drawForegroundSwell(ctx, groundCanvas, worldX, A, B, t);
-    this._drawTransitionOverlays(ctx, groundCanvas, B);
+    // Deferred like the flood: a cut flash must cover the shore too.
+    if (!this.inhabitedShore) this._drawTransitionOverlays(ctx, groundCanvas, B);
   }
 
   /** The legacy scenic stack: scanned/procedural L2-L5 strips with their

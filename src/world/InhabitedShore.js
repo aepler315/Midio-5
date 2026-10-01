@@ -36,14 +36,17 @@ const BABY_LAGS_S = [0.55, 0.95, 1.35];
 const frac = (v) => v - Math.floor(v);
 const smooth = (u) => u * u * (3 - 2 * u);
 
-/** A small hop arc (0..1) after the latest kick in `hits` (newest first,
- *  as recentConductorHits returns them): up and back down over 300 ms. */
+/** A small hop arc (0..1) after the kicks in `hits` (as recentConductorHits
+ *  returns them): up and back down over 300 ms per kick. */
 export function kickHop01(hits, nowMs) {
-  const hit = hits?.[0];
-  if (!hit) return 0;
-  const dt = nowMs - hit.tMs;
-  if (dt < 0 || dt >= 300) return 0;
-  return hit.strength * Math.sin(Math.PI * dt / 300);
+  // The highest of the overlapping arcs, so a kick landing mid-hop carries
+  // him on up rather than snapping him back to the sand.
+  let hop = 0;
+  for (const hit of hits || []) {
+    const dt = nowMs - hit.tMs;
+    if (dt >= 0 && dt < 300) hop = Math.max(hop, hit.strength * Math.sin(Math.PI * dt / 300));
+  }
+  return hop;
 }
 
 /** The beach edge (top of the land strip in front of the sea) at x. Static
@@ -179,7 +182,8 @@ export function drawInhabitedShore(ctx, {
   const midasus = midasusPose(tSec, W, H, motion);
   drawMidasus(ctx, midasus, { night01, reducedFlash });
   drawBroshi(ctx, broshiPose(tSec, W, H, motion), { k });
-  drawShip(ctx, shipPose(tSec, W, H, motion), { tSec, night01, landColor, k, reducedFlash, lookAt: midasus });
+  // Reduced motion also stills the wake, pennant and Midio's hover.
+  drawShip(ctx, shipPose(tSec, W, H, motion), { tSec: reducedMotion ? 0 : tSec, night01, landColor, k, reducedFlash, lookAt: midasus });
   ctx.restore();
 }
 

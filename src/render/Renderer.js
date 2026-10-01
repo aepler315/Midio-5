@@ -405,8 +405,14 @@ export class Renderer {
         celestial: cs, glitterX, reducedMotion: !!sim.reducedMotion, reducedFlash: !!sim.reducedFlash,
       });
       ctx.restore();
-      // The flood rises over the shore, not under it.
+      // The flood rises over the shore, not under it, in the shore's own
+      // (unshifted) frame: cancel the glacial ground offset.
+      ctx.save();
+      ctx.translate(0, -groundOffsetY);
       biomeManager._drawFlood(ctx, groundView.stage);
+      ctx.restore();
+      // Transition flashes cover the whole composed frame, shore included.
+      biomeManager._drawTransitionOverlays(ctx, groundView.stage, null);
     }
     if (sim.battle && presentation.performers) this._drawBattleFX(ctx, sim);
     if (sim.gnat && presentation.performers) sim.gnat.draw(ctx, sim.timeMs);

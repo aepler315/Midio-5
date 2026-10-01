@@ -71,3 +71,14 @@ test('landscape worlds host the residents; Cathode keeps its own pixel world', (
   assert.equal(resolveLandscapePresentation('alpine').performers, false);
   assert.equal(resolveLandscapePresentation('cathode').inhabitants, false);
 });
+
+test('a second kick mid-hop never drops Broshi back to the sand', () => {
+  const hits = [{ tMs: 1150, strength: 1 }, { tMs: 1000, strength: 1 }];
+  assert.ok(kickHop01(hits, 1150) > 0.99, 'still at the first arc apex when the next kick lands');
+  let prev = kickHop01(hits, 1000);
+  for (let t = 1001; t < 1450; t++) {
+    const v = kickHop01(hits, t);
+    assert.ok(Math.abs(v - prev) < 0.02, `continuous at ${t}`);
+    prev = v;
+  }
+});
