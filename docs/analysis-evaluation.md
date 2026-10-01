@@ -41,3 +41,16 @@ World *visual* quality is a separate protocol: see
 [world-quality-evaluation.md](./world-quality-evaluation.md) and
 `npm run eval:worlds`. Section metrics here do not measure watchability,
 and world-quality ratings do not measure boundary F-measure.
+
+## Human listening annotations
+
+The proposed [Midio listening language](./listening/README.md) describes sound,
+simultaneous emotions, and changes in their foreground roles over time. Start
+with its [annotation template](./listening/template.song.yaml) and see the
+[pipeline design](./listening/pipeline-design.md) for recording identity,
+reference separation, comparison, and evaluation requirements.
+
+The authoring format and schema are available for review. The importer,
+full-recording evidence export, comparison runner, and calibrated emotion
+predictor are not implemented by this proposal. Illustrative examples must
+not be used as real evaluation data.
