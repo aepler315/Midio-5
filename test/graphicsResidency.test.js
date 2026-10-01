@@ -26,6 +26,26 @@ test('a denied reservation allocates nothing and evicts nothing', () => {
   assert.equal(r.snapshot().denials, 1);
 });
 
+test('a pending reservation grows once its exact size is known, or stays as it was', () => {
+  const r = ledger(100);
+  const old = r.reserve({ key: 'old', bytes: 30 * MiB, owner: 'terrain' });
+  let disposed = 0;
+  r.commit(old, {}, () => disposed++);
+  const res = r.reserve({ key: 'k', bytes: 50 * MiB, owner: 'terrain' });
+  assert.equal(r.grow(res, 10 * MiB), true);
+  assert.equal(res.bytes, 60 * MiB);
+  assert.equal(r.pendingBytes, 60 * MiB);
+  assert.equal(disposed, 0);
+  // Over budget: the unpinned old entry is evicted, never the growing one.
+  assert.equal(r.grow(res, 20 * MiB), true);
+  assert.equal(disposed, 1);
+  assert.equal(r.usedBytes, 80 * MiB);
+  assert.equal(r.grow(res, 30 * MiB), false);
+  assert.equal(r.usedBytes, 80 * MiB);
+  assert.equal(r.commit(res, {}), true);
+  assert.equal(r.grow(res, 1), false, 'a live entry no longer grows');
+});
+
 test('pending -> live is not double counted', () => {
   const r = ledger(100);
   const res = r.reserve({ key: 'k', bytes: 40 * MiB, owner: 'o' });

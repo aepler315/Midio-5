@@ -85,6 +85,7 @@ export class RangeScene {
     this.materials = new Map(); // manifest URL -> { pack, textures, key, users:Set }
     this.pending = new Map(); // viewId -> { generation, job }
     this.materialLoads = new Map(); // manifest URL -> in-flight acquisition
+    this.fringeBytes = new Map(); // GPU key -> seam-fill index bytes last built
     this.target = null;
     this.sideTargets = { B: null };
     this.depthCache = { A: { frame: -1, view: null }, B: { frame: -1, view: null } };
@@ -279,14 +280,22 @@ export class RangeScene {
         // only while it is built: the view owns both GPU textures.
         const gridPx = cpu.data.grid.width * cpu.data.grid.height;
         const featureBudgetBytes = 3 * 768 * 6 * 4;
-        // The mesh is built on the CPU first (nothing uploads until it
-        // draws) so the seam-fill index buffers, which the bake's mesh
-        // estimate does not know about, are counted in the reservation.
-        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
-        const fringeBytes = Object.values(geos.fringes || {}).reduce((sum, g) => sum + g.index.array.byteLength, 0);
-        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
+        // The bake's mesh estimate does not know the seam-fill index
+        // buffers, whose size is exact only once the mesh is built on the
+        // CPU (nothing uploads until it draws). The estimate is reserved
+        // first, so a view that cannot fit is denied before that build, and
+        // the reservation grows by the fringe bytes after it. A view denied
+        // at that step remembers its fringe size and asks for it up front.
+        const knownFringe = this.fringeBytes.get(gpuKey) || 0;
+        const bytes = (est?.meshBytes || 0) + knownFringe + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
+        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
+        const fringeBytes = Object.values(geos.fringes || {}).reduce((sum, g) => sum + g.index.array.byteLength, 0);
+        this.fringeBytes.set(gpuKey, fringeBytes);
+        if (res && fringeBytes > knownFringe && !this.residency.grow(res, fringeBytes - knownFringe)) {
+          throw new RangeAssetError('budget', `no GPU room for ${view.id} seam fill`);
+        }
         const scratchKey = `range:surface-scratch:${view.id}`;
         const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 11, owner: 'range-scratch', generation }) || null;
         if (this.residency && !scratch) throw new RangeAssetError('budget', `no room to build ${view.id} surface`);

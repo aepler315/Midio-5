@@ -143,8 +143,10 @@ export function pointVisible(ob, p, occ) {
  * with a disc of `blobRadius` cells: whatever stands more than
  * `ratio * blobRadius` cells above the opened surface is just as steep on
  * every side, and is lowered to it when it forms a blob no wider than the
- * disc in either direction (a long narrow ridge stays). Returns the number
- * of samples changed.
+ * disc in either direction (a long narrow ridge stays) and lies within
+ * `blobRadius` cells of the grid edge or a no-data sample, where source
+ * seams leave such blobs (a compact butte inland stays). Returns the
+ * number of samples changed.
  */
 export function despikeGrid(grid, { ratio = 2, blobRadius = 3 } = {}) {
   const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
@@ -171,6 +173,16 @@ export function despikeGrid(grid, { ratio = 2, blobRadius = 3 } = {}) {
     const span = 2 * blobRadius + 1;
     const seen = new Uint8Array(h.length);
     const isCandidate = (i) => valid[i] && h[i] - opened[i] > limit;
+    // Compactness alone does not make a blob an artifact (a butte or rock
+    // tower is compact too). These blobs come from where the source data
+    // ends: a mosaic seam at the grid edge or a no-data hole. A blob is
+    // lowered only within `blobRadius` cells of one.
+    const nearDataEdge = (x0, x1, y0, y1) => {
+      const ax = x0 - blobRadius, bx = x1 + blobRadius, ay = y0 - blobRadius, by = y1 + blobRadius;
+      if (ax < 0 || ay < 0 || bx >= w || by >= hgt) return true;
+      for (let y = ay; y <= by; y++) for (let x = ax; x <= bx; x++) if (!valid[y * w + x]) return true;
+      return false;
+    };
     // Only a bounded blob goes: a long ridge narrower than the disc stands
     // above the opening along its whole length but is not a spike.
     for (let start = 0; start < h.length; start++) {
@@ -189,6 +201,7 @@ export function despikeGrid(grid, { ratio = 2, blobRadius = 3 } = {}) {
         }
       }
       if (x1 - x0 + 1 > span || y1 - y0 + 1 > span) continue;
+      if (!nearDataEdge(x0, x1, y0, y1)) continue;
       for (const i of blob) { h[i] = opened[i]; changed++; }
     }
   }
