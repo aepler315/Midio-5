@@ -383,6 +383,8 @@ export function sceneUniforms(THREE, base) {
     uAmbientScale: { value: 2.5 },
     uDebugMask: { value: 0 },
     uTime: { value: 0 },
+    // Two gust fronts (age s, strength) and their direction across the frame.
+    uGust: { value: new THREE.Vector4(1000, 0, 1000, 0) }, uGustDir: { value: 1 },
     uForestKeep: { value: 1 },
     uExposure: { value: 2.0 },
     uNarrative: { value: new THREE.Vector4(1, 1, 1, 1) },
