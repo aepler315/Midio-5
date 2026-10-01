@@ -393,7 +393,8 @@
           "docs/evidence/range-v2/teton-jackson-lake-stations.jpg",
           "docs/evidence/range-v2/teton-jackson-lake-inapp-10s.jpg"
         ]
-      }
+      },
+      "materialRules": {}
     },
     {
       "id": "denali-wonder-lake",
@@ -622,7 +623,7 @@
       "regionId": "trans-mexican-volcanic-belt",
       "biome": "PINE_OAK",
       "status": "approved",
-      "notes": "From the western foothills above Tlalmanalco looking east to Iztaccíhuatl and Popocatépetl.",
+      "notes": "From the western foothills above Tlalmanalco looking east to Iztacc\u00edhuatl and Popocat\u00e9petl.",
       "dem": {
         "source": "terrarium",
         "zoom": 12,
@@ -669,7 +670,7 @@
       },
       "landmarks": [
         {
-          "name": "Iztaccíhuatl",
+          "name": "Iztacc\u00edhuatl",
           "lonLat": [
             -98.6425,
             19.1786
@@ -677,7 +678,7 @@
           "elevationM": 5230
         },
         {
-          "name": "Popocatépetl",
+          "name": "Popocat\u00e9petl",
           "lonLat": [
             -98.6278,
             19.0225
@@ -685,8 +686,8 @@
           "elevationM": 5426
         }
       ],
-      "title": "Iztaccíhuatl and Popocatépetl",
-      "place": "Trans-Mexican Volcanic Belt, México",
+      "title": "Iztacc\u00edhuatl and Popocat\u00e9petl",
+      "place": "Trans-Mexican Volcanic Belt, M\u00e9xico",
       "water": false,
       "approval": {
         "date": "2026-09-29",
@@ -1376,21 +1377,21 @@
       },
       "landmarks": [
         {
-          "name": "Newport — USGS 12395500",
+          "name": "Newport \u2014 USGS 12395500",
           "lonLat": [
             -117.0341667,
             48.1822222
           ]
         },
         {
-          "name": "Cusick — USGS 12395950",
+          "name": "Cusick \u2014 USGS 12395950",
           "lonLat": [
             -117.2929986,
             48.3360166
           ]
         },
         {
-          "name": "Ione / Box Canyon — USGS 12396500",
+          "name": "Ione / Box Canyon \u2014 USGS 12396500",
           "lonLat": [
             -117.4163706,
             48.7809561
@@ -1398,13 +1399,163 @@
         }
       ],
       "title": "Pend Oreille Valley",
-      "place": "Newport–Cusick–Ione, Washington",
+      "place": "Newport\u2013Cusick\u2013Ione, Washington",
       "reviewPath": "docs/glacial-valley-validation.md",
       "materialRules": {
         "snowlineM": 2250,
         "forestFloorM": 550,
         "forestDensity": 0.2
+      },
+      "composition": {
+        "foreground": "none",
+        "nearLedgeMaxFrac": 0
       }
+    },
+    {
+      "id": "teton-jackson-lake-coherent",
+      "regionId": "tetons",
+      "biome": "CONIFER",
+      "status": "candidate",
+      "notes": "Over the south arm of Jackson Lake looking south-west across the water to Mount Moran and the Cathedral Group.",
+      "dem": {
+        "source": "3dep13",
+        "fill": "terrarium",
+        "fillZoom": 12,
+        "centerLonLat": [
+          -110.7,
+          43.83
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -110.64927,
+            43.85504
+          ],
+          "aboveGroundM": 350
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -110.66073,
+            43.86896
+          ],
+          "aboveGroundM": 350
+        },
+        "targetStart": {
+          "lonLat": [
+            -110.79428,
+            43.79304
+          ],
+          "heightM": 2371
+        },
+        "targetEnd": {
+          "lonLat": [
+            -110.80572,
+            43.80696
+          ],
+          "heightM": 2371
+        },
+        "fovYDeg": 29.9
+      },
+      "landmarks": [
+        {
+          "name": "Grand Teton",
+          "lonLat": [
+            -110.8024,
+            43.7411
+          ],
+          "elevationM": 4199
+        },
+        {
+          "name": "Mount Moran",
+          "lonLat": [
+            -110.7762,
+            43.835
+          ],
+          "elevationM": 3842
+        }
+      ],
+      "title": "Teton Range",
+      "place": "Jackson Lake, Wyoming",
+      "composition": {
+        "foreground": "ledge",
+        "nearLedgeMaxFrac": 0.12
+      },
+      "materialRules": {
+        "waterSkyMix": 0.65,
+        "waterGlintGain": 1.5
+      },
+      "terrainSourceId": "teton-jackson-lake",
+      "reviewPath": "docs/evidence/terrain-continuation/README.md",
+      "review": "Shallow-foreground composition pilot. Final compositor, music and device review pending; source camera and terrain unchanged."
+    },
+    {
+      "id": "monument-valley-163-coherent",
+      "regionId": "monument-valley",
+      "biome": "CANYON",
+      "status": "candidate",
+      "notes": "From US-163 at Forrest Gump Point looking south-west down the highway to the Mittens and Merrick Butte.",
+      "dem": {
+        "source": "3dep13",
+        "centerLonLat": [
+          -110.04,
+          37.04
+        ],
+        "extentM": [
+          44800,
+          44800
+        ],
+        "cellM": 20
+      },
+      "rail": {
+        "eyeStart": {
+          "lonLat": [
+            -110.0401,
+            37.03716
+          ],
+          "aboveGroundM": 60
+        },
+        "eyeEnd": {
+          "lonLat": [
+            -110.05116,
+            37.04338
+          ],
+          "aboveGroundM": 60
+        },
+        "targetStart": {
+          "lonLat": [
+            -110.08448,
+            36.98689
+          ],
+          "heightM": 1700
+        },
+        "targetEnd": {
+          "lonLat": [
+            -110.09552,
+            36.99311
+          ],
+          "heightM": 1700
+        },
+        "fovYDeg": 16
+      },
+      "landmarks": [],
+      "title": "Monument Valley",
+      "place": "Navajo Nation, Utah and Arizona",
+      "materialRules": {
+        "forestFloorM": 1900
+      },
+      "composition": {
+        "foreground": "ledge",
+        "nearLedgeMaxFrac": 0.12
+      },
+      "terrainSourceId": "monument-valley-163",
+      "reviewPath": "docs/evidence/terrain-continuation/README.md",
+      "review": "Shallow-foreground composition pilot. Final compositor, music and device review pending; source camera and terrain unchanged."
     }
   ]
 }

@@ -66,8 +66,8 @@ test('a kick lifts Broshi briefly and lands him again', () => {
   assert.equal(kickHop01([], 1000), 0);
 });
 
-test('landscape worlds host the residents; Cathode keeps its own pixel world', () => {
-  assert.equal(resolveLandscapePresentation('alpine').inhabitants, true);
+test('listening excludes shore residents; Cathode keeps its own pixel world', () => {
+  assert.equal(resolveLandscapePresentation('alpine').inhabitants, false);
   assert.equal(resolveLandscapePresentation('alpine').performers, false);
   assert.equal(resolveLandscapePresentation('cathode').inhabitants, false);
 });

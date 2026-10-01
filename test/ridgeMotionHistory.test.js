@@ -85,7 +85,7 @@ test('paint geometry and neutral measurements share seeded points and reduced mo
   assert.deepEqual(frozen.points, frozen.neutralPoints); assert.equal(frozen.velocity01, 0);
   assert.deepEqual(frozen.points, geometry.sampleSpaceRidge({ ...input, reducedMotion: true, heardTimeMs: 9000 }).points);
   const silent = make({ durationMs: 12000 });
-  const dance = geometry.sampleHorizonRidge({ ...input, history: silent, worldX: 80, songP: .5 });
+  const dance = geometry.sampleHorizonRidge({ ...input, history: silent, advectionPx: 80, songP: .5 });
   assert.deepEqual(dance.points, dance.neutralPoints, 'silence has no decorative musical wave');
 });
 
@@ -151,6 +151,76 @@ test('song-owned stateKey and both ridge samples survive real simulation seek an
 test('repeated heard-time queries reuse the immutable sample rather than advance a filter', () => {
   const h = make({ energyCurves: curves(), durationMs: 12000 });
   assert.equal(h.sample(4373), h.sample(4373));
+});
+
+test('actual simulation poses reconstruct asymmetric ridge bands after cold and backward seeks', async () => {
+  const { Simulation } = await import('../src/sim/Simulation.js');
+  const { Conductor } = await import('../src/core/Conductor.js');
+  const { ParamBus } = await import('../src/core/ParamBus.js');
+  const { buildRangeFrame } = await import('../src/world/alpine/RangeFrame.js');
+  const source = curves(.05, .01, 50); source.bands[0].fill(.9);
+  const session = api.createRidgeMusicSampler({ primary: make({ energyCurves: source, durationMs: 12000 }) });
+  const makeSim = () => {
+    const c = new Conductor(); c.load({ timeline: [], durationMs: 12000, bpm: 120, barGrid: [] });
+    const sim = new Simulation(c, new ParamBus(), { energyCurves: source, songSeed: 45, ridgeMusicSession: session });
+    sim.biomes.pumpStripPrewarm = () => {}; return sim;
+  };
+  const played = makeSim(), seeked = makeSim();
+  const frame = sim => buildRangeFrame({ frameId: 1, sim, pose: sim.lerpState(1) });
+  try {
+    for (let at = 0; at <= 4000; at += 10) played.step(10, at);
+    seeked.startAt(4000);
+    assert.notEqual(played.worldX, seeked.worldX, 'exercise different real spatial origins');
+    assert.deepEqual(frame(played).ridges.dance.points, frame(seeked).ridges.dance.points);
+    seeked.startAt(9000); seeked.startAt(4000);
+    assert.deepEqual(frame(played).ridges, frame(seeked).ridges);
+    for (const sim of [played, seeked]) sim.biomes._horizonCrest = { heights: Float32Array.of(.4, 1, .2, .8), windowM: 2, travelM: 1, stepM: 1 };
+    assert.deepEqual(frame(played).ridges.dance.points, frame(seeked).ridges.dance.points);
+    assert.deepEqual(played.biomes._horizonEqPoints({ width: 1280, height: 720 }, played.worldX),
+      seeked.biomes._horizonEqPoints({ width: 1280, height: 720 }, seeked.worldX));
+  } finally { played.dispose(); seeked.dispose(); }
+});
+
+test('physical pressure releases at a silence edge without snapping either geometry or calibration', async () => {
+  const { rangeMusicState, calibrateRangeMusic, sceneDeformation } = await import('../src/world/alpine/RangeFrame.js');
+  const { ridgeEnvelope } = await import('../src/world/alpine/Ridge.js');
+  const c = curves(.8, .01, 50);
+  c.bands.forEach(b => b.fill(0, 50)); c.rmsBands.forEach(b => b.fill(0, 50));
+  const h = make({ energyCurves: c, durationMs: 12000 });
+  const musicAt = t => {
+    const s = h.sample(t);
+    return rangeMusicState({ env: ridgeEnvelope({ energy: s.pressureEnergy01, bass: s.bassPressure01 }),
+      activity01: s.activity01, motionPresence01: s.motionPresence01, calibrationActivity01: s.pressureEnergy01,
+      evaluatedKick01: s.kick01, tSec: t / 1000 });
+  };
+  const samples = [999.9, 1000].map(t => h.sample(t));
+  assert.ok(samples[0].motionPresence01 > .99);
+  assert.ok(Math.abs(samples[0].motionPresence01 - samples[1].motionPresence01) < .001);
+  for (const calibrate of [m => m, m => calibrateRangeMusic(m, { depthM: 800, heightRange: [0, 2000] })]) {
+    const ys = [999.9, 1000].map(t => sceneDeformation(calibrate(musicAt(t)), 1200, 0, 2000, [0, 2000]));
+    assert.ok(Math.abs(ys[0] - ys[1]) < .1, `silence discontinuity ${ys}`);
+  }
+  const after = musicAt(7000);
+  assert.equal(after.motionPresence01, 0);
+  assert.equal(sceneDeformation(after, 1200, 0, 2000, [0, 2000]), 0);
+  const cold = make({ energyCurves: c, durationMs: 12000 });
+  for (let t = 0; t < 1600; t += 17) h.sample(t);
+  assert.deepEqual(h.sample(1553), cold.sample(1553));
+  assert.ok(h.sample(1100).motionPresence01 > h.sample(1553).motionPresence01);
+});
+
+test('physical presence stays neutral for noise but follows quiet music, MIDI tails and recorded handoff', () => {
+  const noise = make({ energyCurves: curves(.8, 1e-6), durationMs: 12000 });
+  const quiet = make({ energyCurves: curves(.2, .0001), durationMs: 12000 });
+  assert.equal(noise.sample(1000).motionPresence01, 0);
+  assert.ok(quiet.sample(1000).motionPresence01 > .99);
+  const midi = make({ timeline: [note, { ...note, tMs: 550 }], durationMs: 2000 });
+  assert.equal(midi.sample(99).motionPresence01, 0);
+  assert.ok(midi.sample(400).motionPresence01 > .8, 'audible note tail sustains presence');
+  assert.ok(midi.sample(700).motionPresence01 > midi.sample(540).motionPresence01, 'second onset interrupts release');
+  const sampler = api.createRidgeMusicSampler({ previous: noise, primary: quiet, handoffStartMs: 2000 });
+  const expected = (noise.sample(2250).motionPresence01 + quiet.sample(2250).motionPresence01) / 2;
+  assert.equal(sampler.sample(2250).motionPresence01, expected);
 });
 
 test('authored calm cue value uses the same strength contract as live conductor dispatch', () => {
@@ -222,4 +292,30 @@ test('recorded analysis handoff preserves shared provisional ownership and dedup
   const fresh = api.createRidgeMusicSampler({ primary, previous, handoffStartMs: 3000 });
   assert.deepEqual(fresh.stateKey, sampler.stateKey); assert.deepEqual(fresh.sample(3250), middle);
   assert.equal(sampler.sample(3500), primary.sample(3500), 'final ownership is restored exactly at completion');
+});
+
+test('actual physical melodic geometry releases across silence while raw source ownership is gated', async () => {
+  const { Simulation } = await import('../src/sim/Simulation.js');
+  const { Conductor } = await import('../src/core/Conductor.js');
+  const { ParamBus } = await import('../src/core/ParamBus.js');
+  const { buildRangeFrame, sceneDeformation } = await import('../src/world/alpine/RangeFrame.js');
+  const c = curves(.8, .01, 50); c.bands.forEach(b => b.fill(0, 50)); c.rmsBands.forEach(b => b.fill(0, 50));
+  const timeline = [{ tMs: 100, durMs: 1000, vel: 1, src: 'audio', role: 'BASS', pitch: 84, pitchConfidence: 1, pitchProvenance: 'tracked' }];
+  const h = make({ energyCurves: c, durationMs: 12000, timeline });
+  const conductor = new Conductor(); conductor.load({ timeline, durationMs: 12000, bpm: 120, barGrid: [] });
+  const sim = new Simulation(conductor, new ParamBus(), { energyCurves: c, songSeed: 45, ridgeMusicSession: h });
+  sim.biomes.pumpStripPrewarm = () => {};
+  const at = t => { sim.startAt(t); return buildRangeFrame({ sim, pose: sim.lerpState(1) }).music; };
+  try {
+    const a = at(999.9), b = at(1000);
+    assert.ok(a.melodicM > 1);
+    assert.ok(Math.abs(sceneDeformation(a, 1200, 900, 1500, [0, 2000]) - sceneDeformation(b, 1200, 900, 1500, [0, 2000])) < .1);
+    assert.equal(h.sample(1000).sources.midio.pitchActivity, 0, 'raw source remains noise-gated');
+    assert.equal(at(7000).melodicM, 0);
+    assert.deepEqual(h.sample(1553), make({ energyCurves: c, durationMs: 12000, timeline }).sample(1553));
+    const noise = make({ energyCurves: curves(.8, 1e-6), durationMs: 12000, timeline });
+    assert.equal(noise.sample(900).motionMelody.activity, 0);
+    const blend = api.createRidgeMusicSampler({ primary: noise, previous: h, handoffStartMs: 500 });
+    assert.equal(blend.sample(750).motionMelody.activity, h.sample(750).motionMelody.activity / 2);
+  } finally { sim.dispose(); }
 });

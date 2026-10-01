@@ -3,6 +3,12 @@
 Plan: `docs/superpowers/plans/2026-09-29-range-geodata-master.md` (copied verbatim from the supplied package).
 Reference image: `docs/evidence/range-v2/reference.webp` (1806×871, documentation only; never staged into `/src`).
 
+## Coherent terrain continuation — 2026-10-01
+
+The implementation branch `codex/coherent-terrain-performance-20261001` adds actor-free composition, heard-time ridge advection, causal physical release, uniform output fitting, optional foreground composition and bounded water controls. All 13 approved views retain normal-picker coverage. New Teton/Monument `-coherent` variants and Pend Oreille remain forced candidates with no new approval.
+
+Current evidence and remaining gates are recorded in [terrain continuation](evidence/terrain-continuation/README.md). Full suite: 3672 passed, 5 GDAL skips, 0 failures. Dependency-based runtime rebuild and staged delivery pass. CPU evidence is reproducible; current GPU captures, decoded export, real-song motion review and physical-device performance remain pending. No merge/deployment was performed.
+
 ## State
 
 | Field | Value |

@@ -2,6 +2,7 @@
 // travel are never changed: only the height of a whole strip above its foot
 // changes. Preflight runs once per biome-side strip set, not on audio frames.
 import { sampleHorizonRidge } from './RidgeMotion.js';
+import { ridgeAdvectionPxAt } from '../RidgeMotionHistory.js';
 import { stripOriginX, stripSampleX } from '../SilhouetteGenerator.js';
 
 const STATIONS = 21;
@@ -14,11 +15,11 @@ const MIN_FAR_SCALE = 0.62;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 /** Exactly the sampled polyline painted by BiomeManager._drawHorizonEQ. */
-export function horizonEqPoints({ width, height, crest = null, songP = 0, bands, worldX = 0,
+export function horizonEqPoints({ width, height, crest = null, songP = 0, bands,
   tSec = 0, maxHeightFrac = 0.4, tuning = {}, activity01 = null, kick01 = 0 }) {
   const music = { bands: bands || Array(7).fill(0), sources: {}, kick01,
     activity01: activity01 ?? Math.max(0, ...(bands || [])) };
-  return sampleHorizonRidge({ viewport: { width, height }, crest, songP, worldX,
+  return sampleHorizonRidge({ viewport: { width, height }, crest, songP, advectionPx: ridgeAdvectionPxAt(tSec * 1000),
     heardTimeMs: tSec * 1000, tuning: { ...tuning, maxHeightFrac }, history: { sample: () => music } }).points;
 }
 

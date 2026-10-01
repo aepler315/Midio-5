@@ -154,9 +154,18 @@ export function groundPresentationOffsetY(presentation, biomes, height, supportY
   return weight * Math.max(0, Math.min(height * 0.22, height * 0.915 - supportY + SHAKE_MARGIN_PX));
 }
 
-export function applyFixedGroundTransform(ctx, { sx, sy, width, height, camera, offsetY = 0 }) {
+/** Fit the authored stage without rounding its axes independently. Backing
+ * buffers may round their sizes; the final Canvas mapping stays uniform. */
+export function fitStageOutput(width, height, outputWidth, outputHeight) {
+  const scale = Math.min(outputWidth / width, outputHeight / height);
+  const fittedWidth = width * scale, fittedHeight = height * scale;
+  return { scale, x: (outputWidth - fittedWidth) / 2, y: (outputHeight - fittedHeight) / 2,
+    width: fittedWidth, height: fittedHeight };
+}
+
+export function applyFixedGroundTransform(ctx, { sx, sy, width, height, camera, offsetY = 0, outputX = 0, outputY = 0 }) {
   const cx = width / 2 + SHAKE_MARGIN_PX, cy = height / 2 + SHAKE_MARGIN_PX;
-  ctx.setTransform(sx, 0, 0, sy, 0, 0);
+  ctx.setTransform(sx, 0, 0, sy, outputX, outputY);
   ctx.translate(cx, cy);
   ctx.rotate(camera.roll || 0);
   ctx.translate(-cx + camera.shakeX - SHAKE_MARGIN_PX,
@@ -201,6 +210,7 @@ export class Renderer {
 
   draw(sim, alpha) {
     this.drawCount++;
+    this.inhabitedShoreDraws = 0;
     const { ctx, canvas } = this;
     const fracture = sim.fracture || null;
     this._styleDials = styleDials(sim.visualStyle);
@@ -245,8 +255,9 @@ export class Renderer {
     const stage = this._stageView || (this._stageView = { width: stageW, height: stageH });
     stage.width = stageW;
     stage.height = stageH;
-    const sx = canvas.width / baseStageW;
-    const sy = canvas.height / baseStageH;
+    const outputFit = fitStageOutput(nominalW, nominalH, canvas.width, canvas.height);
+    const sx = outputFit.scale * nominalW / baseStageW;
+    const sy = sx;
     // Unpadded counterpart for everything drawn AFTER the shake transform is
     // restored below (vignette/fever aura/hype frame/film finish) -- those
     // are screen-edge-hugging effects, not world content, so they must size
@@ -275,7 +286,14 @@ export class Renderer {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+    this._drawOutputBars(ctx, canvas, outputFit);
+    // Overscan and post-effects remain inside the fitted picture. ImageData
+    // writes bypass Canvas clips, so bars are restored after pixel operations.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(outputFit.x, outputFit.y, outputFit.width, outputFit.height);
+    ctx.clip();
+    ctx.setTransform(sx, 0, 0, sy, outputFit.x, outputFit.y);
 
     // Impact roll and screen shake both still pivot on the visible window's
     // own center -- which now sits SHAKE_MARGIN_PX inside the padded stage,
@@ -319,8 +337,8 @@ export class Renderer {
     // sky/mountain becomes visible above it" -- no new blank space is ever
     // exposed, because the sky/mountain pass already safely covers its own
     // (zoomed, wider) bounds the same way it always has.
-    const sxFixed = canvas.width / nominalW;
-    const syFixed = canvas.height / nominalH;
+    const sxFixed = outputFit.scale;
+    const syFixed = sxFixed;
     const groundOffsetY = groundPresentationOffsetY(this.rangePresentation, biomeManager, nominalH, groundY);
     const groundStage = this._groundStageView || (this._groundStageView = { width: 0, height: 0 });
     groundStage.width = nominalW + 2 * SHAKE_MARGIN_PX;
@@ -328,7 +346,8 @@ export class Renderer {
     const groundView = {
       stage: groundStage,
       apply: () => {
-        applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera, offsetY: groundOffsetY });
+        applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera, offsetY: groundOffsetY,
+          outputX: outputFit.x, outputY: outputFit.y });
       },
     };
 
@@ -354,7 +373,8 @@ export class Renderer {
         groundViewport: viewportState({ logicalWidth: groundStage.width, logicalHeight: groundStage.height,
           backingWidth: Math.round(groundStage.width * sxFixed), backingHeight: Math.round(groundStage.height * syFixed),
           overscanPx: SHAKE_MARGIN_PX, nominalWidth: nominalW, nominalHeight: nominalH,
-          transform: groundView.transform, pixelRatio: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1 }),
+          transform: groundView.transform, presentationOffsetY: groundOffsetY,
+          pixelRatio: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1 }),
       });
     } else if (biomeManager) {
       biomeManager.rangePresentation = null;
@@ -386,18 +406,20 @@ export class Renderer {
     // ship, Broshi on the beach and Midasus in the sky. Nominal stage space
     // on the fixed-ground transform, so it shakes and rolls with the land.
     if (biomeManager && biomeManager.inhabitedShore) {
+      this.inhabitedShoreDraws++;
       // Heard time, like the rest of the world, so latency compensation
       // keeps the residents (and Broshi's kick hop) on the audible beat.
       const heardMs = sim.heardTimeMs ?? sim.timeMs;
       const cs = biomeManager.celestialState;
       const lit = cs?.activeBody ? cs[cs.activeBody] : null;
       const glitterX = lit && scenicMatrix
-        ? scenicMatrix.transformPoint({ x: lit.xFrac * stage.width, y: lit.yFrac * stage.height }).x / sxFixed - (camera.shakeX || 0)
+        ? (scenicMatrix.transformPoint({ x: lit.xFrac * stage.width, y: lit.yFrac * stage.height }).x - outputFit.x) / sxFixed - (camera.shakeX || 0)
         : null;
       ctx.save();
       // The fixed-ground transform (shake and roll) without the glacial
       // offset, shifted so nominal stage (0,0) is the frame's corner.
-      applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera });
+      applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera,
+        outputX: outputFit.x, outputY: outputFit.y });
       ctx.translate(SHAKE_MARGIN_PX, SHAKE_MARGIN_PX);
       drawInhabitedShore(ctx, {
         W: nominalW, H: nominalH, tSec: heardMs / 1000,
@@ -456,10 +478,10 @@ export class Renderer {
     this._drawBloom(ctx, canvas, sim, salience);
     // After bloom, not before: heat is a lens on the whole scene, so it
     // should bend the glow bloom just added too, not just the world under it.
-    this._drawHeatDistortion(ctx, canvas, sim, pose, viewStage);
+    this._drawHeatDistortion(ctx, canvas, sim, pose, viewStage, outputFit);
     if (narrative || (sim.filmFinish && (perf ? perf.heavyPostFx : true))) {
       // Film finish was authored in logical space; scale its fill rects.
-      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      ctx.setTransform(sx, 0, 0, sy, outputFit.x, outputFit.y);
       this._drawFilmFinish(ctx, viewStage, sim);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
@@ -472,13 +494,13 @@ export class Renderer {
     // the nominal STAGE_W/STAGE_H space -- drawing it against the zoomed
     // stage would desync the visible strip from where clicks land.
     if (sim.conductor && this.hudInFrame && !narrative) {
-      const sxN = canvas.width / nominalW;
-      const syN = canvas.height / nominalH;
+      const sxN = outputFit.scale;
+      const syN = sxN;
       const nominalStage = this._nominalStageView
         || (this._nominalStageView = { width: nominalW, height: nominalH });
       nominalStage.width = nominalW;
       nominalStage.height = nominalH;
-      ctx.setTransform(sxN, 0, 0, syN, 0, 0);
+      ctx.setTransform(sxN, 0, 0, syN, outputFit.x, outputFit.y);
       if (!this.composer) {
         const holds = sim.noteChart ? sim.noteChart.notes.filter((n) => n.type === 'hold') : [];
         const sections = sim.biomes?.sections || [];
@@ -500,7 +522,7 @@ export class Renderer {
     // the picture, so it is drawn whether or not the HUD is in frame, and
     // recordings and bulk exports carry it.
     if (sim.rangeCaption || sim.rangeCaptions) {
-      ctx.setTransform(canvas.width / nominalW, 0, 0, canvas.height / nominalH, 0, 0);
+      ctx.setTransform(sxFixed, 0, 0, syFixed, outputFit.x, outputFit.y);
       const captionStage = this._captionStageView || (this._captionStageView = { width: nominalW, height: nominalH });
       captionStage.width = nominalW;
       captionStage.height = nominalH;
@@ -513,7 +535,7 @@ export class Renderer {
     // (HUD included) and dissolve away once landed, revealing whatever the
     // actually-live game looks like by then -- not a freeze, just a veil.
     if (sim.assembly && sim.assembly.active && presentation.performers) {
-      ctx.setTransform(sx, 0, 0, sy, 0, 0);
+      ctx.setTransform(sx, 0, 0, sy, outputFit.x, outputFit.y);
       sim.assembly.draw(ctx, sim.timeMs);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
@@ -529,6 +551,10 @@ export class Renderer {
       quantizeCanvas(ctx, canvas);
     }
 
+    ctx.restore(); // fitted output clip
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this._drawOutputBars(ctx, canvas, outputFit);
+
     if (fracture && fracture.isAboutToFreeze) fracture.captureFreeze(canvas, sim.timeMs);
 
     // The Reel: grab a highlight thumbnail of the fully-composed frame at
@@ -542,6 +568,23 @@ export class Renderer {
       reel.notify('detonation', !!sim._atlasDetonated, canvas, t, 'Supernova');
       reel.notify('freeze', !!(fracture && fracture.isAboutToFreeze), canvas, t, 'Finale');
     }
+  }
+
+  _drawOutputBars(ctx, canvas, fit) {
+    if (fit.x <= 0 && fit.y <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#000000';
+    if (fit.y > 0) {
+      ctx.fillRect(0, 0, canvas.width, fit.y);
+      ctx.fillRect(0, fit.y + fit.height, canvas.width, canvas.height - fit.y - fit.height);
+    }
+    if (fit.x > 0) {
+      ctx.fillRect(0, 0, fit.x, canvas.height);
+      ctx.fillRect(fit.x + fit.width, 0, canvas.width - fit.x - fit.width, canvas.height);
+    }
+    ctx.restore();
   }
 
   /** The Key of the World: a kick-synced vertical chromatic wash, in the
@@ -891,7 +934,7 @@ export class Renderer {
    *  light sideways as it convects upward off the ground, not the sky).
    *  Sheds under PerfGovernor pressure like its siblings -- a flourish,
    *  never core feedback. */
-  _drawHeatDistortion(ctx, canvas, sim, pose, viewStage) {
+  _drawHeatDistortion(ctx, canvas, sim, pose, viewStage, outputFit = null) {
     const perf = sim.perf;
     if (perf && !perf.heavyPostFx) return;
 
@@ -918,16 +961,17 @@ export class Renderer {
     // Coarser grid at higher resolutions -- same cost, same apparent cell
     // size on screen, matching bloom's own downscale-by-canvas-width steps.
     const cell = HEAT_GRID_PX * (canvas.width > 2560 ? 2.2 : canvas.width > 1920 ? 1.6 : 1);
-    const cols = Math.ceil(canvas.width / cell) + 1;
-    const rows = Math.ceil(canvas.height / cell) + 1;
+    const picture = outputFit || { x: 0, y: 0, width: canvas.width, height: canvas.height };
+    const cols = Math.ceil(picture.width / cell);
+    const rows = Math.ceil(picture.height / cell);
     const t = sim.timeMs / 1000;
     // pose.midioDrawX / sim.midio.groundY are logical (viewStage) coords;
     // this pass runs post identity-reset against the full physical canvas,
     // so rescale by the same sx/sy the rest of draw() uses for that jump.
-    const scaleX = viewStage && viewStage.width ? canvas.width / viewStage.width : 1;
-    const scaleY = viewStage && viewStage.height ? canvas.height / viewStage.height : 1;
-    const originX = pose ? pose.midioDrawX * scaleX : canvas.width / 2;
-    const originY = sim.midio ? sim.midio.groundY * scaleY : canvas.height * 0.7;
+    const scaleX = viewStage && viewStage.width ? picture.width / viewStage.width : 1;
+    const scaleY = viewStage && viewStage.height ? picture.height / viewStage.height : 1;
+    const originX = picture.x + (pose ? pose.midioDrawX * scaleX : picture.width / 2);
+    const originY = picture.y + (sim.midio ? sim.midio.groundY * scaleY : picture.height * 0.7);
 
     ctx.save();
     // NOT 'copy'. Under 'copy' each drawImage discards the ENTIRE destination
@@ -940,9 +984,9 @@ export class Renderer {
     // its original unwarped content instead of being punched out.
     ctx.globalCompositeOperation = 'source-over';
     for (let ry = 0; ry < rows; ry++) {
-      const cy = ry * cell + cell / 2;
+      const cy = picture.y + ry * cell + cell / 2;
       for (let rx = 0; rx < cols; rx++) {
-        const cx = rx * cell + cell / 2;
+        const cx = picture.x + rx * cell + cell / 2;
         let offX = 0, offY = 0;
         if (dropAmpPx > 0.05) {
           const dx = cx - originX, dy = cy - originY;
@@ -955,11 +999,11 @@ export class Renderer {
         if (ambientAmpPx > 0.05) {
           // Canvas Y grows downward. Reach full sway at the actual ground
           // in backing-store coordinates, with the weaker floor above it.
-          const heightFrac = clamp01(cy / Math.max(1, originY));
-          offX += Math.sin(cx * 0.045 + t * 2.4 + cy * 0.03) * ambientAmpPx * (0.35 + 0.65 * heightFrac);
+          const heightFrac = clamp01((cy - picture.y) / Math.max(1, originY - picture.y));
+          offX += Math.sin((cx - picture.x) * 0.045 + t * 2.4 + (cy - picture.y) * 0.03) * ambientAmpPx * (0.35 + 0.65 * heightFrac);
         }
         if (Math.abs(offX) < 0.05 && Math.abs(offY) < 0.05) continue; // no-op cell -- skip the blit entirely
-        const sx = rx * cell - HEAT_PAD_PX, sy = ry * cell - HEAT_PAD_PX;
+        const sx = picture.x + rx * cell - HEAT_PAD_PX, sy = picture.y + ry * cell - HEAT_PAD_PX;
         const sw = cell + HEAT_PAD_PX * 2, sh = cell + HEAT_PAD_PX * 2;
         ctx.drawImage(src, sx, sy, sw, sh, sx + offX, sy + offY, sw, sh);
       }

@@ -120,3 +120,19 @@ test('a preparation that straddles a context loss or restore never publishes; no
   await assert.rejects(s.prepare(view('b'), { baseUrl: base }), (e) => e.reason === 'context-lost');
   assert.equal(s.pending.has('b'), false);
 });
+
+test('no foreground never builds ground, and shared target release clears ownership on resize/context cleanup', () => {
+  const s = bareScene();
+  s.prepared.set('none', { view: { composition: { foreground: 'none', nearLedgeMaxFrac: 0 } } });
+  s.contextLost = false;
+  const frame = { compositions: { none: { foreground: 'none', nearLedgeMaxFrac: 0 } } };
+  assert.equal(s.renderGround(frame, 'none'), null, 'no viewport/GL access when no foreground');
+  let disposed = 0;
+  s.groundTarget = { dispose() { disposed++; } };
+  const r = s.residency.reserve({ key: 'range:ground-target', bytes: 1024, owner: 'range-targets' });
+  s.residency.commit(r, s.groundTarget, t => t.dispose());
+  s.releaseGroundTarget(); s.releaseGroundTarget();
+  assert.equal(s.groundTarget, null);
+  assert.equal(disposed, 1);
+  assert.equal(s.residency.snapshot().liveBytes, 0);
+});

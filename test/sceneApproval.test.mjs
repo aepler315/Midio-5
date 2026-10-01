@@ -56,3 +56,39 @@ test('approving requires existing evidence files', async () => {
   await assert.rejects(approveView(structuredClone(doc), 'nc-ross-lake-north', { evidence: [] }), /evidence/);
   await assert.rejects(approveView(structuredClone(doc), 'nc-ross-lake-north', { evidence: ['docs/evidence/range-v2/missing.jpg'] }), /does not exist/);
 });
+
+test('composition changes and removal invalidate approval, but metadata-free approvals remain valid', async () => {
+  const { approvalHashes, RUNTIME_DIR } = await import('../tools/build-range-scene.mjs');
+  const fs = await import('node:fs/promises');
+  const doc = await readAuthoring();
+  const v = doc.views.find(v => v.id === 'nc-ross-lake-north');
+  const warn = console.warn; console.warn = () => {};
+  try {
+    assert.equal((await buildCatalog(doc)).views.find(x => x.id === v.id).status, 'approved');
+    v.composition = { foreground: 'ledge', nearLedgeMaxFrac: .12 };
+    let out = (await buildCatalog(doc)).views.find(x => x.id === v.id);
+    assert.deepEqual(out.composition, v.composition);
+    assert.equal(out.status, 'candidate');
+    const build = JSON.parse(await fs.readFile(`${RUNTIME_DIR}/terrain/${v.id}.build.json`));
+    v.approval = { ...v.approval, ...await approvalHashes(v, build) };
+    assert.equal((await buildCatalog(doc)).views.find(x => x.id === v.id).status, 'approved');
+    delete v.composition;
+    assert.equal((await buildCatalog(doc)).views.find(x => x.id === v.id).status, 'candidate');
+  } finally { console.warn = warn; }
+});
+
+test('coherent pilots reuse published assets without removing approved biome coverage or inheriting approval', async () => {
+  const cat = await buildCatalog(await readAuthoring());
+  for (const id of ['teton-jackson-lake', 'monument-valley-163']) {
+    const original = cat.views.find(v => v.id === id);
+    const pilot = cat.views.find(v => v.id === `${id}-coherent`);
+    assert.equal(original.status, 'approved');
+    assert.ok(pilot, `${id} has a separately forced composition pilot`);
+    assert.equal(pilot.status, 'candidate');
+    assert.equal(pilot.evidence.approval, null);
+    assert.equal(pilot.terrainManifestUrl, original.terrainManifestUrl);
+    assert.deepEqual(pilot.camera, original.camera);
+    assert.equal(pilot.composition.foreground, 'ledge');
+  }
+  assert.equal(cat.views.filter(v => v.status === 'approved').length, 13);
+});

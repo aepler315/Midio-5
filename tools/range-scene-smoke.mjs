@@ -192,6 +192,7 @@ export async function landscapeOwnership(page) {
       emitters: mgr.rangePresentation?.frame?.emitters || [],
       capture: !!painter._capture, brush: !!painter.brush,
       reflections: painter.reflectionStats?.layers?.length || 0,
+      inhabitedShoreDraws: painter.inhabitedShoreDraws,
       policy: sim.presentation,
     };
   });
@@ -205,6 +206,7 @@ export function assertLandscapeOwnership(state) {
   assert.equal(state.capture, false, 'no performer capture resource');
   assert.equal(state.brush, false, 'no actor trails');
   assert.equal(state.reflections, 0, 'no actor reflections');
+  assert.equal(state.inhabitedShoreDraws, 0, 'no visible resident/sea pass');
 }
 
 async function writePng(dir, name, b64) {

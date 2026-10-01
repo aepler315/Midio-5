@@ -1,4 +1,5 @@
-import { hexToLinear, RULE_DEFAULTS } from './MaterialPackage.js';
+import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
+import { RangeAssetError } from './RangeAssets.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
 // bundle). Task 8 ships the neutral-material pilot: real geometry, the
 // surface texture's full-grid normals, the frame's resolved celestial light
@@ -102,6 +103,7 @@ export const SCENE_FRAG = /* glsl */`
   uniform float rSnowline; uniform float rSnowFull; uniform float rSnowMaxSlope; uniform float rTreeline;
   uniform float rForestMaxSlope; uniform float rForestDensity; uniform float rMoss; uniform float rStrata;
   uniform float rForestFloor;
+  uniform float rWaterSkyMix; uniform float rWaterGlintGain;
   uniform float uTime;
   in vec2 vUv;
   in vec3 vWorld;
@@ -146,6 +148,11 @@ export const SCENE_FRAG = /* glsl */`
     return r;
   }
   Tri triplanar(sampler2D t, vec3 p, vec3 n, float scale, float rot) { return triplanarRib(t, p, n, scale, rot, 1.0); }
+  float waterGlint(float cosine, float gain, float keyEnergy) {
+    if (keyEnergy < 1e-10 || gain <= 0.0) return 0.0;
+    return pow(max(cosine, 0.0), 600.0) * gain;
+  }
+
   void main() {
     vec2 uv = vUv * (1.0 - uTexel) + 0.5 * uTexel;
     vec4 s = texture(uSurface, uv);
@@ -302,9 +309,10 @@ export const SCENE_FRAG = /* glsl */`
       vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * 0.025;
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(vec3(0.0, 1.0, 0.0), V), 0.0), 5.0);
-      vec3 H = normalize(uLightDir + V);
-      float glint = pow(max(dot(H, waterNormal), 0.0), 600.0) * 3.0;
-      lit = mix(lit, uSkyHorizon * 0.9, fres) + uLightColor * glint;
+      vec3 halfVector = uLightDir + V;
+      vec3 H = halfVector / max(length(halfVector), 1e-10);
+      float glint = waterGlint(dot(H, waterNormal), rWaterGlintGain, dot(uLightColor, uLightColor));
+      lit = mix(lit, uSkyHorizon * rWaterSkyMix, fres) + uLightColor * glint;
     }
     // Aerial perspective, applied once here and nowhere else.
     float heightTerm = exp(-max(0.0, vRenderedWorld.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
@@ -386,6 +394,7 @@ export function sceneUniforms(THREE, base) {
     rSnowline: { value: 2000 }, rSnowFull: { value: 2400 }, rSnowMaxSlope: { value: 50 }, rTreeline: { value: 1700 },
     rForestMaxSlope: { value: 38 }, rForestDensity: { value: 0.8 }, rMoss: { value: 0.5 }, rStrata: { value: 0.2 },
     rForestFloor: { value: RULE_DEFAULTS.forestFloorM },
+    rWaterSkyMix: { value: RULE_DEFAULTS.waterSkyMix }, rWaterGlintGain: { value: RULE_DEFAULTS.waterGlintGain },
   };
 }
 
@@ -396,7 +405,7 @@ const PALETTE_UNIFORM = { rockLit: 'pRockLit', rockShade: 'pRockShade', rockWarm
   water: 'pWater', waterDeep: 'pWaterDeep', lichen: 'pLichen' };
 const RULE_UNIFORM = { snowlineM: 'rSnowline', snowFullM: 'rSnowFull', snowMaxSlopeDeg: 'rSnowMaxSlope', treelineM: 'rTreeline',
   forestMaxSlopeDeg: 'rForestMaxSlope', forestDensity: 'rForestDensity', moss: 'rMoss', strata: 'rStrata',
-  forestFloorM: 'rForestFloor' };
+  forestFloorM: 'rForestFloor', waterSkyMix: 'rWaterSkyMix', waterGlintGain: 'rWaterGlintGain' };
 
 /** Set a THREE.Color to the linear value of an sRGB hex, exactly once.
  *  (Color.set(hex) already linearises under colour management; chaining
@@ -433,6 +442,9 @@ export function createMaterialTextures(THREE, pack, { anisotropy = 4 } = {}) {
 
 /** Bind a pack (textures, palette, rules; `ruleOverrides` from the view). */
 export function applyMaterial(uniforms, pack, textures, ruleOverrides = {}) {
+  const rules = { ...pack.manifest.rules, ...ruleOverrides };
+  const check = validateWaterRules(rules);
+  if (!check.ok) throw new RangeAssetError('manifest', `material rules rejected: ${check.errors.join('; ')}`);
   for (const [role, [tu, su]] of Object.entries(ROLE_UNIFORM)) {
     const r = textures.roles[role];
     if (!r) continue;
@@ -440,7 +452,6 @@ export function applyMaterial(uniforms, pack, textures, ruleOverrides = {}) {
     uniforms[su].value = r.metersPerTile;
   }
   for (const [k, u] of Object.entries(PALETTE_UNIFORM)) setLinearFromHex(uniforms[u].value, pack.manifest.palette[k]);
-  const rules = { ...pack.manifest.rules, ...ruleOverrides };
   for (const [k, u] of Object.entries(RULE_UNIFORM)) uniforms[u].value = rules[k] ?? RULE_DEFAULTS[k];
   uniforms.uHasMaterial.value = 1;
 }

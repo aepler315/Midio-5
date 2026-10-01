@@ -17,6 +17,7 @@
 // This policy is deliberately separate from RangeMatcher.FAIR_SHARE (the
 // musical skyline pool) and BiomeSet's HOME_BIOME_FAIR_SHARE: tuning the
 // scenic draw never moves either of those distributions.
+import { compositionErrors } from '../alpine/RangeComposition.js';
 import { AXES, axisDistance } from './RangeCharacter.js';
 import { seedTicket, songTerrainTarget } from './RangeMatcher.js';
 import { cameraRailErrors } from './SceneTravel.js';
@@ -37,7 +38,7 @@ export function sceneViewErrors(view) {
   if (!Number.isInteger(view.catalogVersion)) errors.push('catalogVersion');
   if (typeof view.terrainManifestUrl !== 'string' || !view.terrainManifestUrl.endsWith('.json')) errors.push('terrainManifestUrl');
   if (typeof view.materialManifestUrl !== 'string' || !view.materialManifestUrl.endsWith('.json')) errors.push('materialManifestUrl');
-  errors.push(...cameraRailErrors(view.camera));
+  errors.push(...cameraRailErrors(view.camera), ...compositionErrors(view));
   if (!view.characterScores || !AXES.every((a) => Number.isFinite(view.characterScores[a]))) errors.push('characterScores');
   if (!view.evidence || typeof view.evidence.reviewPath !== 'string') errors.push('evidence');
   return errors;

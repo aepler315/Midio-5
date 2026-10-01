@@ -1,3 +1,4 @@
+import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
 // here, renders transparent terrain partitions that RangePresentation copies
 // synchronously into the main stage canvas at the existing pass boundaries.
@@ -16,7 +17,7 @@ import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
 import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
 import { terrainFeatureSegments } from './TerrainFeatures.js';
-import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS } from './MaterialPackage.js';
+import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { placeForestAsync } from './ForestCover.js';
 import { SunShaftGL, SHAFT_KEY, shaftSize, shaftSource } from './SunShaftGL.js';
 import { rangeQuality } from './RangeQuality.js';
@@ -264,9 +265,11 @@ export class RangeScene {
         mat = await this._acquireMaterial(view, { baseUrl, signal });
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const rules = { ...mat.pack.manifest.rules, ...(view.materialRules || {}) };
+        const waterCheck = validateWaterRules(rules);
+        if (!waterCheck.ok) throw new RangeAssetError('manifest', `material rules rejected for ${view.id}: ${waterCheck.errors.join('; ')}`);
         // Placement yields to the event loop as it goes: a view prepared
         // during playback must not freeze frames while its forest is laid.
-        const placed = await placeForestAsync(cpu.data, view, rules, { seed: hashSeed(view.id), signal });
+        const placed = await placeForestAsync(cpu.data, view, rules, { seed: hashSeed(view.terrainSourceId || view.id), signal });
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const forestBytes = placed.count * 7 * 4;
         // Building the surface texture needs temporary height and flow
@@ -321,7 +324,7 @@ export class RangeScene {
         material.depthFunc = THREE.LessEqualDepth;
         material.depthWrite = false;
         forest = createForest(THREE, placed, uniforms);
-        stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
+        if (resolveRangeComposition(view)?.foreground !== 'none') stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
         for (const band of BANDS) for (const m of forest.byBand[band]) scenes[band].add(m);
         for (const d of forest.depth) depthScene.add(d);
         // Per-band depth scenes for travel frames, where a side's nearer
@@ -644,23 +647,26 @@ export class RangeScene {
    * render call, the stage carrying exact pool polygons (wet masks).
    */
   renderGround(frame, viewId = frame.viewFromId) {
+    if (frame.compositions?.[viewId]?.foreground === 'none') return null;
     const p = this.prepared.get(viewId);
     if (!p || this.contextLost) return null;
+    const composition = frame.compositions?.[viewId] ?? resolveRangeComposition(p.view);
+    if (composition?.foreground === 'none') return null;
     const vp = frame.groundViewport;
     const w = Math.max(2, Math.round(vp.backingWidth)), h = Math.max(2, Math.round(vp.backingHeight));
     if (!this.groundTarget || this.groundTarget.width !== w || this.groundTarget.height !== h) {
       const key = 'range:ground-target';
       this.releaseShafts();
-      if (this.residency) this.residency.release(key);
-      else this.groundTarget?.dispose();
+      this.releaseGroundTarget();
       const res = this.residency?.reserve({ key, bytes: w * h * 8, owner: 'range-targets' });
       if (this.residency && !res) return null;
       const THREE = this.THREE;
       this.groundTarget = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false,
         minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
-      if (res) this.residency.commit(res, this.groundTarget, (t) => t.dispose());
+      if (res) this.residency.commit(res, this.groundTarget, (t) => { t.dispose(); if (this.groundTarget === t) this.groundTarget = null; });
     }
-    const stage = buildRockStage({ bars: frame.groundBars, width: vp.logicalWidth, height: vp.logicalHeight,
+    const bars = compositionBars(frame.groundBars, vp, composition);
+    const stage = buildRockStage({ bars, slabCount: composition ? 1 : undefined, width: vp.logicalWidth, height: vp.logicalHeight,
       worldX: frame.worldX, originX: frame.originX, seed: frame.seed });
     const u = p.uniforms;
     // The scene's key light, re-expressed for the stage: from behind and
@@ -690,13 +696,17 @@ export class RangeScene {
     return { canvas: this.canvas, stage };
   }
 
+  releaseGroundTarget() {
+    if (this.residency) this.residency.release('range:ground-target');
+    else this.groundTarget?.dispose();
+    this.groundTarget = null;
+  }
+
   _invalidateContext() {
     this.releaseShafts();
     if (this.residency) this.residency.release('range:render-target');
     else this.target?.dispose();
-    if (this.residency) this.residency.release('range:ground-target');
-    else this.groundTarget?.dispose();
-    this.groundTarget = null;
+    this.releaseGroundTarget();
     this._copy?.mesh.geometry.dispose();
     this._copy?.mesh.material.dispose();
     // Retire handles during the lost event, before Three creates the next
@@ -721,8 +731,8 @@ export class RangeScene {
     for (const id of [...this.prepared.keys()]) this.release(id);
     this.releaseSide('B');
     this.residency?.release('range:render-target');
-    this.residency?.release('range:ground-target');
-    if (!this.residency) { this.target?.dispose(); this.groundTarget?.dispose(); }
+    this.releaseGroundTarget();
+    if (!this.residency) this.target?.dispose();
     this._copy.mesh.geometry.dispose();
     this._copy.mesh.material.dispose();
     this.renderer.dispose();

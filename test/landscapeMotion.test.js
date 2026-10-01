@@ -30,8 +30,8 @@ test('geographic default travels left three times the frozen reviewed speed with
 test('EQ advection moves a bass landmark left at three times the reviewed coefficient', () => {
   const tuning = { crestWavePx: 0, sourceLiftPx: 0, kickLiftPx: 0 };
   const state = music({ bands: [0, 1, 0, 0, 0, 0, 0] });
-  const a = sample({ worldX: 0, tuning }, state);
-  const b = sample({ worldX: 1 / .0054, tuning }, state);
+  const a = sample({ advectionPx: 0, tuning }, state);
+  const b = sample({ advectionPx: 1 / .0054, tuning }, state);
   assert.ok(Math.abs(at(b, 0) - (316.8 - 172.8)) < 1e-8, 'one band arrives at the left edge');
   assert.ok(at(b, 0) < at(a, 0) - 150, 'positive worldX advances the peak left');
 });
@@ -65,10 +65,10 @@ test('ridge stays smoothly above 0.12H under loud waves and kick while silence r
 });
 
 test('composition preflight uses identical geometry with effective tuning and evaluated kick', () => {
-  const state = music({ bands: Array(7).fill(.3), kick01: .6 });
+  const state = music({ bands: [.1, .7, .2, .3, .5, .4, .8], kick01: .6 });
   const tuning = { advection: .0036, phaseRate: 3.2 };
-  const painted = sample({ heardTimeMs: 900, worldX: 325, tuning }, state);
-  const preflight = horizonEqPoints({ ...viewport, crest, bands: state.bands, activity01: state.activity01, kick01: state.kick01, tSec: .9, worldX: 325, tuning });
+  const painted = sample({ heardTimeMs: 900, advectionPx: 198, tuning }, state);
+  const preflight = horizonEqPoints({ ...viewport, crest, bands: state.bands, activity01: state.activity01, kick01: state.kick01, tSec: .9, tuning });
   assert.deepEqual(preflight, painted.points);
 });
 
@@ -100,7 +100,7 @@ test('headroom metrics use uncropped authored source stations across geographic 
   const input = { tuning: { maxHeightFrac: .6 }, heardTimeMs: 1000 };
   const source = { heights: new Float32Array([.1, 1, .5]), stepM: 1, windowM: .5, travelM: 1.5 };
   const a = sample({ ...input, crest: source, songP: .1 }, state);
-  const b = sample({ ...input, crest: source, songP: .8, worldX: 5000 }, state);
+  const b = sample({ ...input, crest: source, songP: .8, advectionPx: 5000 }, state);
   assert.equal(a.boundPx, b.boundPx, 'fixed design bound cannot shrink with the geographic crop');
   assert.equal(a.displacement01, b.displacement01);
   assert.equal(a.velocity01, b.velocity01);
