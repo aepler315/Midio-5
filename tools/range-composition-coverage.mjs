@@ -1,5 +1,6 @@
-// Read-only CPU coverage evidence for the coherent composition candidates.
-// Usage: node tools/range-composition-coverage.mjs [output.json]
+// Read-only CPU coverage evidence for the coherent composition candidates,
+// or with --all for every catalogue view.
+// Usage: node tools/range-composition-coverage.mjs [output.json] [--all]
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,9 @@ const runtime = path.join(repo, 'src/assets/range/v2');
 const nominalW = 1280, nominalH = 720, rasterWidth = 320;
 const samplesW = 320, samplesH = 180, lowerFraction = .12;
 const bottomStart = Math.floor(samplesH * (1 - lowerFraction));
-const ids = ['teton-jackson-lake-coherent', 'monument-valley-163-coherent', 'pend-oreille-valley'];
+const args = process.argv.slice(2), outArg = args.find(a => !a.startsWith('--'));
+const ids = args.includes('--all') ? catalog.views.map(v => v.id)
+  : ['teton-jackson-lake-coherent', 'monument-valley-163-coherent', 'pend-oreille-valley'];
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const relative = file => path.relative(repo, file).split(path.sep).join('/');
 const fingerprint = async file => ({ path: relative(file), sha256: sha256(await fs.readFile(file)) });
@@ -111,7 +114,7 @@ const result = { schema: 'midio.range-composition-coverage', version: 1, visualA
   limitations: ['sampled CPU desktop triangles and glacier surface', 'lower foreground region only; sky is intentionally absent',
     'no musical deformation, trees or travel compositor', 'no GPU render, material appearance, device performance or visual approval'],
   sourceFiles, rows };
-const output = path.resolve(repo, process.argv[2] || 'docs/evidence/terrain-continuation/coverage.json');
+const output = path.resolve(repo, outArg || 'docs/evidence/terrain-continuation/coverage.json');
 await fs.mkdir(path.dirname(output), { recursive: true });
 await fs.writeFile(output, JSON.stringify(result, null, 2) + '\n');
 for (const row of rows) console.log(`${row.id}: nominal ${row.nominal.uncoveredPixels}/${row.nominal.testedPixels}, extremes ${row.extremes.uncoveredPixels}/${row.extremes.testedPixels} uncovered`);

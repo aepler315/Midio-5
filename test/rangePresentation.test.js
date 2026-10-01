@@ -490,3 +490,19 @@ test('migrated no-stage final manager path suppresses opaque foreground painters
     m.dispose();
   }
 });
+
+test('a view that composes its own foreground takes neither the veil nor the landmark occluders', () => {
+  for (const owned of [false, true]) {
+    const { m } = manager();
+    m.currentBlend = { from: 'TAIGA', to: 'TAIGA', t: 1 };
+    let landmarks = 0, discs = 0;
+    m.nearField.draw = () => { landmarks++; };
+    m.rangePresentation = { hasViewComposition: owned };
+    const ctx = anyCtx();
+    ctx.ellipse = () => { discs++; };
+    m.drawForeground(ctx, { width: 1408, height: 848 }, 0, true);
+    assert.equal(landmarks, owned ? 0 : 1);
+    assert.equal(discs, owned ? 0 : 3);
+    m.dispose();
+  }
+});

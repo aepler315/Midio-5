@@ -3465,31 +3465,37 @@ export class BiomeManager {
     // Calm sections lift the veil alpha a little -- a small, cheap way to
     // keep this backmost layer visibly breathing when nothing else is loud.
     if (!veilEnabled) return;
-    ctx.save();
-    ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
-    const scrollX = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L7, this.unravel);
-    for (let i = 0; i < 3; i++) {
-      const x = ((i * 480 - scrollX) % (canvas.width + 400) + canvas.width + 400) % (canvas.width + 400) - 200;
-      const cy = canvas.height * (0.3 + 0.2 * i);
-      // Wider, softer radial fill stands in for the old blur(6px) pass --
-      // same soft-edged look, no per-frame offscreen-layer/GPU-flush cost.
-      const rx = 220, ry = 130;
-      const g = ctx.createRadialGradient(x, cy, 0, x, cy, Math.max(rx, ry));
-      g.addColorStop(0, 'rgba(255,255,255,1)');
-      g.addColorStop(0.6, 'rgba(255,255,255,0.6)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.ellipse(x, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
+    // A Range view that composes its own foreground (its terrain reaches the
+    // frame's bottom edge) takes neither the veil, whose soft discs read as
+    // circles in the sky, nor the cartoon landmark occluders.
+    const viewOwned = !!this.rangePresentation?.hasViewComposition;
+    if (!viewOwned) {
+      ctx.save();
+      ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
+      const scrollX = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L7, this.unravel);
+      for (let i = 0; i < 3; i++) {
+        const x = ((i * 480 - scrollX) % (canvas.width + 400) + canvas.width + 400) % (canvas.width + 400) - 200;
+        const cy = canvas.height * (0.3 + 0.2 * i);
+        // Wider, softer radial fill stands in for the old blur(6px) pass --
+        // same soft-edged look, no per-frame offscreen-layer/GPU-flush cost.
+        const rx = 220, ry = 130;
+        const g = ctx.createRadialGradient(x, cy, 0, x, cy, Math.max(rx, ry));
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(0.6, 'rgba(255,255,255,0.6)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(x, cy, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
-    ctx.restore();
 
     // Near-field occluders: huge biome-landmark silhouettes sweeping past
     // faster than the characters, close enough to occlude them. Gated on
     // the same perf signal as the veil above -- costs a handful of vector
     // shape draws per visible sector, cheaper than the veil's 3 gradients.
-    if (this.currentBlend) {
+    if (this.currentBlend && !viewOwned) {
       const dominant = this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from;
       // Same name/archetype mismatch as decorateStrip above: NearField keys
       // LANDMARKS and (via biomeByName) its silhouette-darkening color off

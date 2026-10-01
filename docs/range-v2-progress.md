@@ -155,6 +155,14 @@ Five synthetic songs (`tools/gen-test-wav.mjs`: 120 bpm / 96 s, 80 / 150, 150 / 
 - **Rock stage crash.** `RockStageGL._upload` allocated nothing when the first frame had no pools, and the next line threw inside the draw.
 - **Striped travel seam.** The shared seam uses 4 constant-weight bands (fine for legacy strips); on real terrain they read as vertical stripes. v2 now uses 16 whole-pixel bands (`V2_TRAVEL_BANDS`); legacy keeps 4.
 
+## No rock stage (catalog v18, 2026-10-01)
+
+Ashton chose to drop the rock-stage ground strip from every Range view. Every authored view now carries `composition: { foreground: 'none', nearLedgeMaxFrac: 0 }`, so the terrain itself reaches the frame's bottom edge. The `-coherent` pilots keep their 12% ledge as the forced comparison.
+
+- **Coverage.** `node tools/range-composition-coverage.mjs docs/evidence/range-v2/no-stage-coverage.json --all`: every catalogue view, 21 stations, nominal camera and the zoom, shake and roll extremes; zero uncovered samples in the lower 12% of the frame.
+- **Re-approval.** The composition hash changed, so all 13 views were re-approved with `--approve`, which re-ran the far-crest gates (single and in travel). Each keeps its earlier evidence and adds `<id>-nostage-10s.jpg` and the coverage report.
+- **Legacy foreground.** With the strip gone, two legacy foreground layers showed: a cartoon landmark silhouette at the bottom edge, and the soft white veil discs that read as faint circles in the sky. A view that composes its own foreground now draws neither.
+
 ## Task 16: resource, lifecycle and performance
 
 ### Fixes found by exercising real (unforced) play
