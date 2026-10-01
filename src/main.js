@@ -3777,7 +3777,15 @@ canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDef
 const PINCH_TAP_WAIT_MS = 140;
 let pendingTouchTap = null;
 function cancelPendingTouchTap() {
-  if (pendingTouchTap) { clearTimeout(pendingTouchTap); pendingTouchTap = null; }
+  if (pendingTouchTap) { clearTimeout(pendingTouchTap.timer); pendingTouchTap = null; }
+}
+/** A new finger after the last one lifted is its own tap: the waiting one
+ *  counts now rather than being dropped. */
+function flushPendingTouchTap() {
+  const t = pendingTouchTap;
+  if (!t) return;
+  cancelPendingTouchTap();
+  t.fire();
 }
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -3790,10 +3798,11 @@ canvas.addEventListener('pointerdown', (e) => {
   // A second finger makes it a pinch: neither finger is a tap.
   if (rangeZoomInput.pinching(e)) { cancelPendingTouchTap(); return; }
   if (e.pointerType === 'touch' && rangeZoomInput.live()) {
-    cancelPendingTouchTap();
+    flushPendingTouchTap();
     const p = clientToStage(e), button = e.button;
     const atMs = audioEngine ? visualNow(audioEngine.nowMs, effectiveOutputLatencyMs()) : null;
-    pendingTouchTap = setTimeout(() => { pendingTouchTap = null; canvasTap(p, button, atMs); }, PINCH_TAP_WAIT_MS);
+    const fire = () => canvasTap(p, button, atMs);
+    pendingTouchTap = { fire, timer: setTimeout(() => { pendingTouchTap = null; fire(); }, PINCH_TAP_WAIT_MS) };
     return;
   }
   canvasTap(clientToStage(e), e.button);

@@ -45,6 +45,7 @@ const USER_EASE_SEC = 0.18;
 // well above both. More from far up.
 const CLEARANCE_MIN_M = 250;
 const CLEARANCE_FRAC = 0.01;
+const LOW_CLEARANCE_MIN_M = 30;
 // The zoom path is checked at least every terrain cell (so no ridge slips
 // between samples), within these bounds.
 const CLEARANCE_SAMPLES_MIN = 16;
@@ -182,19 +183,25 @@ export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevel
     const v = add(add(add([0, 0, 0], forward, user.fx * D), right, user.rx * D), up, user.uy * D);
     // Fly as far along the offset as the ground allows: the first sample
     // that would put the eye under its clearance stops the flight there.
-    const start = eye[1] - floorAt(eye);
+    // A view authored lower than the clearance (a desert floor shot) flies
+    // with half its own height above ground instead, never under
+    // LOW_CLEARANCE_MIN_M, so the zoom is not dead from the first step.
+    const above = eye[1] - groundAt(heightAt, waterLevelM, eye[0], eye[2]);
+    const flight = above < clearance ? Math.max(LOW_CLEARANCE_MIN_M, 0.5 * above) : clearance;
+    const marginAt = (p) => p[1] - (groundAt(heightAt, waterLevelM, p[0], p[2]) + flight);
+    const need = Math.min(0, marginAt(eye));
     if (heightAt || Number.isFinite(waterLevelM)) {
       const step = Number.isFinite(sampleStepM) && sampleStepM > 0 ? sampleStepM : DEFAULT_SAMPLE_STEP_M;
       const n = Math.min(CLEARANCE_SAMPLES_MAX, Math.max(CLEARANCE_SAMPLES_MIN, Math.ceil(Math.hypot(...v) / step)));
       for (let i = 1; i <= n; i++) {
         const s = i / n, p = add(eye, v, s);
-        if (p[1] - floorAt(p) >= Math.min(0, start)) continue;
+        if (marginAt(p) >= need) continue;
         // Refine between the last clear sample and this one, so an easing
         // zoom slows to a stop instead of stepping sample to sample.
         let lo = (i - 1) / n, hi = s;
         for (let k = 0; k < 8; k++) {
           const mid = (lo + hi) / 2, q = add(eye, v, mid);
-          if (q[1] - floorAt(q) >= Math.min(0, start)) lo = mid; else hi = mid;
+          if (marginAt(q) >= need) lo = mid; else hi = mid;
         }
         userScale = lo;
         break;
@@ -261,12 +268,15 @@ export class RangeUserCamera {
     const remaining = 1 - t.fx;
     const step = remaining - remaining / factor;
     const nx = clamp(ndcX, -1, 1), ny = clamp(ndcY, -1, 1);
+    const fx0 = t.fx;
     t.fx = clamp(t.fx + step, 0, USER_FX_MAX);
-    // Zooming in heads toward the pointer; zooming out backs straight out
-    // and lets the cone clamp below recentre the frame.
-    if (step > 0) {
-      t.rx += step * nx * this.tan.x;
-      t.uy += step * ny * this.tan.y;
+    // Zooming in heads toward the pointer, by the forward distance actually
+    // taken (at the cap, none: no sideways pan). Zooming out backs straight
+    // out and lets the cone clamp below recentre the frame.
+    const taken = t.fx - fx0;
+    if (taken > 0) {
+      t.rx += taken * nx * this.tan.x;
+      t.uy += taken * ny * this.tan.y;
     }
     if (t.fx < 1e-4) { t.fx = 0; t.rx = 0; t.uy = 0; }
     this._clampToCone(t);

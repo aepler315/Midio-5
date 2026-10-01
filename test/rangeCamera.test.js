@@ -149,3 +149,18 @@ test('a narrower view re-clamps an edge zoom into its cone', () => {
     assert.ok(Math.abs(o.rx) <= o.fx * 0.25 + 1e-9 && Math.abs(o.uy) <= o.fx * 0.14 + 1e-9);
   }
 });
+
+test('a low authored eye can still zoom forward over flat ground', () => {
+  const low = { eyeM: [0, 1060, 20000], targetM: [0, 1200, 0], fovYDeg: 35 };
+  const gentle = (x, z) => 1000 + (20000 - z) * 0.001; // rises 1 m per km
+  const out = applyCameraMoves(low, null, { fx: 0.3, rx: 0, uy: 0 }, { heightAt: gentle });
+  assert.ok(out.userScale > 0.9);
+});
+
+test('zooming in at the cap does not turn into a sideways pan', () => {
+  const cam = new RangeUserCamera({ now: () => 0 });
+  for (let i = 0; i < 40; i++) cam.zoomAt(1.5, 0, 0);
+  const before = { ...cam.target };
+  cam.zoomAt(1.5, 1, 0);
+  assert.deepEqual(cam.target, before);
+});
