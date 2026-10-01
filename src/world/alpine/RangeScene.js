@@ -279,7 +279,12 @@ export class RangeScene {
         // only while it is built: the view owns both GPU textures.
         const gridPx = cpu.data.grid.width * cpu.data.grid.height;
         const featureBudgetBytes = 3 * 768 * 6 * 4;
-        const bytes = (est?.meshBytes || 0) + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
+        // The mesh is built on the CPU first (nothing uploads until it
+        // draws) so the seam-fill index buffers, which the bake's mesh
+        // estimate does not know about, are counted in the reservation.
+        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
+        const fringeBytes = Object.values(geos.fringes || {}).reduce((sum, g) => sum + g.index.array.byteLength, 0);
+        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         const scratchKey = `range:surface-scratch:${view.id}`;
@@ -299,7 +304,6 @@ export class RangeScene {
           vertexShader: SCENE_VERT, fragmentShader: FEATURE_FRAG, transparent: true,
           depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth });
         const depthMaterial = createDepthMaterial(THREE, uniforms);
-        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
         await yieldToMain();
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const meshes = {}, depthMeshes = {}, scenes = {};
@@ -320,6 +324,27 @@ export class RangeScene {
           depthMeshes[band] = new THREE.Mesh(geos.geometries[band], depthMaterial);
           depthMeshes[band].frustumCulled = false;
           depthScene.add(depthMeshes[band]);
+        }
+        // Seam fill: a nearer band's tiles that border a farther band also
+        // draw in that farther pass (against the same depth pre-pass, so
+        // only where they are the visible surface). The nearer pass covers
+        // them; along the seam, where neither pass owned a pixel outright,
+        // the farther partition is already the same ground instead of sky.
+        // During travel a side draws its nearer bands only in some columns,
+        // so there the fill draws from its own scene under the same scissor.
+        const fringeMeshes = [], fringeTravel = [];
+        for (let b = 1; b < BANDS.length; b++) {
+          const g = geos.fringes?.[BANDS[b]];
+          if (!g) continue;
+          const fm = new THREE.Mesh(g, material);
+          fm.frustumCulled = false;
+          scenes[BANDS[b - 1]].add(fm);
+          fringeMeshes.push(fm);
+          const travel = new THREE.Mesh(g, material);
+          travel.frustumCulled = false;
+          const scene = new THREE.Scene();
+          scene.add(travel);
+          fringeTravel.push({ band: BANDS[b], pass: BANDS[b - 1], scene });
         }
         material.depthFunc = THREE.LessEqualDepth;
         material.depthWrite = false;
@@ -343,7 +368,7 @@ export class RangeScene {
         this.renderer.compile(depthScene, this.camera);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
-          surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene, depthScenes,
+          surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
           forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
           rules, waterLevelM: waterLevel(cpu.data), materialKey: mat.key,
@@ -372,6 +397,7 @@ export class RangeScene {
           surface?.texture?.dispose();
           surface?.receiverTexture?.dispose();
           for (const g of Object.values(geos?.geometries || {})) g.dispose();
+          for (const g of Object.values(geos?.fringes || {})) g.dispose();
         }
         throw err;
       }
@@ -417,6 +443,25 @@ export class RangeScene {
       r.setRenderTarget(target);
     });
     this.stats.depthPasses++;
+  }
+
+  /** A travel side's seam fill for one pass: each nearer band's border
+   *  tiles, inside that band's own columns only. */
+  _travelFringe(p, target, pass, bandColumns) {
+    const r = this.renderer;
+    const { width: W, height: H } = this.size;
+    for (const f of p.fringeTravel || []) {
+      const cols = f.pass === pass && bandColumns[f.band];
+      if (!cols) continue;
+      const x0 = Math.max(0, Math.floor(cols[0] * W)), x1 = Math.min(W, Math.ceil(cols[1] * W));
+      if (!(x1 > x0)) continue;
+      target.scissor.set(x0, 0, x1 - x0, H);
+      target.scissorTest = true;
+      r.setRenderTarget(target);
+      r.render(f.scene, this.camera);
+      target.scissorTest = false;
+      r.setRenderTarget(target);
+    }
   }
 
   /** Keep what the current frame draws resident: its view's GPU, CPU and
@@ -481,6 +526,7 @@ export class RangeScene {
     p.forest?.dispose();
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
+    for (const g of Object.values(p.fringes || {})) g.dispose();
     p.surface?.texture?.dispose();
     p.surface?.receiverTexture?.dispose();
     p.material?.dispose();
@@ -622,11 +668,16 @@ export class RangeScene {
       depth.view = viewId;
       this.stats.depthPasses++;
     }
+    // During travel a side's nearer bands draw only in some columns: its
+    // seam fill draws there too (below), never over ground the other side
+    // owns.
+    for (const fm of p.fringeMeshes || []) fm.visible = !bandColumns;
     r.setRenderTarget(target);
     r.setClearColor(0x000000, 0);
     r.clear(true, false, false);
     p.uniforms.uDiag.value = this.diag === 'markers' && pass === 'far' ? 1 : 0;
     r.render(p.scenes[pass], this.camera);
+    if (bandColumns) this._travelFringe(p, target, pass, bandColumns);
     // Far is the single solar boundary, before the inserted Dancing Ridge.
     // During travel its depth was just rebuilt with this side's real columns.
     const source = pass === 'far' && rangeQuality(frame.qualityLevel).sunShafts ? shaftSource(frame) : null;

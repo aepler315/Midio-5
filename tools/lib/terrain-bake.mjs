@@ -138,9 +138,15 @@ export function pointVisible(ob, p, occ) {
  * more than `ratio * r` cell widths (steeper than ~63 degrees for the
  * default 2) cannot be real terrain at this spacing, and is lowered to that
  * ring's highest sample. Edge samples use the in-bounds part of the ring.
- * Returns the number of samples changed.
+ * Wider blobs (a mosaic seam left a 2 x 5 one up to 4.7 km on Tombstone's
+ * west edge, drawn as a needle on the skyline) are found by a grey opening
+ * with a disc of `blobRadius` cells: whatever stands more than
+ * `ratio * blobRadius` cells above the opened surface is just as steep on
+ * every side, and is lowered to it when it forms a blob no wider than the
+ * disc in either direction (a long narrow ridge stays). Returns the number
+ * of samples changed.
  */
-export function despikeGrid(grid, { ratio = 2 } = {}) {
+export function despikeGrid(grid, { ratio = 2, blobRadius = 3 } = {}) {
   const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
   let changed = 0;
   for (const r of [1, 2, 1]) {
@@ -159,7 +165,58 @@ export function despikeGrid(grid, { ratio = 2 } = {}) {
       if (Number.isFinite(top) && h[i] - top > limit) { h[i] = top; changed++; }
     }
   }
+  if (blobRadius > 0) {
+    const opened = openGrid(h, valid, w, hgt, blobRadius);
+    const limit = ratio * blobRadius * cell;
+    const span = 2 * blobRadius + 1;
+    const seen = new Uint8Array(h.length);
+    const isCandidate = (i) => valid[i] && h[i] - opened[i] > limit;
+    // Only a bounded blob goes: a long ridge narrower than the disc stands
+    // above the opening along its whole length but is not a spike.
+    for (let start = 0; start < h.length; start++) {
+      if (seen[start] || !isCandidate(start)) continue;
+      const blob = [start];
+      seen[start] = 1;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let k = 0; k < blob.length; k++) {
+        const i = blob[k], x = i % w, y = (i - x) / w;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+          const j = yy * w + xx;
+          if (!seen[j] && isCandidate(j)) { seen[j] = 1; blob.push(j); }
+        }
+      }
+      if (x1 - x0 + 1 > span || y1 - y0 + 1 > span) continue;
+      for (const i of blob) { h[i] = opened[i]; changed++; }
+    }
+  }
   return changed;
+}
+
+/** Grey opening (erosion, then dilation) of the valid samples by a disc of
+ *  radius `r` cells; edges and no-data use the in-bounds valid part. */
+function openGrid(h, valid, w, hgt, r) {
+  const disc = [];
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + 0.5) disc.push([dx, dy]);
+  const pass = (src, pick, init) => {
+    const out = new Float32Array(src.length);
+    for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!valid[i]) { out[i] = src[i]; continue; }
+      let v = init;
+      for (const [dx, dy] of disc) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+        const j = yy * w + xx;
+        if (valid[j]) v = pick(v, src[j]);
+      }
+      out[i] = v;
+    }
+    return out;
+  };
+  return pass(pass(h, Math.min, Infinity), Math.max, -Infinity);
 }
 
 /**

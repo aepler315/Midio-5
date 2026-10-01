@@ -104,21 +104,31 @@ export function buildTerrainGeometry(data, { budget = 'desktop', bias = 1, inclu
     return nb ? stridesById.get(nb.id) : 0;
   };
   // Size every band first so the arrays are allocated once.
-  const size = Object.fromEntries(BANDS.map((b) => [b, { v: 0, i: 0 }]));
+  const size = Object.fromEntries(BANDS.map((b) => [b, { v: 0, i: 0, f: 0 }]));
+  const bandOf = (t) => (BANDS.includes(t.band) ? t.band : 'far');
   const drawn = [];
   for (const t of data.tiles.values()) {
     if (!t.visible && !includeHidden) continue;
     const m = cells / stridesById.get(t.id);
-    const band = BANDS.includes(t.band) ? t.band : 'far';
+    const band = bandOf(t);
+    // A fringe tile borders a farther band: the farther pass draws it too
+    // (RangeScene), so the seam between the two passes is never left open.
+    let fringe = false;
+    for (let dz = -1; dz <= 1 && !fringe; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const nb = (dx || dz) && data.byIndex.get(`${t.ix + dx},${t.iz + dz}`);
+      if (nb && (nb.visible || includeHidden) && BANDS.indexOf(bandOf(nb)) < BANDS.indexOf(band)) { fringe = true; break; }
+    }
     size[band].v += (m + 1) * (m + 1);
     size[band].i += 6 * m * m;
-    drawn.push([t, band]);
+    if (fringe) size[band].f += 6 * m * m;
+    drawn.push([t, band, fringe]);
   }
   const out = Object.fromEntries(BANDS.map((b) => [b, {
     positions: new Float32Array(size[b].v * 3), indices: new Uint32Array(size[b].i), vertexCount: 0, indexCount: 0,
+    fringe: new Uint32Array(size[b].f), fringeCount: 0,
   }]));
   let triangles = 0;
-  for (const [t, bandName] of drawn) {
+  for (const [t, bandName, fringe] of drawn) {
     const s = stridesById.get(t.id);
     const step = s / t.stride; // stored samples per runtime step
     const m = cells / s; // runtime cells per side
@@ -181,13 +191,18 @@ export function buildTerrainGeometry(data, { budget = 'desktop', bias = 1, inclu
         triangles += 2;
       }
     }
+    if (fringe) {
+      band.fringe.set(I.subarray(band.indexCount, k), band.fringeCount);
+      band.fringeCount += k - band.indexCount;
+    }
     band.indexCount = k;
     band.vertexCount += n * n;
   }
   const bands = {};
   for (const b of BANDS) {
     const o = out[b];
-    bands[b] = { positions: o.positions, indices: o.indexCount === o.indices.length ? o.indices : o.indices.slice(0, o.indexCount), vertexCount: o.vertexCount };
+    bands[b] = { positions: o.positions, indices: o.indexCount === o.indices.length ? o.indices : o.indices.slice(0, o.indexCount), vertexCount: o.vertexCount,
+      fringe: o.fringeCount === o.fringe.length ? o.fringe : o.fringe.slice(0, o.fringeCount) };
   }
   const bytes = BANDS.reduce((sum, b) => sum + bands[b].positions.byteLength + bands[b].indices.byteLength, 0);
   return { bands, stats: { triangles, vertices: BANDS.reduce((s2, b) => s2 + bands[b].vertexCount, 0), bytes } };

@@ -122,18 +122,28 @@ export function terrainUniforms(THREE, data, surface) {
 /** One BufferGeometry per depth band. */
 export function createBandGeometries(THREE, data, options = {}) {
   const built = buildTerrainGeometry(data, options);
-  const geometries = {};
+  const geometries = {}, fringes = {};
   let bytes = 0;
   for (const band of BANDS) {
     const b = built.bands[band];
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(b.positions, 3));
+    const position = new THREE.BufferAttribute(b.positions, 3);
+    geo.setAttribute('position', position);
     geo.setIndex(new THREE.BufferAttribute(b.indices, 1));
     geo.computeBoundingSphere();
     geometries[band] = geo;
     bytes += b.positions.byteLength + b.indices.byteLength;
+    // The band's tiles that border a farther band, sharing its vertices.
+    if (b.fringe?.length) {
+      const f = new THREE.BufferGeometry();
+      f.setAttribute('position', position);
+      f.setIndex(new THREE.BufferAttribute(b.fringe, 1));
+      f.boundingSphere = geo.boundingSphere;
+      fringes[band] = f;
+      bytes += b.fringe.byteLength;
+    }
   }
-  return { geometries, stats: built.stats, bytes };
+  return { geometries, fringes, stats: built.stats, bytes };
 }
 
 /** The review material (neutral / silhouette / depth / normals). */

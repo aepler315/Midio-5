@@ -451,8 +451,8 @@ const SKYLINE_BLUR_COLS = 6;
 const WORLD_WEATHER_KINDS = Object.freeze({ alpine: Object.freeze({ embers: 'wind' }) });
 // Wind streaks cross a stylised stage in ~6 s; over a real range that
 // reads as a gale tearing past distant peaks, so the Range slows them to
-// a drift that takes ~25 s to cross the frame.
-const WORLD_WIND_SPEED = Object.freeze({ alpine: 0.25 });
+// a slow drift that takes ~50 s to cross the frame.
+const WORLD_WIND_SPEED = Object.freeze({ alpine: 0.125 });
 export function windSpeedScaleFor(worldKind) {
   return WORLD_WIND_SPEED[worldKind] ?? 1;
 }

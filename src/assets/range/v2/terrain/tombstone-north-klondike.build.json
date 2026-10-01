@@ -150,8 +150,16 @@
   "id": "tombstone-north-klondike",
   "regionId": "yukon-ranges",
   "biome": "TUNDRA",
-  "status": "candidate",
+  "materialRules": {
+   "treelineM": 1550,
+   "forestDensity": 0.12
+  },
+  "status": "approved",
   "notes": "From the ridges above the North Klondike valley looking south-west into the Tombstone Range granite spires.",
+  "composition": {
+   "foreground": "none",
+   "nearLedgeMaxFrac": 0
+  },
   "dem": {
    "source": "terrarium",
    "zoom": 12,
@@ -209,6 +217,19 @@
   ],
   "title": "Tombstone Range",
   "place": "Tombstone Territorial Park, Yukon",
+  "approval": {
+   "date": "2026-10-01",
+   "terrainManifestSha256": "468ecc8cb04e53184ca0cea5f9127c0bafa33f7eadc0e8eed7c972f599af7bbe",
+   "materialManifestSha256": "76deaaa34707bc0454ecb6e10080e4d1b6716ba84b760a7fa4ce9df09a26dce2",
+   "materialRulesSha256": "4209bf81ebcd0ec0d844dd6ce39922461a1ced0fee74f577001f70337d1f8b27",
+   "cameraSha256": "64615bae3929523094aa6df0c7ad16b1b1ebd34844546e7af2dbd16ae1667fa2",
+   "compositionSha256": "42aabcc21fc899222ba1c8263d48fd22f58d0b94716e47f9a127c1e84b12a1f1",
+   "evidence": [
+    "docs/evidence/range-v2/tombstone-north-klondike-stations.jpg",
+    "docs/evidence/range-v2/tombstone-north-klondike-forest-10s.jpg",
+    "docs/evidence/range-v2/tombstone-north-klondike-forest-30s.jpg"
+   ]
+  },
   "camera": {
    "eyeStartM": [
     2043.9,
@@ -269,21 +290,21 @@
    "lengthKm": 342.3310078984351
   }
  ],
- "manifestSha256": "5cbcec0d5132d445b75c1ffcec1fe1bb48980e2c34f44f34b6ebb4eb96bdbc89",
- "payloadSha256": "54e82597b709d5208bd15cbee53ac4aea35e3a698057ecf6a9c317e2324cd330",
- "payloadBytes": 1866105,
+ "manifestSha256": "468ecc8cb04e53184ca0cea5f9127c0bafa33f7eadc0e8eed7c972f599af7bbe",
+ "payloadSha256": "194f321980239c3b676e4f1ee913c6cfde367d5ac2f1d9190fee6900bb302689",
+ "payloadBytes": 1859544,
  "stats": {
-  "tiles": 358,
+  "tiles": 357,
   "desktop": {
-   "vertices": 1170046,
-   "triangles": 2263520,
-   "meshBytes": 41202792,
+   "vertices": 1165821,
+   "triangles": 2255328,
+   "meshBytes": 41053788,
    "surfaceTextureBytes": 26784432
   },
   "mobile": {
-   "vertices": 689379,
-   "triangles": 1328198,
-   "meshBytes": 24210924,
+   "vertices": 685154,
+   "triangles": 1320006,
+   "meshBytes": 24061920,
    "surfaceTextureBytes": 26784432
   }
  },
@@ -307,6 +328,6 @@
   "desktop": 0.997,
   "mobile": 1.997
  },
- "despikedSamples": 13,
- "gentleGroundSmoothingM": 0.6648223176209561
+ "despikedSamples": 191,
+ "gentleGroundSmoothingM": 0.6648072529414943
 }

@@ -12,13 +12,13 @@ import { GUST_FRONTS, GUST_SWEEP_SEC } from './Gust.js';
 
 import { MIST_GLSL } from './RangeAtmosphere.js';
 
-const GUST_ATTACK_SEC = 0.35;
-const GUST_DECAY_SEC = 1.2;
+const GUST_ATTACK_SEC = 0.7;
+const GUST_DECAY_SEC = 2.4;
 /** Crown lean at a full gust, as a fraction of tree height. */
 const GUST_LEAN = 0.08;
 /** Crown brightening at a full gust: needles turning their pale sides up. */
 const GUST_SHEEN = 0.05;
-const GUST_SHEEN_DECAY_SEC = 0.5;
+const GUST_SHEEN_DECAY_SEC = 1.0;
 
 export const TREE_COMMON = /* glsl */`
   ${DEFORM_GLSL}
@@ -67,7 +67,7 @@ export const TREE_COMMON = /* glsl */`
   }
   vec2 windAt(float y01) {
     float ph = iVar.y * 6.2831;
-    float s = sin(uTime * 1.3 + ph) * 0.6 + sin(uTime * 2.9 + ph * 1.7) * 0.25;
+    float s = sin(uTime * 0.65 + ph) * 0.6 + sin(uTime * 1.45 + ph * 1.7) * 0.25;
     vec2 sway = vec2(s, s * 0.4) * 0.012;
     // The gust leans crowns the way the front travels (camera right in xz).
     vec2 gust = gustAt();
