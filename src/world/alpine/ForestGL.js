@@ -12,13 +12,13 @@ import { GUST_FRONTS, GUST_SWEEP_SEC } from './Gust.js';
 
 import { MIST_GLSL } from './RangeAtmosphere.js';
 
-const GUST_ATTACK_SEC = 0.08;
-const GUST_DECAY_SEC = 0.4;
+const GUST_ATTACK_SEC = 0.35;
+const GUST_DECAY_SEC = 1.2;
 /** Crown lean at a full gust, as a fraction of tree height. */
 const GUST_LEAN = 0.08;
 /** Crown brightening at a full gust: needles turning their pale sides up. */
 const GUST_SHEEN = 0.05;
-const GUST_SHEEN_DECAY_SEC = 0.12;
+const GUST_SHEEN_DECAY_SEC = 0.5;
 
 export const TREE_COMMON = /* glsl */`
   ${DEFORM_GLSL}
