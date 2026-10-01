@@ -82,3 +82,17 @@ test('a second kick mid-hop never drops Broshi back to the sand', () => {
     prev = v;
   }
 });
+
+test('reduced motion holds the baby stars in place around Midasus', () => {
+  const rel = (t) => {
+    const p = midasusPose(t, W, H, { reducedMotion: true });
+    return p.babies.map((b, i) => {
+      const lagged = midasusPose(t - [0.55, 0.95, 1.35][i], W, H, { reducedMotion: true });
+      return [b.x - lagged.x, b.y - (lagged.y)];
+    });
+  };
+  const a = rel(10), b = rel(11.3);
+  for (let i = 0; i < 3; i++) {
+    assert.ok(Math.abs(a[i][0] - b[i][0]) < 1e-9 && Math.abs(a[i][1] - b[i][1]) < 1e-9, `baby ${i} orbit frozen`);
+  }
+});

@@ -122,7 +122,7 @@ export function midasusPose(tSec, W, H, { treble = 0, reducedMotion = false } = 
   for (let i = 1; i <= 9; i++) trail.push(at(tSec - i * 0.11));
   const babies = BABY_LAGS_S.map((lag, i) => {
     const b = at(tSec - lag);
-    const a = tSec * 1.7 + i * TAU / 3;
+    const a = (reducedMotion ? 0 : tSec * 1.7) + i * TAU / 3;
     const r = H / 720 * 9;
     return { x: b.x + Math.cos(a) * r, y: b.y + Math.sin(a) * r * 0.6 };
   });
