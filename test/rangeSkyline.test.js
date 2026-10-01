@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { skylineFromAlpha, smoothSkyline, skylineYAt } from '../src/world/alpine/RangeSkyline.js';
 import { SpaceRidge } from '../src/world/SpaceRidge.js';
+import { BiomeManager } from '../src/world/BiomeManager.js';
+import { RangePresentation } from '../src/world/alpine/RangePresentation.js';
 
 /** RGBA with land (alpha 255) from row `tops[x]` down; null = no land. */
 function alphaImage(tops, h) {
@@ -63,4 +65,45 @@ test('the corridor follows the echoed curtain', () => {
   const mid = echoed.reduce((best, p) => (Math.abs(p.x - 640) < Math.abs(best.x - 640) ? p : best));
   const band = ridge.corridor(canvas)(mid.x);
   assert.ok(band.top < mid.y && band.bottom > mid.y);
+});
+
+test('the echo arrives with the land: none before it, all of it once arrived', () => {
+  const ridge = new SpaceRidge(315);
+  ridge._tSec = 10;
+  const { pts } = ridge._samples(canvas);
+  ridge.skyline = { ys: peak, atSec: 10, weight: 1 };
+  const full = ridge._echoSkyline(pts, canvas);
+  ridge.skyline.weight = 0;
+  assert.deepEqual(ridge._echoSkyline(pts, canvas), pts);
+  ridge.skyline.weight = .5;
+  ridge._echoSkyline(pts, canvas).forEach((p, k) => assert.ok(Math.abs(p.y - (pts[k].y + full[k].y) / 2) < 1e-9));
+});
+
+test('a skyline read after the sky went without one asks for the instant to be redrawn', async () => {
+  const W = 96, H = 54;
+  const data = new Uint8ClampedArray(W * H * 4);
+  for (let x = 0; x < W; x++) for (let y = 30; y < H; y++) data[(y * W + x) * 4 + 3] = 255;
+  const ctx2d = { clearRect() {}, drawImage() {}, getImageData: () => ({ data }) };
+  globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ctx2d }) };
+  try {
+    const ridge = new SpaceRidge(315);
+    const mgr = Object.assign(Object.create(BiomeManager.prototype), { spaceRidge: ridge, tSec: 20, _serial: 1 });
+    ridge.lastEchoed = false; // the sky this frame had nothing to echo (just sought)
+    mgr._readSkyline({ image: {}, width: 1280, height: 720, arrival: 1 });
+    assert.ok(Math.abs(ridge.skyline.ys[0] - 30 / 54) < 1e-3);
+    assert.equal(mgr.takeSkylineUnsettled(), true);
+    assert.equal(mgr.takeSkylineUnsettled(), false, 'reading clears it');
+    const settle = RangePresentation.prototype.settle;
+    const pres = { _needed: new Set(), _wants: [], frameInputs: { sim: { biomes: mgr } } };
+    ridge.lastEchoed = false;
+    mgr.tSec = 21;
+    mgr._readSkyline({ image: {}, width: 1280, height: 720, arrival: 1 });
+    assert.equal(await settle.call(pres), true, 'export settlement redraws the frame');
+    ridge.lastEchoed = true;
+    mgr.tSec = 22;
+    mgr._readSkyline({ image: {}, width: 1280, height: 720, arrival: 1 });
+    assert.equal(await settle.call(pres), false, 'a frame that echoed is already settled');
+  } finally {
+    delete globalThis.document;
+  }
 });

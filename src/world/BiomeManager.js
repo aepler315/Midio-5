@@ -5484,7 +5484,9 @@ export class BiomeManager {
    *  only the small image ever crosses back. */
   _readSkyline(mask) {
     if (typeof document === 'undefined' || !this.spaceRidge) return;
-    if (this._skyline && Math.abs(this.tSec - this._skyline.atSec) < SKYLINE_PERIOD_SEC) return;
+    // The land fades in on arrival; so does the aurora's echo of it.
+    const weight = clamp01(mask.arrival ?? 1);
+    if (this._skyline && Math.abs(this.tSec - this._skyline.atSec) < SKYLINE_PERIOD_SEC) { this._skyline.weight = weight; return; }
     const W = SKYLINE_COLS, H = SKYLINE_ROWS;
     if (!this._skylineCanvas) {
       if (this.residency) {
@@ -5506,8 +5508,20 @@ export class BiomeManager {
     read.clearRect(0, 0, W, H);
     read.drawImage(this._skylineCanvas, 0, 0);
     const { data } = read.getImageData(0, 0, W, H);
-    this._skyline = { ys: smoothSkyline(skylineFromAlpha(data, W, H), SKYLINE_BLUR_COLS), atSec: this.tSec };
+    this._skyline = { ys: smoothSkyline(skylineFromAlpha(data, W, H), SKYLINE_BLUR_COLS), atSec: this.tSec, weight };
     this.spaceRidge.skyline = this._skyline;
+    // The sky was drawn before this reading. If it went without an echo
+    // (after a seek, or the first frame), the same instant drawn again
+    // differs: settlement redraws it (takeSkylineUnsettled).
+    if (!this.spaceRidge.lastEchoed) this._skylineUnsettled = true;
+  }
+
+  /** Whether a skyline arrived after the sky was drawn without one; reading
+   *  clears it. Frame settlement redraws the same instant when true. */
+  takeSkylineUnsettled() {
+    const unsettled = !!this._skylineUnsettled;
+    this._skylineUnsettled = false;
+    return unsettled;
   }
 
   _drawOneCelestial(ctx, cx, cy, c, alpha, haloMul = 1) {

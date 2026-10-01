@@ -174,6 +174,7 @@ export class SpaceRidge {
     this._flashes = [];
     // The land's skyline the aurora echoes ({ ys, atSec }); the Range sets it.
     this.skyline = null;
+    this.lastEchoed = false;
     this._rotX = 0;
     this._rotY = 0;
     this._tidalPx = 0;
@@ -302,20 +303,27 @@ export class SpaceRidge {
   }
 
   /** The aurora's hem echoing the land: the skyline's shape (`skyline`, set
-   *  by the Range each frame it reads one) carried at the curtain's own
+   *  by the Range each frame it reads one, weighted by how far the land has
+   *  arrived) carried at the curtain's own
    *  altitude, with a share of the musical wave left on top, and never
    *  closer to the land than the gap. Without a fresh skyline, the musical
    *  wave alone. Returns new points; the samples are not changed. */
+  _skylineFresh() {
+    const sky = this.skyline;
+    return !!sky && Math.abs(this._tSec - sky.atSec) <= SKYLINE_STALE_SEC;
+  }
+
   _echoSkyline(pts, canvas) {
     const sky = this.skyline;
-    if (!sky || !(Math.abs(this._tSec - sky.atSec) <= SKYLINE_STALE_SEC) || pts.length < 2) return pts.slice();
+    if (!this._skylineFresh() || pts.length < 2) return pts.slice();
+    const weight = clamp01(sky.weight ?? 1);
     const land = pts.map((p) => skylineYAt(sky.ys, canvas, p.x));
     const mean = (values) => values.reduce((sum, v) => sum + v, 0) / values.length;
     const lift = mean(land) - mean(pts.map((p) => p.y));
     const gap = canvas.height * AURORA_RIDGE_GAP;
     return pts.map((p, k) => {
       const y = p.y + (land[k] - lift - p.y) * AURORA_ECHO;
-      return { ...p, y: Math.min(y, land[k] - gap) };
+      return { ...p, y: p.y + (Math.min(y, land[k] - gap) - p.y) * weight };
     });
   }
 
@@ -351,6 +359,9 @@ export class SpaceRidge {
    */
   drawAurora(ctx, canvas, color, tSec, { reducedFlash = false, reducedMotion = false, presentation = 1, night01 = 1 } = {}) {
     const { pts: raw, maxH } = this._samples(canvas, reducedMotion);
+    // Whether this sky had the land's skyline to echo (see BiomeManager
+    // takeSkylineUnsettled).
+    this.lastEchoed = this._skylineFresh();
     const pts = this._echoSkyline(raw, canvas);
     if (pts.length < 2) return;
     const flashSet = this._flashLevels(tSec);
