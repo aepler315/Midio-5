@@ -129,3 +129,12 @@ test('portrait output heat grid and shock origin use the fitted picture offsets'
   assert.ok(Math.abs(first.dx - first.sx - radial * dx / dist) < 1e-9);
   assert.ok(Math.abs(first.dy - first.sy - radial * dy / dist) < 1e-9);
 });
+
+test('a drop leaves the Range unwarped: there is no performer to radiate from', () => {
+  const blits = [];
+  const sim = makeSim();
+  sim.biomes = { ...sim.biomes, world: { kind: 'alpine' } };
+  Renderer.prototype._drawHeatDistortion.call({ _heatCanvas: makeHeatCanvas() }, makeCtx(blits),
+    { width: 1280, height: 720 }, sim, { midioDrawX: 300 }, { width: 1280, height: 720 });
+  assert.equal(blits.length, 0);
+});

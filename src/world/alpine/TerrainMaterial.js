@@ -312,7 +312,11 @@ export const SCENE_FRAG = /* glsl */`
       vec3 halfVector = uLightDir + V;
       vec3 H = halfVector / max(length(halfVector), 1e-10);
       float glint = waterGlint(dot(H, waterNormal), rWaterGlintGain, dot(uLightColor, uLightColor));
-      lit = mix(lit, uSkyHorizon * rWaterSkyMix, fres) + uLightColor * glint;
+      // The lake mirrors the sky above the far shore, not only its pale
+      // horizon band: an all-horizon mirror turned broad lakes into a
+      // flat white sheet that outshone the mountains.
+      vec3 skyReflect = mix(uSkyZenith, uSkyHorizon, 0.3) * 0.5;
+      lit = mix(lit, skyReflect * rWaterSkyMix, fres) + uLightColor * glint;
     }
     // Aerial perspective, applied once here and nowhere else.
     float heightTerm = exp(-max(0.0, vRenderedWorld.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
