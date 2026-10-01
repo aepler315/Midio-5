@@ -2109,6 +2109,8 @@ export class BiomeManager {
     this.worldRhythm = history.rhythm;
     this._danceKickMs = history.kickMs;
     this._danceKickAmp = history.kickAmp;
+    this._dancePrevKickMs = history.prevKickMs;
+    this._dancePrevKickAmp = history.prevKickAmp;
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
     this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim

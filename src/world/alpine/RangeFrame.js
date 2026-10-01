@@ -99,8 +99,11 @@ export function rangeSectionMotif(section, previous, timeMs, seed = 0) {
 /** Independent slow pressure, rhythmic lift, summit gesture, melodic tilt and
  * standing section growth. Time is always heard time, never integrated.
  * Reduced flash belongs to lighting; reduced motion suppresses geometry. */
+/** A gust age long past any envelope: no front in flight. */
+export const GUST_IDLE_SEC = 1000;
+
 export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, kickAmp = 0,
-  melody = null, structural01 = 0, motif = null, reducedMotion = false, evaluatedKick01 = null, activity01 = null,
+  prevKickAgeMs = Infinity, prevKickAmp = 0, melody = null, structural01 = 0, motif = null, reducedMotion = false, evaluatedKick01 = null, activity01 = null,
   motionPresence01 = null, calibrationActivity01 = null } = {}) {
   const groove = unit(env?.groove), sustain = unit(env?.sustain);
   const scaleMul = Math.min(1.3, Math.max(1, env?.scaleMul ?? 1));
@@ -127,6 +130,14 @@ export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, ki
     melodyK: (2 * Math.PI) / (2400 + 2400 * pitch01),
     melodyDir: [Math.cos(pan * .7 + .9), Math.sin(pan * .7 + .9)],
     melodyPhaseRad: 2 * Math.PI * (.065 + .045 * pitch01) * tSec,
+    // Each kick sends a gust front across the forest. The latest and the
+    // one before it, since a front can still be crossing when the next
+    // lands. Ages are heard time since each kick; the front travels with
+    // the section's wave direction (its sign across the frame).
+    gusts: [[kickAgeMs, kickAmp], [prevKickAgeMs, prevKickAmp]].map(([age, amp]) => ({
+      ageSec: Number.isFinite(age) && age >= 0 ? age / 1000 : GUST_IDLE_SEC,
+      amp01: unit(amp) * (.55 + .45 * kickMul) * motion })),
+    gustDir: (motif?.angle || 0) < 0 ? -1 : 1,
   };
   state.totalBoundM = state.amplitudeM + state.kickM + state.gestureM + state.melodicM + state.structuralM;
   return state;
@@ -234,6 +245,7 @@ export function buildRangeFrame({
   const motif = rangeSectionMotif(section, prior, timeMs, sim.songSeed ?? 0);
   const music = rangeMusicState({
     env, tSec: timeMs / 1000, evaluatedKick01: ridgeSample?.kick01, kickAgeMs: timeMs - (mgr._danceKickMs ?? -Infinity), kickAmp: mgr._danceKickAmp || 0,
+    prevKickAgeMs: timeMs - (mgr._dancePrevKickMs ?? -Infinity), prevKickAmp: mgr._dancePrevKickAmp || 0,
     melody: ridgeSample ? ridgeSample.motionMelody : narrative ? { activity: narrative.sources.midio.pitchActivity,
       pitch01: narrative.sources.midio.pitch01 } : sampleRangeMelody(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     structural01: section?.provenance === 'detected'
