@@ -101,6 +101,8 @@ import {
   formatBytes, formatElapsed, exportFileName, describeResult,
 } from './render/VideoExport.js';
 import { stepExportClock, evenExportSize } from './render/BulkExport.js';
+import { rangeUserCamera } from './world/alpine/RangeCamera.js';
+import { attachRangeZoomInput } from './ui/RangeZoomInput.js';
 import { MusicLibrary } from './library/MusicLibrary.js';
 import { LibraryPanel } from './ui/LibraryPanel.js';
 import { recentlyPlayed, displayTitle, displayArtist, untaggedTracks } from './library/TrackIndex.js';
@@ -1728,7 +1730,7 @@ function startTimeline(timelineData, extra = {}) {
     startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode: captureModeFlag = false,
     exportMode: exportModeFlag = false, exportSize = null, keepAudio = false,
   } = extra;
-  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0 };
+  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0, keepUserCamera: false };
   const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
   const exportMode = !!(exportModeFlag || fromUrl);
   if (exportMode) {
@@ -1844,6 +1846,13 @@ function startTimeline(timelineData, extra = {}) {
     return;
   }
   sim.audioOverview = timelineData.audioOverview || null;
+  // The listener's zoom (scroll wheel, pinch) is live-only: exports and
+  // captures draw the authored camera. A new song starts unzoomed; a seek
+  // or a mid-song rebuild keeps the zoom where it is.
+  sim.userCameraEnabled = !captureMode;
+  // Seeks (to 0 too) and the mid-song full-analysis rebuild say so with
+  // keepUserCamera; a new song or a replay starts unzoomed.
+  if (!extra.keepUserCamera) rangeUserCamera.reset();
   sim.analysisOpening = timelineData.opening || null;
   // This snapshot belongs to the song, beyond Simulation teardown/rebuild.
   if (!timelineData.opening) timelineData.rangeNarrative = sim.rangeNarrative;
@@ -3530,11 +3539,17 @@ function stopTitleBackdrop() {
   }
 }
 
-// Zoom has been removed from the game: there is no player Lens control and
-// no automatic camera zoom. The pointer is still tracked, but only so the
-// star-children can notice where the user is (they're aware of the user); it
-// never moves the camera. Client coords are mapped through the canvas rect
-// into the 1280x720 stage space the sim draws in.
+// The legacy stage has no player zoom. Range views do: the scroll wheel and
+// a two-finger pinch fly the camera toward the pointer (RangeZoomInput.js).
+// The pointer is also tracked so the star-children can notice where the
+// user is. Client coords are mapped through the canvas rect into the
+// 1280x720 stage space the sim draws in.
+const rangeZoomInput = attachRangeZoomInput(canvas, {
+  camera: rangeUserCamera,
+  enabled: () => !!(running && sim?.userCameraEnabled),
+  toStage: (e) => clientToStage(e),
+  stageW: STAGE_W, stageH: STAGE_H,
+});
 canvas.addEventListener('pointermove', (e) => {
   if (!running || !sim || !sim.setPointer) return;
   const p = clientToStage(e);
@@ -3558,6 +3573,7 @@ function adoptFullAnalysisLive(data) {
     songSeed: sim.songSeed,
     startAtMs: Math.max(1, audioEngine.nowMs),
     keepAudio: true,
+    keepUserCamera: true,
     preservePause: wasPaused,
     fitDiagnostic: sim.fitDiagnostic,
     chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs },
@@ -3580,7 +3596,7 @@ function seekSong(ms) {
   const selectedSection = (renderer?.canvasRenderer || renderer)?.composer?.selectedSection;
   const hudInFrame = !!renderer?.hudInFrame;
   const showSectionLabels = !!sim.showSectionLabels;
-  startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t,
+  startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t, keepUserCamera: true,
     playBuffer: buffer || undefined, preservePause: wasPaused, fitDiagnostic: sim.fitDiagnostic });
   if (!running || !sim) return;
   renderer.hudInFrame = hudInFrame;
@@ -3599,9 +3615,10 @@ function seekSong(ms) {
 /** The player's own sense of "where's the beat" (BeatAnchor.js): stamped on
  *  the clock the EAR is on (visualNow), same discipline as every other
  *  beat-anchored cue in the sim. */
-function beatTap(role = null) {
+function beatTap(role = null, atMs = null) {
   if (!running || !sim || paused || !audioEngine) return;
-  const tapMs = visualNow(audioEngine.nowMs, effectiveOutputLatencyMs());
+  // A deferred touch tap (see the canvas handler) keeps its own moment.
+  const tapMs = atMs ?? visualNow(audioEngine.nowMs, effectiveOutputLatencyMs());
   const eyePhase = recalibration.active && recalibration.phase === PHASE_EYE;
   // An eye-phase tap is aimed at a ring on the screen, not at the groove.
   // Feeding it to the anchor would teach BeatAnchor the display delay:
@@ -3752,6 +3769,23 @@ hudLeftEl?.addEventListener('pointerdown', wakeHud);
 // the way -- otherwise every high tap on the canvas pops it open.
 canvas.addEventListener('contextmenu', (e) => { if (running && sim) e.preventDefault(); });
 
+// Over a Range view a touch may be the first finger of a pinch, so its
+// tap waits this long for a second finger before it counts (the beat tap
+// keeps the moment the finger landed).
+const PINCH_TAP_WAIT_MS = 140;
+let pendingTouchTap = null;
+function cancelPendingTouchTap() {
+  if (pendingTouchTap) { clearTimeout(pendingTouchTap.timer); pendingTouchTap = null; }
+}
+/** A new finger after the last one lifted is its own tap: the waiting one
+ *  counts now rather than being dropped. */
+function flushPendingTouchTap() {
+  const t = pendingTouchTap;
+  if (!t) return;
+  cancelPendingTouchTap();
+  t.fire();
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   if (!running || !sim) return;
   // Every canvas tap prevents default -- previously only the seekbar-hit
@@ -3759,16 +3793,30 @@ canvas.addEventListener('pointerdown', (e) => {
   // only input touch has at all) left double-tap-to-zoom and the ~300ms
   // synthetic-click delay in play on mobile.
   e.preventDefault();
+  // A second finger makes it a pinch: neither finger is a tap.
+  if (rangeZoomInput.pinching(e)) { cancelPendingTouchTap(); return; }
+  if (e.pointerType === 'touch' && rangeZoomInput.live()) {
+    flushPendingTouchTap();
+    const p = clientToStage(e), button = e.button;
+    const atMs = audioEngine ? visualNow(audioEngine.nowMs, effectiveOutputLatencyMs()) : null;
+    const fire = () => canvasTap(p, button, atMs);
+    pendingTouchTap = { fire, timer: setTimeout(() => { pendingTouchTap = null; fire(); }, PINCH_TAP_WAIT_MS) };
+    return;
+  }
+  canvasTap(clientToStage(e), e.button);
+});
+
+function canvasTap(p, button, atMs = null) {
+  if (!running || !sim) return;
   if (!hudAwake) { wakeHud(); return; }
   wakeHud();
-  const p = clientToStage(e);
   if (!p) return;
   const hit = hitTestComposerStrip(renderer, p.x, p.y, { width: STAGE_W, height: STAGE_H });
   const composer = (renderer?.canvasRenderer || renderer)?.composer;
   // Mouse buttons mirror the keys: left pairs with F (low), right with J
   // (high). Anything else (middle, back/forward) stays an unroled tap rather
   // than being silently filed as one of the two hands.
-  if (!hit) { beatTap(e.button === 2 ? ROLE_HIGH : e.button === 0 ? ROLE_LOW : null); return; }
+  if (!hit) { beatTap(button === 2 ? ROLE_HIGH : button === 0 ? ROLE_LOW : null, atMs); return; }
   if (hit.type === 'detail') return; // keep overlay open
   if (hit.type === 'strip') {
     // Toggle section detail when re-clicking the same section; always seek.
@@ -3781,7 +3829,7 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     seekSong(hit.tMs);
   }
-});
+}
 
 // The keys a player unfamiliar with the autoplay premise reaches for
 // expecting direct control -- see the keydown handler below.

@@ -23,6 +23,7 @@ import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
 import { topoRevealAt } from './TopoReveal.js';
 import { rangeActorsAt } from './RangeActors.js';
+import { rangeCameraMoveAt, rangeUserCamera } from './RangeCamera.js';
 import { hexLerp } from '../../utils/color.js';
 
 const NIGHT_SKY = '#05060d';
@@ -332,6 +333,10 @@ export function buildRangeFrame({
     topo01: topoRevealAt(mgr, timeMs),
     // The cast as lights in the land: brightness, travel and peaks per lane.
     actors: rangeActorsAt(sim, timeMs),
+    // Camera: this section's slow cinematic move, and the listener's zoom.
+    cameraMove: rangeCameraMoveAt({ timeMs, sections: mgr.sections, durationMs: mgr.durationMs,
+      seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
+    userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
     light: lightState, music, ridges, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
