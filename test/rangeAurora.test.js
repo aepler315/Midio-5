@@ -5,12 +5,13 @@ import { BiomeManager } from '../src/world/BiomeManager.js';
 
 function recordingCtx() {
   const fills = [];
+  const heights = [];
   const stack = [];
   return {
-    fills, globalAlpha: 1, globalCompositeOperation: 'source-over', fillStyle: null,
+    fills, heights, globalAlpha: 1, globalCompositeOperation: 'source-over', fillStyle: null,
     save() { stack.push([this.globalAlpha, this.globalCompositeOperation]); },
     restore() { [this.globalAlpha, this.globalCompositeOperation] = stack.pop(); },
-    translate() {}, scale() {},
+    translate() {}, scale(_x, y) { heights.push(y); },
     createLinearGradient() { return { addColorStop() {} }; },
     fillRect() { fills.push({ alpha: this.globalAlpha, op: this.globalCompositeOperation }); },
   };
@@ -38,12 +39,18 @@ test('the aurora stands down with its presentation and is flash-safe', () => {
   assert.ok(safe.fills.every(f => f.op === 'source-over'));
 });
 
-test('reduced motion holds the curtain\'s rays still', () => {
+test('reduced motion holds the curtain\'s rays still, even through flashes', () => {
   const ridge = new SpaceRidge(315);
-  const a = recordingCtx(), b = recordingCtx();
+  const a = recordingCtx(), b = recordingCtx(), c = recordingCtx();
   ridge.drawAurora(a, canvas, '#9fe8c0', 3, { reducedMotion: true });
   ridge.drawAurora(b, canvas, '#9fe8c0', 9, { reducedMotion: true });
   assert.deepEqual(a.fills, b.fills);
+  ridge._flashes = ridge.nodes.map((_, i) => ({ i, atMs: 9000 }));
+  ridge.drawAurora(c, canvas, '#9fe8c0', 9, { reducedMotion: true });
+  assert.deepEqual(c.heights, a.heights, 'a flash never stretches a ray');
+  const live = recordingCtx();
+  ridge.drawAurora(live, canvas, '#9fe8c0', 9);
+  assert.ok(Math.max(...live.heights) > Math.max(...a.heights), 'with motion allowed, a flash does');
 });
 
 test('crest light draws nothing without terrain to land on', () => {
@@ -59,6 +66,7 @@ test('nothing painted after the aurora can reach into its tallest flaring rays',
   const ridge = new SpaceRidge(315);
   ridge._tSec = 10;
   ridge._flashes = ridge.nodes.map((_, i) => ({ i, atMs: 10000 }));
+  for (const n of ridge.nodes) n.level = 1; // every band at full
   const { pts, maxH } = ridge._samples(canvas);
   const flashes = ridge._flashLevels(10);
   const corridor = ridge.corridor(canvas);
@@ -66,5 +74,35 @@ test('nothing painted after the aurora can reach into its tallest flaring rays',
     const x = (pts[i].x + pts[i + 1].x) / 2, y = (pts[i].y + pts[i + 1].y) / 2;
     const tallest = ridge._curtainHeight(canvas, maxH, pts[i], pts[i + 1], flashes, 1);
     assert.ok(corridor(x).top <= y - tallest + 1e-6, `segment ${i} crown stays inside the corridor`);
+    assert.ok(corridor(x).bottom >= y + tallest * 0.12 - 1e-6, `segment ${i} skirt stays inside the corridor`);
+  }
+});
+
+test('crest light owns its buffers in the shared graphics budget', () => {
+  const made = [];
+  globalThis.document = { createElement: () => { const c = { width: 0, height: 0 }; made.push(c); return c; } };
+  try {
+    const calls = [];
+    const residency = {
+      ok: true,
+      release(key) { calls.push(['release', key]); },
+      reserve(r) { calls.push(['reserve', r.key, r.bytes]); return this.ok ? r : null; },
+      commit() { calls.push(['commit']); return true; },
+    };
+    const mgr = Object.assign(Object.create(BiomeManager.prototype), { residency, _serial: 7 });
+    const got = mgr._crestLightBuffers(1280, 720, 160, 90);
+    assert.deepEqual(calls.slice(0, 3), [['release', 'crest-light#7'], ['reserve', 'crest-light#7', (1280 * 720 + 160 * 90) * 4], ['commit']]);
+    assert.equal(got.light.width, 1280);
+    calls.length = 0;
+    mgr._crestLightBuffers(1280, 720, 160, 90);
+    assert.equal(calls.length, 0, 'an unchanged size reserves nothing');
+    residency.ok = false;
+    assert.equal(mgr._crestLightBuffers(3840, 2160, 480, 270), null, 'a refusal skips the light');
+    assert.ok(made.every(c => c.width === 0 && c.height === 0), 'and frees what it held');
+    calls.length = 0;
+    mgr._releaseCrestLight();
+    assert.deepEqual(calls, [['release', 'crest-light#7']]);
+  } finally {
+    delete globalThis.document;
   }
 });

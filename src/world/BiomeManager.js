@@ -754,7 +754,8 @@ export class BiomeManager {
     // Legacy strips share the page's graphics budget when one is given, so
     // a fallback never holds a second, independent allowance.
     this.residency = residency;
-    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${++BIOME_MANAGER_SERIAL}`,
+    this._serial = ++BIOME_MANAGER_SERIAL;
+    this.strips = new TerrainStripCache({ residency, owner: `legacy-strips#${this._serial}`,
       // Sets for biomes Range v2 draws are fallback: the ledger may evict
       // them when the scene reserves room (else a legacy frame drawn while a
       // view prepared re-bakes them and keeps the view out).
@@ -954,6 +955,7 @@ export class BiomeManager {
     for (const unsub of this._unsub) unsub();
     this._unsub.length = 0;
     this.strips.clear();
+    this._releaseCrestLight();
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {
@@ -5391,18 +5393,12 @@ export class BiomeManager {
       * clamp01(mask.arrival ?? 1);
     if (strength < 0.005) return;
     const W = mask.width, H = mask.height;
-    let light = this._crestLightCanvas;
-    if (!light) {
-      if (typeof document === 'undefined') return;
-      light = this._crestLightCanvas = document.createElement('canvas');
-    }
-    if (light.width !== W || light.height !== H) { light.width = W; light.height = H; }
     // The band is drawn small and blurred, then enlarged: a smooth falloff
     // with no visible stroke edges, at a fraction of the fill cost.
-    let band = this._crestBandCanvas;
-    if (!band) band = this._crestBandCanvas = document.createElement('canvas');
     const bw = Math.max(1, Math.round(W / CREST_LIGHT_DOWNSCALE)), bh = Math.max(1, Math.round(H / CREST_LIGHT_DOWNSCALE));
-    if (band.width !== bw || band.height !== bh) { band.width = bw; band.height = bh; }
+    const buffers = this._crestLightBuffers(W, H, bw, bh);
+    if (!buffers) return;
+    const { light, band } = buffers;
     const bctx = band.getContext('2d');
     const color = this.lerpCache.get(ensureMinLightness(
       this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t)), .72), ALPENGLOW, 0.5);
@@ -5440,6 +5436,34 @@ export class BiomeManager {
     ctx.globalAlpha = Math.min(1, strength);
     ctx.drawImage(light, 0, 0, W, H, 0, 0, canvas.width, canvas.height);
     ctx.restore();
+  }
+
+  /** The crest light's two offscreen canvases, sized W x H and bw x bh.
+   *  Their bytes are owned in the shared graphics budget before they are
+   *  sized; a refusal skips the light (null), never overcommits. */
+  _crestLightBuffers(W, H, bw, bh) {
+    if (typeof document === 'undefined') return null;
+    let light = this._crestLightCanvas, band = this._crestBandCanvas;
+    const resized = !light || light.width !== W || light.height !== H || band.width !== bw || band.height !== bh;
+    if (!resized) return { light, band };
+    if (this.residency) {
+      const key = `crest-light#${this._serial}`;
+      this.residency.release(key);
+      const res = this.residency.reserve({ key, bytes: (W * H + bw * bh) * 4, owner: 'crest-light', evictable: false });
+      if (!res) { this._releaseCrestLight(); return null; }
+      this.residency.commit(res, null);
+    }
+    if (!light) light = this._crestLightCanvas = document.createElement('canvas');
+    if (!band) band = this._crestBandCanvas = document.createElement('canvas');
+    light.width = W; light.height = H;
+    band.width = bw; band.height = bh;
+    return { light, band };
+  }
+
+  _releaseCrestLight() {
+    for (const c of [this._crestLightCanvas, this._crestBandCanvas]) if (c) { c.width = 0; c.height = 0; }
+    this._crestLightCanvas = this._crestBandCanvas = null;
+    this.residency?.release(`crest-light#${this._serial}`);
   }
 
   _drawOneCelestial(ctx, cx, cy, c, alpha, haloMul = 1) {

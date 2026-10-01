@@ -286,7 +286,8 @@ export class SpaceRidge {
         r = reach[i - 1];
         break;
       }
-      return { top: y - r, bottom: y + 15 };
+      // The skirt hangs below the hem in proportion to the curtain.
+      return { top: y - r, bottom: y + Math.max(15, r * AURORA_SKIRT) };
     };
   }
 
@@ -324,6 +325,9 @@ export class SpaceRidge {
     const { pts, maxH } = this._samples(canvas, reducedMotion);
     if (pts.length < 2) return;
     const flashSet = this._flashLevels(tSec);
+    // Under reduced motion a flash may brighten the curtain but never
+    // stretch it: the rays stand still.
+    const reachFlash = reducedMotion ? new Map() : flashSet;
     const inherited = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
     const present = Number.isFinite(presentation) ? clamp01(presentation) : 1;
     const paint = inherited * present * (0.3 + 0.7 * clamp01(night01));
@@ -354,7 +358,7 @@ export class SpaceRidge {
         const y = a.y + (b.y - a.y) * u;
         // Two slow interfering folds give the curtain its rays.
         const fold = (0.5 + 0.5 * Math.sin(x * 0.045 + t * 0.35)) * (0.55 + 0.45 * Math.sin(x * 0.13 - t * 0.9));
-        const height = this._curtainHeight(canvas, maxH, a, b, flashSet, 0.75 + 0.25 * Math.sin(x * 0.021 + t * 0.22));
+        const height = this._curtainHeight(canvas, maxH, a, b, reachFlash, 0.75 + 0.25 * Math.sin(x * 0.021 + t * 0.22));
         ctx.save();
         ctx.globalAlpha = paint * capFlashAlpha((0.1 + 0.22 * fold + 0.18 * level + 0.3 * flash) * dm, reducedFlash);
         ctx.translate(x - w / 2, y);
