@@ -31,7 +31,7 @@ import { BANDS, terrainFringeBytes, terrainHeightAt } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
 import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT } from './WaterMirror.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
-import { applyGlacierUniforms, glacierErrors } from './GlacierField.js';
+import { applyGlacierUniforms, glacierErrors, glacierSample } from './GlacierField.js';
 import { ActorsGL } from './ActorsGL.js';
 import { ACTOR_IDS, ACTOR_HUES, ACTOR_LOOK, ACTOR_START, actorRoutes, routePosition } from './RangeActors.js';
 
@@ -692,6 +692,16 @@ export class RangeScene {
   /** Camera for this frame: the view's rail pose, projected onto the whole
    *  padded scenic stage so the Canvas transform (zoom, shake, roll) applies
    *  once when the partition is composited. */
+  /** Ground height the camera must clear: the DEM plus a glacier view's
+   *  ice at this frame's retreat, as TerrainMaterial raises it. */
+  _renderedGround(view, frame, data) {
+    const ice = view.glacier, retreat01 = frame.glacier?.retreat01 ?? 0;
+    return (x, z) => {
+      const bed = terrainHeightAt(data, x, z);
+      return ice ? glacierSample(ice, x, z, bed, retreat01).surfaceM : bed;
+    };
+  }
+
   _setCamera(view, frame, p = null) {
     const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
     const proj = scenicProjection(rail.fovYDeg, frame.scenicViewport);
@@ -708,7 +718,7 @@ export class RangeScene {
     let pose = poses.get(view.id);
     if (!pose) {
       pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
-        heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM,
+        heightAt: p?.data ? this._renderedGround(view, frame, p.data) : null, waterLevelM: p?.waterLevelM,
         sampleStepM: p?.data?.grid?.cellSizeM, cone: { tanX, tanY },
         heightRangeM: p?.uniforms ? [p.uniforms.uHeightRange.value.x, p.uniforms.uHeightRange.value.y] : null });
       poses.set(view.id, pose);
