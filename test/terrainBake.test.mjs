@@ -49,6 +49,14 @@ test('despike lowers a seam blob at the grid edge but keeps a real peak', () => 
   assert.equal(inlandMax(), summit, 'the real summit survives');
 });
 
+test('despike keeps a long narrow ridge however steep its sides', () => {
+  const g = makeGrid(40, 40, 20, (x, z) => 1200 + 0.1 * z);
+  for (let r = 0; r < 40; r++) for (let c = 18; c < 23; c++) g.heightsM[r * 40 + c] += 800;
+  const before = Float32Array.from(g.heightsM);
+  despikeGrid(g);
+  assert.deepEqual(Array.from(g.heightsM), Array.from(before));
+});
+
 test('despike lowers a whole five-sample block, not just its middle', () => {
   const g = makeGrid(40, 40, 20, (x, z) => 1200 + 0.1 * z);
   const before = Float32Array.from(g.heightsM);

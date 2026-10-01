@@ -142,7 +142,9 @@ export function pointVisible(ob, p, occ) {
  * west edge, drawn as a needle on the skyline) are found by a grey opening
  * with a disc of `blobRadius` cells: whatever stands more than
  * `ratio * blobRadius` cells above the opened surface is just as steep on
- * every side, and is lowered to it. Returns the number of samples changed.
+ * every side, and is lowered to it when it forms a blob no wider than the
+ * disc in either direction (a long narrow ridge stays). Returns the number
+ * of samples changed.
  */
 export function despikeGrid(grid, { ratio = 2, blobRadius = 3 } = {}) {
   const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
@@ -166,8 +168,28 @@ export function despikeGrid(grid, { ratio = 2, blobRadius = 3 } = {}) {
   if (blobRadius > 0) {
     const opened = openGrid(h, valid, w, hgt, blobRadius);
     const limit = ratio * blobRadius * cell;
-    for (let i = 0; i < h.length; i++) {
-      if (valid[i] && h[i] - opened[i] > limit) { h[i] = opened[i]; changed++; }
+    const span = 2 * blobRadius + 1;
+    const seen = new Uint8Array(h.length);
+    const isCandidate = (i) => valid[i] && h[i] - opened[i] > limit;
+    // Only a bounded blob goes: a long ridge narrower than the disc stands
+    // above the opening along its whole length but is not a spike.
+    for (let start = 0; start < h.length; start++) {
+      if (seen[start] || !isCandidate(start)) continue;
+      const blob = [start];
+      seen[start] = 1;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let k = 0; k < blob.length; k++) {
+        const i = blob[k], x = i % w, y = (i - x) / w;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+          const j = yy * w + xx;
+          if (!seen[j] && isCandidate(j)) { seen[j] = 1; blob.push(j); }
+        }
+      }
+      if (x1 - x0 + 1 > span || y1 - y0 + 1 > span) continue;
+      for (const i of blob) { h[i] = opened[i]; changed++; }
     }
   }
   return changed;
