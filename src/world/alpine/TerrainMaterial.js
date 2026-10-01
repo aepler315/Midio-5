@@ -1,6 +1,7 @@
 import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
-import { GUST_FRONTS, GUST_IDLE_SEC } from './Gust.js';
+import { GUST_FRONTS, GUST_IDLE_SEC, GUST_SWEEP_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
+import { MIRROR_LIFT } from './WaterMirror.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
 // bundle). Task 8 ships the neutral-material pilot: real geometry, the
 // surface texture's full-grid normals, the frame's resolved celestial light
@@ -129,6 +130,26 @@ export const SCENE_FRAG = /* glsl */`
   uniform float rForestFloor;
   uniform float rWaterSkyMix; uniform float rWaterGlintGain;
   uniform float uTime;
+  // Lake mirror (WaterMirror.js): the ground seen from the camera reflected
+  // about the water level, projected by uMirrorMatrix; uMirrorAmount 0 when
+  // there is none. While that image is drawn, ground below uClipBelow is cut.
+  uniform sampler2D uMirror;
+  uniform mat4 uMirrorMatrix;
+  uniform float uMirrorAmount;
+  uniform float uMirrorLevel;
+  uniform float uMirrorRipple;
+  uniform float uClipBelow;
+  uniform vec2 uViewportPx;
+  // The 2D backdrop (sky, aurora, distant ranges) as the stage shows it,
+  // and the camera's view-projection to find where a reflected ray meets it.
+  uniform sampler2D uBackdrop;
+  uniform float uBackdropAmount;
+  uniform mat4 uViewProj;
+  // Gust fronts (the forest's): on the water they are cat's paws, rough
+  // patches that cross the frame with each front and break the mirror.
+  uniform float uGustAge[${GUST_FRONTS}];
+  uniform float uGustAmp[${GUST_FRONTS}];
+  uniform float uGustDir[${GUST_FRONTS}];
   in vec2 vUv;
   in vec3 vWorld;
   in vec3 vRenderedWorld;
@@ -172,12 +193,28 @@ export const SCENE_FRAG = /* glsl */`
     return r;
   }
   Tri triplanar(sampler2D t, vec3 p, vec3 n, float scale, float rot) { return triplanarRib(t, p, n, scale, rot, 1.0); }
+  vec3 srgbToLinear(vec3 c) { return pow(max(c, 0.0), vec3(2.2)); }
+  // How rough the water is here from the passing gust fronts: each front
+  // reaches a screen column when the forest's does, rises fast and settles
+  // over ~1.5 s, in drifting patches rather than a solid band.
+  float catsPaw(vec2 xz) {
+    float sx = clamp(gl_FragCoord.x / max(uViewportPx.x, 1.0) * 2.0 - 1.0, -1.2, 1.2);
+    float paw = 0.0;
+    for (int i = 0; i < ${GUST_FRONTS}; i++) {
+      float age = uGustAge[i] - ((sx * uGustDir[i]) * 0.5 + 0.5) * ${GUST_SWEEP_SEC.toFixed(3)};
+      float env = age < 0.0 ? 0.0 : (age < 0.35 ? age / 0.35 : exp(-(age - 0.35) / 1.5));
+      paw = max(paw, env * uGustAmp[i]);
+    }
+    float patches = smoothstep(0.38, 0.72, vnoise12(xz / 160.0 + vec2(uTime * 0.05, -uTime * 0.03)));
+    return paw * patches;
+  }
   float waterGlint(float cosine, float gain, float keyEnergy) {
     if (keyEnergy < 1e-10 || gain <= 0.0) return 0.0;
     return pow(max(cosine, 0.0), 600.0) * gain;
   }
 
   void main() {
+    if (vRenderedWorld.y < uClipBelow) discard;
     vec2 uv = vUv * (1.0 - uTexel) + 0.5 * uTexel;
     vec4 s = texture(uSurface, uv);
     vec2 nxz = s.rg * 2.0 - 1.0;
@@ -361,10 +398,15 @@ export const SCENE_FRAG = /* glsl */`
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
     if (uDebugMask == 5) { outColor = vec4(vec3(key), 1.0); return; }
     vec3 V = normalize(uCameraPos - vRenderedWorld);
+    float waterFres = 0.0, paw = 0.0;
     if (water && uHasMaterial > 0.5) {
-      vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * 0.025;
+      paw = catsPaw(vWorld.xz);
+      vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * (0.025 + 0.05 * paw);
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(vec3(0.0, 1.0, 0.0), V), 0.0), 5.0);
+      // Rough water reflects less, so a cat's paw reads as a darker patch.
+      fres *= 1.0 - 0.35 * paw;
+      waterFres = fres;
       vec3 halfVector = uLightDir + V;
       vec3 H = halfVector / max(length(halfVector), 1e-10);
       float glint = waterGlint(dot(H, waterNormal), rWaterGlintGain, dot(uLightColor, uLightColor));
@@ -372,7 +414,9 @@ export const SCENE_FRAG = /* glsl */`
       // horizon band: an all-horizon mirror turned broad lakes into a
       // flat white sheet that outshone the mountains.
       vec3 skyReflect = mix(uSkyZenith, uSkyHorizon, 0.3) * 0.5;
-      lit = mix(lit, skyReflect * rWaterSkyMix, fres * (1.0 - topo)) + uLightColor * glint * (1.0 - topo);
+      // With the backdrop to reflect, the sky arrives with the mirror below.
+      float skyHere = fres * (1.0 - topo) * (1.0 - uBackdropAmount * uMirrorAmount);
+      lit = mix(lit, skyReflect * rWaterSkyMix, skyHere) + uLightColor * glint * (1.0 - topo);
     }
     // Aerial perspective, applied once here and nowhere else.
     float heightTerm = exp(-max(0.0, vRenderedWorld.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
@@ -387,6 +431,34 @@ export const SCENE_FRAG = /* glsl */`
     vec3 color = mix(uSkyHorizon, physical, uNarrative.x);
     color = mix(color, uMistColor, mistAmount(uCameraPos, vRenderedWorld) * uNarrative.y);
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96) * uNarrative.y);
+    // The lake mirrors the ground above it. The mirror image already holds
+    // the air along its own (longer) path, so it replaces the water's colour
+    // by the water's reflectance, as the sky reflection did in lit. Groove
+    // and kicks shiver it in horizontal bands; a cat's paw breaks it up.
+    if (water && uMirrorAmount > 0.0) {
+      float band = gl_FragCoord.y / max(uViewportPx.y, 1.0) * 260.0 + vnoise12(vWorld.xz / 240.0) * 6.2832;
+      vec2 shiver = vec2(0.3 * sin(band * 0.37 - uTime * 1.7), sin(band + uTime * 2.3)) * uMirrorRipple * (1.0 + 3.0 * paw);
+      // The backdrop, met by the view ray reflected off flat water (it is far
+      // enough away to treat as the sky), then the ground mirrored over it.
+      // Seen from high above a lake, the true reflection of distant ranges
+      // lies beyond its far shore; magical naturalism lowers the reflected
+      // ray (MIRROR_LIFT, as the mirror camera does) so the water holds them.
+      vec3 ray = normalize(vRenderedWorld - uCameraPos);
+      vec3 up = vec3(ray.x, abs(ray.y) * ${MIRROR_LIFT.toFixed(3)}, ray.z);
+      vec4 bc = uViewProj * vec4(uCameraPos + normalize(up) * 60000.0, 1.0);
+      vec3 mirrored = srgbToLinear(texture(uBackdrop, clamp(bc.xy / bc.w * 0.5 + 0.5 + shiver, vec2(0.001), vec2(0.999))).rgb);
+      float have = uBackdropAmount;
+      vec4 mc = uMirrorMatrix * vec4(vRenderedWorld, 1.0);
+      if (mc.w > 0.0 && abs(vWorld.y - uMirrorLevel) < 3.0) {
+        vec4 m = texture(uMirror, clamp(mc.xy / mc.w + shiver, vec2(0.001), vec2(0.999)));
+        if (m.a > 0.004) mirrored = mix(mirrored, srgbToLinear(m.rgb / m.a), have > 0.0 ? m.a : 1.0);
+        have = max(have, m.a);
+      }
+      // Stiller and glossier than physical water: a lake seen from high
+      // above still holds its shores (magical naturalism, like the lift).
+      float reflectance = clamp(0.3 + 0.7 * waterFres, 0.0, 0.9) * (1.0 - 0.4 * paw);
+      color = mix(color, mirrored * 0.9, reflectance * have * (1.0 - topo) * uNarrative.z * uNarrative.w);
+    }
     // A narrow physical silhouette supplies the main opening ink. Sparse
     // source-space hints are drawn separately against this same depth.
     float facing = abs(dot(geologicalNormal, V));
@@ -400,8 +472,10 @@ export const SCENE_FRAG = /* glsl */`
 
 export const DEPTH_FRAG = /* glsl */`
   precision highp float;
+  uniform float uClipBelow;
+  in vec3 vRenderedWorld;
   out vec4 outColor;
-  void main() { outColor = vec4(0.0); }
+  void main() { if (vRenderedWorld.y < uClipBelow) discard; outColor = vec4(0.0); }
 `;
 
 export const FEATURE_FRAG = /* glsl */`
@@ -453,6 +527,11 @@ export function sceneUniforms(THREE, base) {
     uNarrativeInk: { value: 0 },
     // How much of the map under the land shows (TopoReveal).
     uTopo: { value: 0 },
+    // Lake mirror (WaterMirror.js), off until the scene draws one.
+    uMirror: { value: null }, uMirrorMatrix: { value: new THREE.Matrix4() }, uMirrorAmount: { value: 0 },
+    uMirrorLevel: { value: 0 }, uMirrorRipple: { value: 0 }, uClipBelow: { value: -1e9 },
+    uViewportPx: { value: new THREE.Vector2(1, 1) },
+    uBackdrop: { value: null }, uBackdropAmount: { value: 0 }, uViewProj: { value: new THREE.Matrix4() },
     tRock: { value: null }, sRock: { value: 150 }, tRockNear: { value: null }, sRockNear: { value: 6 },
     tCanopy: { value: null }, sCanopy: { value: 70 }, tSnow: { value: null }, sSnow: { value: 60 },
     tSoil: { value: null }, sSoil: { value: 3 },
