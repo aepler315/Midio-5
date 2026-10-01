@@ -95,6 +95,7 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase, constellationLife01, afterglowLife01 } from '../sim/SkyVoyage.js';
 import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
 import { drawParticleBlend } from './WorldDraw.js';
+import { GUST_FRONTS, GUST_FRONT_SPACING_MS } from './alpine/Gust.js';
 
 export { medianBeatSec } from './BiomeSchedule.js';
 
@@ -2109,8 +2110,7 @@ export class BiomeManager {
     this.worldRhythm = history.rhythm;
     this._danceKickMs = history.kickMs;
     this._danceKickAmp = history.kickAmp;
-    this._dancePrevKickMs = history.prevKickMs;
-    this._dancePrevKickAmp = history.prevKickAmp;
+    this._gustFronts = this._visualHistory.kickFronts(nowMs, GUST_FRONTS, GUST_FRONT_SPACING_MS);
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
     this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim
