@@ -7,12 +7,11 @@
 // frame: crowns bend and catch light as it passes (gustAt). Light, sky
 // fill and aerial perspective match the terrain so trees sit in the same
 // air.
-import { DEFORM_GLSL } from './TerrainMaterial.js';
+import { DEFORM_GLSL, gustUniforms } from './TerrainMaterial.js';
+import { GUST_FRONTS, GUST_SWEEP_SEC } from './Gust.js';
 
 import { MIST_GLSL } from './RangeAtmosphere.js';
 
-/** Seconds for a kick's gust front to cross the frame. */
-export const GUST_SWEEP_SEC = 0.6;
 const GUST_ATTACK_SEC = 0.08;
 const GUST_DECAY_SEC = 0.4;
 /** Crown lean at a full gust, as a fraction of tree height. */
@@ -24,8 +23,11 @@ const GUST_SHEEN_DECAY_SEC = 0.12;
 export const TREE_COMMON = /* glsl */`
   ${DEFORM_GLSL}
   uniform float uTime;
-  uniform vec4 uGust;     // (age s, strength) of the latest kick's front, then the one before
-  uniform float uGustDir; // +1 crosses the frame left to right, -1 right to left
+  // Gust fronts in flight: seconds since each front's kick, its strength,
+  // and its way across the frame (+1 left to right, -1 right to left).
+  uniform float uGustAge[${GUST_FRONTS}];
+  uniform float uGustAmp[${GUST_FRONTS}];
+  uniform float uGustDir[${GUST_FRONTS}];
   uniform float uForestKeep;
   uniform vec3 uCameraPos;
   in vec3 iPos;
@@ -47,18 +49,21 @@ export const TREE_COMMON = /* glsl */`
     if (age < 0.0) return 0.0;
     return age < ${GUST_ATTACK_SEC.toFixed(3)} ? age / ${GUST_ATTACK_SEC.toFixed(3)} : exp(-(age - ${GUST_ATTACK_SEC.toFixed(3)}) / decay);
   }
-  // How the passing fronts press on this tree: x the lean (slow settle),
-  // y the sheen (only the front itself, so it reads as a moving band). The
-  // front sweeps across the frame in GUST_SWEEP_SEC, so where a tree stands
-  // on screen, not how far away it is, decides when it arrives.
+  // How the passing fronts press on this tree: x the signed lean (slow
+  // settle, along each front's way), y the sheen (only the front itself,
+  // so it reads as a moving band). A front sweeps across the frame in
+  // GUST_SWEEP_SEC, so where a tree stands on screen, not how far away it
+  // is, decides when it arrives.
   vec2 gustAt() {
     vec4 c = projectionMatrix * viewMatrix * vec4(iPos, 1.0);
-    float across = clamp(c.x / max(c.w, 1e-3), -1.2, 1.2) * uGustDir * 0.5 + 0.5;
-    float delay = across * ${GUST_SWEEP_SEC.toFixed(3)} + iVar.y * 0.06;
-    float a0 = uGust.x - delay, a1 = uGust.z - delay;
-    return vec2(
-      max(gustEnv(a0, ${GUST_DECAY_SEC.toFixed(3)}) * uGust.y, gustEnv(a1, ${GUST_DECAY_SEC.toFixed(3)}) * uGust.w),
-      max(gustEnv(a0, ${GUST_SHEEN_DECAY_SEC.toFixed(3)}) * uGust.y, gustEnv(a1, ${GUST_SHEEN_DECAY_SEC.toFixed(3)}) * uGust.w));
+    float sx = clamp(c.x / max(c.w, 1e-3), -1.2, 1.2);
+    float lean = 0.0, sheen = 0.0;
+    for (int i = 0; i < ${GUST_FRONTS}; i++) {
+      float age = uGustAge[i] - ((sx * uGustDir[i]) * 0.5 + 0.5) * ${GUST_SWEEP_SEC.toFixed(3)} - iVar.y * 0.06;
+      lean += uGustDir[i] * gustEnv(age, ${GUST_DECAY_SEC.toFixed(3)}) * uGustAmp[i];
+      sheen = max(sheen, gustEnv(age, ${GUST_SHEEN_DECAY_SEC.toFixed(3)}) * uGustAmp[i]);
+    }
+    return vec2(clamp(lean, -1.0, 1.0), sheen);
   }
   vec2 windAt(float y01) {
     float ph = iVar.y * 6.2831;
@@ -67,7 +72,7 @@ export const TREE_COMMON = /* glsl */`
     // The gust leans crowns the way the front travels (camera right in xz).
     vec2 gust = gustAt();
     vGust = gust.y;
-    vec2 lean = normalize(vec2(viewMatrix[0][0], viewMatrix[2][0]) + 1e-5) * uGustDir * gust.x * ${GUST_LEAN.toFixed(3)};
+    vec2 lean = normalize(vec2(viewMatrix[0][0], viewMatrix[2][0]) + 1e-5) * gust.x * ${GUST_LEAN.toFixed(3)};
     return (sway + lean) * iSize.x * y01 * y01;
   }
 `;
@@ -284,7 +289,7 @@ function instanced(THREE, base, instances, stride, indices) {
 /**
  * Forest objects per band. `uniforms` are the terrain's (shared light,
  * air, deformation, palette); forest adds uTime (heard seconds, for wind),
- * uGust/uGustDir (the kicks' gust fronts)
+ * uGustAge/uGustAmp/uGustDir (the kicks' gust fronts)
  * and uForestKeep (the quality rung's stable fraction, applied per id in
  * the vertex shader, so a rung change never rebuilds the forest).
  * Returns { byBand: { far: [...Mesh], mid, near }, depth: [...Mesh],
@@ -292,7 +297,7 @@ function instanced(THREE, base, instances, stride, indices) {
  */
 export function createForest(THREE, placed, uniforms, { partitioned = true } = {}) {
   const u = { ...uniforms, uTime: uniforms.uTime || { value: 0 }, uForestKeep: uniforms.uForestKeep || { value: 1 },
-    uGust: uniforms.uGust || { value: new THREE.Vector4(1000, 0, 1000, 0) }, uGustDir: uniforms.uGustDir || { value: 1 } };
+    ...(uniforms.uGustAge ? {} : gustUniforms()) };
   const mat = (vert, frag, depth = false) => {
     const m = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vert, fragmentShader: frag, uniforms: u });
     if (depth) m.colorWrite = false;

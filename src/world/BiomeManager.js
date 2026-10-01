@@ -95,6 +95,8 @@ import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { VoyagePhase, constellationLife01, afterglowLife01 } from '../sim/SkyVoyage.js';
 import { blendSections, medianBeatSec, sectionIndexAt } from './BiomeSchedule.js';
 import { drawParticleBlend } from './WorldDraw.js';
+import { GUST_FRONTS, GUST_FRONT_SPACING_MS } from './alpine/Gust.js';
+import { skylineFromAlpha, smoothSkyline } from './alpine/RangeSkyline.js';
 
 export { medianBeatSec } from './BiomeSchedule.js';
 
@@ -439,6 +441,13 @@ const CREST_LIGHT_DOWNSCALE = 8;
 const CREST_LIGHT_BLUR_PX = 3;
 const ALPENGLOW = '#ffb08a';
 const CREST_LIGHT_SHAFT_MASK_PASSES = 4;
+// The far skyline the aurora echoes, read back small and seldom: its
+// column count, rows, how often it is re-read (heard seconds), and how many
+// columns either side its blur spans (a soft massif, not its teeth).
+const SKYLINE_COLS = 96;
+const SKYLINE_ROWS = 54;
+const SKYLINE_PERIOD_SEC = 0.25;
+const SKYLINE_BLUR_COLS = 6;
 const WORLD_WEATHER_KINDS = Object.freeze({ alpine: Object.freeze({ embers: 'wind' }) });
 export function drawnWeatherKindFor(worldKind, kind) {
   return WORLD_WEATHER_KINDS[worldKind]?.[kind] ?? kind;
@@ -2109,8 +2118,7 @@ export class BiomeManager {
     this.worldRhythm = history.rhythm;
     this._danceKickMs = history.kickMs;
     this._danceKickAmp = history.kickAmp;
-    this._dancePrevKickMs = history.prevKickMs;
-    this._dancePrevKickAmp = history.prevKickAmp;
+    this._gustFronts = this._visualHistory.kickFronts(nowMs, GUST_FRONTS, GUST_FRONT_SPACING_MS);
     this.tSec = nowMs / 1000;
     this.calmLevel = calmLevel;
     this._danceWorldX = worldX; // kept for farRidgeSwell01(), read by the sim
@@ -5386,6 +5394,7 @@ export class BiomeManager {
     const pts = this._horizonEqPoints(canvas, worldX);
     if (this._landscapeGeometry) this._landscapeGeometry.horizon = pts;
     if (!mask?.image || !(mask.width > 0) || !(mask.height > 0) || pts.length < 2) return;
+    this._readSkyline(mask);
     const presence = clamp01(this.openingGain ?? 1) * (styleDials(this.visualStyle).horizonEqAlpha ?? 1)
       * (this.rangeNarrative ? this.rangeNarrative.materials : 1);
     if (presence < 0.005) return;
@@ -5463,9 +5472,56 @@ export class BiomeManager {
   }
 
   _releaseCrestLight() {
-    for (const c of [this._crestLightCanvas, this._crestBandCanvas]) if (c) { c.width = 0; c.height = 0; }
-    this._crestLightCanvas = this._crestBandCanvas = null;
+    for (const c of [this._crestLightCanvas, this._crestBandCanvas, this._skylineCanvas, this._skylineReadCanvas]) if (c) { c.width = 0; c.height = 0; }
+    this._crestLightCanvas = this._crestBandCanvas = this._skylineCanvas = this._skylineReadCanvas = null;
     this.residency?.release(`crest-light#${this._serial}`);
+    this.residency?.release(`range-skyline#${this._serial}`);
+  }
+
+  /** Read the far partition's skyline for the aurora to echo (next frame:
+   *  the sky is drawn before the land). The partition is shrunk on the GPU
+   *  into one small canvas, then copied into a CPU-side one for reading, so
+   *  only the small image ever crosses back. */
+  _readSkyline(mask) {
+    if (typeof document === 'undefined' || !this.spaceRidge) return;
+    // The land fades in on arrival; so does the aurora's echo of it.
+    const weight = clamp01(mask.arrival ?? 1);
+    if (this._skyline && Math.abs(this.tSec - this._skyline.atSec) < SKYLINE_PERIOD_SEC) { this._skyline.weight = weight; return; }
+    const W = SKYLINE_COLS, H = SKYLINE_ROWS;
+    if (!this._skylineCanvas) {
+      if (this.residency) {
+        const key = `range-skyline#${this._serial}`;
+        this.residency.release(key);
+        const res = this.residency.reserve({ key, bytes: W * H * 4 * 2, owner: 'range-skyline', evictable: false });
+        if (!res) return;
+        this.residency.commit(res, null);
+      }
+      for (const k of ['_skylineCanvas', '_skylineReadCanvas']) {
+        const c = this[k] = document.createElement('canvas');
+        c.width = W; c.height = H;
+      }
+    }
+    const small = this._skylineCanvas.getContext('2d');
+    small.clearRect(0, 0, W, H);
+    small.drawImage(mask.image, 0, 0, mask.width, mask.height, 0, 0, W, H);
+    const read = this._skylineReadCanvas.getContext('2d', { willReadFrequently: true });
+    read.clearRect(0, 0, W, H);
+    read.drawImage(this._skylineCanvas, 0, 0);
+    const { data } = read.getImageData(0, 0, W, H);
+    this._skyline = { ys: smoothSkyline(skylineFromAlpha(data, W, H), SKYLINE_BLUR_COLS), atSec: this.tSec, weight };
+    this.spaceRidge.skyline = this._skyline;
+    // The sky was drawn before this reading. If it went without an echo
+    // (after a seek, or the first frame), the same instant drawn again
+    // differs: settlement redraws it (takeSkylineUnsettled).
+    if (!this.spaceRidge.lastEchoed) this._skylineUnsettled = true;
+  }
+
+  /** Whether a skyline arrived after the sky was drawn without one; reading
+   *  clears it. Frame settlement redraws the same instant when true. */
+  takeSkylineUnsettled() {
+    const unsettled = !!this._skylineUnsettled;
+    this._skylineUnsettled = false;
+    return unsettled;
   }
 
   _drawOneCelestial(ctx, cx, cy, c, alpha, haloMul = 1) {

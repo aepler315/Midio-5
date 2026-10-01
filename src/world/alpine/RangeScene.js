@@ -539,9 +539,7 @@ export class RangeScene {
     u.uDeformDir.value.set(m.waveDir[0], m.waveDir[1]);
     u.uDeformPhase.value = m.phaseRad;
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
-    const [g0, g1] = m.gusts;
-    u.uGust.value.set(g0.ageSec, g0.amp01, g1.ageSec, g1.amp01);
-    u.uGustDir.value = m.gustDir;
+    m.gusts.forEach((g, i) => { u.uGustAge.value[i] = g.ageSec; u.uGustAmp.value[i] = g.amp01; u.uGustDir.value[i] = g.dir; });
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
     for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     for (const tree of p.forest?.depth || []) tree.visible = !n || n.materials > .01;

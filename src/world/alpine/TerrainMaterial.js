@@ -1,4 +1,5 @@
 import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
+import { GUST_FRONTS, GUST_IDLE_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
 // bundle). Task 8 ships the neutral-material pilot: real geometry, the
@@ -355,6 +356,12 @@ export const FEATURE_FRAG = /* glsl */`
   void main() { if (uNarrativeInk < .005) discard; outColor = vec4(0.0, 0.0, 0.0, uNarrativeInk); }
 `;
 
+/** The forest's gust-front slots, all idle. */
+export function gustUniforms() {
+  return { uGustAge: { value: new Array(GUST_FRONTS).fill(GUST_IDLE_SEC) },
+    uGustAmp: { value: new Array(GUST_FRONTS).fill(0) }, uGustDir: { value: new Array(GUST_FRONTS).fill(1) } };
+}
+
 /** Shared uniforms for the production terrain (values set per frame). */
 export function sceneUniforms(THREE, base) {
   return {
@@ -383,8 +390,8 @@ export function sceneUniforms(THREE, base) {
     uAmbientScale: { value: 2.5 },
     uDebugMask: { value: 0 },
     uTime: { value: 0 },
-    // Two gust fronts (age s, strength) and their direction across the frame.
-    uGust: { value: new THREE.Vector4(1000, 0, 1000, 0) }, uGustDir: { value: 1 },
+    // Gust fronts in flight: age (s), strength, and way across the frame.
+    ...gustUniforms(),
     uForestKeep: { value: 1 },
     uExposure: { value: 2.0 },
     uNarrative: { value: new THREE.Vector4(1, 1, 1, 1) },

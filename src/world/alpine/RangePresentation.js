@@ -287,13 +287,16 @@ export class RangePresentation {
   async settle({ timeoutMs = 120000, attempts = 3 } = {}) {
     const lacking = this._needed.size > 0;
     this._needed.clear();
+    // The aurora echoes a skyline read back from the frame's own land; one
+    // that arrived only after the sky was drawn needs the instant redrawn.
+    const sky = !!this.frameInputs?.sim?.biomes?.takeSkylineUnsettled?.();
     // Every view the frame wanted, not only the missing ones: preparing a
     // missing side must not evict the side that was already there (a frame
     // that drew no GPU scene pinned nothing).
     const views = this._wants;
     // A lost context cannot make progress: nothing is ready until it is
     // restored, and waiting would only run out the timeout.
-    if (!lacking || !views.length || !this.scene || this.scene.contextLost) return false;
+    if (!lacking || !views.length || !this.scene || this.scene.contextLost) return sky;
     const deadline = Date.now() + timeoutMs;
     const tries = new Map();
     let waited = false;
@@ -315,7 +318,7 @@ export class RangePresentation {
       }
       await new Promise((r) => setTimeout(r, 25));
     }
-    return waited;
+    return waited || sky;
   }
 
   /** Renderer: this frame's inputs, before BiomeManager.draw. */

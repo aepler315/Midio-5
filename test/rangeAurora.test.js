@@ -101,7 +101,7 @@ test('crest light owns its buffers in the shared graphics budget', () => {
     assert.ok(made.every(c => c.width === 0 && c.height === 0), 'and frees what it held');
     calls.length = 0;
     mgr._releaseCrestLight();
-    assert.deepEqual(calls, [['release', 'crest-light#7']]);
+    assert.deepEqual(calls, [['release', 'crest-light#7'], ['release', 'range-skyline#7']]);
   } finally {
     delete globalThis.document;
   }
