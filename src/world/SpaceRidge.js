@@ -14,6 +14,7 @@ import { capFlashAlpha } from '../ui/Accessibility.js';
 import { kickEnv } from './MountainChoreo.js';
 import { sampleSpaceRidge } from './alpine/RidgeMotion.js';
 import { hexToRgb, hexLerp } from '../utils/color.js';
+import { skylineYAt } from './alpine/RangeSkyline.js';
 
 // +3 joints past each edge (was +1 vs. the old 24-on-screen packing) so the
 // widened depth spread never pulls the outermost joints on-screen.
@@ -24,6 +25,13 @@ const AURORA_GREEN = '#59ffb4';
 const AURORA_VIOLET = '#a86bff';
 const AURORA_COLUMNS = 6;
 const AURORA_SKIRT = 0.12;
+// How far the curtain's hem takes the shape of the land's skyline (0 keeps
+// its own musical wave), how far above that skyline it always stays (a
+// fraction of the frame height), and how old a skyline reading may be
+// before it is ignored (heard seconds; a seek leaves the old one behind).
+const AURORA_ECHO = 0.8;
+const AURORA_RIDGE_GAP = 0.06;
+const SKYLINE_STALE_SEC = 1;
 const ATTACK_SEC = 0.05;
 const RELEASE_SEC = 0.25;
 const FLASH_ON_THRESHOLD = 0.55;
@@ -164,6 +172,8 @@ export class SpaceRidge {
       this.nodes.push({ xFrac, band, phase: rand() * Math.PI * 2, level: 0, z: 0, flashArmed: true });
     }
     this._flashes = [];
+    // The land's skyline the aurora echoes ({ ys, atSec }); the Range sets it.
+    this.skyline = null;
     this._rotX = 0;
     this._rotY = 0;
     this._tidalPx = 0;
@@ -270,7 +280,7 @@ export class SpaceRidge {
 
   corridor(canvas) {
     const { pts: raw, maxH } = this._samples(canvas);
-    const pts = raw.slice().sort((a, b) => a.x - b.x);
+    const pts = this._echoSkyline(raw, canvas).sort((a, b) => a.x - b.x);
     const flashSet = this._flashLevels(this._tSec);
     // The tallest each segment's rays can stand this frame (their sway
     // factor never exceeds 1), so nothing painted later reaches the crown.
@@ -289,6 +299,24 @@ export class SpaceRidge {
       // The skirt hangs below the hem in proportion to the curtain.
       return { top: y - r, bottom: y + Math.max(15, r * AURORA_SKIRT) };
     };
+  }
+
+  /** The aurora's hem echoing the land: the skyline's shape (`skyline`, set
+   *  by the Range each frame it reads one) carried at the curtain's own
+   *  altitude, with a share of the musical wave left on top, and never
+   *  closer to the land than the gap. Without a fresh skyline, the musical
+   *  wave alone. Returns new points; the samples are not changed. */
+  _echoSkyline(pts, canvas) {
+    const sky = this.skyline;
+    if (!sky || !(Math.abs(this._tSec - sky.atSec) <= SKYLINE_STALE_SEC) || pts.length < 2) return pts.slice();
+    const land = pts.map((p) => skylineYAt(sky.ys, canvas, p.x));
+    const mean = (values) => values.reduce((sum, v) => sum + v, 0) / values.length;
+    const lift = mean(land) - mean(pts.map((p) => p.y));
+    const gap = canvas.height * AURORA_RIDGE_GAP;
+    return pts.map((p, k) => {
+      const y = p.y + (land[k] - lift - p.y) * AURORA_ECHO;
+      return { ...p, y: Math.min(y, land[k] - gap) };
+    });
   }
 
   /** One ridge segment's curtain height, scaled by its rays' sway (0..1). */
@@ -322,7 +350,8 @@ export class SpaceRidge {
    * Rays drift slowly in time; reduced motion holds them still.
    */
   drawAurora(ctx, canvas, color, tSec, { reducedFlash = false, reducedMotion = false, presentation = 1, night01 = 1 } = {}) {
-    const { pts, maxH } = this._samples(canvas, reducedMotion);
+    const { pts: raw, maxH } = this._samples(canvas, reducedMotion);
+    const pts = this._echoSkyline(raw, canvas);
     if (pts.length < 2) return;
     const flashSet = this._flashLevels(tSec);
     // Under reduced motion a flash may brighten the curtain but never
