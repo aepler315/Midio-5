@@ -1,4 +1,5 @@
 import { resolveLandscapePresentation } from '../world/LandscapePresentation.js';
+import { drawInhabitedShore, kickHop01 } from '../world/InhabitedShore.js';
 // Canvas 2D compositor. Draws sky -> parallax biome layers -> ground ->
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
 // cracks/shatter -> HUD. Layers are added incrementally as later stages land;
@@ -358,8 +359,13 @@ export class Renderer {
     } else if (biomeManager) {
       biomeManager.rangePresentation = null;
     }
+    let scenicMatrix = null;
     if (biomeManager) {
       biomeManager.salience = salience;
+      biomeManager.inhabitedShore = !!presentation.inhabitants && biomeManager.world?.kind === 'alpine';
+      // The scenic transform the celestial bodies are painted with, so the
+      // shore's glitter path can sit under the sun or moon on screen.
+      scenicMatrix = ctx.getTransform();
       biomeManager.draw(ctx, stage, pose.worldX, pose.midioX, null, worldParticleMul, perf, groundView);
     } else {
       this._drawFallbackSky(ctx, stage);
@@ -375,6 +381,40 @@ export class Renderer {
         hits: recentConductorHits(sim.conductor?.timeline, sim.timeMs),
         reducedFlash: !!sim.reducedFlash, reducedMotion: !!sim.reducedMotion,
         quality: perf?.level ?? 0 });
+    }
+    // The inhabited shore: near sea over the bottom third, with Midio's
+    // ship, Broshi on the beach and Midasus in the sky. Nominal stage space
+    // on the fixed-ground transform, so it shakes and rolls with the land.
+    if (biomeManager && biomeManager.inhabitedShore) {
+      // Heard time, like the rest of the world, so latency compensation
+      // keeps the residents (and Broshi's kick hop) on the audible beat.
+      const heardMs = sim.heardTimeMs ?? sim.timeMs;
+      const cs = biomeManager.celestialState;
+      const lit = cs?.activeBody ? cs[cs.activeBody] : null;
+      const glitterX = lit && scenicMatrix
+        ? scenicMatrix.transformPoint({ x: lit.xFrac * stage.width, y: lit.yFrac * stage.height }).x / sxFixed - (camera.shakeX || 0)
+        : null;
+      ctx.save();
+      // The fixed-ground transform (shake and roll) without the glacial
+      // offset, shifted so nominal stage (0,0) is the frame's corner.
+      applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera });
+      ctx.translate(SHAKE_MARGIN_PX, SHAKE_MARGIN_PX);
+      drawInhabitedShore(ctx, {
+        W: nominalW, H: nominalH, tSec: heardMs / 1000,
+        bands: biomeManager._eqSmoothed, kick: kickHop01(recentConductorHits(sim.conductor?.timeline, heardMs), heardMs),
+        airColor: biomeManager._airColor || '#2a3850', landColor: biomeManager._landTint || '#3a3024',
+        haloColor: biomeManager.currentHaloColor(), night01: biomeManager.celestialState?.night01 ?? 0.5,
+        celestial: cs, glitterX, reducedMotion: !!sim.reducedMotion, reducedFlash: !!sim.reducedFlash,
+      });
+      ctx.restore();
+      // The flood rises over the shore, not under it, in the shore's own
+      // (unshifted) frame: cancel the glacial ground offset.
+      ctx.save();
+      ctx.translate(0, -groundOffsetY);
+      biomeManager._drawFlood(ctx, groundView.stage);
+      ctx.restore();
+      // Transition flashes cover the whole composed frame, shore included.
+      biomeManager._drawTransitionOverlays(ctx, groundView.stage, null);
     }
     if (sim.battle && presentation.performers) this._drawBattleFX(ctx, sim);
     if (sim.gnat && presentation.performers) sim.gnat.draw(ctx, sim.timeMs);
