@@ -17,10 +17,10 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
-import { installSeedReceiver } from './lib/landscape-browser.mjs';
+import { installSeedReceiver, seedBrowserConstruction } from './lib/landscape-browser.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SUITES = ['pilot', 'selection', 'motion', 'lifecycle', 'export', 'complete'];
+const SUITES = ['pilot', 'selection', 'motion', 'lifecycle', 'export', 'short-motion', 'complete'];
 const NAMED = new Set(['cycles', 'url', 'source-root', 'expect-sha', 'suite', 'output', 'view', 'width', 'height', 'fps', 'seconds']);
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const IDENTITY_FILES = [
@@ -29,6 +29,7 @@ const IDENTITY_FILES = [
   'src/world/alpine/TerrainPackage.js', 'src/world/alpine/RangeAssets.js', 'src/render/GraphicsResidency.js',
   'src/world/terrain/SceneCatalog.js', 'src/world/terrain/SceneTravel.js', 'src/world/terrain/sceneCatalogData.js',
   'src/world/BiomeManager.js', 'src/render/Renderer.js', 'src/vendor/range/three-range.module.js',
+  'src/world/RidgeMotionHistory.js', 'src/world/alpine/RidgeMotion.js', 'src/world/alpine/RidgeComposition.js',
   'src/world/alpine/RangeQuality.js', 'src/world/alpine/RangeAtmosphere.js', 'src/world/terrain/TerrainStripCache.js',
   'src/world/TravelSeam.js', 'src/world/alpine/ForestCover.js', 'src/world/alpine/ForestGL.js',
   'src/world/alpine/RockStage.js', 'src/world/alpine/RockStageGL.js', 'src/main.js',
@@ -159,12 +160,16 @@ export async function captureFrame(page, timeMs, { hook = null } = {}) {
       if (pres) { const orig = pres.drawPartition; pres.drawPartition = function (ctx, pass, stage) { return pass === 'far' ? false : orig.call(this, ctx, pass, stage); }; }
     }
     const t0 = performance.now();
-    let clock = smw.renderExportFrame(t);
+    const options = h === 'conifer' ? { beforeDraw: () => {
+      smw.sim.biomes.currentBlend = { from: 'CONIFER', to: 'CONIFER', t: 1, travel: false, travelP: 1,
+        fromHeightMul: 1, toHeightMul: 1, fromSnowLine01: 1, toSnowLine01: 1 };
+    } } : {};
+    let clock = smw.renderExportFrame(t, options);
     let drawMs = performance.now() - t0;
     // A view prepared on demand: redraw the same instant once it is ready.
     if (await smw.rangeSettle?.()) {
       const t1 = performance.now();
-      clock = smw.renderExportFrame(t);
+      clock = smw.renderExportFrame(t, options);
       drawMs = performance.now() - t1;
     }
     const canvas = document.querySelector('#stage');
@@ -334,6 +339,72 @@ async function suiteMotion(ctx) {
   report.motion.pageErrors = s.errors;
   await s.context.close();
   assert.deepEqual(s.errors.filter((e) => !e.startsWith('warn')), [], 'page errors');
+}
+
+/** Bounded full-compositor clip of an approved view, using analyzed audio.
+ * The biome is controlled; camera, sky, forests, film and musical responses
+ * retain their production paths. This is fixed-step evidence, not live FPS.
+ */
+async function suiteShortMotion({ browser, args, out, report }) {
+  const view = 'teton-jackson-lake', fps = 24, count = 72, startMs = 44000;
+  const wav = path.join(out, 'pilot-60s.wav');
+  execFileSync(process.execPath, [path.join(root, 'tools/gen-pilot-wav.mjs'), wav, '60']);
+  const trackedBrowser = { async newContext(options) {
+    const context = await browser.newContext(options);
+    await context.addInitScript(seedBrowserConstruction, 315);
+    return context;
+  } };
+  const opened = await openSong(trackedBrowser, { url: args.url, wav, width: 1280, height: 720,
+    params: { rangeRenderer: 'v2', rangeView: view, seed: '2917029651' } });
+  const dir = path.join(out, 'short-motion-frames');
+  await fs.mkdir(dir, { recursive: true });
+  const motion = report.shortMotion = {
+    classification: 'Actual Chromium full-compositor frames of the approved CONIFER/Teton v2 view; fixed-step export',
+    view, fps, frameCount: count, startMs, endMs: startMs + (count - 1) * 1000 / fps,
+    seed: 2917029651, constructionSeed: 315, fixtureHash: sha256(await fs.readFile(wav)),
+    instrumentation: 'Seeded construction and URL song seed; CONIFER blend pinned immediately before each draw. No painter or compositor passes disabled.',
+    song: 'Analyzed gen-pilot-wav 60s: energetic drums/bass until 45s, calm after; this is not an isolated-kick or silent-release fixture.',
+    limitations: ['Synthetic song, not a real recording', 'Software WebGL2, not device performance', 'Controlled approved view and biome, not a natural song cast'],
+    frames: [], pageErrors: opened.errors,
+  };
+  try {
+    // Prime the normal opening before advancing the forward-only export clock.
+    await captureFrame(opened.page, 250, { hook: 'conifer' });
+    for (let index = 0; index < count; index++) {
+      const timeMs = startMs + index * 1000 / fps;
+      const frame = await captureFrame(opened.page, timeMs, { hook: 'conifer' });
+      assert.equal(frame.range.active, true, `v2 fallback at ${timeMs}: ${frame.range.reason}`);
+      assert.equal(frame.range.viewId, view);
+      assert.equal(frame.range.forcedCandidate, false, 'motion clip must use an approved view');
+      assert.equal(frame.world, 'alpine');
+      assert.equal(frame.clock.draws, 1);
+      const detail = await opened.page.evaluate(() => {
+        const app = window.__SMW, mgr = app.sim.biomes, presentation = mgr.rangePresentation;
+        return { blend: mgr.currentBlend, horizonRange: mgr.horizonRange?.id || null,
+          music: presentation?.frame?.music, ridges: presentation?.frame?.ridges,
+          camera: presentation?.scene?.camera?.matrixWorld?.elements };
+      });
+      assert.equal(detail.blend.from, 'CONIFER');
+      const png = `f${String(index).padStart(5, '0')}.png`;
+      await writePng(dir, png, frame.png);
+      delete frame.png;
+      motion.frames.push({ index, timeMs, png: path.relative(out, path.join(dir, png)), ...frame, ...detail });
+      if (index % fps === 0) console.log(`short-motion ${timeMs}ms ${view} horizon=${detail.horizonRange}`);
+    }
+    assert.deepEqual(opened.errors, [], 'full-compositor motion page or shader errors');
+    const mp4 = path.join(out, 'conifer-teton-44-47s-24fps.mp4');
+    try {
+      execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-framerate', String(fps), '-i', path.join(dir, 'f%05d.png'),
+        '-frames:v', String(count), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', mp4]);
+      motion.mp4 = path.relative(out, mp4);
+    } catch (error) {
+      // PNGs remain complete evidence when the runner has no encoder.
+      if (error.code !== 'ENOENT') throw error;
+      motion.encoder = 'ffmpeg unavailable; inspect the ordered PNG frames at 24fps';
+    }
+  } finally {
+    await opened.context.close();
+  }
 }
 
 /** Magenta marker pixels (the diagnostic far partition) in RGBA bytes. */
@@ -643,13 +714,14 @@ async function main() {
   let failed = null;
   try {
     const suites = args.suite === 'complete' ? SUITES.filter((s) => s !== 'complete') : [args.suite];
-    const impl = { pilot: suitePilot, selection: suiteSelection, export: suiteExport, motion: suiteMotion, lifecycle: suiteLifecycle };
+    const impl = { pilot: suitePilot, selection: suiteSelection, export: suiteExport, motion: suiteMotion, 'short-motion': suiteShortMotion, lifecycle: suiteLifecycle };
     for (const s of suites) {
       // A requested suite that does not exist yet fails the run: an empty
       // "pass" would be evidence of nothing.
       if (!impl[s]) { report[s] = { status: 'unimplemented' }; throw new Error(`suite ${s} is not implemented yet`); }
       await impl[s](ctx);
     }
+    assert.deepEqual(await servedIdentity(args.url, sourceRoot), report.served, 'served source or assets changed during capture');
   } catch (err) {
     failed = err;
     report.error = String(err?.stack || err);

@@ -32,17 +32,17 @@ test('EQ advection moves a bass landmark left at three times the reviewed coeffi
   const state = music({ bands: [0, 1, 0, 0, 0, 0, 0] });
   const a = sample({ advectionPx: 0, tuning }, state);
   const b = sample({ advectionPx: 1 / .0054, tuning }, state);
-  assert.ok(Math.abs(at(b, 0) - (316.8 - 172.8)) < 1e-8, 'one band arrives at the left edge');
-  assert.ok(at(b, 0) < at(a, 0) - 150, 'positive worldX advances the peak left');
+  assert.ok(Math.abs(at(b, 0) - (316.8 - 172.8 * (1 / 14 + .5))) < 1e-8, 'one band arrives at the left edge over the shared lift');
+  assert.ok(at(b, 0) < at(a, 0) - 80, 'positive worldX advances the local peak left');
 });
 
-test('real crest waves have 18px coefficient and 4.8rad/sec phase with viewport scaling once', () => {
-  const time = Math.PI / (2 * 4.8) * 1000;
-  assert.ok(Math.abs(at(sample({ heardTimeMs: time }), 0) - (316.8 - 4.5)) < 1e-8);
+test('broad crest carrier scales once with viewport height', () => {
+  const time = Math.PI / (2 * .8) * 1000;
+  assert.ok(Math.abs(at(sample({ heardTimeMs: time }), 0) - (316.8 - 3)) < 1e-8);
   const half = sample({ viewport: { width: 1280, height: 360 }, heardTimeMs: time });
-  assert.ok(Math.abs(at(half, 0) - (158.4 - 2.25)) < 1e-8);
+  assert.ok(Math.abs(at(half, 0) - (158.4 - 1.5)) < 1e-8);
   const fallback = sample({ crest: null, heardTimeMs: time });
-  assert.ok(Math.abs(at(fallback, 0) - (432 - 6)) < 1e-8);
+  assert.ok(Math.abs(at(fallback, 0) - (432 - 4.5)) < 1e-8);
 });
 
 test('genuine kick adds 24px crest lift with unchanged attack and exponential settle', () => {
@@ -108,7 +108,7 @@ test('headroom metrics use uncropped authored source stations across geographic 
   assert.ok(lower.displacement01 > a.displacement01, 'authored lower crests retain more headroom; metrics do not substitute summit height');
 });
 
-test('short scan framing selection shares its constant 2x speed across geography, EQ advection and wave phase', async () => {
+test('source framing controls horizontal travel while the broad carrier keeps its own slow tempo', async () => {
   const { BiomeManager } = await import('../src/world/BiomeManager.js');
   for (const [id, relative] of [['rainier', 2], ['tetons', 2], ['sierra-whitney', 3]]) {
     const profile = (await loadRangeProfiles(id)).L2;
@@ -118,7 +118,7 @@ test('short scan framing selection shares its constant 2x speed across geography
     const before = horizonCrest(profile, { speedMul: 3 });
     assert.ok(Math.abs(manager._horizonCrest.travelM / manager._horizonCrest.windowM / (before.travelM / before.windowM) - relative) < 1e-8);
     assert.ok(Math.abs(manager._horizonTuning.advection - .0018 * relative) < 1e-12);
-    assert.ok(Math.abs(manager._horizonTuning.phaseRate - 1.6 * relative) < 1e-12);
+    assert.equal(manager._horizonTuning.phaseRate, .8);
     assert.equal(manager._horizonCrest.relativeSpeedMul, relative);
     manager.dispose();
   }

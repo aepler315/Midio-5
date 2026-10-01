@@ -463,7 +463,7 @@ export class BiomeManager {
       try {
         const relativeSpeedMul = HORIZON_SOURCE_SPEED[songTerrain.horizon.range?.id] ?? 3;
         this._horizonTuning = Object.freeze({ ...DEFAULT_RIDGE_TUNING,
-          advection: .0018 * relativeSpeedMul, phaseRate: 1.6 * relativeSpeedMul });
+          advection: .0018 * relativeSpeedMul });
         this._horizonCrest = horizonCrest(songTerrain.horizon.profile, { speedMul: 3 * relativeSpeedMul });
         this.horizonRange = songTerrain.horizon.range || null;
       } catch (err) {
@@ -5328,11 +5328,22 @@ export class BiomeManager {
     ctx.globalCompositeOperation = 'source-over';
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
+    // A narrow body belongs to the same crest and depth pass. It provides
+    // weight against detailed rock without moving the ridge in front of the
+    // middle/near terrain or filling another mountain-sized silhouette.
+    const scale = canvas.height / 720;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = presence * .14;
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y + 12 * scale);
+    ctx.closePath();
+    ctx.fill();
     ctx.strokeStyle = color;
     for (const [lw, alpha] of [[10, halo * .65], [5, halo],
-      [1.9, presence * (.72 + .12 * activity)]]) {
+      [2.8, presence * .96]]) {
       ctx.globalAlpha = alpha;
-      ctx.lineWidth = lw;
+      ctx.lineWidth = lw * scale;
       ctx.beginPath();
       pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
       ctx.stroke();

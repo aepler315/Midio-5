@@ -20,7 +20,7 @@ function paintedHorizon({ budget = .08, band = .35, openingGain = 1, reducedFlas
     globalAlpha: 1, globalCompositeOperation: 'source-over', strokeStyle: '', lineWidth: 1,
     save() { saved.push({ alpha: this.globalAlpha, blend: this.globalCompositeOperation }); },
     restore() { const state = saved.pop(); this.globalAlpha = state.alpha; this.globalCompositeOperation = state.blend; },
-    beginPath() {}, moveTo() {}, lineTo() {},
+    beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {},
     stroke() { strokes.push({ alpha: this.globalAlpha, width: this.lineWidth,
       color: this.strokeStyle, blend: this.globalCompositeOperation }); },
   };
