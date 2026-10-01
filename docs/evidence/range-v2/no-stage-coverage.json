@@ -52,7 +52,7 @@
   "sourceFiles": [
     {
       "path": "tools/range-composition-coverage.mjs",
-      "sha256": "ae2b3b310307ebdebe4fc18b1b7370903d5961df0c2d1856fab305ae048c8583"
+      "sha256": "f27492328c3209519139450ec44a7c5c17a15a345c0e7e1e9a7459926d690301"
     },
     {
       "path": "tools/lib/range-exposure.mjs",
@@ -84,13 +84,13 @@
     },
     {
       "path": "src/world/terrain/sceneCatalogData.js",
-      "sha256": "301f39fdbfb796d5cf709b504c63c7f1053724db29f2b43f886f7f98363443e3"
+      "sha256": "306729d4ebadab53fc8102a73955ba0e78384c39a781233c3191697a5659322c"
     }
   ],
   "rows": [
     {
       "id": "nc-ross-lake-north",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -166,7 +166,7 @@
         "bef1fbf8f871821ae6bd884f381a30b1cf3565eb75d33c51b309cc5ec80ffb60",
         "b621d841e649af0cee550e4db298e94195c22a379186154e8decc741e5a64c1b"
       ],
-      "viewSha256": "76bb5bfea9702ecad4397be878ae0d0321943b934d56c3b2dc3ae87efceeb9bc",
+      "viewSha256": "21697858484dd3e2685284d76c30d4cf383d7775994b38959dabb3aeeae54523",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/nc-ross-lake-north.terrain.json",
         "sha256": "32ee5822fccba5a474d0298cd8eb4e941cbb4858e7f1679b4e6ae9fa338aa4d2"
@@ -207,7 +207,7 @@
     },
     {
       "id": "teton-jackson-lake",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -217,7 +217,7 @@
         "a19a985ea1d6370572bfaac2b7850bd90b49f28e9d10e3ad37c5ac17d4880e8f",
         "4d6c2aae717cba1c485d3533ac0406e21ab14733c459b065eec71cdbbcead4f2"
       ],
-      "viewSha256": "bca3e1058fd7b4578ba98bcd680cc0d2ee63828349f3335b9543d5496e7c08ae",
+      "viewSha256": "cb6e0b163532ede3e3506af31e94113be5191d6a43535da4042adad9ec6a03bd",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
         "sha256": "bd3b57442d203981a66be4e1e23df677116f9a562d7a39497f0a0e0e01b429b1"
@@ -258,7 +258,7 @@
     },
     {
       "id": "denali-wonder-lake",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -590,7 +590,7 @@
         "1c3b522ec7888a3e4e159134073e5c4de101ca5be33055a903e0f350a7599ff4",
         "73f8cb644518da9972e6871ba9dbffce15d425e0aad663cdf417f4571e436382"
       ],
-      "viewSha256": "9d2c6e1244716f9c485003e0ccccbe6625a14125ae423d4de96ad244acc1cb2c",
+      "viewSha256": "039295283127c523bd735e9395177574a251483927cf2cd36b8ee61b44a96c19",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/denali-wonder-lake.terrain.json",
         "sha256": "351aad9728f86a3e78fe985d9d154214f4f7c0a4e89ad1d823df690b6543e46a"
@@ -631,7 +631,7 @@
     },
     {
       "id": "tombstone-north-klondike",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -783,7 +783,7 @@
         "363ea4a1252ac2e8c499c98f12fd8092862ba2fbc0414c2a7013052e0fe93cc9",
         "54e82597b709d5208bd15cbee53ac4aea35e3a698057ecf6a9c317e2324cd330"
       ],
-      "viewSha256": "2a520b3ee3c1ef06e2a60f93c67c9cdf8610e80ecf537e750a57c8cbbe0d10a3",
+      "viewSha256": "6eb10db625a1252d002b51d274c551d663c9a353dae9fdff072de2fa93a88441",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/tombstone-north-klondike.terrain.json",
         "sha256": "5cbcec0d5132d445b75c1ffcec1fe1bb48980e2c34f44f34b6ebb4eb96bdbc89"
@@ -824,7 +824,7 @@
     },
     {
       "id": "muncho-lake-south",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -932,7 +932,7 @@
         "81885b22b7d65f536f7009b81ec6348126815583091726036067d013423158c7",
         "bfd2526a366309e01efceaf3b8c8279a94321b5fb771849b57dd33a634d05467"
       ],
-      "viewSha256": "f53504f6fdb549a063e1a4c50b7ddce5ed818b1f5243b6e0f05ad7dcf0887aa2",
+      "viewSha256": "5924f8580b83aaae6ed887556d6c390c8e10f229c66e44771aa5fd4580a8b5d4",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/muncho-lake-south.terrain.json",
         "sha256": "d25af9f0f975972c13f3da100d7b7df0a1c97136adb9073c1e673931e81c6ac2"
@@ -973,7 +973,7 @@
     },
     {
       "id": "izta-popo-west",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1030,7 +1030,7 @@
         "05ea6952b8c8b6e91306e1719a9a67e0fc0469bffa7a489b3fa9e5d61f11bfa6",
         "02233f778ef622fef7601d005c7dcd96dcbf45ecf3ce40cd427a6aff7f07a202"
       ],
-      "viewSha256": "759b22041296f0cd5dcc6ed5c1f67743ecb4e90fe1b19aac56ca9c1015ee725c",
+      "viewSha256": "8848b98e8bb008ea7f76fa090fbfb6b46c8225f1d5a5d5d5a23e35d2a8e32786",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/izta-popo-west.terrain.json",
         "sha256": "435e0a01cab2af34ca66a16d7bd63cf513ab3d4b071a9ff941709ea63ad3478a"
@@ -1071,7 +1071,7 @@
     },
     {
       "id": "black-mountains-catawba",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1080,7 +1080,7 @@
         "15e50505492c81247f71df96083d67bbd9fed46d7d8580e613d8db4fa620ffd7",
         "e98302c187b24b12f72a771f955be1065b91d6de239e70abc8b48e721780ad8d"
       ],
-      "viewSha256": "8c4b71b35c2781dd5f2bed7a2f88b7e38011b3e22ea1be32b0cea5958fc8c760",
+      "viewSha256": "e2145c5158c0cf0e56787d636562b320b0e5b23013dc1ec7ff03aa97f86748e2",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/black-mountains-catawba.terrain.json",
         "sha256": "0f5d8ce42c058a97f1e912a79fc7610ea82f76ef7d557ca964227647250d7b68"
@@ -1121,7 +1121,7 @@
     },
     {
       "id": "san-gabriel-baldy",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1130,7 +1130,7 @@
         "b8b1f0f8e90ec3c80ceef5f15531751545db1bcc80795679804a70b939700e07",
         "5288efcf70ebe56bb5086b67be2382b3ebcf9cb24161195f7e8eb0e4dbcfbab7"
       ],
-      "viewSha256": "5da1180a48900a772b0ac1249f4ebeaa543af538c674890003c6cd50bf5f285e",
+      "viewSha256": "9379f3c02d423288f43f637ba7cece68f70ac903284ac711ab0c3ab17414c468",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/san-gabriel-baldy.terrain.json",
         "sha256": "56871dd030fa48fc1d1fce0c165f0320fc8cd9a76cddbe3bfa76539e91c4c904"
@@ -1171,7 +1171,7 @@
     },
     {
       "id": "white-mountains-owens",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1180,7 +1180,7 @@
         "c888770207f27ef836b91b02f2848650c49d9f156e82d494f736f97b3de384ee",
         "85cc9eac527de9ddc523e7c56c65b980694c3731f8279703c5618adff0d00e10"
       ],
-      "viewSha256": "4d239daa395027f251496a186f0739bb276bb736f1866f5243d66c0c30e800de",
+      "viewSha256": "9660e6bcf81844dd91e12b4886bee91ed30c73d14d444dc686e375c9c9dd7fbf",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/white-mountains-owens.terrain.json",
         "sha256": "a83a16041b1153ff3babe0a156ed1e54ce47acb9d663f42cca2e53223800fb83"
@@ -1221,7 +1221,7 @@
     },
     {
       "id": "la-sal-castle-valley",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1230,7 +1230,7 @@
         "4fcbc4955bef84eb70c1c7d402268c131533e9e830fe2be5c40db13b2c78a955",
         "ad892081c31b58efd2da7eba203a528654e8aed1fd161986163de497eb0eb231"
       ],
-      "viewSha256": "00620c62df1a19848aff44a989f0682a9b53ad6a160791a53a1ca9e3f8be8ab5",
+      "viewSha256": "72d38458f75a12c469c16bc6bd7f42fc82362f38ef5f836c71278ddb89b86a1b",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/la-sal-castle-valley.terrain.json",
         "sha256": "930f043038551229e0b43b47d0a68db31b33a9bf23d631376af54e33fbf62c42"
@@ -1271,7 +1271,7 @@
     },
     {
       "id": "panamint-dantes-view",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1283,7 +1283,7 @@
         "614865dc9f955a54ace9c63ffbcaed137d682a952dd82c1ad86c7b8a2e545fe8",
         "1baae9d51ec7017a48cb6c2347add0db87a582e7b2d21de6edcb979a22df3186"
       ],
-      "viewSha256": "f42205819f7d107fe5f46cb4db17aebb32aa9cfb3ed586d79e341e415f02201f",
+      "viewSha256": "470c412e2e9fcbbb187043e269f169115d051bddfca0c66706f2d03b4bc16b31",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/panamint-dantes-view.terrain.json",
         "sha256": "b7d3479f316016efe7d25fbacff1127fd5378ab89fa663095e0d55382af5d8c3"
@@ -1324,7 +1324,7 @@
     },
     {
       "id": "chugach-matanuska",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1453,7 +1453,7 @@
         "b5243041bd37884a346e1c983e12110efdf4d5200988bcd42e0293cd849a23e9",
         "74e7c4b062f708516d61d15a6a6943c3c28179f3bebfd097c35e6dcef8c5167e"
       ],
-      "viewSha256": "31758aa0ef47ba53b84bdd4d97bb370eef4a45ed62600615f8164e0005c55d31",
+      "viewSha256": "214a962f3c4f9eb576a8c8dbf7419b7ee491cee52a3d1de55f87a11528290679",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/chugach-matanuska.terrain.json",
         "sha256": "1dc2cd8e74ffc2a7201b35b833fc84be693afd2a5280c8ef2185e545cb4c420a"
@@ -1494,7 +1494,7 @@
     },
     {
       "id": "monument-valley-163",
-      "status": "candidate",
+      "status": "approved",
       "composition": {
         "foreground": "none",
         "nearLedgeMaxFrac": 0
@@ -1506,7 +1506,7 @@
         "169278ce11a8a7b813f83819d8a0636ffc537d69bd774f990495c9f4e8460562",
         "9a60ac6d2118690f9c0db529cdad9ca52c6a75d731b813df25496dfc640df677"
       ],
-      "viewSha256": "d8f12fe683e700bb2b773d52f8508838bdc9d49bdccbb450ac07360a42109783",
+      "viewSha256": "5aa5b31658d5301567d27000edc12c231a386f9772ba5042fdb7644fcad0395b",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/monument-valley-163.terrain.json",
         "sha256": "78779fcd2a016e3777d524969955edb225e64db416ca02ee1708c8cb9825720e"
@@ -1557,7 +1557,7 @@
         "448aa74ee0a45435316c7292f4323876cc47d9f1ebd9ca752cf9d55e95c770cc",
         "d51e69acee4988f501b56feaee699dd6fb3e7b087b530ba103dfa89f7270cf32"
       ],
-      "viewSha256": "aa30dae1e43bd6ebfccc4a1dd1ef3bb507c1142b718d1fd104535e40a1a70d3b",
+      "viewSha256": "c7a6b093a4980f526a83aee03737336aaa885141eb178369fc8f59f5e82b3352",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/pend-oreille-valley.terrain.json",
         "sha256": "c06b35fc64d0af6a0d22b8a595e9fa1499e7c0d701d755caa61c8b3a5ba6a3bd"
@@ -1600,15 +1600,15 @@
       "id": "teton-jackson-lake-coherent",
       "status": "candidate",
       "composition": {
-        "foreground": "none",
-        "nearLedgeMaxFrac": 0
+        "foreground": "ledge",
+        "nearLedgeMaxFrac": 0.12
       },
       "sourceDemSha256": [
         "09930a44096be83c6023c6d853c12d1571f428878691e4bfba81cdd17d9077b9",
         "a19a985ea1d6370572bfaac2b7850bd90b49f28e9d10e3ad37c5ac17d4880e8f",
         "4d6c2aae717cba1c485d3533ac0406e21ab14733c459b065eec71cdbbcead4f2"
       ],
-      "viewSha256": "6bfc6463a6514a1d17ae12980fa47451e3fa7527a66ca6b813400fb8832d6c71",
+      "viewSha256": "e93033fe305586a7207748b4ba7f135b6a02a501ac6c80d825e3fc7282347ed9",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
         "sha256": "bd3b57442d203981a66be4e1e23df677116f9a562d7a39497f0a0e0e01b429b1"
@@ -1651,8 +1651,8 @@
       "id": "monument-valley-163-coherent",
       "status": "candidate",
       "composition": {
-        "foreground": "none",
-        "nearLedgeMaxFrac": 0
+        "foreground": "ledge",
+        "nearLedgeMaxFrac": 0.12
       },
       "sourceDemSha256": [
         "44ac5e6091ea8cbdc717221309402d6dc89e8318d6e6ede132699d8c93d09a03",
@@ -1661,7 +1661,7 @@
         "169278ce11a8a7b813f83819d8a0636ffc537d69bd774f990495c9f4e8460562",
         "9a60ac6d2118690f9c0db529cdad9ca52c6a75d731b813df25496dfc640df677"
       ],
-      "viewSha256": "1bd947ce23ad06c931a6d6528124c9c8caeebcb2f09143ba3887de58009b3e54",
+      "viewSha256": "ea1a5f1e833172fb5b8338973662a1c43813d64a56e7a1c4a316d551ed52a6c7",
       "terrainManifest": {
         "path": "src/assets/range/v2/terrain/monument-valley-163.terrain.json",
         "sha256": "78779fcd2a016e3777d524969955edb225e64db416ca02ee1708c8cb9825720e"

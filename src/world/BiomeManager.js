@@ -3467,9 +3467,11 @@ export class BiomeManager {
     if (!veilEnabled) return;
     // A Range view that composes its own foreground (its terrain reaches the
     // frame's bottom edge) takes neither the veil, whose soft discs read as
-    // circles in the sky, nor the cartoon landmark occluders.
-    const viewOwned = !!this.rangePresentation?.hasViewComposition;
-    if (!viewOwned) {
+    // circles in the sky, nor the cartoon landmark occluders. They fade
+    // against the view's own arrival and departure, so neither pops.
+    const rp = this.rangePresentation;
+    const legacyFg = rp?.hasViewComposition ? 1 - clamp01(rp.arrival ?? 1) : 1;
+    withNarrativeAlpha(ctx, legacyFg, (ctx) => {
       ctx.save();
       ctx.globalAlpha = 0.10 * (1 + 0.6 * (this.calmLevel || 0));
       const scrollX = worldX * CodaDirector.delaminateRatio(LAYER_RATIOS.L7, this.unravel);
@@ -3489,13 +3491,13 @@ export class BiomeManager {
         ctx.fill();
       }
       ctx.restore();
-    }
+    });
 
     // Near-field occluders: huge biome-landmark silhouettes sweeping past
     // faster than the characters, close enough to occlude them. Gated on
     // the same perf signal as the veil above -- costs a handful of vector
     // shape draws per visible sector, cheaper than the veil's 3 gradients.
-    if (this.currentBlend && !viewOwned) {
+    if (this.currentBlend) {
       const dominant = this.currentBlend.t > 0.5 ? this.currentBlend.to : this.currentBlend.from;
       // Same name/archetype mismatch as decorateStrip above: NearField keys
       // LANDMARKS and (via biomeByName) its silhouette-darkening color off
@@ -3503,9 +3505,9 @@ export class BiomeManager {
       const dominantLandmarkKey = this._profile(dominant)?.landmarkKey || dominant;
       const ratio = CodaDirector.delaminateRatio(NEARFIELD_RATIO, this.unravel);
       const kick = planeKick(this.tSec * 1000, this._danceKickMs, 'near', this._danceKickAmp);
-      this.nearField.draw(ctx, canvas, worldX, {
+      withNarrativeAlpha(ctx, legacyFg, (ctx) => this.nearField.draw(ctx, canvas, worldX, {
         tSec: this.tSec, kick, biomeName: dominantLandmarkKey, silhouette: this._profile(dominant)?.silhouette, reducedMotion: !!this.reducedFlash, ratio,
-      });
+      }));
 
       // Ground scatter: the frontmost plane's small detail, drawn after
       // NearField so the two near-field layers stack near-to-camera last.
