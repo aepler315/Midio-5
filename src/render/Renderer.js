@@ -384,7 +384,7 @@ export class Renderer {
     }
     // The inhabited shore: near sea over the bottom third, with Midio's
     // ship, Broshi on the beach and Midasus in the sky. Nominal stage space
-    // on the fixed ground transform's scale, screen-anchored like the HUD.
+    // on the fixed-ground transform, so it shakes and rolls with the land.
     if (biomeManager && biomeManager.inhabitedShore) {
       // Heard time, like the rest of the world, so latency compensation
       // keeps the residents (and Broshi's kick hop) on the audible beat.
@@ -395,8 +395,10 @@ export class Renderer {
         ? scenicMatrix.transformPoint({ x: lit.xFrac * stage.width, y: lit.yFrac * stage.height }).x / sxFixed - (camera.shakeX || 0)
         : null;
       ctx.save();
-      ctx.setTransform(sxFixed, 0, 0, syFixed, 0, 0);
-      ctx.translate(camera.shakeX || 0, camera.shakeY || 0);
+      // The fixed-ground transform (shake and roll) without the glacial
+      // offset, shifted so nominal stage (0,0) is the frame's corner.
+      applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera });
+      ctx.translate(SHAKE_MARGIN_PX, SHAKE_MARGIN_PX);
       drawInhabitedShore(ctx, {
         W: nominalW, H: nominalH, tSec: heardMs / 1000,
         bands: biomeManager._eqSmoothed, kick: kickHop01(recentConductorHits(sim.conductor?.timeline, heardMs), heardMs),
