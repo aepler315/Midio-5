@@ -181,3 +181,21 @@ test('during view travel the narrower view and shorter flight win within a frame
   cam.noteFrame({ tanX: 0.6, tanY: 0.4, userScale: 1, frameId: 8 });
   assert.deepEqual(cam.tan, { x: 0.6, y: 0.4 });
 });
+
+test('zooming out at the same pointer retraces the zoom in', () => {
+  const cam = new RangeUserCamera({ now: () => 0 });
+  cam.noteFrame({ tanX: 0.56, tanY: 0.315 });
+  cam.zoomAt(1.5, 0.5, -0.4);
+  cam.zoomAt(1 / 1.5, 0.5, -0.4);
+  for (const k of ['fx', 'rx', 'uy']) assert.ok(Math.abs(cam.target[k]) < 1e-9, k);
+});
+
+test('a view clamps the zoom snapshot into its own cone', () => {
+  const user = { fx: 0.5, rx: 0.3, uy: 0 };
+  const wide = applyCameraMoves(POSE, null, user);
+  const narrow = applyCameraMoves(POSE, null, user, { cone: { tanX: 0.2, tanY: 0.1 } });
+  const lateral = (o) => { const { right } = cameraBasis(POSE); return o.eyeM.reduce((s, v, i) => s + (v - POSE.eyeM[i]) * right[i], 0); };
+  const D = dist(POSE.eyeM, POSE.targetM);
+  assert.ok(lateral(narrow) <= 0.5 * 0.2 * D + 1e-6);
+  assert.ok(lateral(wide) > lateral(narrow));
+});

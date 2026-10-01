@@ -693,28 +693,27 @@ export class RangeScene {
    *  padded scenic stage so the Canvas transform (zoom, shake, roll) applies
    *  once when the partition is composited. */
   _setCamera(view, frame, p = null) {
+    const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+    const proj = scenicProjection(rail.fovYDeg, frame.scenicViewport);
+    // This view's VISIBLE frustum (the overscan margin excluded): the
+    // pointer is normalised against the visible stage, and the zoom must
+    // stay inside this view's own cone from its very first frame.
+    const vp = frame.scenicViewport, m = vp.overscanPx || 0;
+    const visW = Math.max(1, vp.logicalWidth - 2 * m), visH = Math.max(1, vp.logicalHeight - 2 * m);
+    const tanY = Math.tan((proj.fovYDeg * Math.PI) / 360) * (visH / vp.logicalHeight), tanX = tanY * (visW / visH);
     // Cinematic section moves and the listener's zoom (RangeCamera.js),
     // computed once per frame and view: the partition passes reuse it.
     let poses = this._movedPoses.get(frame);
     if (!poses) this._movedPoses.set(frame, poses = new Map());
     let pose = poses.get(view.id);
     if (!pose) {
-      const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
       pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
         heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM,
-        sampleStepM: p?.data?.grid?.cellSizeM });
+        sampleStepM: p?.data?.grid?.cellSizeM, cone: { tanX, tanY } });
       poses.set(view.id, pose);
     }
     const cam = this.camera;
-    const proj = scenicProjection(pose.fovYDeg, frame.scenicViewport);
-    if (frame.userCamera) {
-      // Report the VISIBLE frame's frustum (the overscan margin excluded):
-      // the pointer is normalised against the visible stage.
-      const vp = frame.scenicViewport, m = vp.overscanPx || 0;
-      const visW = Math.max(1, vp.logicalWidth - 2 * m), visH = Math.max(1, vp.logicalHeight - 2 * m);
-      const tanY = Math.tan((proj.fovYDeg * Math.PI) / 360) * (visH / vp.logicalHeight);
-      rangeUserCamera.noteFrame({ tanX: tanY * (visW / visH), tanY, userScale: pose.userScale, frameId: frame.frameId });
-    }
+    if (frame.userCamera) rangeUserCamera.noteFrame({ tanX, tanY, userScale: pose.userScale, frameId: frame.frameId });
     cam.fov = proj.fovYDeg;
     cam.aspect = proj.aspect;
     cam.position.set(pose.eyeM[0], pose.eyeM[1], pose.eyeM[2]);

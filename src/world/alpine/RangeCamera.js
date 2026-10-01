@@ -150,7 +150,7 @@ function groundAt(heightAt, waterLevelM, x, z) {
  * Returns { eyeM, targetM, fovYDeg, userScale } where userScale (0..1) is
  * how much of the user offset the terrain allowed.
  */
-export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevelM = null, sampleStepM = DEFAULT_SAMPLE_STEP_M } = {}) {
+export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevelM = null, sampleStepM = DEFAULT_SAMPLE_STEP_M, cone = null } = {}) {
   const T0 = pose.targetM;
   const d0 = sub(T0, pose.eyeM);
   const D = Math.hypot(...d0);
@@ -186,7 +186,11 @@ export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevel
   let userScale = 1;
   if (user && (user.fx || user.rx || user.uy)) {
     const { forward, right, up } = cameraBasis({ eyeM: eye, targetM: target });
-    const v = add(add(add([0, 0, 0], forward, user.fx * D), right, user.rx * D), up, user.uy * D);
+    // Inside this view's own cone (see header), even on the first frame of
+    // a narrower view, before the listener camera hears of it.
+    const cx = cone ? user.fx * cone.tanX * 0.98 : Infinity, cy = cone ? user.fx * cone.tanY * 0.98 : Infinity;
+    const rx = clamp(user.rx, -cx, cx), uy = clamp(user.uy, -cy, cy);
+    const v = add(add(add([0, 0, 0], forward, user.fx * D), right, rx * D), up, uy * D);
     // Fly as far along the offset as the ground allows: the first sample
     // that would put the eye under its clearance stops the flight there.
     const need = Math.min(0, marginAt(eye));
@@ -279,14 +283,11 @@ export class RangeUserCamera {
     const nx = clamp(ndcX, -1, 1), ny = clamp(ndcY, -1, 1);
     const fx0 = t.fx;
     t.fx = clamp(t.fx + step, 0, USER_FX_MAX);
-    // Zooming in heads toward the pointer, by the forward distance actually
-    // taken (at the cap, none: no sideways pan). Zooming out backs straight
-    // out and lets the cone clamp below recentre the frame.
+    // The eye moves along the ray under the pointer, in or out, by the
+    // forward distance actually taken (at the cap, none: no sideways pan).
     const taken = t.fx - fx0;
-    if (taken > 0) {
-      t.rx += taken * nx * this.tan.x;
-      t.uy += taken * ny * this.tan.y;
-    }
+    t.rx += taken * nx * this.tan.x;
+    t.uy += taken * ny * this.tan.y;
     if (t.fx < 1e-4) { t.fx = 0; t.rx = 0; t.uy = 0; }
     this._clampToCone(t);
   }
