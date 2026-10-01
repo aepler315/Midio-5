@@ -49,6 +49,14 @@ test('despike lowers a seam blob at the grid edge but keeps a real peak', () => 
   assert.equal(inlandMax(), summit, 'the real summit survives');
 });
 
+test('despike lowers a whole five-sample block, not just its middle', () => {
+  const g = makeGrid(40, 40, 20, (x, z) => 1200 + 0.1 * z);
+  const before = Float32Array.from(g.heightsM);
+  for (let r = 15; r < 20; r++) for (let c = 15; c < 20; c++) g.heightsM[r * 40 + c] += 2500;
+  despikeGrid(g);
+  for (let i = 0; i < before.length; i++) assert.ok(Math.abs(g.heightsM[i] - before[i]) < 15, `sample ${i % 40},${Math.floor(i / 40)} at ${g.heightsM[i]}`);
+});
+
 test('residual coding round-trips arbitrary samples', () => {
   const n = 9;
   const q = Uint16Array.from({ length: n * n }, (_, i) => (i * 7919 + (i % 5) * 60000) & 0xffff);

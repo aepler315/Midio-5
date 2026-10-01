@@ -620,7 +620,7 @@ export default {
    "place": "Tombstone Territorial Park, Yukon",
    "credit": "Elevation: AWS Terrain Tiles",
    "terrainManifestUrl": "terrain/tombstone-north-klondike.terrain.json",
-   "terrainManifestSha256": "d53ca9e43f34f29371826ea969360bd205fb17862f946f0fb5a0c43bf048c0e5",
+   "terrainManifestSha256": "468ecc8cb04e53184ca0cea5f9127c0bafa33f7eadc0e8eed7c972f599af7bbe",
    "materialManifestUrl": "materials/tundra.json",
    "materialManifestSha256": "76deaaa34707bc0454ecb6e10080e4d1b6716ba84b760a7fa4ce9df09a26dce2",
    "materialRules": {
@@ -666,7 +666,7 @@ export default {
     "review": null,
     "approval": {
      "date": "2026-10-01",
-     "terrainManifestSha256": "d53ca9e43f34f29371826ea969360bd205fb17862f946f0fb5a0c43bf048c0e5",
+     "terrainManifestSha256": "468ecc8cb04e53184ca0cea5f9127c0bafa33f7eadc0e8eed7c972f599af7bbe",
      "materialManifestSha256": "76deaaa34707bc0454ecb6e10080e4d1b6716ba84b760a7fa4ce9df09a26dce2",
      "materialRulesSha256": "4209bf81ebcd0ec0d844dd6ce39922461a1ced0fee74f577001f70337d1f8b27",
      "cameraSha256": "64615bae3929523094aa6df0c7ad16b1b1ebd34844546e7af2dbd16ae1667fa2",
@@ -822,7 +822,7 @@ export default {
      "56005b720081f4dae0f394fad9c21afab2476a6c3fa877ca69c037d476bdd8dd",
      "b90a2fd87da8ee3d68dbda9879f44b9234d5828feab31cee554e713e30b5e5f8",
      "363ea4a1252ac2e8c499c98f12fd8092862ba2fbc0414c2a7013052e0fe93cc9",
-     "eefef79c83d4b697af9b9d0799eaf8ddccf2f5f8cdc159d34dc8ad466d8c7205"
+     "194f321980239c3b676e4f1ee913c6cfde367d5ac2f1d9190fee6900bb302689"
     ]
    }
   },

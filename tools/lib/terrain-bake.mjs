@@ -133,45 +133,68 @@ export function pointVisible(ob, p, occ) {
 }
 
 /**
- * Remove spikes: a valid sample (or a cluster up to five samples across)
+ * Remove spikes: a valid sample (or a cluster up to three samples across)
  * higher than every valid sample on the surrounding ring at distance r by
  * more than `ratio * r` cell widths (steeper than ~63 degrees for the
  * default 2) cannot be real terrain at this spacing, and is lowered to that
  * ring's highest sample. Edge samples use the in-bounds part of the ring.
- * The r = 3 ring catches the wider blobs a mosaic seam leaves at the grid
- * edge (Tombstone's west edge carried a 2 x 5 one up to 4.7 km, drawn as a
- * needle on the skyline). Returns the number of samples changed.
+ * Wider blobs (a mosaic seam left a 2 x 5 one up to 4.7 km on Tombstone's
+ * west edge, drawn as a needle on the skyline) are found by a grey opening
+ * with a disc of `blobRadius` cells: whatever stands more than
+ * `ratio * blobRadius` cells above the opened surface is just as steep on
+ * every side, and is lowered to it. Returns the number of samples changed.
  */
-export function despikeGrid(grid, { ratio = 2 } = {}) {
+export function despikeGrid(grid, { ratio = 2, blobRadius = 3 } = {}) {
   const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
-  const sweep = (radii) => {
-    let n = 0;
-    for (const r of radii) {
-      const limit = ratio * r * cell;
-      for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
-        const i = y * w + x;
-        if (!valid[i]) continue;
-        let top = -Infinity;
-        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const xx = x + dx, yy = y + dy;
-          if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
-          const j = yy * w + xx;
-          if (valid[j] && h[j] > top) top = h[j];
-        }
-        if (Number.isFinite(top) && h[i] - top > limit) { h[i] = top; n++; }
+  let changed = 0;
+  for (const r of [1, 2, 1]) {
+    const limit = ratio * r * cell;
+    for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!valid[i]) continue;
+      let top = -Infinity;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+        const j = yy * w + xx;
+        if (valid[j] && h[j] > top) top = h[j];
       }
+      if (Number.isFinite(top) && h[i] - top > limit) { h[i] = top; changed++; }
     }
-    return n;
-  };
-  let changed = sweep([1, 2, 1]);
-  // A wider blob gives way from its middle outwards, a ring at a time.
-  for (let round = 0; round < 4; round++) {
-    const n = sweep([3, 2, 1]);
-    changed += n;
-    if (!n) break;
+  }
+  if (blobRadius > 0) {
+    const opened = openGrid(h, valid, w, hgt, blobRadius);
+    const limit = ratio * blobRadius * cell;
+    for (let i = 0; i < h.length; i++) {
+      if (valid[i] && h[i] - opened[i] > limit) { h[i] = opened[i]; changed++; }
+    }
   }
   return changed;
+}
+
+/** Grey opening (erosion, then dilation) of the valid samples by a disc of
+ *  radius `r` cells; edges and no-data use the in-bounds valid part. */
+function openGrid(h, valid, w, hgt, r) {
+  const disc = [];
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + 0.5) disc.push([dx, dy]);
+  const pass = (src, pick, init) => {
+    const out = new Float32Array(src.length);
+    for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!valid[i]) { out[i] = src[i]; continue; }
+      let v = init;
+      for (const [dx, dy] of disc) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+        const j = yy * w + xx;
+        if (valid[j]) v = pick(v, src[j]);
+      }
+      out[i] = v;
+    }
+    return out;
+  };
+  return pass(pass(h, Math.min, Infinity), Math.max, -Infinity);
 }
 
 /**
