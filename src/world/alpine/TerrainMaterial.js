@@ -2,6 +2,7 @@ import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackag
 import { GUST_FRONTS, GUST_IDLE_SEC, GUST_SWEEP_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
 import { MIRROR_LIFT } from './WaterMirror.js';
+import { ACTOR_GLSL, WAKE_GLSL, actorUniforms } from './ActorsGL.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
 // bundle). Task 8 ships the neutral-material pilot: real geometry, the
 // surface texture's full-grid normals, the frame's resolved celestial light
@@ -150,6 +151,9 @@ export const SCENE_FRAG = /* glsl */`
   uniform float uGustAge[${GUST_FRONTS}];
   uniform float uGustAmp[${GUST_FRONTS}];
   uniform float uGustDir[${GUST_FRONTS}];
+  // The cast's lanterns (ActorsGL.js): their light, glints and Midio's wake.
+  ${ACTOR_GLSL}
+  ${WAKE_GLSL}
   in vec2 vUv;
   in vec3 vWorld;
   in vec3 vRenderedWorld;
@@ -394,15 +398,21 @@ export const SCENE_FRAG = /* glsl */`
     // integrates the hemisphere, hence the scale.
     vec3 hemi = mix(uSkyHorizon * 0.55, uSkyZenith, 0.5 + 0.5 * nShade.y) * uAmbientScale;
     vec3 lit = albedo * (hemi * ao + uLightColor * key * mix(0.85, 1.0, ao));
+    // The cast's lanterns light the ground around them.
+    lit += albedo * actorLight(vRenderedWorld, nShade);
     if (uDebugMask == 3) { outColor = vec4(albedo * 4.0, 1.0); return; }
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
     if (uDebugMask == 5) { outColor = vec4(vec3(key), 1.0); return; }
     vec3 V = normalize(uCameraPos - vRenderedWorld);
-    float waterFres = 0.0, paw = 0.0;
+    float waterFres = 0.0, paw = 0.0, wake = 0.0;
+    vec3 waterN = vec3(0.0, 1.0, 0.0);
     if (water && uHasMaterial > 0.5) {
-      paw = catsPaw(vWorld.xz);
+      // Midio's wake roughens the water as a cat's paw does.
+      wake = wakeAt(vWorld.xz);
+      paw = max(catsPaw(vWorld.xz), wake);
       vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * (0.025 + 0.05 * paw);
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
+      waterN = waterNormal;
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(vec3(0.0, 1.0, 0.0), V), 0.0), 5.0);
       // Rough water reflects less, so a cat's paw reads as a darker patch.
       fres *= 1.0 - 0.35 * paw;
@@ -459,6 +469,12 @@ export const SCENE_FRAG = /* glsl */`
       float reflectance = clamp(0.3 + 0.7 * waterFres, 0.0, 0.9) * (1.0 - 0.4 * paw);
       color = mix(color, mirrored * 0.9, reflectance * have * (1.0 - topo) * uNarrative.z * uNarrative.w);
     }
+    if (water) {
+      // Lanterns over the water lay a path of glints; Midio's wake catches
+      // his light. Over the mirror, through the air.
+      vec3 glow = actorGlint(vRenderedWorld, V, waterN) * 0.6 + uActorColor[0] * wake * 0.12;
+      color += glow * (1.0 - topo) * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0));
+    }
     // A narrow physical silhouette supplies the main opening ink. Sparse
     // source-space hints are drawn separately against this same depth.
     float facing = abs(dot(geologicalNormal, V));
@@ -495,6 +511,7 @@ export function gustUniforms() {
 export function sceneUniforms(THREE, base) {
   return {
     ...base,
+    ...actorUniforms(THREE),
     uGlacierEnabled: { value: 0 }, uGlacierStart: { value: new THREE.Vector2() }, uGlacierEnd: { value: new THREE.Vector2(0, -100) },
     uGlacierWidth: { value: 1 }, uGlacierSurface: { value: new THREE.Vector2() }, uGlacierMaxThickness: { value: 0 }, uGlacierRetreat: { value: 0 },
     uDeformAmp: { value: 0 }, uDeformKick: { value: 0 }, uDeformK: { value: 0 },

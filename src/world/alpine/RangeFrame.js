@@ -22,6 +22,7 @@ import { glacierStateAt } from './GlacierField.js';
 import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
 import { topoRevealAt } from './TopoReveal.js';
+import { rangeActorsAt } from './RangeActors.js';
 
 const NIGHT_SKY = '#05060d';
 
@@ -300,6 +301,8 @@ export function buildRangeFrame({
     progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     // How much of the Forest Service map under the land shows (quiet passages).
     topo01: topoRevealAt(mgr, timeMs),
+    // The cast as lights in the land: brightness, travel and peaks per lane.
+    actors: rangeActorsAt(sim, timeMs),
     scenicViewport, groundViewport,
     light: lightState, music, ridges, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
