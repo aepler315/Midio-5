@@ -45,7 +45,11 @@ const USER_EASE_SEC = 0.18;
 // well above both. More from far up.
 const CLEARANCE_MIN_M = 250;
 const CLEARANCE_FRAC = 0.01;
-const LOW_CLEARANCE_MIN_M = 30;
+const LOW_CLEARANCE_MIN_M = 50;
+// The musical deformation's reach (calibrateRangeMusic bounds it near
+// 180 m). It scales with the square of a point's height in the view's
+// height range, so a desert floor barely moves while ridges move fully.
+export const DEFORM_PAD_M = 180;
 // The zoom path is checked at least every terrain cell (so no ridge slips
 // between samples), within these bounds.
 const CLEARANCE_SAMPLES_MIN = 16;
@@ -84,7 +88,7 @@ export function cameraMoveKeys(sections, durationMs, seed = 0) {
   for (let i = 0; i < starts.length; i++) {
     const cur = keys.at(-1);
     const end = i + 1 < starts.length ? starts[i + 1].tMs : finaleAt;
-    if (!(end > cur.tMs)) continue;
+    if (end - cur.tMs < MIN_MOVE_MS) continue;
     const energy = clamp(Number(starts[i].section?.relEnergy01 ?? 0.5) || 0, 0, 1);
     let kind = MOVE_KINDS[Math.floor(rand() * MOVE_KINDS.length) % MOVE_KINDS.length];
     // A loud section pushes in toward the peaks.
@@ -150,19 +154,29 @@ function groundAt(heightAt, waterLevelM, x, z) {
  * Returns { eyeM, targetM, fovYDeg, userScale } where userScale (0..1) is
  * how much of the user offset the terrain allowed.
  */
-export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevelM = null, sampleStepM = DEFAULT_SAMPLE_STEP_M, cone = null } = {}) {
+export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevelM = null, sampleStepM = DEFAULT_SAMPLE_STEP_M, cone = null, heightRangeM = null } = {}) {
   const T0 = pose.targetM;
   const d0 = sub(T0, pose.eyeM);
   const D = Math.hypot(...d0);
   if (!(D > 1)) return { ...pose, userScale: 1 };
   // Clearance above the ground for every moved eye. A view authored lower
   // than the full clearance (a desert floor shot) keeps half its own
-  // height above ground instead, never under LOW_CLEARANCE_MIN_M, so its
-  // moves stay clear and its zoom is not dead from the first step.
+  // height above ground instead, never under LOW_CLEARANCE_MIN_M (plus the
+  // deformation pad), so its moves stay clear and its zoom still works.
   const clearance = Math.max(CLEARANCE_MIN_M, CLEARANCE_FRAC * D);
   const above = pose.eyeM[1] - groundAt(heightAt, waterLevelM, pose.eyeM[0], pose.eyeM[2]);
-  const flight = above < clearance ? Math.max(LOW_CLEARANCE_MIN_M, 0.5 * above) : clearance;
-  const floorAt = (p) => groundAt(heightAt, waterLevelM, p[0], p[2]) + flight;
+  // The full clearance already covers deformation and trees; a low view's
+  // reduced one adds the deformation back wherever the ground can rise.
+  const low = above < clearance;
+  const flight = low ? Math.max(LOW_CLEARANCE_MIN_M, 0.5 * above) : clearance;
+  const [h0, h1] = Array.isArray(heightRangeM) ? heightRangeM : [0, 0];
+  const deformPad = (g) => {
+    if (!low) return 0;
+    if (!(h1 > h0)) return DEFORM_PAD_M;
+    const h = clamp((g - h0) / (h1 - h0), 0, 1);
+    return DEFORM_PAD_M * h * h;
+  };
+  const floorAt = (p) => { const g = groundAt(heightAt, waterLevelM, p[0], p[2]); return g + flight + deformPad(g); };
   const marginAt = (p) => p[1] - floorAt(p);
   let eye = pose.eyeM, target = T0;
   if (move && move !== NEUTRAL_MOVE) {

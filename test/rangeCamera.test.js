@@ -199,3 +199,17 @@ test('a view clamps the zoom snapshot into its own cone', () => {
   assert.ok(lateral(narrow) <= 0.5 * 0.2 * D + 1e-6);
   assert.ok(lateral(wide) > lateral(narrow));
 });
+
+test('a short song makes no move shorter than the minimum before its finale', () => {
+  const keys = cameraMoveKeys([{ startMs: 0, relEnergy01: 1 }], 21000, 1);
+  assert.deepEqual(keys.map((k) => k.kind), ['rest', 'finale']);
+});
+
+test('a low view keeps the deformation pad over high ground, not over its floor', () => {
+  const low = { eyeM: [0, 1060, 20000], targetM: [0, 1200, 0], fovYDeg: 35 };
+  const mesa = (x) => (Math.abs(x) > 100 ? 1300 : 1000);
+  const out = applyCameraMoves(low, { dolly: 0, yaw: 0, crane: 0, truck: 0.02 }, null, { heightAt: mesa, heightRangeM: [1000, 1300] });
+  assert.ok(out.eyeM[1] >= 1300 + 50 + 180 - 1e-9);
+  const flat = applyCameraMoves(low, null, { fx: 0.3, rx: 0, uy: 0 }, { heightAt: () => 1000, heightRangeM: [1000, 1300] });
+  assert.ok(flat.userScale > 0.9);
+});

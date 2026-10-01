@@ -709,7 +709,8 @@ export class RangeScene {
     if (!pose) {
       pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
         heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM,
-        sampleStepM: p?.data?.grid?.cellSizeM, cone: { tanX, tanY } });
+        sampleStepM: p?.data?.grid?.cellSizeM, cone: { tanX, tanY },
+        heightRangeM: p?.uniforms ? [p.uniforms.uHeightRange.value.x, p.uniforms.uHeightRange.value.y] : null });
       poses.set(view.id, pose);
     }
     const cam = this.camera;

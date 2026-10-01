@@ -512,8 +512,6 @@ let lastDrawMs = 0;
  *  Display-fit and the perf ladder both stand aside for it. */
 let bulkExportSize = null;
 let bulkExportArmed = false;
-// The song whose timeline the listener's Range zoom belongs to.
-let zoomTimeline = null;
 
 /** `?bulkExport=1&exportW=&exportH=` arms export on the next song start.
  *  An odd or unusable size reads as not armed (evenExportSize -> null);
@@ -1732,7 +1730,7 @@ function startTimeline(timelineData, extra = {}) {
     startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode: captureModeFlag = false,
     exportMode: exportModeFlag = false, exportSize = null, keepAudio = false,
   } = extra;
-  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0 };
+  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0, keepUserCamera: false };
   const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
   const exportMode = !!(exportModeFlag || fromUrl);
   if (exportMode) {
@@ -1852,10 +1850,9 @@ function startTimeline(timelineData, extra = {}) {
   // captures draw the authored camera. A new song starts unzoomed; a seek
   // or a mid-song rebuild keeps the zoom where it is.
   sim.userCameraEnabled = !captureMode;
-  // Seeks (to 0 too) rebuild on the same timeline object; a mid-song
-  // full-analysis adoption carries a nonzero start. Only a new song resets.
-  if (timelineData !== zoomTimeline && !(extra.startAtMs > 0)) rangeUserCamera.reset();
-  zoomTimeline = timelineData;
+  // Seeks (to 0 too) and the mid-song full-analysis rebuild say so with
+  // keepUserCamera; a new song or a replay starts unzoomed.
+  if (!extra.keepUserCamera) rangeUserCamera.reset();
   sim.analysisOpening = timelineData.opening || null;
   // This snapshot belongs to the song, beyond Simulation teardown/rebuild.
   if (!timelineData.opening) timelineData.rangeNarrative = sim.rangeNarrative;
@@ -3576,6 +3573,7 @@ function adoptFullAnalysisLive(data) {
     songSeed: sim.songSeed,
     startAtMs: Math.max(1, audioEngine.nowMs),
     keepAudio: true,
+    keepUserCamera: true,
     preservePause: wasPaused,
     fitDiagnostic: sim.fitDiagnostic,
     chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs },
@@ -3598,7 +3596,7 @@ function seekSong(ms) {
   const selectedSection = (renderer?.canvasRenderer || renderer)?.composer?.selectedSection;
   const hudInFrame = !!renderer?.hudInFrame;
   const showSectionLabels = !!sim.showSectionLabels;
-  startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t,
+  startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t, keepUserCamera: true,
     playBuffer: buffer || undefined, preservePause: wasPaused, fitDiagnostic: sim.fitDiagnostic });
   if (!running || !sim) return;
   renderer.hudInFrame = hudInFrame;
