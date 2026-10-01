@@ -75,6 +75,9 @@ export class ParticleField {
     // motion happens to already go up or down. Zero by default -- existing
     // callers that don't pass driftBias get byte-identical motion.
     this.driftBias = config.driftBias || null;
+    // Scales the wind streaks' travel (a world drawn at landscape scale sets
+    // it below 1); their drawn length keeps the unscaled speed.
+    this.windSpeedScale = 1;
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.rand = mulberry32(seed);
@@ -241,7 +244,7 @@ export class ParticleField {
           // Directional streaks blown hard across the screen -- reads as
           // its own weather (dust/debris on the gust) rather than bending
           // whatever else might be falling.
-          p.x += (p.vx + wx * 2) * dtSec;
+          p.x += (p.vx + wx * 2) * this.windSpeedScale * dtSec;
           p.y += Math.sin(tSec * p.omega + p.phase) * 10 * dtSec;
           if (p.x > this.w + 20) Object.assign(p, this._spawn(-20, rand() * this.h));
           break;
