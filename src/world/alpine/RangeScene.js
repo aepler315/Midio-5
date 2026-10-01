@@ -321,6 +321,20 @@ export class RangeScene {
           depthMeshes[band].frustumCulled = false;
           depthScene.add(depthMeshes[band]);
         }
+        // Seam fill: a nearer band's tiles that border a farther band also
+        // draw in that farther pass (against the same depth pre-pass, so
+        // only where they are the visible surface). The nearer pass covers
+        // them; along the seam, where neither pass owned a pixel outright,
+        // the farther partition is already the same ground instead of sky.
+        const fringeMeshes = [];
+        for (let b = 1; b < BANDS.length; b++) {
+          const g = geos.fringes?.[BANDS[b]];
+          if (!g) continue;
+          const fm = new THREE.Mesh(g, material);
+          fm.frustumCulled = false;
+          scenes[BANDS[b - 1]].add(fm);
+          fringeMeshes.push(fm);
+        }
         material.depthFunc = THREE.LessEqualDepth;
         material.depthWrite = false;
         forest = createForest(THREE, placed, uniforms);
@@ -343,7 +357,7 @@ export class RangeScene {
         this.renderer.compile(depthScene, this.camera);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
-          surface, uniforms, material, depthMaterial, geometries: geos.geometries, scenes, depthScene, depthScenes,
+          surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, scenes, depthScene, depthScenes,
           forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
           rules, waterLevelM: waterLevel(cpu.data), materialKey: mat.key,
@@ -372,6 +386,7 @@ export class RangeScene {
           surface?.texture?.dispose();
           surface?.receiverTexture?.dispose();
           for (const g of Object.values(geos?.geometries || {})) g.dispose();
+          for (const g of Object.values(geos?.fringes || {})) g.dispose();
         }
         throw err;
       }
@@ -481,6 +496,7 @@ export class RangeScene {
     p.forest?.dispose();
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
+    for (const g of Object.values(p.fringes || {})) g.dispose();
     p.surface?.texture?.dispose();
     p.surface?.receiverTexture?.dispose();
     p.material?.dispose();
@@ -622,6 +638,9 @@ export class RangeScene {
       depth.view = viewId;
       this.stats.depthPasses++;
     }
+    // During travel a side's nearer bands draw only in some columns, so its
+    // seam fill would paint ground the other side owns there.
+    for (const fm of p.fringeMeshes || []) fm.visible = !bandColumns;
     r.setRenderTarget(target);
     r.setClearColor(0x000000, 0);
     r.clear(true, false, false);

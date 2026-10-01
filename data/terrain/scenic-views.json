@@ -1,6 +1,6 @@
 {
   "about": "Range v2 scenic views: curated real terrain corridors with authored camera rails. Authoring source for tools/build-range-scene.mjs; the runtime catalog (src/assets/range/v2/catalog.json) is generated from it. Rail anchors are lon/lat (NAD83 for 3DEP sources) with an absolute height (heightM, metres above the source vertical datum) or a height above the DEM ground (aboveGroundM). status: candidate | approved | rejected; only approved views are production-eligible.",
-  "catalogVersion": 18,
+  "catalogVersion": 19,
   "views": [
     {
       "id": "nc-ross-lake-north",
@@ -515,6 +515,10 @@
       "id": "tombstone-north-klondike",
       "regionId": "yukon-ranges",
       "biome": "TUNDRA",
+      "materialRules": {
+        "treelineM": 1550,
+        "forestDensity": 0.12
+      },
       "status": "approved",
       "notes": "From the ridges above the North Klondike valley looking south-west into the Tombstone Range granite spires.",
       "composition": {
@@ -580,16 +584,15 @@
       "place": "Tombstone Territorial Park, Yukon",
       "approval": {
         "date": "2026-10-01",
-        "terrainManifestSha256": "5cbcec0d5132d445b75c1ffcec1fe1bb48980e2c34f44f34b6ebb4eb96bdbc89",
+        "terrainManifestSha256": "d53ca9e43f34f29371826ea969360bd205fb17862f946f0fb5a0c43bf048c0e5",
         "materialManifestSha256": "76deaaa34707bc0454ecb6e10080e4d1b6716ba84b760a7fa4ce9df09a26dce2",
-        "materialRulesSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "materialRulesSha256": "4209bf81ebcd0ec0d844dd6ce39922461a1ced0fee74f577001f70337d1f8b27",
         "cameraSha256": "64615bae3929523094aa6df0c7ad16b1b1ebd34844546e7af2dbd16ae1667fa2",
         "compositionSha256": "42aabcc21fc899222ba1c8263d48fd22f58d0b94716e47f9a127c1e84b12a1f1",
         "evidence": [
           "docs/evidence/range-v2/tombstone-north-klondike-stations.jpg",
-          "docs/evidence/range-v2/tombstone-north-klondike-inapp-10s.jpg",
-          "docs/evidence/range-v2/tombstone-north-klondike-nostage-10s.jpg",
-          "docs/evidence/range-v2/no-stage-coverage.json"
+          "docs/evidence/range-v2/tombstone-north-klondike-forest-10s.jpg",
+          "docs/evidence/range-v2/tombstone-north-klondike-forest-30s.jpg"
         ]
       }
     },

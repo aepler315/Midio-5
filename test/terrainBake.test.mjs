@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import {
-  bakeTerrain, encodeResiduals, decodeResiduals, validateTerrainManifest, tileStrideError, waterMask, SHORE_MAX_STRIDE,
+  bakeTerrain, encodeResiduals, decodeResiduals, validateTerrainManifest, tileStrideError, waterMask, SHORE_MAX_STRIDE, despikeGrid,
 } from '../tools/lib/terrain-bake.mjs';
 import { decodeTerrain, buildTerrainGeometry, buildSurfaceTexture, terrainHeightAt, tileStrides } from '../src/world/alpine/TerrainMesh.js';
 
@@ -36,6 +36,18 @@ async function loadBaked(baked) {
   assert.equal(decoded.byteLength, baked.manifest.payload.decodedByteLength);
   return decodeTerrain(baked.manifest, new Uint8Array(decoded));
 }
+
+test('despike lowers a seam blob at the grid edge but keeps a real peak', () => {
+  // Gentle slope with a broad real summit inland and a 2 x 5 blob of bad
+  // samples on the west edge, as a mosaic seam leaves.
+  const g = makeGrid(40, 40, 20, (x, z) => 1200 + 0.1 * z + 600 * Math.exp(-((x - 200) ** 2 + z ** 2) / (2 * 120 ** 2)));
+  const inlandMax = () => Math.max(...Array.from(g.heightsM).filter((_, i) => i % 40 >= 2));
+  const summit = inlandMax();
+  for (let r = 18; r < 23; r++) for (let c = 0; c < 2; c++) g.heightsM[r * 40 + c] += 3000;
+  assert.ok(despikeGrid(g) >= 10);
+  for (let r = 18; r < 23; r++) for (let c = 0; c < 2; c++) assert.ok(g.heightsM[r * 40 + c] < 1400, `blob sample ${c},${r} still ${g.heightsM[r * 40 + c]}`);
+  assert.equal(inlandMax(), summit, 'the real summit survives');
+});
 
 test('residual coding round-trips arbitrary samples', () => {
   const n = 9;

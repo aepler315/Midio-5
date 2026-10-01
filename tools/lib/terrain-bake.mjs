@@ -133,31 +133,43 @@ export function pointVisible(ob, p, occ) {
 }
 
 /**
- * Remove spikes: a valid sample (or a cluster up to three samples across)
+ * Remove spikes: a valid sample (or a cluster up to five samples across)
  * higher than every valid sample on the surrounding ring at distance r by
  * more than `ratio * r` cell widths (steeper than ~63 degrees for the
  * default 2) cannot be real terrain at this spacing, and is lowered to that
  * ring's highest sample. Edge samples use the in-bounds part of the ring.
- * Returns the number of samples changed.
+ * The r = 3 ring catches the wider blobs a mosaic seam leaves at the grid
+ * edge (Tombstone's west edge carried a 2 x 5 one up to 4.7 km, drawn as a
+ * needle on the skyline). Returns the number of samples changed.
  */
 export function despikeGrid(grid, { ratio = 2 } = {}) {
   const { width: w, height: hgt, heightsM: h, valid, cellSizeM: cell } = grid;
-  let changed = 0;
-  for (const r of [1, 2, 1]) {
-    const limit = ratio * r * cell;
-    for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      if (!valid[i]) continue;
-      let top = -Infinity;
-      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-        const xx = x + dx, yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
-        const j = yy * w + xx;
-        if (valid[j] && h[j] > top) top = h[j];
+  const sweep = (radii) => {
+    let n = 0;
+    for (const r of radii) {
+      const limit = ratio * r * cell;
+      for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (!valid[i]) continue;
+        let top = -Infinity;
+        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= hgt) continue;
+          const j = yy * w + xx;
+          if (valid[j] && h[j] > top) top = h[j];
+        }
+        if (Number.isFinite(top) && h[i] - top > limit) { h[i] = top; n++; }
       }
-      if (Number.isFinite(top) && h[i] - top > limit) { h[i] = top; changed++; }
     }
+    return n;
+  };
+  let changed = sweep([1, 2, 1]);
+  // A wider blob gives way from its middle outwards, a ring at a time.
+  for (let round = 0; round < 4; round++) {
+    const n = sweep([3, 2, 1]);
+    changed += n;
+    if (!n) break;
   }
   return changed;
 }

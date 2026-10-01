@@ -13,7 +13,7 @@ test('every other Range weather kind, and every other world, paints as directed'
 });
 
 test('the Range slows wind streaks to a drift; other worlds keep their gale', () => {
-  assert.equal(windSpeedScaleFor('alpine'), .25);
+  assert.equal(windSpeedScaleFor('alpine'), .125);
   for (const world of ['city', 'fathom', undefined]) assert.equal(windSpeedScaleFor(world), 1);
   const travel = (scale) => {
     const f = new ParticleField({ kind: 'wind', color: '#fff', count: 8, speed: 0 }, 1280, 720, 7);
