@@ -28,6 +28,9 @@ import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { BANDS, terrainFringeBytes } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
+import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT } from './WaterMirror.js';
+
+const BACKDROP_KEY = 'range:water-backdrop';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors } from './GlacierField.js';
 
@@ -87,6 +90,9 @@ export class RangeScene {
     this.materialLoads = new Map(); // manifest URL -> in-flight acquisition
     this.target = null;
     this.sideTargets = { B: null };
+    // Lake mirror image per side (optional, like the shafts), drawn once a frame.
+    this.mirrors = { A: null, B: null };
+    this.mirrorCamera = new THREE.PerspectiveCamera();
     this.depthCache = { A: { frame: -1, view: null }, B: { frame: -1, view: null } };
     this.size = { width: 0, height: 0 };
     this.contextLost = false;
@@ -141,6 +147,7 @@ export class RangeScene {
     this.size = { width: w, height: h };
     if (res) this.residency.commit(res, this.target, (t) => t.dispose());
     this.depthCache.A.frame = -1;
+    this.releaseMirror('A');
     // The incoming side's target follows the new size on its next use.
     this.releaseSide('B');
   }
@@ -170,7 +177,9 @@ export class RangeScene {
 
   /** Free the incoming side's target once no transition needs it. */
   releaseSide(side = 'B') {
-    if (side !== 'B' || !this.sideTargets?.B) return;
+    if (side !== 'B') return;
+    this.releaseMirror('B');
+    if (!this.sideTargets?.B) return;
     this.releaseShafts();
     const t = this.sideTargets.B;
     if (this.residency) this.residency.release('range:render-target-B');
@@ -206,6 +215,129 @@ export class RangeScene {
     this.shafts = shafts; this.shaftIdentity = identity; this.shaftViews = ids;
     this.depthCache.A.frame = this.depthCache.B.frame = -1;
     return true;
+  }
+
+  /** The side's mirror image target, reserved as optional light: it may
+   *  not evict anything resident to fit, and anything may evict it. */
+  _ensureMirror(side) {
+    const { width, height } = mirrorSize(this.size.width, this.size.height);
+    const identity = `${width}x${height}:${this.contextEpoch}`;
+    const have = this.mirrors[side];
+    if (have && have.identity === identity) return have;
+    this.releaseMirror(side);
+    const key = `range:water-mirror-${side}`;
+    const protect = [...(this.residency?.entries.keys() || [])];
+    // RGBA8 colour + 24/8 depth.
+    const res = this.residency?.reserve({ key, bytes: width * height * 8, owner: 'range-mirror', protect });
+    if (this.residency && !res) return null;
+    const THREE = this.THREE;
+    const target = new THREE.WebGLRenderTarget(width, height, {
+      depthBuffer: true, stencilBuffer: false, type: THREE.UnsignedByteType,
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    });
+    const entry = { key, identity, target, frame: -1, view: null, matrix: new THREE.Matrix4() };
+    const dispose = (e) => { e.target.dispose(); if (this.mirrors[side] === e) this.mirrors[side] = null; };
+    if (res && !this.residency.commit(res, entry, dispose)) return null;
+    this.mirrors[side] = entry;
+    return entry;
+  }
+
+  releaseMirror(side) {
+    const m = this.mirrors?.[side];
+    if (!m) return;
+    if (this.residency) this.residency.release(m.key);
+    else m.target.dispose();
+    this.mirrors[side] = null;
+  }
+
+  /**
+   * What the stage holds before the middle distance is drawn (the 2D sky,
+   * aurora and distant ranges, and the far partition) is the backdrop the
+   * lake reflects: copy the stage area of `ctx` into a small texture the
+   * water in the middle and near partitions samples along its (lowered)
+   * reflected ray. Only while a prepared view mirrors; otherwise the copy
+   * is released.
+   */
+  captureBackdrop(ctx, stage, frame) {
+    const wanted = !this.contextLost && rangeQuality(frame?.qualityLevel).waterMirror
+      && [...this.prepared.values()].some((p) => Number.isFinite(p.mirrorLevelM));
+    if (!wanted || !ctx?.canvas || !(stage?.width > 0)) { this.releaseBackdrop(); return false; }
+    const { width, height } = mirrorSize(this.size.width, this.size.height);
+    let b = this.backdrop;
+    if (!b || b.width !== width || b.height !== height || b.epoch !== this.contextEpoch) {
+      this.releaseBackdrop();
+      // The copy canvas and its texture.
+      const res = this.residency?.reserve({ key: BACKDROP_KEY, bytes: width * height * 8, owner: 'range-mirror',
+        protect: [...(this.residency?.entries.keys() || [])] });
+      if (this.residency && !res) return false;
+      const canvas = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(width, height)
+        : Object.assign(document.createElement('canvas'), { width, height });
+      const THREE = this.THREE;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = false;
+      b = { width, height, epoch: this.contextEpoch, canvas, ctx: canvas.getContext('2d'), texture, frame: -1 };
+      const dispose = (x) => { x.texture.dispose(); x.canvas.width = x.canvas.height = 0; if (this.backdrop === x) this.backdrop = null; };
+      if (res && !this.residency.commit(res, b, dispose)) return false;
+      this.backdrop = b;
+    }
+    // The stage's rectangle in the canvas: the painter's scale/translate.
+    const T = ctx.getTransform?.() || { a: 1, d: 1, e: 0, f: 0 };
+    b.ctx.clearRect(0, 0, width, height);
+    b.ctx.drawImage(ctx.canvas, T.e, T.f, T.a * stage.width, T.d * stage.height, 0, 0, width, height);
+    b.texture.needsUpdate = true;
+    b.frame = frame?.frameId ?? -1;
+    return true;
+  }
+
+  releaseBackdrop() {
+    if (!this.backdrop) return;
+    if (this.residency) this.residency.release(BACKDROP_KEY);
+    else { this.backdrop.texture.dispose(); this.backdrop = null; }
+    this.backdrop = null;
+  }
+
+  /**
+   * Draw this side's lake mirror for `frame` (once per frame and view) and
+   * point the water at it; without water near the view's level, at a
+   * quality that sheds it, or without room, the water keeps its sky
+   * reflection.
+   */
+  _prepareMirror(p, frame, side, viewId) {
+    const u = p.uniforms;
+    u.uViewportPx.value.set(this.size.width, this.size.height);
+    const ripple = (m) => (frame.reducedMotion ? 0.001 : 0.0012 + 0.0025 * (m?.groove ?? 0) + 0.004 * (m?.kick01 ?? 0));
+    const level = p.mirrorLevelM;
+    const wanted = Number.isFinite(level) && rangeQuality(frame.qualityLevel).waterMirror
+      && (frame.narrative?.materials ?? 1) > .01;
+    const m = wanted ? this._ensureMirror(side) : null;
+    if (!m) { u.uMirrorAmount.value = 0; u.uBackdropAmount.value = 0; if (!wanted) this.releaseMirror(side); return; }
+    if (m.frame !== frame.frameId || m.view !== viewId) {
+      const r = this.renderer;
+      const THREE = this.THREE;
+      mirrorCameraFor(THREE, this.camera, level, this.mirrorCamera, MIRROR_LIFT);
+      mirrorTextureMatrix(THREE, this.mirrorCamera, m.matrix);
+      for (const fm of p.fringeMeshes || []) fm.visible = false;
+      u.uMirrorAmount.value = 0;
+      u.uClipBelow.value = level + MIRROR_CLIP_M;
+      r.setRenderTarget(m.target);
+      r.setClearColor(0x000000, 0);
+      r.clear(true, true, false);
+      r.render(p.depthScene, this.mirrorCamera);
+      for (const band of BANDS) r.render(p.scenes[band], this.mirrorCamera);
+      u.uClipBelow.value = -1e9;
+      m.frame = frame.frameId;
+      m.view = viewId;
+      this.stats.mirrorPasses = (this.stats.mirrorPasses || 0) + 1;
+    }
+    u.uMirror.value = m.target.texture;
+    u.uMirrorMatrix.value.copy(m.matrix);
+    const b = this.backdrop?.frame === frame.frameId ? this.backdrop : null;
+    u.uBackdrop.value = b?.texture || null;
+    u.uBackdropAmount.value = b ? 1 : 0;
+    u.uViewProj.value.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    u.uMirrorLevel.value = level;
+    u.uMirrorRipple.value = ripple(frame.music);
+    u.uMirrorAmount.value = 1;
   }
 
   releaseShafts() {
@@ -367,12 +499,13 @@ export class RangeScene {
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
+        const waterLevelM = waterLevel(cpu.data);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
           forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
-          rules, waterLevelM: waterLevel(cpu.data), materialKey: mat.key,
+          rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key,
         };
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         // Eviction (or any release) of the GPU entry also retires the view
@@ -653,6 +786,10 @@ export class RangeScene {
     // its depth pre-pass (kept per side) is reused.
     this._setCamera(p.view, frame);
     this._setUniforms(p, frame);
+    this._prepareMirror(p, frame, side, viewId);
+    // The backdrop holds the far partition itself: far water reflecting it
+    // would feed back into the next copy, so it keeps the ground mirror only.
+    if (pass === 'far') p.uniforms.uBackdropAmount.value = 0;
     const depth = this.depthCache[side];
     if (bandColumns && p.depthScenes) {
       // Travel: this side draws its nearer bands only in some columns (the
@@ -761,6 +898,9 @@ export class RangeScene {
 
   _invalidateContext() {
     this.releaseShafts();
+    this.releaseBackdrop();
+    this.releaseMirror('A');
+    this.releaseMirror('B');
     if (this.residency) this.residency.release('range:render-target');
     else this.target?.dispose();
     this.releaseGroundTarget();
@@ -785,6 +925,8 @@ export class RangeScene {
 
   dispose() {
     this.releaseShafts();
+    this.releaseBackdrop();
+    this.releaseMirror('A');
     for (const id of [...this.prepared.keys()]) this.release(id);
     this.releaseSide('B');
     this.residency?.release('range:render-target');

@@ -3,8 +3,9 @@
 // over-budget frames, returns after 10 clean seconds, and a rung that fails
 // again after recovering waits twice as long before the next try. This
 // table says what the Range's GPU scene gives up at each level, in order:
-// the stable foliage subset first, then fog sampling, then the rock-stage
-// pool reflections (Renderer, level 6). Landform structure (terrain meshes
+// the stable foliage subset first, then fog sampling and the sun shafts
+// (level 3), the lake mirror (level 4; the water keeps its sky
+// reflection), then the rock-stage pool reflections (Renderer, level 6). Landform structure (terrain meshes
 // and their LOD budget), ground contact, performer cores and the musical
 // signatures are never touched by the ladder.
 import { forestKeepFraction } from './ForestCover.js';
@@ -23,5 +24,6 @@ export function rangeQuality(level = 0) {
     mistSteps: MIST_STEPS[q],
     poolReflections: q < 6,
     sunShafts: q < 3,
+    waterMirror: q < 4,
   };
 }

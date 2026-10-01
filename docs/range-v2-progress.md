@@ -179,6 +179,17 @@ Ashton asked for an underlying Forest Service topo map that occasionally shows t
 - **Massif cap.** Over a Range view the spectrum massif sits behind real terrain, and only its crest wire's tip cleared the skyline, as a lone glowing arch. The cap now fades with the view's arrival (the body stays).
 - Evidence (pilot song, calm intro): `tombstone-north-klondike-topo-11.5s.jpg` (map up), `-topo-40s.jpg` (energetic, map down), `teton-jackson-lake-topo-20s.jpg`.
 
+## Lake mirror (2026-10-01)
+
+Next item from the landscape brainstorm: lakes hold the land around them, as still water does at dusk.
+
+- **Mirror image.** `WaterMirror.js` poses a second camera as the real one reflected about the view's lake level, and `RangeScene` renders every band through it into a half-size target once per frame (fragments below the level + 0.5 m are clipped in both terrain shaders). The water projects its own position through that camera to find what it reflects. A view mirrors only when at least 40 sampled water samples within 3 m of its median water level stand on visible tiles; other water (another level, rivers) keeps the sky.
+- **Magical naturalism.** From a rail hundreds of metres above a lake, a physical reflection is nearly all sky. Reflections are drawn as if the eye stood at 0.45 of its height (`MIRROR_LIFT`): the mirror camera sits that much closer to the plane, and the distant backdrop (sky, aurora, moon and far ranges, copied from the canvas as the mid partition starts) is looked up along the same lowered ray. Teton's water now holds the peaks upside down; Muncho's holds its west shore and a moon path. Water reflectance is also raised (0.3 + 0.7 x Fresnel, capped at 0.9).
+- **Motion.** Groove and kicks shiver the reflection in horizontal bands; the wind's gust fronts sweep cat's paws across the water (rougher, duller patches that cross the screen with each front).
+- **Cost.** One extra render of the bands at quarter area per frame, plus a half-size canvas copy. The quality ladder sheds it at level 4 (after fog samples and sun shafts, before pool reflections); its two buffers are evictable residency entries.
+- **Known limits.** Gentle slopes seen from below the water plane face away from the mirror camera, so a shallow far shore reflects in patches. The far partition's own water gets the ground mirror only (it is part of the backdrop it would sample).
+- Evidence: `teton-jackson-lake-mirror-20s.jpg`, `teton-jackson-lake-mirror-60s.jpg` (pilot song), `muncho-lake-south-mirror-20s.jpg`.
+
 ## Task 16: resource, lifecycle and performance
 
 ### Fixes found by exercising real (unforced) play

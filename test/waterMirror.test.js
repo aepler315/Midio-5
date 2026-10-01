@@ -1,0 +1,51 @@
+// Range lake mirror (WaterMirror.js): the reflected camera and the
+// projection the water samples it through.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { mirrorCameraFor, mirrorTextureMatrix, mirrorSize, mirrorLevelFor, MIRROR_MIN_SAMPLES } from '../src/world/alpine/WaterMirror.js';
+
+const camera = () => {
+  const c = new THREE.PerspectiveCamera(35, 16 / 9, 20, 150000);
+  c.position.set(3650, 2410, -3500);
+  c.lookAt(9000, 2300, 12000);
+  c.updateProjectionMatrix();
+  c.updateMatrixWorld();
+  return c;
+};
+const ndc = (cam, p) => new THREE.Vector3(...p).project(cam);
+
+test('the mirror camera sees a point where the real camera sees its reflection, x mirrored', () => {
+  const cam = camera(), level = 2055;
+  const mirror = mirrorCameraFor(THREE, cam, level, new THREE.PerspectiveCamera());
+  assert.ok(Math.abs(mirror.position.y - (2 * level - 2410)) < 1e-6);
+  for (const p of [[8000, 4100, 20000], [4000, level, 6000], [9000, 2600, 14000]]) {
+    const a = ndc(mirror, p), b = ndc(cam, [p[0], 2 * level - p[1], p[2]]);
+    assert.ok(Math.abs(a.x + b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6, `${p}: ${a.x},${a.y} vs ${b.x},${b.y}`);
+  }
+});
+
+test('a water point samples the mirror image where the ground above it lies', () => {
+  const cam = camera(), level = 2055;
+  const mirror = mirrorCameraFor(THREE, cam, level, new THREE.PerspectiveCamera());
+  const m = mirrorTextureMatrix(THREE, mirror);
+  // A peak beyond the lake, and the water point where its reflection shows.
+  const peak = new THREE.Vector3(8000, 4100, 20000);
+  const eye = cam.position, img = new THREE.Vector3(peak.x, 2 * level - peak.y, peak.z);
+  const s = (level - eye.y) / (img.y - eye.y);
+  const water = eye.clone().lerp(img, s);
+  const uvOf = (v) => { const c = new THREE.Vector4(v.x, v.y, v.z, 1).applyMatrix4(m); return [c.x / c.w, c.y / c.w]; };
+  const [u1, v1] = uvOf(water), [u2, v2] = uvOf(peak);
+  assert.ok(Math.abs(u1 - u2) < 1e-6 && Math.abs(v1 - v2) < 1e-6);
+  assert.ok(u1 > 0 && u1 < 1 && v1 > 0 && v1 < 1);
+});
+
+test('only views with visible water at their level mirror', () => {
+  const tile = (visible, n, h) => ({ visible, flowBytes: new Uint8Array(n * 7).fill(255), heightsM: new Float32Array(n * 7).fill(h) });
+  const data = (tiles) => ({ tiles: new Map(tiles.map((t, i) => [i, t])) });
+  assert.equal(mirrorLevelFor(data([tile(true, MIRROR_MIN_SAMPLES, 2055)]), 2055), 2055);
+  assert.equal(mirrorLevelFor(data([tile(false, 500, 2055)]), 2055), null, 'a lake the rail never sees');
+  assert.equal(mirrorLevelFor(data([tile(true, 500, 1900)]), 2055), null, 'water at another level');
+  assert.equal(mirrorLevelFor(data([tile(true, 500, 2055)]), null), null);
+  assert.deepEqual(mirrorSize(1280, 720), { width: 640, height: 360 });
+});

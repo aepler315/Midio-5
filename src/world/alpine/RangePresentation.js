@@ -568,6 +568,9 @@ export class RangePresentation {
     this.lastPartition = null;
     if (!this.active || !this.frame) return false;
     const t0 = performance.now();
+    // Everything painted before the middle distance (sky, aurora, distant
+    // ranges, the far terrain) is the backdrop the lake reflects.
+    if (pass === 'mid') this.scene.captureBackdrop?.(ctx, stage, this.frame);
     if (this.incomingViewId) {
       // Travel between two views: each side renders into its own target and
       // is composited through the shared travel seam (TravelSeam.js), the

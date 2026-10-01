@@ -6,7 +6,7 @@ import { MIST_SAMPLES } from '../src/world/alpine/RangeAtmosphere.js';
 
 test('the ladder sheds foliage first, then fog sampling, then pool reflections; level 0 is full quality', () => {
   const q = [0, 1, 2, 3, 4, 5, 6].map(rangeQuality);
-  assert.deepEqual(q[0], { level: 0, forestKeep: 1, mistSteps: MIST_SAMPLES, poolReflections: true, sunShafts: true });
+  assert.deepEqual(q[0], { level: 0, forestKeep: 1, mistSteps: MIST_SAMPLES, poolReflections: true, sunShafts: true, waterMirror: true });
   for (let i = 1; i < q.length; i++) {
     assert.ok(q[i].forestKeep <= q[i - 1].forestKeep, 'foliage never returns while shedding');
     assert.ok(q[i].mistSteps <= q[i - 1].mistSteps, 'fog sampling never returns while shedding');
@@ -15,6 +15,9 @@ test('the ladder sheds foliage first, then fog sampling, then pool reflections; 
   const firstFog = q.findIndex((x) => x.mistSteps < MIST_SAMPLES);
   const firstReflection = q.findIndex((x) => !x.poolReflections);
   assert.ok(firstForest < firstFog && firstFog < firstReflection, `${firstForest} < ${firstFog} < ${firstReflection}`);
+  const firstMirror = q.findIndex((x) => !x.waterMirror);
+  assert.ok(firstFog < firstMirror && firstMirror < firstReflection, 'the lake mirror goes after fog, before pool reflections');
+  for (let i = firstMirror; i < q.length; i++) assert.equal(q[i].waterMirror, false);
   assert.ok(q[6].mistSteps >= 2, 'fog thins, never vanishes');
 });
 
