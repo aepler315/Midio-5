@@ -61,13 +61,19 @@ test('a front keeps the way its section leaned when its kick landed', () => {
     'and keeps it while the next section\'s motif eases in');
 });
 
-test('the shader\'s gust envelope rises fast, settles, and is silent before the front', () => {
+test('the shader\'s gust envelope bends gently, settles slowly, and is silent before the front', () => {
   const body = TREE_COMMON.match(/float gustEnv\(float age, float decay\) \{([\s\S]*?)\n\s*\}/);
   assert.ok(body, 'the forest shader exposes its gust envelope');
   const env = new Function('age', 'decay', body[1].replace(/\bexp\(/g, 'Math.exp('));
-  assert.equal(env(-0.01, .4), 0);
-  assert.equal(env(0, .4), 0);
-  assert.equal(env(.08, .4), 1);
-  assert.ok(Math.abs(env(.48, .4) - Math.exp(-1)) < 1e-9);
-  assert.ok(env(.48, .12) < env(.48, .4), 'the sheen passes faster than the lean');
+  assert.equal(env(-0.01, 1.2), 0);
+  assert.equal(env(0, 1.2), 0);
+  assert.ok(env(.08, 1.2) < .3, 'a tree takes the gust over a fraction of a second, not one frame');
+  assert.equal(env(.35, 1.2), 1);
+  assert.ok(Math.abs(env(1.55, 1.2) - Math.exp(-1)) < 1e-9);
+  assert.ok(env(1.55, .5) < env(1.55, 1.2), 'the sheen passes faster than the lean');
+});
+
+test('a gust rolls across the forest over seconds, one at a time', () => {
+  assert.ok(GUST_SWEEP_SEC >= 2.5, `a front crosses the frame in ${GUST_SWEEP_SEC} s`);
+  assert.ok(GUST_FRONT_SPACING_MS >= 1000, 'kicks closer than a second ride the same gust');
 });
