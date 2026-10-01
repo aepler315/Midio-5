@@ -111,33 +111,6 @@ export class GraphicsResidency {
     return { key, bytes: want, owner: entry.owner, generation };
   }
 
-  /**
-   * Add `bytes` to a pending reservation once its exact size is known
-   * (reserve the estimate first, so a denial comes before the work).
-   * Evicts like reserve(), never the reservation itself; returns false and
-   * changes nothing when the extra cannot fit.
-   */
-  grow(reservation, bytes, protect = []) {
-    const e = reservation && this.entries.get(reservation.key);
-    if (!e || e.state !== 'pending' || this.cancelled.has(e.generation)) return false;
-    const want = Math.max(0, Math.ceil(Number(bytes) || 0));
-    const keep = new Set([...protect, e.key]);
-    const over = this.usedBytes + want - this.budgetBytes;
-    if (over > 0 && this._evictable(keep) < over) { this.denials++; return false; }
-    while (this.usedBytes + want > this.budgetBytes) {
-      let victim = null;
-      for (const [k, x] of this.entries) {
-        if (x.state !== 'live' || !x.evictable || this.pinned.has(k) || keep.has(k)) continue;
-        if (!victim || x.used < victim[1].used) victim = [k, x];
-      }
-      this.release(victim[0]);
-    }
-    e.bytes += want;
-    reservation.bytes = e.bytes;
-    this._notePeak();
-    return true;
-  }
-
   /** Whether `bytes` could be reserved now (evicting what may be evicted). */
   canFit(bytes, protect = []) {
     const over = this.usedBytes + Math.max(0, Number(bytes) || 0) - this.budgetBytes;

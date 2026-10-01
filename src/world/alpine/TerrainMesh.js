@@ -92,6 +92,41 @@ export function tileStrides(data, budget = 'desktop', bias = 1) {
 }
 
 /**
+ * Which tiles each band draws and how big its arrays are, before anything
+ * is allocated. A fringe tile borders a farther band: the farther pass
+ * draws it too (RangeScene), so the seam between the two passes is never
+ * left open.
+ */
+function planBands(data, stridesById, includeHidden) {
+  const { cells } = data;
+  const size = Object.fromEntries(BANDS.map((b) => [b, { v: 0, i: 0, f: 0 }]));
+  const bandOf = (t) => (BANDS.includes(t.band) ? t.band : 'far');
+  const drawn = [];
+  for (const t of data.tiles.values()) {
+    if (!t.visible && !includeHidden) continue;
+    const m = cells / stridesById.get(t.id);
+    const band = bandOf(t);
+    let fringe = false;
+    for (let dz = -1; dz <= 1 && !fringe; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const nb = (dx || dz) && data.byIndex.get(`${t.ix + dx},${t.iz + dz}`);
+      if (nb && (nb.visible || includeHidden) && BANDS.indexOf(bandOf(nb)) < BANDS.indexOf(band)) { fringe = true; break; }
+    }
+    size[band].v += (m + 1) * (m + 1);
+    size[band].i += 6 * m * m;
+    if (fringe) size[band].f += 6 * m * m;
+    drawn.push([t, band, fringe]);
+  }
+  return { size, drawn };
+}
+
+/** Bytes of the seam-fill index buffers buildTerrainGeometry would make,
+ *  counted without building anything (a GPU reservation needs them first). */
+export function terrainFringeBytes(data, { budget = 'desktop', bias = 1, includeHidden = false, strides = null } = {}) {
+  const { size } = planBands(data, strides || tileStrides(data, budget, bias), includeHidden);
+  return BANDS.reduce((sum, b) => sum + size[b].f * 4, 0);
+}
+
+/**
  * Build per-band geometry. Each band merges its tiles into one position
  * (Float32 xyz) and index (Uint32) array. Tiles never visible from the
  * rail are skipped unless `includeHidden`.
@@ -103,26 +138,7 @@ export function buildTerrainGeometry(data, { budget = 'desktop', bias = 1, inclu
     const nb = data.byIndex.get(`${t.ix + dx},${t.iz + dz}`);
     return nb ? stridesById.get(nb.id) : 0;
   };
-  // Size every band first so the arrays are allocated once.
-  const size = Object.fromEntries(BANDS.map((b) => [b, { v: 0, i: 0, f: 0 }]));
-  const bandOf = (t) => (BANDS.includes(t.band) ? t.band : 'far');
-  const drawn = [];
-  for (const t of data.tiles.values()) {
-    if (!t.visible && !includeHidden) continue;
-    const m = cells / stridesById.get(t.id);
-    const band = bandOf(t);
-    // A fringe tile borders a farther band: the farther pass draws it too
-    // (RangeScene), so the seam between the two passes is never left open.
-    let fringe = false;
-    for (let dz = -1; dz <= 1 && !fringe; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const nb = (dx || dz) && data.byIndex.get(`${t.ix + dx},${t.iz + dz}`);
-      if (nb && (nb.visible || includeHidden) && BANDS.indexOf(bandOf(nb)) < BANDS.indexOf(band)) { fringe = true; break; }
-    }
-    size[band].v += (m + 1) * (m + 1);
-    size[band].i += 6 * m * m;
-    if (fringe) size[band].f += 6 * m * m;
-    drawn.push([t, band, fringe]);
-  }
+  const { size, drawn } = planBands(data, stridesById, includeHidden);
   const out = Object.fromEntries(BANDS.map((b) => [b, {
     positions: new Float32Array(size[b].v * 3), indices: new Uint32Array(size[b].i), vertexCount: 0, indexCount: 0,
     fringe: new Uint32Array(size[b].f), fringeCount: 0,

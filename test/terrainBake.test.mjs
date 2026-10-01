@@ -5,7 +5,7 @@ import zlib from 'node:zlib';
 import {
   bakeTerrain, encodeResiduals, decodeResiduals, validateTerrainManifest, tileStrideError, waterMask, SHORE_MAX_STRIDE, despikeGrid,
 } from '../tools/lib/terrain-bake.mjs';
-import { decodeTerrain, buildTerrainGeometry, buildSurfaceTexture, terrainHeightAt, tileStrides } from '../src/world/alpine/TerrainMesh.js';
+import { decodeTerrain, buildTerrainGeometry, buildSurfaceTexture, terrainHeightAt, tileStrides, terrainFringeBytes } from '../src/world/alpine/TerrainMesh.js';
 
 function makeGrid(width, height, cell, fn, holes = () => false) {
   const heightsM = new Float32Array(width * height);
@@ -292,4 +292,9 @@ test('runtime strides can coarsen for the mobile budget without re-baking', asyn
   const mob = buildTerrainGeometry(data, { budget: 'mobile' });
   assert.ok(mob.stats.triangles <= desk.stats.triangles);
   for (const [id, s] of tileStrides(data, 'mobile')) assert.ok(s >= data.tiles.get(id).stride);
+  // The seam-fill size a GPU reservation is taken for matches what is built.
+  for (const [budget, geo] of [['desktop', desk], ['mobile', mob]]) {
+    const built = Object.values(geo.bands).reduce((sum, b) => sum + b.fringe.byteLength, 0);
+    assert.equal(terrainFringeBytes(data, { budget }), built);
+  }
 });

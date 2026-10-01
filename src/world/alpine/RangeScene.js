@@ -26,7 +26,7 @@ import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
 import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
-import { BANDS } from './TerrainMesh.js';
+import { BANDS, terrainFringeBytes } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors } from './GlacierField.js';
@@ -85,7 +85,6 @@ export class RangeScene {
     this.materials = new Map(); // manifest URL -> { pack, textures, key, users:Set }
     this.pending = new Map(); // viewId -> { generation, job }
     this.materialLoads = new Map(); // manifest URL -> in-flight acquisition
-    this.fringeBytes = new Map(); // GPU key -> seam-fill index bytes last built
     this.target = null;
     this.sideTargets = { B: null };
     this.depthCache = { A: { frame: -1, view: null }, B: { frame: -1, view: null } };
@@ -281,21 +280,14 @@ export class RangeScene {
         const gridPx = cpu.data.grid.width * cpu.data.grid.height;
         const featureBudgetBytes = 3 * 768 * 6 * 4;
         // The bake's mesh estimate does not know the seam-fill index
-        // buffers, whose size is exact only once the mesh is built on the
-        // CPU (nothing uploads until it draws). The estimate is reserved
-        // first, so a view that cannot fit is denied before that build, and
-        // the reservation grows by the fringe bytes after it. A view denied
-        // at that step remembers its fringe size and asks for it up front.
-        const knownFringe = this.fringeBytes.get(gpuKey) || 0;
-        const bytes = (est?.meshBytes || 0) + knownFringe + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
+        // buffers; their exact size is counted from the tile plan (no
+        // geometry built), so the one reservation covers them and a view
+        // that cannot fit is denied before the mesh is built.
+        const fringeBytes = terrainFringeBytes(cpu.data, { budget: this.budget });
+        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
-        const fringeBytes = Object.values(geos.fringes || {}).reduce((sum, g) => sum + g.index.array.byteLength, 0);
-        this.fringeBytes.set(gpuKey, fringeBytes);
-        if (res && fringeBytes > knownFringe && !this.residency.grow(res, fringeBytes - knownFringe)) {
-          throw new RangeAssetError('budget', `no GPU room for ${view.id} seam fill`);
-        }
         const scratchKey = `range:surface-scratch:${view.id}`;
         const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 11, owner: 'range-scratch', generation }) || null;
         if (this.residency && !scratch) throw new RangeAssetError('budget', `no room to build ${view.id} surface`);
