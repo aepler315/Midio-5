@@ -78,3 +78,19 @@ test('terrain/forest/water key keeps the projected celestial ray at low altitude
   const point=camera.position.clone().addScaledVector(u.uLightDir.value,10000).project(camera);
   close(point.x,.84);close(point.y,-.16);
 });
+
+test('a moonless night is darkness: the night fill drops and the low sun turns red', async () => {
+  const { resolveCelestialState, MOONLESS_AMBIENT_CUT } = await import('../src/world/CelestialState.js');
+  const { songSkyClock } = await import('../src/world/DayNight.js');
+  const clock = songSkyClock(120000);
+  const viewport = { width: 1280, height: 720 };
+  const dark = resolveCelestialState({ timeMs: 0, cycleMs: clock, viewport });
+  assert.equal(dark.darkness01, 1);
+  assert.ok(Math.abs(dark.ambientMultiplier - 0.35 * (1 - MOONLESS_AMBIENT_CUT)) < 1e-9);
+  const noon = resolveCelestialState({ timeMs: 60000, cycleMs: clock, viewport, sunColor: '#fff3df' });
+  assert.equal(noon.darkness01, 0);
+  assert.equal(noon.sun.colorHex, '#fff3df');
+  const low = resolveCelestialState({ timeMs: clock.sunriseMs + 1500, cycleMs: clock, viewport, sunColor: '#fff3df' });
+  const red = parseInt(low.sun.colorHex.slice(1, 3), 16), blue = parseInt(low.sun.colorHex.slice(5, 7), 16);
+  assert.ok(red > 200 && blue < 120, low.sun.colorHex);
+});

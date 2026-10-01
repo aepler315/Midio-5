@@ -33,7 +33,7 @@ import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRRO
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors } from './GlacierField.js';
 import { ActorsGL } from './ActorsGL.js';
-import { ACTOR_IDS, ACTOR_HUES, ACTOR_LOOK, actorRoutes, routePosition } from './RangeActors.js';
+import { ACTOR_IDS, ACTOR_HUES, ACTOR_LOOK, ACTOR_START, actorRoutes, routePosition } from './RangeActors.js';
 
 const BACKDROP_KEY = 'range:water-backdrop';
 
@@ -818,6 +818,9 @@ export class RangeScene {
     const tanHalf = Math.tan((cam.fov * Math.PI) / 360);
     const materials = frame.narrative?.materials ?? 1;
     const tSec = frame.reducedMotion ? 0 : frame.timeMs / 1000;
+    // The lights carry the dark: brightest before dawn and after sunset,
+    // a soft shimmer at noon.
+    const dark = Math.min(1, Math.max(0, frame.light?.night01 ?? 0));
     u.uWakeAmt.value = 0;
     u.uParting.value.w = 0;
     ACTOR_IDS.forEach((id, k) => {
@@ -827,7 +830,7 @@ export class RangeScene {
       const look = ACTOR_LOOK[id];
       const presence = (cast?.presence ?? 0) * (materials > .01 ? materials : 0);
       const pos = route && s && presence > 0.001
-        ? routePosition(route, s.travel, { data: p.data, waterLevelM: p.waterLevelM, hoverM: look.hoverM, bobSec: tSec + k * 2.1 }) : null;
+        ? routePosition(route, s.travel + (ACTOR_START[id] || 0), { data: p.data, waterLevelM: p.waterLevelM, hoverM: look.hoverM, bobSec: tSec + k * 2.1 }) : null;
       u.uActorColor.value[k].set(0, 0, 0);
       if (!group) return;
       if (!pos) { group.visible = false; return; }
@@ -837,7 +840,7 @@ export class RangeScene {
       const display = new THREE.Color().setHSL(ACTOR_HUES[id] / 360, 0.85, 0.62);
       // Light: linear, stronger as the lane plays and at its peak.
       const lin = display.clone().convertSRGBToLinear();
-      const gain = look.lightGain * (0.35 + 0.65 * s.glow + 0.5 * peak) * presence;
+      const gain = look.lightGain * (0.35 + 0.65 * s.glow + 0.5 * peak) * presence * (0.45 + 1.15 * dark);
       u.uActorPos.value[k].copy(at);
       u.uActorColor.value[k].set(lin.r * gain, lin.g * gain, lin.b * gain);
       u.uActorRadius.value[k] = look.lightM;
@@ -846,7 +849,7 @@ export class RangeScene {
       const mpp0 = (2 * dist * tanHalf) / 720;
       const push = Math.min(dist * 0.25, 3 * look.haloPx * mpp0);
       const toCam = cam.position.clone().sub(at).normalize();
-      const v = group.children[0].material.uniforms;
+      const v = p.actors.uniforms[id];
       v.uCenter.value.copy(at).addScaledVector(toCam, push);
       v.uRight.value.copy(right);
       v.uUp.value.copy(up);
@@ -854,12 +857,26 @@ export class RangeScene {
       v.uHaloPx.value = look.haloPx;
       v.uColor.value.copy(display);
       v.uGlow.value = s.glow;
-      v.uPresence.value = presence;
+      v.uPresence.value = presence * (0.55 + 0.45 * dark);
       v.uCohere.value = peak;
       v.uTime.value = tSec + k * 37;
       v.uWanderPx.value = look.wanderPx * (1 + 0.5 * s.glow);
       v.uShapePx.value = look.shapePx;
       v.uShapeLift.value = route.kind === 'air' ? 0 : 0.6;
+      // Companions trail along the same route, each a little behind and
+      // weaving about it.
+      (p.actors.companions[id] || []).forEach((c, j) => {
+        const lag = routePosition(route, s.travel + (ACTOR_START[id] || 0) - (j + 1) * 0.5,
+          { data: p.data, waterLevelM: p.waterLevelM, hoverM: look.hoverM, bobSec: tSec + j * 1.3 });
+        const w = tSec * (0.7 + 0.2 * j) + j * 2.1;
+        const cp = new THREE.Vector3(lag[0], lag[1], lag[2])
+          .addScaledVector(right, Math.sin(w) * 18 * mpp0).addScaledVector(up, Math.cos(w * 1.3) * 10 * mpp0);
+        const cd = Math.max(1, cp.distanceTo(cam.position));
+        const cpush = Math.min(cd * 0.25, 30 * mpp0);
+        c.uCenter.value.copy(cp).addScaledVector(cam.position.clone().sub(cp).normalize(), cpush);
+        c.uMpp.value = mpp0 * (cd - cpush) / cd;
+        c.uGlow.value = s.glow * 0.6;
+      });
       group.visible = true;
       const tile = this._tileAt(p.data, pos[0], pos[2]);
       const band = BANDS.includes(tile?.band) ? tile.band : 'far';

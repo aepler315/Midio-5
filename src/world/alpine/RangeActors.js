@@ -195,6 +195,9 @@ const DEPTH_M = [700, 12000];
 /** One route length takes this many travel units (ACTOR_DRIFT..1 per
  *  second), so a full sweep across the frame takes about a minute. */
 export const ROUTE_UNITS = 40;
+/** Where along its route each actor starts (travel units): Broshi sets
+ *  out from the far end, so he and Midio do not move as one. */
+export const ACTOR_START = Object.freeze({ midio: 0, broshi: ROUTE_UNITS, midasus: ROUTE_UNITS / 2 });
 
 function hash(seed, i) {
   let h = (seed ^ Math.imul(i + 1, 0x9e3779b1)) >>> 0;
