@@ -7609,7 +7609,12 @@ export class BiomeManager {
     // supposed to be capping.
     // On a real summit the cap is the crest wire (CrestWire.js), slower and
     // broader than the ranges' own, in a colour against its body and sky.
-    if (styleDials(this.visualStyle).massifCrestCaps !== false) {
+    // Over a Range view the massif sits behind real terrain and only its
+    // cap's tip clears the skyline, a lone glowing arch; it fades with the
+    // view's arrival and returns with its departure.
+    const rp = this.rangePresentation;
+    const capFade = rp?.hasViewComposition ? 1 - clamp01(rp.arrival ?? 1) : 1;
+    if (capFade > 0.001 && styleDials(this.visualStyle).massifCrestCaps !== false) {
       if (crest) {
         const { loud, kick } = this._wireMusic();
         const cfg = WIRE_LAYERS.massif;
@@ -7619,14 +7624,14 @@ export class BiomeManager {
           amp: wireAmplitude(cfg, loud, kick, this.tSec),
           sharp: clamp01(loud * 1.6),
           tSec: this.tSec,
-          alpha: 0.55 + 0.35 * this.budget,
+          alpha: (0.55 + 0.35 * this.budget) * capFade,
           glow: !this._perf || this._perf.heavyPostFx,
           beatPosition: this._crestBeatClock?.at(this.tSec) ?? this.tSec / 0.5,
           wavePhase: CREST_WAVE_PHASE.massif,
         });
       } else {
         ctx.strokeStyle = cap;
-        ctx.globalAlpha = 0.28 * (0.5 + 0.5 * this.budget);
+        ctx.globalAlpha = 0.28 * (0.5 + 0.5 * this.budget) * capFade;
         ctx.lineWidth = 3.5;
         ctx.lineJoin = 'round';
         ctx.beginPath();

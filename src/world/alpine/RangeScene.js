@@ -596,6 +596,7 @@ export class RangeScene {
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     m.gusts.forEach((g, i) => { u.uGustAge.value[i] = g.ageSec; u.uGustAmp.value[i] = g.amp01; u.uGustDir.value[i] = g.dir; });
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
+    u.uTopo.value = frame.topo01 ?? 0;
     for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     for (const tree of p.forest?.depth || []) tree.visible = !n || n.materials > .01;
     for (const objects of Object.values(p.forest?.depthByBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;

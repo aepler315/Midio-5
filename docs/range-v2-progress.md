@@ -169,6 +169,16 @@ Ashton chose to drop the rock-stage ground strip from every Range view. Every au
 - The thin needle above the far ridge right of centre was a 2 x 5 sample blob (up to 4.7 km) on the DEM's west edge, wider than the old despike ring could see. `despikeGrid` now also takes a grey opening with a 3-cell disc and lowers whatever stands more than 120 m (63 degrees) above it, so blobs of any shape up to about six samples across go. Only a blob no wider than the disc in either direction, and within 3 cells of the grid edge or a no-data sample (where source seams leave them), goes, so a long narrow ridge or a compact butte inland stays. Tombstone was rebaked (23 samples lowered: the 10-sample blob and 13 single-sample spikes from the ring pass).
 - The faint line across the meadow was the seam between the near and mid partitions: along a band boundary neither pass owned some pixels, so the sky showed through. A nearer band's border tiles now also draw in the farther pass (the same depth pre-pass decides visibility); during travel they draw under the same column scissor as that band, and their index buffers are counted in the view's GPU reservation (the bake's estimate is reserved first, so a view that cannot fit is denied before the mesh is built, and the reservation grows by the fill's exact size after).
 
+
+## Topo map under the land (2026-10-01)
+
+Ashton asked for an underlying Forest Service topo map that occasionally shows through, and picked "quiet passages" for when.
+
+- **When.** `TopoReveal.js` compiles one curve per song from its energy: a 3 s trailing average of `globalEnergyNorm`, quiet within the lowest 30% of the song's own p10..p90 span (fading out by 45%). A quiet stretch must hold 1.5 s; the map then rises over 3 s and sinks over 2 s once the song lifts. Nothing shows in the first 8 s (the scene's arrival), or on a song whose span is under 0.15 (a steady groove has no breakdowns). The curve is indexed by heard time, so seeks either way read the same.
+- **What.** The terrain shader draws the map on the source ground: paper, woodland green where the forest mask is, blue water and streams (from the flow raster), brown contours every 40 m with index contours every 200 m (blue on snow and ice), and the red one-mile section grid. It replaces albedo only, so the scene's light, relief shading, mist and haze still apply. Patches surface from a two-scale noise mask and join up as the amount rises; trees inside a patch fold down into it.
+- **Massif cap.** Over a Range view the spectrum massif sits behind real terrain, and only its crest wire's tip cleared the skyline, as a lone glowing arch. The cap now fades with the view's arrival (the body stays).
+- Evidence (pilot song, calm intro): `tombstone-north-klondike-topo-11.5s.jpg` (map up), `-topo-40s.jpg` (energetic, map down), `teton-jackson-lake-topo-20s.jpg`.
+
 ## Task 16: resource, lifecycle and performance
 
 ### Fixes found by exercising real (unforced) play

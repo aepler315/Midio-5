@@ -508,3 +508,24 @@ test('a view that composes its own foreground takes neither the veil nor the lan
     m.dispose();
   }
 });
+
+test('over a Range view the spectrum massif keeps its body but its crest cap fades with the arrival', () => {
+  // [owned, arrival, expected cap presence]
+  for (const [owned, arrival, presence] of [[false, 1, 1], [true, 1, 0], [true, .4, .6]]) {
+    const { m } = manager();
+    m.currentBlend = { from: 'TAIGA', to: 'TAIGA', t: 1 };
+    const ctx = anyCtx();
+    const strokes = [], fills = [];
+    ctx.stroke = () => { strokes.push(ctx.globalAlpha); };
+    ctx.fill = () => { fills.push(1); };
+    m._massifCrest = null;
+    m._massifGeometry = () => ({ ridgePts: [{ x: 0, y: 20 }, { x: 50, y: 5 }, { x: 100, y: 20 }], left: 0, massifW: 100, baseY: 40, maxH: 30 });
+    m.rangePresentation = { hasViewComposition: owned, arrival };
+    const A = m._profile('TAIGA');
+    BiomeManager.prototype._drawSpectrumMassif.call(m, ctx, { width: 1408, height: 848 }, 0, A, A, 1);
+    assert.equal(fills.length, 1, 'the massif body always draws');
+    const full = 0.28 * (0.5 + 0.5 * m.budget);
+    assert.deepEqual(strokes.map(a => +a.toFixed(4)), presence ? [+(full * presence).toFixed(4)] : []);
+    m.dispose();
+  }
+});
