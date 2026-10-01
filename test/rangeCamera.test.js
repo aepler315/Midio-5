@@ -164,3 +164,20 @@ test('zooming in at the cap does not turn into a sideways pan', () => {
   cam.zoomAt(1.5, 1, 0);
   assert.deepEqual(cam.target, before);
 });
+
+test('a move in a low-authored view still clears a mesa', () => {
+  const low = { eyeM: [0, 1060, 20000], targetM: [0, 1200, 0], fovYDeg: 35 };
+  const mesa = (x) => (Math.abs(x) > 100 ? 1300 : 1000);
+  const out = applyCameraMoves(low, { dolly: 0, yaw: 0, crane: 0, truck: 0.02 }, null, { heightAt: mesa });
+  assert.ok(out.eyeM[1] >= 1300 + 30 - 1e-9);
+});
+
+test('during view travel the narrower view and shorter flight win within a frame', () => {
+  const cam = new RangeUserCamera({ now: () => 0 });
+  cam.noteFrame({ tanX: 0.3, tanY: 0.2, userScale: 0.5, frameId: 7 });
+  cam.noteFrame({ tanX: 0.6, tanY: 0.4, userScale: 1, frameId: 7 });
+  assert.deepEqual(cam.tan, { x: 0.3, y: 0.2 });
+  assert.equal(cam.userScale, 0.5);
+  cam.noteFrame({ tanX: 0.6, tanY: 0.4, userScale: 1, frameId: 8 });
+  assert.deepEqual(cam.tan, { x: 0.6, y: 0.4 });
+});

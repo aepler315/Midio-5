@@ -40,8 +40,11 @@ export function attachRangeZoomInput(canvas, { camera, enabled, toStage, stageW 
 
   const onWheel = (e) => {
     if (!live()) return;
+    // Over the letterbox bars there is no stage point: leave the page alone.
+    const p = toStage(e);
+    if (!p) return;
     e.preventDefault();
-    camera.zoomAt(wheelZoomFactor(e), ...ndc(toStage(e)));
+    camera.zoomAt(wheelZoomFactor(e), ...ndc(p));
   };
   const onDown = (e) => {
     if (e.pointerType !== 'touch') return;
@@ -55,7 +58,7 @@ export function attachRangeZoomInput(canvas, { camera, enabled, toStage, stageW 
     if (touches.size !== 2 || !live()) return;
     e.preventDefault();
     const { span, mid } = pinchState();
-    if (lastSpan > 8 && span > 8) camera.zoomAt(span / lastSpan, ...ndc(mid));
+    if (lastSpan > 8 && span > 8 && mid) camera.zoomAt(span / lastSpan, ...ndc(mid));
     lastSpan = span;
   };
   const onUp = (e) => {

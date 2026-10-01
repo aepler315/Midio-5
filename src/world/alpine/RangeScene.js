@@ -96,6 +96,8 @@ export class RangeScene {
     // Lake mirror image per side (optional, like the shafts), drawn once a frame.
     this.mirrors = { A: null, B: null };
     this.mirrorCamera = new THREE.PerspectiveCamera();
+    // Moved camera poses per frame and view (see _setCamera).
+    this._movedPoses = new WeakMap();
     this.depthCache = { A: { frame: -1, view: null }, B: { frame: -1, view: null } };
     this.size = { width: 0, height: 0 };
     this.contextLost = false;
@@ -691,11 +693,18 @@ export class RangeScene {
    *  padded scenic stage so the Canvas transform (zoom, shake, roll) applies
    *  once when the partition is composited. */
   _setCamera(view, frame, p = null) {
-    const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
-    // Cinematic section moves and the listener's zoom (RangeCamera.js).
-    const pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
-      heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM,
-      sampleStepM: p?.data?.grid?.cellSizeM });
+    // Cinematic section moves and the listener's zoom (RangeCamera.js),
+    // computed once per frame and view: the partition passes reuse it.
+    let poses = this._movedPoses.get(frame);
+    if (!poses) this._movedPoses.set(frame, poses = new Map());
+    let pose = poses.get(view.id);
+    if (!pose) {
+      const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+      pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
+        heightAt: p?.data ? (x, z) => terrainHeightAt(p.data, x, z) : null, waterLevelM: p?.waterLevelM,
+        sampleStepM: p?.data?.grid?.cellSizeM });
+      poses.set(view.id, pose);
+    }
     const cam = this.camera;
     const proj = scenicProjection(pose.fovYDeg, frame.scenicViewport);
     if (frame.userCamera) {
@@ -704,7 +713,7 @@ export class RangeScene {
       const vp = frame.scenicViewport, m = vp.overscanPx || 0;
       const visW = Math.max(1, vp.logicalWidth - 2 * m), visH = Math.max(1, vp.logicalHeight - 2 * m);
       const tanY = Math.tan((proj.fovYDeg * Math.PI) / 360) * (visH / vp.logicalHeight);
-      rangeUserCamera.noteFrame({ tanX: tanY * (visW / visH), tanY, userScale: pose.userScale });
+      rangeUserCamera.noteFrame({ tanX: tanY * (visW / visH), tanY, userScale: pose.userScale, frameId: frame.frameId });
     }
     cam.fov = proj.fovYDeg;
     cam.aspect = proj.aspect;

@@ -155,8 +155,15 @@ export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevel
   const d0 = sub(T0, pose.eyeM);
   const D = Math.hypot(...d0);
   if (!(D > 1)) return { ...pose, userScale: 1 };
+  // Clearance above the ground for every moved eye. A view authored lower
+  // than the full clearance (a desert floor shot) keeps half its own
+  // height above ground instead, never under LOW_CLEARANCE_MIN_M, so its
+  // moves stay clear and its zoom is not dead from the first step.
   const clearance = Math.max(CLEARANCE_MIN_M, CLEARANCE_FRAC * D);
-  const floorAt = (p) => groundAt(heightAt, waterLevelM, p[0], p[2]) + clearance;
+  const above = pose.eyeM[1] - groundAt(heightAt, waterLevelM, pose.eyeM[0], pose.eyeM[2]);
+  const flight = above < clearance ? Math.max(LOW_CLEARANCE_MIN_M, 0.5 * above) : clearance;
+  const floorAt = (p) => groundAt(heightAt, waterLevelM, p[0], p[2]) + flight;
+  const marginAt = (p) => p[1] - floorAt(p);
   let eye = pose.eyeM, target = T0;
   if (move && move !== NEUTRAL_MOVE) {
     const yaw = move.yaw || 0;
@@ -172,10 +179,9 @@ export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevel
       eye = add(eye, right, move.truck * D);
       target = add(target, right, move.truck * D);
     }
-    // A move never takes the eye into a hillside: lift it clear instead
-    // (unless the authored eye itself sits that low; then it is the view).
+    // A move never takes the eye into a hillside: lift it clear instead.
     const floor = floorAt(eye);
-    if (eye[1] < floor && pose.eyeM[1] >= floorAt(pose.eyeM)) eye = [eye[0], floor, eye[2]];
+    if (eye[1] < floor) eye = [eye[0], floor, eye[2]];
   }
   let userScale = 1;
   if (user && (user.fx || user.rx || user.uy)) {
@@ -183,12 +189,6 @@ export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevel
     const v = add(add(add([0, 0, 0], forward, user.fx * D), right, user.rx * D), up, user.uy * D);
     // Fly as far along the offset as the ground allows: the first sample
     // that would put the eye under its clearance stops the flight there.
-    // A view authored lower than the clearance (a desert floor shot) flies
-    // with half its own height above ground instead, never under
-    // LOW_CLEARANCE_MIN_M, so the zoom is not dead from the first step.
-    const above = eye[1] - groundAt(heightAt, waterLevelM, eye[0], eye[2]);
-    const flight = above < clearance ? Math.max(LOW_CLEARANCE_MIN_M, 0.5 * above) : clearance;
-    const marginAt = (p) => p[1] - (groundAt(heightAt, waterLevelM, p[0], p[2]) + flight);
     const need = Math.min(0, marginAt(eye));
     if (heightAt || Number.isFinite(waterLevelM)) {
       const step = Number.isFinite(sampleStepM) && sampleStepM > 0 ? sampleStepM : DEFAULT_SAMPLE_STEP_M;
@@ -240,7 +240,16 @@ export class RangeUserCamera {
 
   /** The scene's frame report: the drawn frustum's half-angle tangents and
    *  the fraction of the user offset the terrain allowed. */
-  noteFrame({ tanX, tanY, userScale = 1 } = {}) {
+  noteFrame({ tanX, tanY, userScale = 1, frameId = null } = {}) {
+    // Both views draw during view-to-view travel: within one frame the
+    // narrower cone and the shorter flight win.
+    if (frameId != null && frameId === this._frameId) {
+      tanX = Math.min(tanX, this._frameTan.x);
+      tanY = Math.min(tanY, this._frameTan.y);
+      userScale = Math.min(userScale, this.userScale);
+    }
+    this._frameId = frameId;
+    this._frameTan = { x: tanX, y: tanY };
     if (Number.isFinite(tanX) && tanX > 0 && Number.isFinite(tanY) && tanY > 0
       && (tanX !== this.tan.x || tanY !== this.tan.y)) {
       // A new view (or a resize) can narrow the cone: re-clamp both offsets.
