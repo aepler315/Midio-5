@@ -26,7 +26,7 @@ import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
 import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
-import { BANDS } from './TerrainMesh.js';
+import { BANDS, terrainFringeBytes } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors } from './GlacierField.js';
@@ -279,14 +279,15 @@ export class RangeScene {
         // only while it is built: the view owns both GPU textures.
         const gridPx = cpu.data.grid.width * cpu.data.grid.height;
         const featureBudgetBytes = 3 * 768 * 6 * 4;
-        // The mesh is built on the CPU first (nothing uploads until it
-        // draws) so the seam-fill index buffers, which the bake's mesh
-        // estimate does not know about, are counted in the reservation.
-        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
-        const fringeBytes = Object.values(geos.fringes || {}).reduce((sum, g) => sum + g.index.array.byteLength, 0);
+        // The bake's mesh estimate does not know the seam-fill index
+        // buffers; their exact size is counted from the tile plan (no
+        // geometry built), so the one reservation covers them and a view
+        // that cannot fit is denied before the mesh is built.
+        const fringeBytes = terrainFringeBytes(cpu.data, { budget: this.budget });
         const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes;
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
+        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
         const scratchKey = `range:surface-scratch:${view.id}`;
         const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 11, owner: 'range-scratch', generation }) || null;
         if (this.residency && !scratch) throw new RangeAssetError('budget', `no room to build ${view.id} surface`);
@@ -587,6 +588,7 @@ export class RangeScene {
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     m.gusts.forEach((g, i) => { u.uGustAge.value[i] = g.ageSec; u.uGustAmp.value[i] = g.amp01; u.uGustDir.value[i] = g.dir; });
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
+    u.uTopo.value = frame.topo01 ?? 0;
     for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     for (const tree of p.forest?.depth || []) tree.visible = !n || n.materials > .01;
     for (const objects of Object.values(p.forest?.depthByBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;

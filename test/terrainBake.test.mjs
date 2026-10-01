@@ -5,7 +5,7 @@ import zlib from 'node:zlib';
 import {
   bakeTerrain, encodeResiduals, decodeResiduals, validateTerrainManifest, tileStrideError, waterMask, SHORE_MAX_STRIDE, despikeGrid,
 } from '../tools/lib/terrain-bake.mjs';
-import { decodeTerrain, buildTerrainGeometry, buildSurfaceTexture, terrainHeightAt, tileStrides } from '../src/world/alpine/TerrainMesh.js';
+import { decodeTerrain, buildTerrainGeometry, buildSurfaceTexture, terrainHeightAt, tileStrides, terrainFringeBytes } from '../src/world/alpine/TerrainMesh.js';
 
 function makeGrid(width, height, cell, fn, holes = () => false) {
   const heightsM = new Float32Array(width * height);
@@ -57,12 +57,23 @@ test('despike keeps a long narrow ridge however steep its sides', () => {
   assert.deepEqual(Array.from(g.heightsM), Array.from(before));
 });
 
-test('despike lowers a whole five-sample block, not just its middle', () => {
+test('despike lowers a whole five-sample block beside a no-data hole, not just its middle', () => {
   const g = makeGrid(40, 40, 20, (x, z) => 1200 + 0.1 * z);
+  for (let r = 15; r < 20; r++) for (let c = 12; c < 14; c++) g.valid[r * 40 + c] = 0;
   const before = Float32Array.from(g.heightsM);
   for (let r = 15; r < 20; r++) for (let c = 15; c < 20; c++) g.heightsM[r * 40 + c] += 2500;
   despikeGrid(g);
-  for (let i = 0; i < before.length; i++) assert.ok(Math.abs(g.heightsM[i] - before[i]) < 15, `sample ${i % 40},${Math.floor(i / 40)} at ${g.heightsM[i]}`);
+  for (let i = 0; i < before.length; i++) {
+    if (g.valid[i]) assert.ok(Math.abs(g.heightsM[i] - before[i]) < 15, `sample ${i % 40},${Math.floor(i / 40)} at ${g.heightsM[i]}`);
+  }
+});
+
+test('despike keeps a compact butte away from any data edge', () => {
+  const g = makeGrid(40, 40, 20, (x, z) => 1200 + 0.1 * z);
+  for (let r = 15; r < 20; r++) for (let c = 15; c < 20; c++) g.heightsM[r * 40 + c] += 130;
+  const before = Float32Array.from(g.heightsM);
+  despikeGrid(g);
+  assert.deepEqual(Array.from(g.heightsM), Array.from(before));
 });
 
 test('residual coding round-trips arbitrary samples', () => {
@@ -281,4 +292,9 @@ test('runtime strides can coarsen for the mobile budget without re-baking', asyn
   const mob = buildTerrainGeometry(data, { budget: 'mobile' });
   assert.ok(mob.stats.triangles <= desk.stats.triangles);
   for (const [id, s] of tileStrides(data, 'mobile')) assert.ok(s >= data.tiles.get(id).stride);
+  // The seam-fill size a GPU reservation is taken for matches what is built.
+  for (const [budget, geo] of [['desktop', desk], ['mobile', mob]]) {
+    const built = Object.values(geo.bands).reduce((sum, b) => sum + b.fringe.byteLength, 0);
+    assert.equal(terrainFringeBytes(data, { budget }), built);
+  }
 });
