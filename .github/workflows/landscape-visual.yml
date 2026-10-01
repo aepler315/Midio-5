@@ -39,6 +39,12 @@ jobs:
             --expect-sha "${{ github.sha }}" \
             --preset ${{ github.event.inputs.preset || 'primary' }} \
             --output .smoke/range-correction
+          node tools/range-scene-smoke.mjs \
+            --url http://127.0.0.1:8091 \
+            --source-root . \
+            --expect-sha "${{ github.sha }}" \
+            --suite short-motion \
+            --output .smoke/conifer-teton-motion
       - name: Upload landscape evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

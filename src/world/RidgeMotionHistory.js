@@ -118,6 +118,26 @@ export class RidgeMotionHistory {
       at = end;
     }
   }
+  #kick01(at) {
+    const kicks = this.#visual.kicks;
+    let lo = 0, hi = kicks.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (kicks[mid].tMs <= at) lo = mid + 1; else hi = mid;
+    }
+    let retained = 0;
+    for (let i = lo - 1; i >= 0; i--) {
+      const age = at - kicks[i].tMs, envelope = ridgeKickEnv(age);
+      // Every older envelope is lower once the 80ms attack has passed.
+      // Bound by a full-strength hit, so weak newer hits cannot erase a
+      // stronger tail and there is no arbitrary release cutoff.
+      if (age >= 80 && envelope <= retained) break;
+      retained = Math.max(retained, envelope * clamp01(.4 + .6 * kicks[i].vel));
+    }
+    // The upper envelope preserves each isolated accent and stays in 0..1;
+    // a new attack enters at zero without resetting the body already moving.
+    return retained;
+  }
   sample(heardTimeMs = 0) {
     const at = Math.min(this.durationMs, Math.max(0, Number.isFinite(heardTimeMs) ? heardTimeMs : 0));
     if (this.#cache.has(at)) return this.#cache.get(at);
@@ -142,7 +162,7 @@ export class RidgeMotionHistory {
     const gatedSources = raw.activity01 > 0 ? sources : freeze(Object.fromEntries(Object.entries(sources)
       .map(([id, s]) => [id, freeze({ ...s, activity: 0, pitchActivity: 0, pitch01: .5 })])));
     const sample = freeze({ generation: this.generation, pressureEnergy01, bassPressure01, rhythmAccent01, spaceFlash01: freeze(state.flashMs.map(ms => Math.max(0, 1 - (at - ms) / 300))), bands: freeze(state.bands), spaceLevels: freeze(state.levels), spaceDepths: freeze(state.depths),
-      kickMs: kick.kickMs, kickAmp: kick.kickAmp, kick01: ridgeKickEnv(at - kick.kickMs) * kick.kickAmp,
+      kickMs: kick.kickMs, kickAmp: kick.kickAmp, kick01: this.#kick01(at),
       activity01: raw.activity01, motionPresence01: state.motionPresence01,
       motionMelody: freeze({ activity: state.melodyActivity, pitch01: state.melodyActivity ? clamp01(state.melodyPitchWeight / state.melodyActivity) : .5 }), sources: gatedSources });
     // Small query memo only; checkpoints remain the musical authority.

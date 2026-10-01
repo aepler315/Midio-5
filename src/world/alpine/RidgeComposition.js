@@ -16,9 +16,11 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 /** Exactly the sampled polyline painted by BiomeManager._drawHorizonEQ. */
 export function horizonEqPoints({ width, height, crest = null, songP = 0, bands,
-  tSec = 0, maxHeightFrac = 0.4, tuning = {}, activity01 = null, kick01 = 0 }) {
+  tSec = 0, maxHeightFrac = 0.4, tuning = {}, activity01 = null, kick01 = 0,
+  motionPresence01 = null, motionMelody = { activity: 0, pitch01: .5 } }) {
+  const activity = activity01 ?? Math.max(0, ...(bands || []));
   const music = { bands: bands || Array(7).fill(0), sources: {}, kick01,
-    activity01: activity01 ?? Math.max(0, ...(bands || [])) };
+    activity01: activity, motionPresence01: motionPresence01 ?? activity, motionMelody };
   return sampleHorizonRidge({ viewport: { width, height }, crest, songP, advectionPx: ridgeAdvectionPxAt(tSec * 1000),
     heardTimeMs: tSec * 1000, tuning: { ...tuning, maxHeightFrac }, history: { sample: () => music } }).points;
 }

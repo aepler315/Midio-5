@@ -3,7 +3,7 @@ import { crestHeightAt } from '../terrain/HorizonRidge.js';
 import { clamp, clamp01 } from '../../utils/math.js';
 
 export const DEFAULT_RIDGE_TUNING = Object.freeze({ maxHeightFrac: .4, advection: .0054,
-  phaseRate: 4.8, crestWavePx: 18, fallbackWavePx: 24, sourceLiftPx: 14, kickLiftPx: 24 });
+  phaseRate: .8, crestWavePx: 12, fallbackWavePx: 18, sourceLiftPx: 14, kickLiftPx: 24 });
 export const DEFAULT_SPACE_RIDGE_TUNING = Object.freeze({ musicHeightFrac: .11, sourceLiftPx: 10,
   depthGain: .45, globalDepthGain: .3 });
 const frozenPoints = pts => Object.freeze(pts.map(p => Object.freeze(p)));
@@ -40,13 +40,20 @@ export function sampleHorizonRidge({ viewport, crest = null, songP = 0, advectio
     const base = metric ? sourceShape(u) : shape(u);
     const p = ((u * 7 + (metric ? 0 : advectionPx * tuning.advection)) % 7 + 7) % 7;
     const i = Math.floor(p), f = (1 - Math.cos((p - i) * Math.PI)) / 2;
-    const v = clamp01((music.bands[i] || 0) * (1 - f) + (music.bands[(i + 1) % 7] || 0) * f);
-    const source = music.sources.midio;
+    const local = clamp01((music.bands[i] || 0) * (1 - f) + (music.bands[(i + 1) % 7] || 0) * f);
+    const mean = music.bands.reduce((sum, band) => sum + clamp01(band), 0) / 7;
+    // Move the mountain as one mass, retaining half of the travelling band's
+    // contrast. Full-spectrum strength stays unchanged; isolated bands no
+    // longer pull seven unrelated small hills across the geographic crest.
+    const v = .5 * mean + .5 * local;
+    const source = music.motionMelody ?? music.sources.midio;
+    const presence = music.motionPresence01 ?? music.activity01;
+    const phase = u * Math.PI * 2 + at / 1000 * tuning.phaseRate;
     const neutralY = baseline - (crest ? base * .4 * maxH : 0);
     const bound = base * designBound;
     const lift = base * ((crest ? .6 : 1) * v * maxH
-      + Math.sin(u * Math.PI * 7 + at / 1000 * tuning.phaseRate) * wavePx * (music.activity01 > 0 ? .25 + v : v)
-      + (source?.activity || 0) * tuning.sourceLiftPx * scale * Math.sin(u * 1280 / 180 + at / 1000 * 2.2 + (source?.pitch01 ?? .5) * 2)
+      + Math.sin(phase) * wavePx * (.25 * presence + v)
+      + (source?.activity || 0) * tuning.sourceLiftPx * scale * Math.sin(phase + (source?.pitch01 ?? .5) * 2)
       + music.kick01 * tuning.kickLiftPx * scale);
     // C1 shoulder: loud peaks retain a response while approaching headroom.
     const floor = height * .12, shoulder = 24 * scale, rawY = neutralY - lift;

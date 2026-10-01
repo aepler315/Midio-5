@@ -44,6 +44,53 @@ test('off-grid heard time never reads the next source frame or future onset', ()
   assert.ok(h.sample(39).bands[0] > 0, 'causal residual includes arrived source sample at 30ms');
 });
 
+test('new kicks retain a continuous ridge tail instead of resetting it at the onset', () => {
+  for (const spacing of [40, 250, 500]) {
+    const h = make({ durationMs: 2000, timeline: [0, spacing].map(tMs => ({
+      tMs, durMs: 100, vel: 1, src: 'midi', role: 'RHYTHM', kick: true,
+    })) });
+    const before = h.sample(spacing - .0001).kick01;
+    const onset = h.sample(spacing).kick01;
+    assert.ok(before > .2, 'the preceding kick still has a visible tail');
+    assert.ok(Math.abs(onset - before) < .00001,
+      `${spacing}ms kick spacing reset a retained response from ${before} to ${onset}`);
+  }
+});
+
+test('a weaker overlapping kick preserves the stronger tail and the original single-hit accent', () => {
+  const first = { tMs: 0, durMs: 100, vel: 1, src: 'midi', role: 'RHYTHM', kick: true };
+  const single = make({ durationMs: 4000, timeline: [first] });
+  for (const [at, want] of [[0, 0], [40, .5], [80, 1], [420, .36787944117144233]]) {
+    assert.ok(Math.abs(single.sample(at).kick01 - want) < 1e-12, `single hit at ${at}ms`);
+  }
+  const overlap = make({ durationMs: 4000, timeline: [first, { ...first, tMs: 100, vel: .2 }] });
+  assert.ok(overlap.sample(180).kick01 > .74, 'a weaker hit cannot replace the stronger releasing body');
+  assert.equal(overlap.sample(180).kickMs, 100, 'event metadata still identifies the newest kick');
+  assert.ok(overlap.sample(3000).kick01 > 0, 'release has no arbitrary time cutoff');
+  assert.ok(overlap.sample(3000).kick01 < .001, 'the retained body still settles');
+});
+
+test('dense kick overlap stays bounded and reproduces after sparse queries, cold seeks and handoff', () => {
+  const timeline = Array.from({ length: 90 }, (_, i) => ({ tMs: 37 + i * 13.5, durMs: 20,
+    vel: i % 3 === 0 ? 1 : .2, src: 'midi', role: 'RHYTHM', kick: true }));
+  const input = { timeline, durationMs: 4000 };
+  const played = make(input), cold = make(input);
+  for (let at = 0; at < 2000; at += 1000 / 120) {
+    const value = played.sample(at).kick01;
+    assert.ok(Number.isFinite(value) && value >= 0 && value <= 1, `unbounded overlap at ${at}ms: ${value}`);
+  }
+  for (const at of [1295.125, 37, 644.5, 2000, 36.999, 900.25]) {
+    assert.equal(played.sample(at).kick01, cold.sample(at).kick01, `query-order dependence at ${at}ms`);
+  }
+  assert.equal(cold.sample(36.999).kick01, 0, 'the first future kick cannot contribute');
+  const silence = make({ durationMs: 4000 });
+  const handoff = api.createRidgeMusicSampler({ previous: played, primary: silence, handoffStartMs: 1000 });
+  assert.equal(handoff.sample(1250).kick01, played.sample(1250).kick01 / 2);
+  const frozen = geometry.sampleHorizonRidge({ viewport: { width: 1280, height: 720 },
+    history: played, heardTimeMs: 644.5, reducedMotion: true });
+  assert.deepEqual(frozen.points, frozen.neutralPoints, 'dense kicks do not bypass reduced motion');
+});
+
 test('physical noise is silent while quiet sustained music keeps its response', () => {
   const noise = make({ energyCurves: curves(.8, 1e-6), durationMs: 12000 });
   const quiet = make({ energyCurves: curves(.2, .0001), durationMs: 12000 });

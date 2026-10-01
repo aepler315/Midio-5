@@ -1,0 +1,293 @@
+{
+  "classification": "Synthetic flat-crest geometry comparison, not full-scene or artistic acceptance",
+  "units": "logical pixels at 1280x720",
+  "definitions": {
+    "geometry": "sampleHorizonRidge production point-y geometry, matching x indices within 0..1280; no pixel raster",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "crest": {
+      "heights": [
+        1,
+        1
+      ],
+      "stepM": 1,
+      "windowM": 1,
+      "travelM": 0
+    },
+    "songP": 0.5,
+    "advection": "ridgeAdvectionPxAt(heardTimeMs) from each tree",
+    "durationMs": 6000,
+    "sourceRateHz": 50,
+    "silence": {
+      "beforeMs": 999.999,
+      "afterMs": 1000,
+      "bands": [
+        0.8,
+        0.8,
+        0.8,
+        0.8,
+        0.8,
+        0.8,
+        0.8
+      ],
+      "rmsBefore": 0.01,
+      "rmsAfter": 0.000001,
+      "rmsChangeAtSourceIndex": 50,
+      "optionalTrackedMelody": {
+        "tMs": 0,
+        "durMs": 2000,
+        "vel": 1,
+        "role": "BASS",
+        "src": "audio",
+        "pitch": 48,
+        "pitchConfidence": 1,
+        "pitchProvenance": "tracked"
+      }
+    },
+    "kicks": {
+      "spacingMs": [
+        250,
+        500
+      ],
+      "compare": "spacing-.001 versus spacing",
+      "energyCurves": null,
+      "event": {
+        "durMs": 100,
+        "vel": 1,
+        "src": "midi",
+        "role": "RHYTHM",
+        "kick": true
+      },
+      "onsetTimes": "[0, spacing]"
+    },
+    "steady": {
+      "bands": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rms": 0.01,
+      "timeline": [],
+      "startMs": 1500,
+      "endMs": 4500,
+      "fps": 60,
+      "definition": "maximum absolute point-y change between 180 adjacent frames; spatial turns count strict changes in the sign of consecutive y differences at each sampled frame"
+    }
+  },
+  "results": {
+    "before": {
+      "silence": [
+        {
+          "withTrackedMelody": false,
+          "maxAbsDeltaPx": 4.499998684769253,
+          "atXPx": 1092,
+          "pointCount": 321,
+          "before": {
+            "activity01": 0.800000011920929,
+            "motionPresence01": 0.9999962733002444,
+            "motionMelody": {
+              "activity": 0,
+              "pitch01": 0.5
+            },
+            "rawMelodyActivity": 0,
+            "kick01": 0
+          },
+          "after": {
+            "activity01": 0,
+            "motionPresence01": 0.999996273346828,
+            "motionMelody": {
+              "activity": 0,
+              "pitch01": 0.5
+            },
+            "rawMelodyActivity": 0,
+            "kick01": 0
+          }
+        },
+        {
+          "withTrackedMelody": true,
+          "maxAbsDeltaPx": 18.43552243857735,
+          "atXPx": 364,
+          "pointCount": 321,
+          "before": {
+            "activity01": 0.800000011920929,
+            "motionPresence01": 0.9999962733002444,
+            "motionMelody": {
+              "activity": 0.9999945352668185,
+              "pitch01": 0.20000000000000004
+            },
+            "rawMelodyActivity": 1,
+            "kick01": 0
+          },
+          "after": {
+            "activity01": 0,
+            "motionPresence01": 0.999996273346828,
+            "motionMelody": {
+              "activity": 0.9999945353351273,
+              "pitch01": 0.2
+            },
+            "rawMelodyActivity": 0,
+            "kick01": 0
+          }
+        }
+      ],
+      "kicks": [
+        {
+          "spacingMs": 250,
+          "maxAbsDeltaPx": 14.556778647095086,
+          "atXPx": 0,
+          "pointCount": 321,
+          "beforeKick01": 0.6065324436289619,
+          "atOnsetKick01": 0
+        },
+        {
+          "spacingMs": 500,
+          "maxAbsDeltaPx": 6.978002170945274,
+          "atXPx": 0,
+          "pointCount": 321,
+          "beforeKick01": 0.2907500904560534,
+          "atOnsetKick01": 0
+        }
+      ],
+      "steady": {
+        "maxAbsDeltaPx": 1.0797120229506163,
+        "atXPx": 456,
+        "pointCount": 321,
+        "fromMs": 4249.999999999999,
+        "toMs": 4266.666666666666,
+        "minSpatialTurns": 6,
+        "maxSpatialTurns": 7,
+        "adjacentFramePairs": 180
+      }
+    },
+    "after": {
+      "silence": [
+        {
+          "withTrackedMelody": false,
+          "maxAbsDeltaPx": 0.000010086271601039698,
+          "atXPx": 1116,
+          "pointCount": 321,
+          "before": {
+            "activity01": 0.800000011920929,
+            "motionPresence01": 0.9999962733002444,
+            "motionMelody": {
+              "activity": 0,
+              "pitch01": 0.5
+            },
+            "rawMelodyActivity": 0,
+            "kick01": 0
+          },
+          "after": {
+            "activity01": 0,
+            "motionPresence01": 0.999996273346828,
+            "motionMelody": {
+              "activity": 0,
+              "pitch01": 0.5
+            },
+            "rawMelodyActivity": 0,
+            "kick01": 0
+          }
+        },
+        {
+          "withTrackedMelody": true,
+          "maxAbsDeltaPx": 0.00002086251885202728,
+          "atXPx": 1076,
+          "pointCount": 321,
+          "before": {
+            "activity01": 0.800000011920929,
+            "motionPresence01": 0.9999962733002444,
+            "motionMelody": {
+              "activity": 0.9999945352668185,
+              "pitch01": 0.20000000000000004
+            },
+            "rawMelodyActivity": 1,
+            "kick01": 0
+          },
+          "after": {
+            "activity01": 0,
+            "motionPresence01": 0.999996273346828,
+            "motionMelody": {
+              "activity": 0.9999945353351273,
+              "pitch01": 0.2
+            },
+            "rawMelodyActivity": 0,
+            "kick01": 0
+          }
+        }
+      ],
+      "kicks": [
+        {
+          "spacingMs": 250,
+          "maxAbsDeltaPx": 0.00004889823804887783,
+          "atXPx": 348,
+          "pointCount": 321,
+          "beforeKick01": 0.6065324436289619,
+          "atOnsetKick01": 0.6065306597126334
+        },
+        {
+          "spacingMs": 500,
+          "maxAbsDeltaPx": 0.000024014442828956817,
+          "atXPx": 308,
+          "pointCount": 321,
+          "beforeKick01": 0.2907500904560534,
+          "atOnsetKick01": 0.2907492353099861
+        }
+      ],
+      "steady": {
+        "maxAbsDeltaPx": 0.11999911445616362,
+        "atXPx": 988,
+        "pointCount": 321,
+        "fromMs": 1783.3333333333333,
+        "toMs": 1800,
+        "minSpatialTurns": 1,
+        "maxSpatialTurns": 2,
+        "adjacentFramePairs": 180
+      }
+    }
+  },
+  "sources": {
+    "before": {
+      "commit": "2dff06b8e8a300e89cd7ab933587ed046a389564",
+      "changes": "",
+      "files": {
+        "src/world/RidgeMotionHistory.js": "6b3f22097ded7c56122f209f72d9fa28bc745ae88b9a89125f0e2bb44c85250c",
+        "src/world/alpine/RidgeMotion.js": "b4783ab3e98ae362bf99e6c558a04efcc5c6179c39f4f644d11a7500602daf46",
+        "src/audio/EnergyCurves.js": "29ebc577acea50318cb10f3f098a868626eed96578ae4377f4cdc3fcf547dcb1",
+        "src/world/VisualMusicHistory.js": "b039aa1f8b364aa99fc929fc33a2e4e5ec639edd2f408ea3a60b4b30db9f0653",
+        "src/world/alpine/RangeNarrative.js": "2deba66e963329dd96e36ec81148729a52b2a35d695c2be672b7137346450334",
+        "src/world/MountainChoreo.js": "185e5458c137d975d26bec9a7ffc95a083265ec710fc405e9f11d240d8720d15",
+        "src/world/terrain/HorizonRidge.js": "3e551ade7e9ccf8962983fa97c8c9461d898a01cd9b960a2edd4a26c6a5d4a38",
+        "src/utils/math.js": "286f59c22cc06651326b02208b6596aa3bc67146d4c8b89d8083a7ce8fa3bf94"
+      }
+    },
+    "after": {
+      "commit": "c02cdefe74f60f206e9646f13d21736a6af92b22",
+      "changes": "M src/world/RidgeMotionHistory.js\n M src/world/alpine/RidgeMotion.js",
+      "files": {
+        "src/world/RidgeMotionHistory.js": "4e05aa283e36279abf3e548fd7692e4440f5fe001f543d8a35d420e9a09ab72c",
+        "src/world/alpine/RidgeMotion.js": "88618e97073625a2f3675bf7b41bc71226d179450b6bdf71726e44fc19918104",
+        "src/audio/EnergyCurves.js": "29ebc577acea50318cb10f3f098a868626eed96578ae4377f4cdc3fcf547dcb1",
+        "src/world/VisualMusicHistory.js": "b039aa1f8b364aa99fc929fc33a2e4e5ec639edd2f408ea3a60b4b30db9f0653",
+        "src/world/alpine/RangeNarrative.js": "2deba66e963329dd96e36ec81148729a52b2a35d695c2be672b7137346450334",
+        "src/world/MountainChoreo.js": "185e5458c137d975d26bec9a7ffc95a083265ec710fc405e9f11d240d8720d15",
+        "src/world/terrain/HorizonRidge.js": "3e551ade7e9ccf8962983fa97c8c9461d898a01cd9b960a2edd4a26c6a5d4a38",
+        "src/utils/math.js": "286f59c22cc06651326b02208b6596aa3bc67146d4c8b89d8083a7ce8fa3bf94"
+      }
+    }
+  },
+  "limitations": [
+    "No real terrain crest, camera travel, renderer raster, painting latency, visual perception or device timing is measured.",
+    "The 0.001ms onset interval isolates discontinuities; it is not a real playback frame interval.",
+    "Spatial turns describe a flat synthetic carrier, not complexity of a geographic skyline."
+  ],
+  "reproduce": "node docs/evidence/ridge-refinement/measure.mjs --before ../terrain-implementation --after . --output docs/evidence/ridge-refinement/metrics.json",
+  "runtime": {
+    "node": "v24.19.0"
+  },
+  "reproducerSha256": "dcbf0cf8cbc1d47b66e85e29f34460f1b59ffc221b7c479c946a391a96277432"
+}
