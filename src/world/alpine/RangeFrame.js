@@ -185,7 +185,9 @@ function swellOf(sections, timeMs, fromMs, toMs) {
     if (age < 0 || start < fromMs || start >= toMs) continue;
     if (age >= span) break;
     const sec = sections[i], prev = sections[i - 1];
-    // A repeat of the same part never swells, louder or not.
+    // A decorative cut only paces the schedule (no musical event), and a
+    // repeat of the same part never swells, louder or not.
+    if (sec?.provenance === 'decorative') continue;
     if (partOf(sec) != null && partOf(sec) === partOf(prev)) continue;
     const strength = Math.max(changeFloor, boundaryLift01(sec, prev));
     const env = smoothstep(0, riseMs, age) * (1 - smoothstep(riseMs + holdMs, span, age));
@@ -197,10 +199,17 @@ function swellOf(sections, timeMs, fromMs, toMs) {
 /** The land's geometry for a frame: the rhythmic, melodic and gesture
  *  channels are kept as `source` (for evidence and the water) but move
  *  nothing; only the moment's slow swell and lift do, at a fixed target
- *  size, so the land is still between moments. */
-export function landMotion(music, moment01, { tSec = 0, reducedMotion = false } = {}) {
+ *  size, so the land is still between moments. The swell runs one way for
+ *  the whole song (from `seed`, not the section), so neither a section
+ *  change nor a re-analysis can turn it mid-swell. */
+export function landWaveDir(seed = 0) {
+  const angle = Math.atan2(-.6, .8) + (hashSeed(`${seed}:land`) / 4294967296 - .5) * .9;
+  return [Math.cos(angle), Math.sin(angle)];
+}
+
+export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, seed = 0 } = {}) {
   const m = reducedMotion ? 0 : unit(moment01);
-  const out = { ...music, source: music, landMoment01: m,
+  const out = { ...music, source: music, landMoment01: m, waveDir: landWaveDir(seed),
     amplitudeM: LAND_SWELL.waveM * m,
     kickM: 0, gestureM: 0, melodicM: 0, structuralM: LAND_SWELL.liftM * m,
     phaseRad: 2 * Math.PI * LAND_SWELL.waveHz * tSec, calibrationActivity01: 1 };
@@ -357,7 +366,8 @@ export function buildRangeFrame({
     reducedMotion, motif, activity01: ridgeSample?.activity01 ?? sampled.energy,
     motionPresence01: ridgeSample?.motionPresence01, calibrationActivity01: ridgeSample?.pressureEnergy01,
   });
-  const land = landMotion(music, landMoment01(mgr.sections, timeMs, mgr._landHistory), { tSec: timeMs / 1000, reducedMotion });
+  const land = landMotion(music, landMoment01(mgr.sections, timeMs, mgr._landHistory),
+    { tSec: timeMs / 1000, reducedMotion, seed: sim.songSeed ?? 0 });
   const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
   const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
     stateKey: mgr.ridgeMusicSession.stateKey,

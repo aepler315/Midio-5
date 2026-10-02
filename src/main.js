@@ -1936,7 +1936,8 @@ function startTimeline(timelineData, extra = {}) {
   const presentationLeadMs = captureClock.leadMs;
   // A live re-analysis rejoins here, after the build: the land's swells
   // start from boundaries after this point only (RangeFrame.landMoment01).
-  if (keepAudio) sim.biomes?.commitLandRejoin?.(startedAt + presentationLeadMs);
+  // On the heard clock, as the first rebuilt frame samples it (Simulation.step).
+  if (keepAudio) sim.biomes?.commitLandRejoin?.(visualNow(startedAt + presentationLeadMs, choreographyOutputLatencyMs()));
   if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs);
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.

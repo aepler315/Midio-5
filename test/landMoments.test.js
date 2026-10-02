@@ -2,7 +2,7 @@
 // landMotion): still between section changes, a slow swell at each one.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LAND_SWELL, landMoment01, landMotion, rangeMusicState, sceneDeformation } from '../src/world/alpine/RangeFrame.js';
+import { LAND_SWELL, landMoment01, landMotion, landWaveDir, rangeMusicState, sceneDeformation } from '../src/world/alpine/RangeFrame.js';
 
 const sections = [
   { startMs: 0, label: 'intro', meanEnergy: 0.2, relEnergy01: 0.2 },
@@ -76,4 +76,16 @@ test('boundaries crossed while the show was rebuilt start no swell after it rejo
   assert.ok(landMoment01(after, 44000, history) > 0.3, 'the 41 s change swells as usual');
   // Without the rejoin time the 38 s change would pop in mid-rise.
   assert.ok(landMoment01(after, 40000, { sections: before, throughMs: 36000 }) > 0);
+});
+
+test('a decorative pacing cut never swells, even between different labels', () => {
+  const secs = [{ startMs: 0, label: 'a' }, { startMs: 80000, label: 'b', provenance: 'decorative' }];
+  for (let t = 80000; t < 80000 + span; t += 500) assert.equal(landMoment01(secs, t), 0);
+});
+
+test('the swell keeps one direction for the whole song', () => {
+  const a = rangeMusicState({ motif: { angle: 0.4 }, tSec: 3 }), b = rangeMusicState({ motif: { angle: -0.4 }, tSec: 3 });
+  assert.notDeepEqual(a.waveDir, b.waveDir, 'the heard channels still turn with the section');
+  assert.deepEqual(landMotion(a, 0.5, { seed: 7 }).waveDir, landMotion(b, 0.5, { seed: 7 }).waveDir);
+  assert.deepEqual(landMotion(a, 0.5, { seed: 7 }).waveDir, landWaveDir(7));
 });
