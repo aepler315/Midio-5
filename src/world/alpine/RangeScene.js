@@ -769,8 +769,7 @@ export class RangeScene {
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     m.gusts.forEach((g, i) => { u.uGustAge.value[i] = g.ageSec; u.uGustAmp.value[i] = g.amp01; u.uGustDir.value[i] = g.dir; });
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
-    u.uTopo.value = frame.topo01 ?? 0;
-    for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
+        for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     for (const tree of p.forest?.depth || []) tree.visible = !n || n.materials > .01;
     for (const objects of Object.values(p.forest?.depthByBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     const c = frame.light.celestial;
@@ -804,13 +803,16 @@ export class RangeScene {
     u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night) * (p.rules?.airScale ?? RULE_DEFAULTS.airScale);
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
-      tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0) });
+      tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0),
+      sea01: frame.cloudSea01 ?? 0, cameraY: this.camera.position.y });
     const quality = rangeQuality(frame.qualityLevel);
     u.uMistDensity.value = mp.density * (n?.atmosphere ?? 1);
     u.uMistSteps.value = quality.mistSteps;
     u.uMistBase.value = mp.baseM;
     u.uMistHeight.value = mp.heightM;
     u.uMistTime.value = mp.tSec;
+    u.uMistTop.value = mp.topM;
+    u.uMistFill.value = mp.fill;
     // Lit mist: the air's colour lifted toward the key light (display domain).
     u.uMistColor.value.copy(u.uAirColor.value).multiplyScalar(1.2).add(u.uLightColor.value.clone().multiplyScalar(0.06));
     u.uMistColor.value.r = Math.min(0.9, u.uMistColor.value.r);

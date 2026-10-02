@@ -59,6 +59,24 @@ test('mist parameters follow the view: water level, wetness, calm', () => {
   assert.ok(Number.isFinite(mistParams({ heightRange: [300, 2760] }).baseM), 'no water: a valley-floor fallback');
 });
 
+test('a cloud sea floods the valley below a flat top that stays under the eye', () => {
+  const view = { rules: { wetness: 0.5 }, waterLevelM: 800, heightRange: [750, 2300], cameraY: 2200 };
+  const calm = mistParams(view);
+  assert.equal(calm.fill, 0);
+  assert.ok(calm.topM > 1e8, 'no top without a cloud sea');
+  const full = mistParams({ ...view, sea01: 1 });
+  assert.equal(full.fill, 1);
+  assert.ok(full.topM > 800 && full.topM < 2200, `top ${full.topM} between floor and eye`);
+  assert.ok(full.density > calm.density);
+  assert.ok(mistParams({ ...view, sea01: 0.5 }).topM < full.topM, 'it rises as it fills');
+  assert.equal(mistParams({ ...view, sea01: 1, cameraY: 700 }).fill, 0, 'never with the eye below the floor');
+  // Looking down into it: thick below the top, clear above it.
+  const p = { ...full, tSec: 0 };
+  const cam = [0, 2200, 0];
+  assert.ok(mistAmount(cam, [0, 900, -3000], p) > 0.8, 'the valley floor is under cloud');
+  assert.ok(mistAmount(cam, [0, full.topM + 200, -1500], p) < mistAmount(cam, [0, 900, -1500], p) * 0.5, 'a peak above the top stands clear');
+});
+
 test('local light is bounded, softened for reduced flash and height', () => {
   const full = emitterStrength({});
   assert.ok(full > 0 && full <= 0.22);

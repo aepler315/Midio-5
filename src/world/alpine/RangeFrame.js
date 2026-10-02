@@ -21,7 +21,7 @@ import { recentConductorHits } from './GroundResponse.js';
 import { glacierStateAt } from './GlacierField.js';
 import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
-import { topoRevealAt } from './TopoReveal.js';
+import { cloudSeaAt } from './CloudSea.js';
 import { rangeActorsAt } from './RangeActors.js';
 import { rangeCameraMoveAt, rangeUserCamera } from './RangeCamera.js';
 import { hexLerp } from '../../utils/color.js';
@@ -402,7 +402,7 @@ export function buildRangeFrame({
     forcedCandidate: !!forcedView?.forcedCandidate,
     progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     // How much of the Forest Service map under the land shows (quiet passages).
-    topo01: topoRevealAt(mgr, timeMs),
+    cloudSea01: cloudSeaAt(mgr, timeMs),
     // The cast as lights in the land: brightness, travel and peaks per lane.
     actors: rangeActorsAt(sim, timeMs),
     // Camera: this section's slow cinematic move, and the listener's zoom.

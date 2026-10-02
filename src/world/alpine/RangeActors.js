@@ -7,7 +7,7 @@
 // briefly gathers into the actor's outline, then lets go.
 //
 // Everything here is plain data: a per-song score compiled from each actor's
-// lane (seek-safe, like the topo reveal) and per-view routes picked from the
+// lane (seek-safe, like the cloud sea) and per-view routes picked from the
 // terrain the rail actually sees. ActorsGL draws them.
 import { MIDIO_IDENTITY_HUE } from '../../render/ColorLaw.js';
 import { MIDIO_BODY, BROSHI_BODY, BROSHI_HEAD, BROSHI_TAIL, MIDASUS_MESH } from '../../render/meshes.js';
@@ -137,7 +137,7 @@ export function rangeActorsAt(sim, timeMs) {
   const a = ACTOR_ARRIVE_MS;
   const x = unit((t - a[0]) / (a[1] - a[0]));
   const now = score.at(t);
-  // A diagnostic override (like the topo reveal's) holds every actor at a
+  // A diagnostic override (like the cloud sea's) holds every actor at a
   // peak amount, so a review can see the figures without waiting for one.
   const forced = sim.biomes?.actorPeakOverride;
   if (Number.isFinite(forced)) for (const id of ACTOR_IDS) now[id].peak = unit(forced);
