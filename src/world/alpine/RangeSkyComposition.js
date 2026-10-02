@@ -1,3 +1,4 @@
+import { projectPoint } from '../terrain/SceneTravel.js';
 /** One frame's Range-specific upper-sky ownership. Keep faint star depth
  * behind the live ridge while reserving its body for incidental figures. */
 export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = false } = {}) {
@@ -61,29 +62,42 @@ export function drawMoonMaria(ctx, cx, cy, R, alpha = 1) {
   ctx.restore();
 }
 
+/** Cloud drift, as a fraction of the frame width per second of heard time:
+ *  one wind for the whole sky, so the banks move together, slowly, the same
+ *  way (about seven minutes to cross the frame). */
+export const CLOUD_DRIFT_W_PER_SEC = 0.0025;
+
 /**
  * Deterministic cloud banks for a frame: sparse, elongated, drifting slowly
- * in heard time (pure: pause holds, seek reconstructs). Two wisps are
- * anchored to cross the moon when one is given.
+ * in heard time (pure: pause holds, seek reconstructs). Every bank moves
+ * with the one wind (nearer, lower banks a little faster), and `panPx`
+ * carries them with the camera's turn, so they hang in the sky over the
+ * land instead of sliding across the screen on their own.
  */
-export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, moon = null, count = 6 }) {
+export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, panPx = 0, count = 7 }) {
   const banks = [];
+  const span = width * 1.6;
   for (let i = 0; i < count; i++) {
-    const speed = 4 + 6 * hash(i, seed + 1); // px per second
-    const span = width * 1.6;
-    const x = ((hash(i, seed + 2) * span + tSec * speed) % span) - width * 0.3;
-    const y = height * (0.06 + 0.3 * hash(i, seed + 3));
+    const y01 = hash(i, seed + 3);
+    const speed = width * CLOUD_DRIFT_W_PER_SEC * (0.85 + 0.3 * y01);
+    const raw = hash(i, seed + 2) * span + tSec * speed + panPx;
+    const x = ((raw % span) + span) % span - width * 0.3;
+    const y = height * (0.06 + 0.3 * y01);
     const w = width * (0.12 + 0.16 * hash(i, seed + 4));
     banks.push({ id: `bank${i}`, x, y, w, h: w * (0.1 + 0.06 * hash(i, seed + 5)), alpha: 0.28 + 0.14 * hash(i, seed + 6), puffs: 7 });
   }
-  if (moon) {
-    for (let k = 0; k < 2; k++) {
-      const drift = Math.sin(tSec * 0.05 + k * 2.1) * moon.R * 1.2;
-      banks.push({ id: `wisp${k}`, x: moon.x + drift + (k ? -0.4 : 0.5) * moon.R * 3, y: moon.y + (k ? 0.45 : -0.2) * moon.R,
-        w: moon.R * (5 + 2 * k), h: moon.R * 0.42, alpha: 0.5 - 0.1 * k, puffs: 5 });
-    }
-  }
   return banks;
+}
+
+/** How far the sky has turned across the frame, in NDC (-1..1 = the frame's
+ *  half-width): where the direction `refForward` (the unmoved rail's view
+ *  direction) lands for `pose`. Clouds pan by this times half the width
+ *  when the camera swings. */
+export function skyPanNdc(pose, refForward, aspect) {
+  if (!pose || !refForward) return 0;
+  const far = pose.eyeM.map((v, i) => v + refForward[i] * 1e7);
+  const q = projectPoint(pose, aspect, far);
+  return q && Number.isFinite(q.x) ? q.x : 0;
 }
 
 /** Paint cloud banks: a dark body with a lit rim toward the light. */

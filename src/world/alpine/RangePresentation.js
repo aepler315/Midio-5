@@ -13,6 +13,9 @@
 // reason; the cast and music never wait on the GPU.
 import { travelSpans } from '../TravelSeam.js';
 import { buildRangeFrame, viewportState } from './RangeFrame.js';
+import { cameraPoseAt, cameraBasis } from '../terrain/SceneTravel.js';
+import { applyCameraMoves } from './RangeCamera.js';
+import { skyPanNdc } from './RangeSkyComposition.js';
 import { forcedSceneChoice } from '../terrain/SceneCatalog.js';
 import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
 import { noteViewShown } from '../terrain/RangeHistory.js';
@@ -497,6 +500,7 @@ export class RangePresentation {
       sceneAssignments: this.sceneByBiome, forcedView: this.forced, renderedViews: [view, incoming].filter(Boolean),
     });
     this.scene.prepareShafts?.(this.frame, incoming ? [view.id, incoming.id] : [view.id]);
+    this.skyPanNdc = this._skyPan(view, this.frame);
     this.viewId = view.id;
     this.active = true;
     this.reason = null;
@@ -505,6 +509,20 @@ export class RangePresentation {
       noteViewShown(view);
     }
     return true;
+  }
+
+  /** How far the camera's section move has swung the sky across the frame
+   *  (NDC): the sky's clouds turn with the land instead of holding still on
+   *  the screen. The rail itself is the reference, so a travel between
+   *  views never jumps the clouds. Same rail progress as RangeScene._setCamera. */
+  _skyPan(view, frame) {
+    if (!frame?.cameraMove) return 0;
+    try {
+      const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+      const vp = frame.scenicViewport;
+      const aspect = vp?.logicalWidth > 0 && vp?.logicalHeight > 0 ? vp.logicalWidth / vp.logicalHeight : 16 / 9;
+      return skyPanNdc(applyCameraMoves(rail, frame.cameraMove, null), cameraBasis(rail).forward, aspect);
+    } catch { return 0; }
   }
 
   /**

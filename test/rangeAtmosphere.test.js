@@ -74,20 +74,29 @@ test('the shader twin uses the same constants', () => {
   }
 });
 
-test('sky hierarchy: a secondary moon and sparse clouds that drift purely in time', async () => {
+test('sky hierarchy: a secondary moon and sparse clouds that drift together, purely in time', async () => {
   const { rangeV2MoonRadius, rangeCloudBanks } = await import('../src/world/alpine/RangeSkyComposition.js');
   const R = rangeV2MoonRadius(1280, 1);
   assert.ok(Math.abs((2 * R) / 1280 - 0.035) < 0.002, 'about 3.5% of the width across');
   assert.ok(rangeV2MoonRadius(1280, 5) <= 1280 * 0.0175 * 1.25 + 1e-9, 'approach growth is capped');
-  const a = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, moon: { x: 150, y: 160, R } });
-  const b = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, moon: { x: 150, y: 160, R } });
+  const a = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7 });
+  const b = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7 });
   assert.deepEqual(a, b);
   assert.ok(a.length <= 8, 'sparse');
-  const wisps = a.filter((k) => k.id.startsWith('wisp'));
-  assert.equal(wisps.length, 2);
-  for (const w of wisps) assert.ok(Math.abs(w.y - 160) < R, 'wisps cross the moon');
+  // One wind: every bank drifts the same way, slowly (a few px a second).
   const later = rangeCloudBanks({ width: 1280, height: 720, tSec: 31, seed: 7 });
-  assert.ok(Math.abs(later[0].x - a[0].x) < 12, 'slow drift');
+  for (let i = 0; i < a.length; i++) {
+    const dx = later[i].x - a[i].x;
+    if (Math.abs(dx) > 100) continue; // wrapped round, off frame
+    assert.ok(dx > 0 && dx < 5, `${a[i].id} moved ${dx}`);
+  }
+  // A camera swing carries the whole sky together.
+  const panned = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, panPx: 40 });
+  for (let i = 0; i < a.length; i++) {
+    const dx = panned[i].x - a[i].x;
+    if (Math.abs(dx) > 100) continue;
+    assert.ok(Math.abs(dx - 40) < 1e-6, `${a[i].id} panned ${dx}`);
+  }
 });
 
 test('fewer fog samples (the quality ladder) approximate the full integral and never exceed the full sample count', () => {
@@ -111,4 +120,19 @@ test('fewer fog samples (the quality ladder) approximate the full integral and n
   // The shader bounds its loop the same way.
   assert.match(MIST_GLSL, /if \(float\(i\) >= n\) break;/);
   assert.match(MIST_GLSL, /od \*= uMistDensity \* L \/ n;/);
+});
+
+test('the sky turns with the camera: a far landmark and the clouds pan alike', async () => {
+  const { skyPanNdc } = await import('../src/world/alpine/RangeSkyComposition.js');
+  const { applyCameraMoves } = await import('../src/world/alpine/RangeCamera.js');
+  const { cameraBasis, projectPoint } = await import('../src/world/terrain/SceneTravel.js');
+  const rail = { eyeM: [0, 2000, 0], targetM: [0, 1000, 20000], fovYDeg: 40 };
+  const ref = cameraBasis(rail).forward;
+  assert.equal(Math.abs(skyPanNdc(rail, ref, 16 / 9)) < 1e-9, true);
+  const swung = applyCameraMoves(rail, { dolly: 0, yaw: 0.05, crane: 0, truck: 0, kind: 'orbit' }, null);
+  const pan = skyPanNdc(swung, ref, 16 / 9);
+  assert.ok(Math.abs(pan) > 0.02, `${pan}`);
+  // A peak 80 km out along the rail's view slides the same way.
+  const peak = rail.eyeM.map((v, i) => v + ref[i] * 80000);
+  assert.ok(Math.sign(projectPoint(swung, 16 / 9, peak).x) === Math.sign(pan));
 });
