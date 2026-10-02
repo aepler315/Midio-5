@@ -823,6 +823,10 @@ export class BiomeManager {
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
     if (chapterState?.previous) this.refineChapterPlan(chapterState.previous, chapterState.committedThroughMs || 0);
+    // The sections the show was playing on before a live re-analysis: the
+    // land's swells already heard come from them (RangeFrame.landMoment01).
+    this._landHistory = Array.isArray(chapterState?.landSections)
+      ? { sections: chapterState.landSections, throughMs: chapterState.committedThroughMs || 0 } : null;
     // Strips are baked AFTER the schedule exists (moved here from right
     // after construction's field init) so _buildStripSet can key each
     // profile's per-label variant (lithology/landform/landmarks/heightMul --
@@ -978,6 +982,13 @@ export class BiomeManager {
     this._unsub.length = 0;
     this.strips.clear();
     this._releaseCrestLight();
+  }
+
+  /** The rebuilt show has rejoined the music at `ms`: boundaries the new
+   *  analysis put between the committed time and here were crossed while
+   *  the world was being built, so they start no land swell. */
+  commitLandRejoin(ms) {
+    if (this._landHistory && Number.isFinite(ms)) this._landHistory = { ...this._landHistory, rejoinMs: ms };
   }
 
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {

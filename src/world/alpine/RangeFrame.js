@@ -148,6 +148,76 @@ export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, ki
   return state;
 }
 
+/** The land moves only at the song's big moments (Ashton, 2026-10-02:
+ *  constant heaving with every kick and phrase read as accidental). At a
+ *  section change the range swells over `riseMs`, holds, and settles over
+ *  `settleMs`; a lift into a louder section swells fully, any other change
+ *  by `changeFloor`, a repeat of the same part not at all. Metres are
+ *  before view calibration (RANGE_MOTION_REFERENCE_M is the reference). */
+export const LAND_SWELL = Object.freeze({ riseMs: 3000, holdMs: 2000, settleMs: 9000, changeFloor: 0.35,
+  waveM: 50, liftM: 40, waveHz: 0.012 });
+
+const partOf = (s) => s?.motifId ?? s?.label ?? null;
+
+/** How far the land is into a swell at `timeMs` (0 still .. 1 a full
+ *  lift), from the section boundaries alone: pure in heard time.
+ *  `history` ({ sections, throughMs }) is the section list the show was
+ *  playing on before a live re-analysis replaced it: boundaries before
+ *  `throughMs` are the ones already heard on it, so a swell under way
+ *  carries on and a boundary the new list adds in the past starts none.
+ *  `rejoinMs` is where the rebuilt show actually rejoined the music: a
+ *  boundary crossed while it was being built (never drawn) starts none. */
+export function landMoment01(sections, timeMs, history = null) {
+  const has = Array.isArray(history?.sections) && Number.isFinite(history.throughMs);
+  const through = has ? history.throughMs : -Infinity;
+  const rejoin = has ? Math.max(through, Number.isFinite(history.rejoinMs) ? history.rejoinMs : through) : -Infinity;
+  return Math.max(swellOf(history?.sections, timeMs, -Infinity, through), swellOf(sections, timeMs, rejoin, Infinity));
+}
+
+function swellOf(sections, timeMs, fromMs, toMs) {
+  if (!Array.isArray(sections)) return 0;
+  const { riseMs, holdMs, settleMs, changeFloor } = LAND_SWELL;
+  const span = riseMs + holdMs + settleMs;
+  let best = 0;
+  for (let i = sections.length - 1; i >= 1; i--) {
+    const start = sections[i]?.startMs ?? Infinity;
+    const age = timeMs - start;
+    if (age < 0 || start < fromMs || start >= toMs) continue;
+    if (age >= span) break;
+    const sec = sections[i], prev = sections[i - 1];
+    // A decorative cut only paces the schedule (no musical event), and a
+    // repeat of the same part never swells, louder or not -- unless the
+    // song's author cued the change, which always counts.
+    if (sec?.provenance === 'decorative') continue;
+    if (sec?.provenance !== 'authored' && partOf(sec) != null && partOf(sec) === partOf(prev)) continue;
+    const strength = Math.max(changeFloor, boundaryLift01(sec, prev));
+    const env = smoothstep(0, riseMs, age) * (1 - smoothstep(riseMs + holdMs, span, age));
+    best = Math.max(best, strength * env);
+  }
+  return best;
+}
+
+/** The land's geometry for a frame: the rhythmic, melodic and gesture
+ *  channels are kept as `source` (for evidence and the water) but move
+ *  nothing; only the moment's slow swell and lift do, at a fixed target
+ *  size, so the land is still between moments. The swell runs one way for
+ *  the whole song (from `seed`, not the section), so neither a section
+ *  change nor a re-analysis can turn it mid-swell. */
+export function landWaveDir(seed = 0) {
+  const angle = Math.atan2(-.6, .8) + (hashSeed(`${seed}:land`) / 4294967296 - .5) * .9;
+  return [Math.cos(angle), Math.sin(angle)];
+}
+
+export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, seed = 0 } = {}) {
+  const m = reducedMotion ? 0 : unit(moment01);
+  const out = { ...music, source: music, landMoment01: m, waveDir: landWaveDir(seed),
+    amplitudeM: LAND_SWELL.waveM * m,
+    kickM: 0, gestureM: 0, melodicM: 0, structuralM: LAND_SWELL.liftM * m,
+    phaseRad: 2 * Math.PI * LAND_SWELL.waveHz * tSec, calibrationActivity01: 1 };
+  out.totalBoundM = out.amplitudeM + out.structuralM;
+  return out;
+}
+
 export const RANGE_MOTION_REFERENCE_M = 106.7;
 
 /** The kicks' fronts in flight at `timeMs`, newest first. Each keeps the
@@ -297,6 +367,8 @@ export function buildRangeFrame({
     reducedMotion, motif, activity01: ridgeSample?.activity01 ?? sampled.energy,
     motionPresence01: ridgeSample?.motionPresence01, calibrationActivity01: ridgeSample?.pressureEnergy01,
   });
+  const land = landMotion(music, landMoment01(mgr.sections, timeMs, mgr._landHistory),
+    { tSec: timeMs / 1000, reducedMotion, seed: sim.songSeed ?? 0 });
   const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
   const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
     stateKey: mgr.ridgeMusicSession.stateKey,
@@ -338,7 +410,7 @@ export function buildRangeFrame({
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
     userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
-    light: lightState, music, ridges, narrative, groundBars, emitters,
+    light: lightState, music: land, ridges, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,

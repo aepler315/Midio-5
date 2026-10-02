@@ -1934,6 +1934,10 @@ function startTimeline(timelineData, extra = {}) {
   if (captureMode) captureClock.beginFullCapture(startedAt);
   else captureClock.resetLive(startedAt);
   const presentationLeadMs = captureClock.leadMs;
+  // A live re-analysis rejoins here, after the build: the land's swells
+  // start from boundaries after this point only (RangeFrame.landMoment01).
+  // On the heard clock, as the first rebuilt frame samples it (Simulation.step).
+  if (keepAudio) sim.biomes?.commitLandRejoin?.(visualNow(startedAt + presentationLeadMs, choreographyOutputLatencyMs()));
   if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs);
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.
@@ -3576,7 +3580,7 @@ function adoptFullAnalysisLive(data) {
     keepUserCamera: true,
     preservePause: wasPaused,
     fitDiagnostic: sim.fitDiagnostic,
-    chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs },
+    chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs, landSections: sim.biomes.sections },
   });
   if (!running || !sim) return;
   if (wasPaused) { paused = true; updatePauseButtonUI(); }
