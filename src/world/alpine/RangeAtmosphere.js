@@ -75,8 +75,9 @@ export function mistAmount(cam, p, { density = 0, baseM = 0, heightM = 220, tSec
     const y = cam[1] + dy * t;
     const x = cam[0] + dx * t, z = cam[2] + dz * t;
     const layer = mix(Math.exp(-Math.max(0, y - baseM) / heightM), 1 - smoothstep(topM - SEA_TOP_SOFT_BELOW_M, topM + SEA_TOP_SOFT_ABOVE_M, y), fill);
-    const mask = mistMask(x, z, tSec);
-    od += w * layer * mix(mask, 0.6 + 0.4 * mistMask(x * 0.5, z * 0.5, tSec), fill);
+    let mask = mistMask(x, z, tSec);
+    if (fill > 0) mask = mix(mask, 0.6 + 0.4 * mistMask(x * 0.5, z * 0.5, tSec), fill);
+    od += w * layer * mask;
   }
   od *= density * L / n;
   return 1 - Math.exp(-od);
@@ -139,8 +140,11 @@ export const MIST_GLSL = /* glsl */`
       vec3 q = cam + d * t;
       float layer = mix(exp(-max(0.0, q.y - uMistBase) / uMistHeight),
         1.0 - smoothstep(uMistTop - ${SEA_TOP_SOFT_BELOW_M.toFixed(1)}, uMistTop + ${SEA_TOP_SOFT_ABOVE_M.toFixed(1)}, q.y), uMistFill);
+      // The cloud sea's wider banks cost a second mask; only pay for it
+      // while the sea is up.
       float mask = mistMask(q.xz);
-      od += w * layer * mix(mask, 0.6 + 0.4 * mistMask(q.xz * 0.5), uMistFill);
+      if (uMistFill > 0.0) mask = mix(mask, 0.6 + 0.4 * mistMask(q.xz * 0.5), uMistFill);
+      od += w * layer * mask;
     }
     od *= uMistDensity * L / n;
     return 1.0 - exp(-od);
@@ -148,7 +152,8 @@ export const MIST_GLSL = /* glsl */`
   // The mist's colour: under a cloud sea, read where the view ray meets its
   // top, with brighter crowns and shaded troughs.
   vec3 mistColorAt(vec3 cam, vec3 p) {
-    if (uMistFill <= 0.0 || cam.y <= uMistTop || p.y >= cam.y) return uMistColor;
+    // A point above the top is seen without crossing it: plain haze.
+    if (uMistFill <= 0.0 || cam.y <= uMistTop || p.y >= uMistTop) return uMistColor;
     vec3 hit = cam + (p - cam) * clamp((cam.y - uMistTop) / (cam.y - p.y), 0.0, 1.0);
     vec2 q = (hit.xz + vec2(uMistTime * 3.0, uMistTime * 1.2)) / ${SEA_BILLOW_M.toFixed(1)};
     float b = 0.55 * mistVnoise(q) + 0.3 * mistVnoise(q * 2.3 + vec2(5.1, 1.7)) + 0.15 * mistVnoise(q * 5.1 + vec2(-2.3, 8.4));
