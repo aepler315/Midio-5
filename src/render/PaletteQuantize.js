@@ -1,3 +1,4 @@
+import { RANGE32_COLORS } from './PaletteCatalog.js';
 // Palette quantization for "8-bit intensive" (StagePresets.PALETTE_PRESET).
 //
 // Plain 8-bit mode gets its look from pixel SIZE alone -- a 320x180 buffer
@@ -42,7 +43,7 @@ const BAYER_4X4 = [
  *  0..255 range rather than left truncated, so the brightest level is a true
  *  255 -- truncation alone would darken the whole frame by up to 31/255 and
  *  read as a wash rather than as a palette. */
-function buildDitherLut(levels) {
+function buildDitherLut(levels, strength = 1) {
   const lut = new Uint8Array(16 * 256);
   const step = 255 / (levels - 1); // distance between adjacent output levels
   const top = levels - 1;
@@ -57,7 +58,7 @@ function buildDitherLut(levels) {
     // cells that step up equals the distance to the upper level, which is
     // what makes the dither unbiased -- hence the +0.5, centering the 16
     // cells on 0.5 rather than leaving their mean at 15/32.
-    const frac = (BAYER_4X4[cell] + 0.5) / 16;
+    const frac = .5 + (((BAYER_4X4[cell] + 0.5) / 16) - .5) * strength;
     for (let v = 0; v < 256; v++) {
       const level = Math.floor(v / step + frac);
       const clamped = level < 0 ? 0 : level > top ? top : level;
@@ -89,7 +90,9 @@ const LUT_2BIT = buildDitherLut(4); // blue
  *  of painting the title's transparent background black instead of letting
  *  the page's own color show through, which is not a trade this mode should
  *  make on its own. */
-export function quantizeImageData(imageData) {
+const RGB_LUTS = new Map([[1, [LUT_3BIT, LUT_2BIT]], [0, [buildDitherLut(8, 0), buildDitherLut(4, 0)]], [.35, [buildDitherLut(8, .35), buildDitherLut(4, .35)]]]);
+export function quantizeImageData(imageData, { dither = 1 } = {}) {
+  const [redGreen, blue] = RGB_LUTS.get(dither) || RGB_LUTS.get(1);
   const { data, width, height } = imageData;
   for (let y = 0; y < height; y++) {
     // The dither cell's row offset is constant across a scanline.
@@ -97,9 +100,9 @@ export function quantizeImageData(imageData) {
     let i = y * width * 4;
     for (let x = 0; x < width; x++, i += 4) {
       const cell = (rowCell + (x & 3)) * 256;
-      data[i] = LUT_3BIT[cell + data[i]];
-      data[i + 1] = LUT_3BIT[cell + data[i + 1]];
-      data[i + 2] = LUT_2BIT[cell + data[i + 2]];
+      data[i] = redGreen[cell + data[i]];
+      data[i + 1] = redGreen[cell + data[i + 1]];
+      data[i + 2] = blue[cell + data[i + 2]];
     }
   }
   return imageData;
@@ -110,7 +113,7 @@ export function quantizeImageData(imageData) {
  *  simply is not quantized", never to a dead render loop. */
 export function quantizeCanvas(ctx, canvas) {
   const w = canvas.width | 0, h = canvas.height | 0;
-  if (w <= 0 || h <= 0) return false;
+  if (w <= 0 || h <= 0 || w * h > 57600) return false;
   try {
     const frame = ctx.getImageData(0, 0, w, h);
     quantizeImageData(frame);
@@ -119,4 +122,77 @@ export function quantizeCanvas(ctx, canvas) {
   } catch {
     return false; // e.g. a tainted canvas -- drop the effect, keep the frame
   }
+}
+
+export function applyPalette(ctx, canvas, { paletteId = 'rgb332', dither = 1 } = {}) {
+  const pixels = (canvas?.width || 0) * (canvas?.height || 0);
+  if (!pixels) return { applied: false, reason: 'empty', pixels };
+  if (pixels > 57600) return { applied: false, reason: 'oversize', pixels };
+  if (!ctx) return { applied: false, reason: 'unavailable', pixels };
+  try {
+    const start = performance.now();
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const transformStart = performance.now();
+    if (paletteId === 'range32') quantizePalette(frame, compilePalette(RANGE32_COLORS), { dither });
+    else if (paletteId === 'rgb332') quantizeImageData(frame, { dither });
+    else return { applied: false, reason: 'unavailable', pixels };
+    const transformEnd = performance.now();
+    ctx.putImageData(frame, 0, 0);
+    return { applied: true, reason: null, pixels, cpuMs: transformEnd - transformStart, readbackMs: transformStart - start };
+  } catch (err) {
+    return { applied: false, reason: err?.name === 'SecurityError' ? 'security' : 'unavailable', pixels };
+  }
+}
+
+const COMPILED = new WeakMap();
+const LINEAR = Float32Array.from({ length: 256 }, (_, i) => {
+  const v = i / 255;
+  return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+});
+/** Compile a 5-bit/channel nearest pair once; frame work never scans colors. */
+export function compilePalette(colors) {
+  const signature = colors.join(',');
+  const cached = COMPILED.get(colors);
+  if (cached?.signature === signature) return cached;
+  if (!colors.length || colors.length > 256 || !colors.every(c => /^#[0-9a-f]{6}$/i.test(c))) throw new TypeError('Palette needs 1–256 hex colors');
+  const rgb = colors.map(c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)));
+  const linear = rgb.map(c => c.map(v => LINEAR[v]));
+  const exact = new Map(rgb.map((c, i) => [(c[0] << 16) | (c[1] << 8) | c[2], i]));
+  const first = new Uint8Array(32768), second = new Uint8Array(32768), mix = new Float32Array(32768);
+  for (let key = 0; key < 32768; key++) {
+    const p = [key >> 10, (key >> 5) & 31, key & 31].map(v => LINEAR[Math.round(v * 255 / 31)]);
+    let a = 0, b = 0, d1 = Infinity, d2 = Infinity;
+    for (let i = 0; i < linear.length; i++) {
+      const c = linear[i];
+      const d = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2;
+      if (d < d1) { b = a; d2 = d1; a = i; d1 = d; }
+      else if (d < d2) { b = i; d2 = d; }
+    }
+    const ca = linear[a], cb = linear[b];
+    const direction = cb.map((v, i) => v - ca[i]);
+    const denominator = direction.reduce((sum, v) => sum + v * v, 0);
+    const projection = direction.reduce((sum, v, i) => sum + (p[i] - ca[i]) * v, 0);
+    first[key] = a; second[key] = b;
+    mix[key] = denominator > 0 ? Math.max(0, Math.min(.5, projection / denominator)) : 0;
+  }
+  const compiled = { signature, rgb, exact, first, second, mix };
+  COMPILED.set(colors, compiled);
+  return compiled;
+}
+export function quantizePalette(imageData, compiled, { dither = .35 } = {}) {
+  const { data, width, height } = imageData;
+  const strength = [0, .35, 1].includes(dither) ? dither : .35;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = (y * width + x) * 4;
+    const packed = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+    let index = compiled.exact.get(packed);
+    if (index === undefined) {
+      const key = ((data[i] >> 3) << 10) | ((data[i + 1] >> 3) << 5) | (data[i + 2] >> 3);
+      const threshold = (BAYER_4X4[(y & 3) * 4 + (x & 3)] + .5) / 16;
+      index = threshold < compiled.mix[key] * strength ? compiled.second[key] : compiled.first[key];
+    }
+    const color = compiled.rgb[index];
+    data[i] = color[0]; data[i + 1] = color[1]; data[i + 2] = color[2];
+  }
+  return imageData;
 }

@@ -66,10 +66,10 @@ test('a kick lifts Broshi briefly and lands him again', () => {
   assert.equal(kickHop01([], 1000), 0);
 });
 
-test('listening excludes shore residents; Cathode keeps its own pixel world', () => {
+test('listening excludes shore residents in every surviving world', () => {
   assert.equal(resolveLandscapePresentation('alpine').inhabitants, false);
   assert.equal(resolveLandscapePresentation('alpine').performers, false);
-  assert.equal(resolveLandscapePresentation('cathode').inhabitants, false);
+  assert.equal(resolveLandscapePresentation('fathom').inhabitants, false);
 });
 
 test('a second kick mid-hop never drops Broshi back to the sand', () => {

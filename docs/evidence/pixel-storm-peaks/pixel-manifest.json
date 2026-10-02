@@ -1,0 +1,138 @@
+{
+  "title": {
+    "requestedLook": "palette",
+    "effectiveLook": "palette",
+    "paletteStatus": {
+      "applied": true,
+      "reason": null,
+      "pixels": 57600,
+      "cpuMs": 65.5,
+      "readbackMs": 1638.5999999977648
+    },
+    "paletteCpuMs": 65.5,
+    "readbackCpuMs": 1638.5999999977648,
+    "output": {
+      "width": 320,
+      "height": 180
+    },
+    "working": {
+      "width": 320,
+      "height": 180
+    }
+  },
+  "frames": [
+    {
+      "width": 800,
+      "height": 480,
+      "diag": {
+        "requestedLook": "palette",
+        "effectiveLook": "palette",
+        "paletteStatus": {
+          "applied": true,
+          "reason": null,
+          "pixels": 57600,
+          "cpuMs": 1.699999999254942,
+          "readbackMs": 231.10000000149012
+        },
+        "paletteCpuMs": 1.699999999254942,
+        "readbackCpuMs": 231.10000000149012,
+        "output": {
+          "width": 800,
+          "height": 480
+        },
+        "working": {
+          "width": 320,
+          "height": 180
+        },
+        "qualityLevel": 6
+      },
+      "quality": 6,
+      "colors": 19
+    },
+    {
+      "width": 1080,
+      "height": 1080,
+      "diag": {
+        "requestedLook": "palette",
+        "effectiveLook": "palette",
+        "paletteStatus": {
+          "applied": true,
+          "reason": null,
+          "pixels": 57600,
+          "cpuMs": 2.5,
+          "readbackMs": 241.09999999776483
+        },
+        "paletteCpuMs": 2.5,
+        "readbackCpuMs": 241.09999999776483,
+        "output": {
+          "width": 1080,
+          "height": 1080
+        },
+        "working": {
+          "width": 320,
+          "height": 180
+        },
+        "qualityLevel": 6
+      },
+      "quality": 6,
+      "colors": 19
+    },
+    {
+      "width": 1080,
+      "height": 1920,
+      "diag": {
+        "requestedLook": "palette",
+        "effectiveLook": "palette",
+        "paletteStatus": {
+          "applied": true,
+          "reason": null,
+          "pixels": 57600,
+          "cpuMs": 2.399999998509884,
+          "readbackMs": 271.80000000074506
+        },
+        "paletteCpuMs": 2.399999998509884,
+        "readbackCpuMs": 271.80000000074506,
+        "output": {
+          "width": 1080,
+          "height": 1920
+        },
+        "working": {
+          "width": 320,
+          "height": 180
+        },
+        "qualityLevel": 6
+      },
+      "quality": 6,
+      "colors": 19
+    },
+    {
+      "width": 160,
+      "height": 90,
+      "diag": {
+        "requestedLook": "palette",
+        "effectiveLook": "palette",
+        "paletteStatus": {
+          "applied": true,
+          "reason": null,
+          "pixels": 57600,
+          "cpuMs": 2.199999999254942,
+          "readbackMs": 265.8999999985099
+        },
+        "paletteCpuMs": 2.199999999254942,
+        "readbackCpuMs": 265.8999999985099,
+        "output": {
+          "width": 160,
+          "height": 90
+        },
+        "working": {
+          "width": 320,
+          "height": 180
+        },
+        "qualityLevel": 6
+      },
+      "quality": 6,
+      "colors": 17
+    }
+  ],
+  "errors": []
+}

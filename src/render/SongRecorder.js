@@ -32,6 +32,8 @@ import {
   videoBitsPerSecond, AUDIO_BITS_PER_SECOND, sniffVideoCodec, presetById,
 } from './VideoExport.js';
 
+import { fitPixelRect } from './PixelPresentation.js';
+
 const FALLBACK_SAMPLE_FPS = 60;
 /** Chunk cadence. Frequent enough that a crash loses a second rather than a
  *  song, rare enough not to fragment a long recording into thousands of
@@ -162,6 +164,7 @@ export class SongRecorder {
     canvas.height = preset.height;
     this._canvas = canvas;
     this._ctx = canvas.getContext('2d', { alpha: false });
+    this._lastCaptureFit = null;
     this._fit = fitLetterbox(STAGE_W, STAGE_H, preset.width, preset.height);
     this._bars = needsLetterbox(STAGE_W, STAGE_H, preset.width, preset.height);
     if (this._bars && this._ctx) {
@@ -220,11 +223,20 @@ export class SongRecorder {
    * Cheap by construction: one `drawImage` into a canvas of the export's
    * size. At the car preset that is a downscale into 800x480.
    */
-  captureFrame() {
-    if (!this.recording || !this._ctx || !this.stage) return;
-    const fit = this._fit;
+  captureFrame({ canvas = this.stage, pixelated = false, scaling = 'fit' } = {}) {
+    if (!this.recording || !this._ctx || !canvas) return;
+    const fit = pixelated ? fitPixelRect(canvas.width, canvas.height, this._canvas.width, this._canvas.height, scaling) : this._fit;
+    if (JSON.stringify(fit) !== this._lastCaptureFit) {
+      if (scaling === 'integer' || this._lastCaptureFit) {
+        this._ctx.fillStyle = '#000000';
+        this._ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
+      }
+      this._lastCaptureFit = JSON.stringify(fit);
+    }
     try {
-      this._ctx.drawImage(this.stage, fit.x, fit.y, fit.width, fit.height);
+      const sourceCanvas = canvas;
+      this._ctx.imageSmoothingEnabled = !pixelated;
+      this._ctx.drawImage(sourceCanvas, fit.x, fit.y, fit.width, fit.height);
       if (this._pushesFrames) this._videoTrack.requestFrame();
     } catch {
       // A canvas in a bad state for one frame is not worth ending a

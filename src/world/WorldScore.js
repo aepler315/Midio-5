@@ -278,8 +278,7 @@ function buildOptimalAffinity(features) {
 }
 
 /**
- * Song-specific interpretation of one registered world. Cathode keeps its
- * pixel renderer and four-color ramps; painterly worlds overlay as `custom`
+ * Song-specific interpretation of one registered world. Worlds overlay as `custom`
  * with a stable `registeredId` and a per-song `instanceId`.
  */
 export function buildWorldVariant(baseId, features, data = null) {

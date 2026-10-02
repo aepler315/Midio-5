@@ -1,0 +1,89 @@
+{
+  "checks": [
+    {
+      "name": "the browser offers a recordable container",
+      "ok": true,
+      "detail": "video/mp4;codecs=avc1"
+    },
+    {
+      "name": "recording is armed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the HUD stays reachable while recording",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a HUD recording saves a file",
+      "ok": true,
+      "detail": "391642 bytes as export-fixture - 720p - 2026-10-02.mp4"
+    },
+    {
+      "name": "recording is disarmed after saving",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the saved file decodes at the stage size",
+      "ok": true,
+      "detail": "1280x720"
+    },
+    {
+      "name": "the saved file has a picture in it, not a black frame",
+      "ok": true,
+      "detail": "55499 colors, 1.00 lit"
+    },
+    {
+      "name": "the saved file is about as long as the recording",
+      "ok": true,
+      "detail": "16.7s"
+    },
+    {
+      "name": "the saved file has sound in it",
+      "ok": true,
+      "detail": "76736 audio bytes decoded"
+    },
+    {
+      "name": "the export note names the target and the format",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a full-song export replays with the recorder armed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the car export is exactly 800x480",
+      "ok": true,
+      "detail": "800x480"
+    },
+    {
+      "name": "the car export is letterboxed, not stretched",
+      "ok": true,
+      "detail": "top 0.0000 (peak 0) middle 1.00 bottom 0.0000 (peak 0)"
+    },
+    {
+      "name": "the car export covers the whole song",
+      "ok": true,
+      "detail": "60.5s"
+    },
+    {
+      "name": "the car export has sound in it",
+      "ok": true,
+      "detail": "76736 audio bytes decoded"
+    },
+    {
+      "name": "the result line states what the file actually is",
+      "ok": true,
+      "detail": "Saved export-fixture - car - 2026-10-02.mp4 — MP4 · H.264 · 1:02 · 1.5 MB — plays anywhere, including car head units."
+    },
+    {
+      "name": "no browser errors",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

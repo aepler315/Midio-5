@@ -6,10 +6,9 @@ import { buildSongProfile } from '../src/audio/SongProfile.js';
 import { getWorld, listWorlds } from '../src/world/Worlds.js';
 import {
   adaptWorld, capabilitiesFor, filterTerrainMods, responseConfigFor,
-  instanceIdFor, KIND_CAPABILITIES, ADAPT_VERSION,
+  instanceIdFor, ADAPT_VERSION,
 } from '../src/world/WorldAdaptation.js';
 import { RIDGE_TERRAIN_KEYS, CITY_TERRAIN_KEYS } from '../src/world/dna/ShapeGrammar.js';
-import { CATHODE_PALETTES } from '../src/world/cathode/CathodePalettes.js';
 import { sampleWorldMusic } from '../src/world/WorldMusic.js';
 import { buildWorldVariant, buildCustomWorld } from '../src/world/WorldScore.js';
 
@@ -56,7 +55,6 @@ test('every registered kind has an explicit capability description', () => {
     assert.ok(Array.isArray(caps.geometry) && caps.geometry.length > 0, w.id);
     assert.ok(caps.response.smoothingMs > 0 && caps.response.maxAccents >= 1, w.id);
   }
-  assert.equal(KIND_CAPABILITIES.cathode.palette, 'four-color');
   assert.equal(ADAPT_VERSION, 1);
 });
 
@@ -111,17 +109,6 @@ test('alpine terrain controls are not sent to a city; city controls are not sent
   assert.equal(filterTerrainMods('city', { shoulderMul: 1.2, cityWidthMul: 0.8 }).shoulderMul, undefined);
 });
 
-test('Cathode keeps four-color ramps and the pixel renderer', () => {
-  const { data, profile } = song({ bpm: 140 });
-  const { world } = adaptWorld(getWorld('cathode'), profile, data);
-  assert.equal(world.id, 'cathode');
-  assert.equal(world.renderer, 'pixel');
-  assert.equal(world.manualOnly, true);
-  assert.equal(world.palettes, CATHODE_PALETTES);
-  assert.equal(world.terrainMods, null);
-  assert.equal(world.characterScheme, null);
-  assert.ok(world.palettes.every((p) => Array.isArray(p.ramp) && p.ramp.length >= 4));
-});
 
 test('response bounds: sparse is restrained, dense filters accents, quiet stays still', () => {
   const sparse = responseConfigFor('city', { watch: { onset: 0.08, energyMean: 0.3, dyn: 0.3 } });
@@ -260,7 +247,7 @@ for (const fixture of [
   test(`adapted physical vocabulary stays within selected world at bpm=${fixture.bpm}`, () => {
     const { data, profile } = song(fixture);
     for (const base of listWorlds()) {
-      if (base.kind === 'alpine' || base.kind === 'cathode') continue;
+      if (base.kind === 'alpine') continue;
       const { world } = adaptWorld(base, profile, data);
       assert.equal(world.kind, base.kind);
       const particles = new Set(base.palettes.map(p => p.particles.kind));

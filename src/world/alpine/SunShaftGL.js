@@ -9,7 +9,7 @@ export function shaftSize(width, height) {
 export function shaftSource(frame) {
   const source = frame.light?.celestial;
   return source?.body === 'sun' && source.visibility > 0 && source.intensity > 0
-    && Number.isFinite(source.xFrac) && Number.isFinite(source.yFrac) ? source : null;
+    && Number.isFinite(source.xFrac) && Number.isFinite(source.yFrac) ? { ...source, stormGain: (1 - (frame.storm?.amount || 0) * .85) * (1 + (frame.storm?.break01 || 0) * 2.8) } : null;
 }
 const VERT = /* glsl */`
   out vec2 vUv;
@@ -136,7 +136,7 @@ export class SunShaftGL {
     // Backing pixels can scale X/Y differently during export, so keep the
     // same logical disc before that shared display transform is applied.
     u.uRadius.value.set(radius, radius * scenicViewport.logicalWidth / scenicViewport.logicalHeight);
-    u.uGain.value = .55 * Math.min(1, source.intensity / 1.6);
+    u.uGain.value = .55 * Math.min(1, source.intensity / 1.6) * (source.stormGain ?? 1);
     this.mesh.material = this.scatter;
     renderer.setRenderTarget(buffer);
     renderer.render(this.scene, this.camera);

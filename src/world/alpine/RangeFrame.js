@@ -1,3 +1,4 @@
+import { stormAt } from './RangeStorm.js';
 import { resolveRangeComposition } from './RangeComposition.js';
 import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
 import { ridgeAdvectionPxAt } from '../RidgeMotionHistory.js';
@@ -403,6 +404,7 @@ export function buildRangeFrame({
     progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     // How much of the Forest Service map under the land shows (quiet passages).
     cloudSea01: cloudSeaAt(mgr, timeMs),
+    storm: stormAt(mgr, timeMs),
     // The cast as lights in the land: brightness, travel and peaks per lane.
     actors: rangeActorsAt(sim, timeMs),
     // Camera: this section's slow cinematic move, and the listener's zoom.

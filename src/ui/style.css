@@ -2258,27 +2258,6 @@ html, body {
     92% 100%, 92% 28%, 100% 28%, 100% 100%
   );
 }
-/* Cathode's swatch is the only one that shows the PIPELINE rather than a
-   landform: hard-edged bands and scanlines instead of a soft gradient,
-   because that -- not the hue -- is what picking this world changes. */
-.worldCardPreview.cathode {
-  background:
-    repeating-linear-gradient(180deg,
-      rgba(0, 0, 0, 0.55) 0px, rgba(0, 0, 0, 0.55) 1px,
-      rgba(0, 0, 0, 0) 1px, rgba(0, 0, 0, 0) 3px),
-    linear-gradient(180deg, #0f380f 0%, #306230 45%, #8bac0f 70%, #9bbc0f 100%);
-}
-.worldCardPreview.cathode::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 34%;
-  background: #0f380f;
-  /* A chunky stepped horizon: whole-pixel jumps, no diagonals. */
-  clip-path: polygon(0 100%, 0 55%, 12% 55%, 12% 30%, 28% 30%, 28% 62%,
-    44% 62%, 44% 18%, 60% 18%, 60% 48%, 76% 48%, 76% 26%, 88% 26%, 88% 58%, 100% 58%, 100% 100%);
-}
-
 .worldCardPreview.is-rendered::after,
 .worldCardPreview.is-rendered::before {
   display: none;
@@ -3113,3 +3092,20 @@ html, body {
   border-color: var(--spec-cool);
   outline: none;
 }
+
+/* A centered integer image has its own hit rectangle; surrounding bars reject taps. */
+#stage.integerPixels {
+  position: absolute; left: 50%; top: 50%;
+  width: var(--pixel-width); height: var(--pixel-height);
+  transform: translate(-50%, -50%);
+  background: #000;
+}
+.displayRow { flex-wrap: wrap; }
+.displayRow select { min-width: 6em; }
+
+#displaySettingsDialog { color: inherit; background: #111a25; border: 1px solid #647080; border-radius: 12px; max-width: min(90vw, 680px); }
+#displaySettingsDialog::backdrop { background: #0009; }
+
+#app.pixelDisplay { background: #000; }
+#app.pixelDisplay::before { display: none; }
+#app.pixelDisplay #stage { background: #000; }

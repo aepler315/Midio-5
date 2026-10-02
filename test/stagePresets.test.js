@@ -43,10 +43,11 @@ test('Auto is the default stage mode exposed by the menu', () => {
   assert.equal(isAutoPreset(1080), false);
 });
 
-test('the menu offers both 8-bit modes, and only those two are retro', () => {
+test('legacy presets remain parseable while the menu uses separate Look controls', () => {
   const values = stageResOptionValues();
-  assert.ok(values.includes(RETRO_PRESET), 'the 8-bit option is missing from index.html');
-  assert.ok(values.includes(PALETTE_PRESET), 'the 8-bit intensive option is missing from index.html');
+  assert.equal(values.includes(RETRO_PRESET), false);
+  assert.match(indexHtml, /id="display-look"/);
+  assert.equal(values.includes(PALETTE_PRESET), false);
   const retro = Object.keys(STAGE_PRESETS).filter((k) => STAGE_PRESETS[k].retro).sort();
   assert.deepEqual(retro, [RETRO_PRESET, PALETTE_PRESET].sort());
   assert.equal(isRetroPreset(RETRO_PRESET), true);

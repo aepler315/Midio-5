@@ -1,11 +1,11 @@
 # Worlds — the other six
 
-**Status:** all nine worlds now have registered render paths. The sections
+**Status:** all eight worlds now have registered render paths. The sections
 below retain the original art direction; they are not a feature checklist.
 The chooser presents equal choices and tailors each selected painterly world
-to the song. Cathode keeps its separate pixel renderer.
+to the song. Cathode is retired; old playback IDs resolve to The Range.
 
-### Musical behavior: The Range, After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave, Cathode
+### Musical behavior: The Range, After Hours, Fathom, Redline, Foundry, Far Side, Understory, Nave
 
 The painterly worlds share a small set of controls from
 `WorldMusic.js`, while interpreting those controls differently:
@@ -64,18 +64,8 @@ The painterly worlds share a small set of controls from
   do not invent a chorus -- every bay follows bass equally (broad phrasing).
   Inferred structure is worth half a measured one. Earned phrase openings lift
   the motif bays.
-- **Cathode:** a CRT, not a mountain. Raster travel is the 1.2s energy
-  average -- quiet crawls, a groove cruises, dense material drops to half-time
-  so the floor does not strobe. Phosphor weight is bass. Isolated accents flash
-  the boss screen; a locked 170 BPM grid does not strobe the sprite -- dense
-  material only keeps the flinch when the beat also earned a hit. Returning
-  labels pick a scan motif; decorative cuts keep the default raster. Reduced
-  flash kills the flinch, the tear and the screen hit. Manual choice stays
-  manual; nothing here clones a painterly bloom.
 - **Reduced motion:** the new current sway, traffic travel and hammer drop are
-  suppressed, local accents are softened, cruise rate, ridge travel and raster
-  rate are halved, pours and phrase-scale lifts are tempered, Cathode's flinch
-  and tear are suppressed, additive layers fall
+  suppressed, local accents are softened, cruise rate and ridge travel are halved, pours and phrase-scale lifts are tempered, additive layers fall
   back to non-additive compositing. Existing world/character motion remains
   governed by the existing controls.
 
@@ -108,8 +98,7 @@ for a week while drawing zero pixels (its call landed in a same-named method
 with a different signature) and the frame was as colorful as ever throughout.
 Passes that may legitimately paint nothing on a short fixture — `drawDeepSky`,
 whose Star Atlas is still empty — are recorded in the report rather than
-asserted. Cathode has no BiomeManager passes to audit, since it replaces the
-renderer rather than the scenery, so its frame is checked as a whole.
+asserted.
 
 `npm test` covers the
 control timing, missing data, sustained versus transient bass, rapid drums,

@@ -351,6 +351,12 @@ export class DebugOverlay {
       if (e.adjust) lines.push(`  adjust: ${JSON.stringify(e.adjust)}  conf=${e.confidence.toFixed(2)} trust=${e.trust.toFixed(2)}`);
     }
 
+    const display = this.presentationDiagnostics?.();
+    if (display) {
+      lines.push('', '=== DISPLAY ===', `${display.requestedLook} → ${display.effectiveLook}; quality ${display.qualityLevel ?? '?'}`);
+      lines.push(`working ${display.working?.width}×${display.working?.height}; output ${display.output?.width}×${display.output?.height}`);
+      lines.push(`palette ${display.paletteStatus?.reason || (display.paletteStatus?.applied ? 'applied' : 'off')}; transform ${(display.paletteCpuMs || 0).toFixed(2)}ms; readback ${(display.readbackCpuMs || 0).toFixed(2)}ms`);
+    }
     this.pre.textContent = lines.join('\n');
     this._drawTrace();
   }

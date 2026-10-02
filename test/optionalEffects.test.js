@@ -46,11 +46,6 @@ test('airless keeps ground diffusion and sky effects it draws, and skips alpine 
   }
 });
 
-test('cathode does not step reaction diffusion or alpine spectacle', () => {
-  const { mgr, calls } = spyMgr('cathode', FULL);
-  mgr.stepOptionalEffects(1000, 0.016, null, 0, { x: 0, y: 0 });
-  assert.deepEqual(calls, []);
-});
 
 test('a low-quality range keeps the light rig and drops phenomena, including diffusion', () => {
   const { mgr, calls } = spyMgr('alpine', { phenomenaFull: false, constellationsEnabled: true });

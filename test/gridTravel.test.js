@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cruiseTravel } from '../src/world/redline/Cruise.js';
-import * as tube from '../src/world/cathode/Tube.js';
 
 for (const [name, travel, maxSpeed] of [
-  ['Redline', cruiseTravel, 140], ['Cathode', (...args) => tube.rasterTravel(...args), 56],
+  ['Redline', cruiseTravel, 140],
 ]) {
   for (const at of [10, 180]) for (const falling of [false, true]) {
     test(`${name}: ${falling ? 'falling' : 'rising'} energy at ${at}s cannot jump or reverse travel`, () => {

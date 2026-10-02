@@ -158,16 +158,6 @@ export const KIND_MATERIAL = {
     layers: LAYERS.nave,
     deep: null,
   },
-  cathode: {
-    fillLift: 0,
-    rimAlpha: 0,
-    catchlight: 'none',
-    aerial: false,
-    scheme: null,
-    ground: { hueShift: 0, satAdd: 0, lightAdd: 0, voidAlpha: 0, roots: false, minL: 0.1, aerial: false },
-    layers: LAYERS.alpine,
-    deep: null,
-  },
 };
 
 export function materialFor(kind) {

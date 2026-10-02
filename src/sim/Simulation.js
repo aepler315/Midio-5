@@ -15,7 +15,7 @@ import { CodaDirector } from './CodaDirector.js';
 import { FilmFinish } from '../render/FilmFinish.js';
 import { BiomeManager } from '../world/BiomeManager.js';
 import { alpineTerrainProfiles } from '../world/terrain/loadTerrain.js';
-import { getWorld } from '../world/Worlds.js';
+import { getWorld, resolveWorldId } from '../world/Worlds.js';
 import { FractureEngine } from '../world/FractureEngine.js';
 import { GroundField } from '../world/GroundField.js';
 import { PerfGovernor } from '../render/PerfGovernor.js';
@@ -59,7 +59,7 @@ export class Simulation {
     this.paramBus = paramBus;
     this.energyCurves = energyCurves;
     this.customBiome = customBiome || null;
-    this.worldId = worldId || 'alpine';
+    this.worldId = resolveWorldId(worldId);
     this.canvasWidth = canvasWidth;
     this.canvasHeight = canvasHeight;
     this.stageW = canvasWidth;

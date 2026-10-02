@@ -13,7 +13,6 @@
 // Toggle with ?renderer=webgl (or createRenderer(canvas, 'webgl')).
 
 import { Renderer } from './Renderer.js';
-import { CathodeRenderer } from '../world/cathode/CathodeRenderer.js';
 
 const VERT = `#version 300 es
 in vec2 a_pos;
@@ -224,6 +223,9 @@ export class WebGLRenderer {
     }
   }
 
+  get composer() { return this.canvasRenderer.composer; }
+  set composer(value) { this.canvasRenderer.composer = value; }
+
   get drawCount() { return this.canvasRenderer?.drawCount ?? 0; }
   get rangePresentation() { return this.canvasRenderer?.rangePresentation ?? null; }
   set rangePresentation(p) { if (this.canvasRenderer) this.canvasRenderer.rangePresentation = p; }
@@ -233,6 +235,12 @@ export class WebGLRenderer {
     this.canvasRenderer.draw(sim, alpha);
     if (this.backend !== 'webgl' || !this.gl || this._disposed) return;
 
+    if (this.presentationPixelated) {
+      this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+      this.glCanvas.style.display = 'none';
+      return;
+    }
+    this.glCanvas.style.display = 'block';
     this._syncSize();
     this._sampleEnergy(sim);
 
@@ -263,6 +271,7 @@ export class WebGLRenderer {
   dispose() {
     this._disposed = true;
     this._teardownGL();
+    this.canvasRenderer.dispose();
   }
 }
 
@@ -271,15 +280,8 @@ export class WebGLRenderer {
  * Canvas mode returns the stock Renderer; webgl mode returns WebGLRenderer
  * (which itself falls back to Canvas scene drawing if GL is unavailable).
  *
- * `world` (the resolved world object, not an id) lets a world bring its own
- * pipeline instead of a scenery branch: a world declaring `renderer:
- * 'pixel'` replaces the whole frame rather than skinning part of it. Worlds
- * without the field -- every world but Cathode -- take the path above
- * unchanged, and the renderer mode still wins for them, so `?renderer=webgl`
- * behaves exactly as before.
  */
-export function createRenderer(canvas, mode = 'canvas', world = null) {
-  if (world?.renderer === 'pixel') return new CathodeRenderer(canvas);
+export function createRenderer(canvas, mode = 'canvas') {
   if (mode === 'webgl') return new WebGLRenderer(canvas, { preferWebGL: true });
   return new Renderer(canvas);
 }

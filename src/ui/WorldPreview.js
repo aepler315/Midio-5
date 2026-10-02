@@ -7,12 +7,8 @@ import { Role } from '../core/NoteEvent.js';
 import { clamp, clamp01 } from '../utils/math.js';
 import { buildWorldVariant } from '../world/WorldScore.js';
 import {
-  listWorlds, getCustomWorld, setCustomWorld, clearCustomWorld,
+  listWorlds, getWorld, resolveWorldId, getCustomWorld, setCustomWorld, clearCustomWorld,
 } from '../world/Worlds.js';
-import { CATHODE_PALETTES, CATHODE_TEMPERATURE } from '../world/cathode/CathodePalettes.js';
-import { PIXEL_W, PIXEL_H } from '../world/cathode/PixelBuffer.js';
-import { buildBackdropPixels, horizonRowFor } from '../world/cathode/CathodeRenderer.js';
-import { hexToRgb } from '../utils/color.js';
 
 export const PREVIEW_VERSION = 1;
 export const PREVIEW_SPAN_MS = 8000;
@@ -143,10 +139,6 @@ export function describeWorldResponse(kind, features = {}, extras = {}) {
       return bass > 0.35
         ? 'Bays follow the bass equally. No chorus is invented from missing labels.'
         : 'Broad phrasing. Weak structure does not mint a motif.';
-    case 'cathode':
-      return onset > 0.35
-        ? 'Beats become sprites. Dense hits are filtered so the tube does not strobe.'
-        : 'A four-color machine. Sparse hits stay readable. No painterly glow.';
     default:
       return contrast + form > 0.8
         ? 'The scene follows measured contrast and shape, not a guessed genre.'
@@ -171,46 +163,6 @@ function withCustomWorld(world, fn) {
   }
 }
 
-function pickCathodePersona(energy) {
-  const e = clamp01(energy);
-  let best = CATHODE_PALETTES[0], bestDist = Infinity;
-  for (const pal of CATHODE_PALETTES) {
-    const temp = CATHODE_TEMPERATURE[pal.name] ?? 0.5;
-    const d = Math.abs(temp - e);
-    if (d < bestDist) { bestDist = d; best = pal; }
-  }
-  return best;
-}
-
-function renderCathodeStill(canvas, { tMs = 0, energyCurves = null } = {}) {
-  const energy = energyCurves && typeof energyCurves.globalEnergyNorm === 'function'
-    ? energyCurves.globalEnergyNorm(tMs)
-    : 0.4;
-  const persona = pickCathodePersona(energy);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const w = PIXEL_W, h = PIXEL_H;
-  const data = buildBackdropPixels(persona.ramp, w, h, horizonRowFor(h));
-  const buf = document.createElement('canvas');
-  buf.width = w;
-  buf.height = h;
-  const bctx = buf.getContext('2d');
-  bctx.putImageData(new ImageData(data, w, h), 0, 0);
-  const ground = hexToRgb(persona.ramp[0]);
-  const mid = hexToRgb(persona.ramp[Math.min(2, persona.ramp.length - 1)]);
-  bctx.fillStyle = `rgb(${ground.r},${ground.g},${ground.b})`;
-  const steps = [0.55, 0.30, 0.62, 0.18, 0.48, 0.26, 0.58];
-  const stepW = Math.floor(w / steps.length);
-  for (let i = 0; i < steps.length; i++) {
-    const top = Math.round(h * (0.45 + steps[i] * 0.35));
-    bctx.fillRect(i * stepW, top, stepW + 1, h - top);
-  }
-  bctx.fillStyle = `rgba(${mid.r},${mid.g},${mid.b},0.55)`;
-  bctx.fillRect(0, Math.round(h * 0.62), w, 2);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
-}
-
 /**
  * Build the same tailored world playback will use, then draw it at `tMs`.
  * Caller must dispose(). Browser-only: strip bakes need a canvas factory.
@@ -222,21 +174,10 @@ export function createPreviewWorld({
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  const stock = listWorlds().find((w) => w.id === worldId);
-  if (!stock) throw new Error(`Unknown world ${worldId}`);
+  worldId = resolveWorldId(worldId);
+  const stock = getWorld(worldId);
 
-  if (stock.manualOnly || stock.renderer === 'pixel' || stock.kind === 'cathode') {
-    return {
-      kind: 'cathode',
-      canvas,
-      draw(tMs) {
-        renderCathodeStill(canvas, { tMs, energyCurves: data.energyCurves });
-      },
-      dispose() {},
-    };
-  }
-
-  const { world: variant } = buildWorldVariant(worldId, features, data);
+  const variant = worldId === getCustomWorld()?.id ? stock : buildWorldVariant(worldId, features, data).world;
   const conductor = new Conductor();
   conductor.load({
     timeline: data.timeline || [],

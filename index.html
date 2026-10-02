@@ -161,12 +161,25 @@
 
           
 
+            <div class="resRow displayRow">
+              <label for="display-look">Look</label>
+              <select id="display-look"><option value="natural">Natural</option><option value="pixel">Pixel</option><option value="palette">Palette</option></select>
+              <label for="display-quality">Quality</label>
+              <select id="display-quality"><option value="auto">Auto</option><option value="economy">Economy</option></select>
+              <span id="pixelGridHint" hidden>320 × 180 grid</span>
+            </div>
+            <div class="resRow displayRow">
+              <label for="display-palette">Palette</label>
+              <select id="display-palette"><option value="range32">Landscape</option><option value="rgb332">Legacy RGB332</option></select>
+              <label for="display-dither">Dither</label>
+              <select id="display-dither"><option value="0">Off</option><option value="0.35">Subtle</option><option value="1">Full</option></select>
+              <label for="display-scaling">Scaling</label>
+              <select id="display-scaling"><option value="fit">Fit</option><option value="integer">Integer</option></select>
+            </div>
             <div class="resRow" title="Stage render resolution (sim stays 16:9 logical; canvas upscales to this).">
               <label for="stageRes">Stage</label>
-              <select id="stageRes" title="Internal stage resolution. Auto matches the visible stage and lowers pixel load under sustained frame pressure. Manual modes remain fixed. 8-bit renders at 320×180 with optional effects off; 8-bit intensive adds a 256-colour palette pass.">
+              <select id="stageRes" title="Natural look resolution. Auto matches the visible stage and follows frame pressure. Pixel looks use 320×180.">
                 <option value="auto" selected>Auto</option>
-                <option value="8bit">8-bit</option>
-                <option value="8bit-intensive">8-bit intensive</option>
                 <option value="144">144p</option>
                 <option value="240">240p</option>
                 <option value="360">360p</option>
@@ -201,21 +214,22 @@
 
     <dialog id="worldSelect" class="worldSelect hidden" aria-labelledby="worldSelectTitle" aria-modal="true">
       <div class="worldSelectInner">
-        <p class="worldSelectEyebrow">same song, nine looks</p>
+        <p class="worldSelectEyebrow">same song, eight worlds</p>
         <h2 id="worldSelectTitle">Choose how your song looks</h2>
-        <p class="worldSelectHint">Each world keeps its own look and listens to this song. Preview the same quiet stretch and the same peak, then play. The cards are not a ranking — Choose for me is optional, and Cathode is always a hand pick.</p>
+        <p class="worldSelectHint">Each world keeps its own look and listens to this song. Preview the same quiet stretch and the same peak, then play. The cards are not a ranking — Choose for me is optional.</p>
         <div class="worldSelectToolbar">
           <div class="worldSelectPassages" role="group" aria-label="Preview passage">
             <button type="button" id="worldPassageQuiet" class="worldPassageBtn" aria-pressed="false" title="The same quiet stretch of this song, in every world">Quiet</button>
             <button type="button" id="worldPassagePeak" class="worldPassageBtn" aria-pressed="true" title="The same loud stretch of this song, in every world">Peak</button>
           </div>
-          <button type="button" id="worldChooseForMe" class="ghostbtn" title="Play in a world that fits this mix. The cards stay unranked, and Cathode is never auto-picked.">Choose for me</button>
+          <button type="button" id="worldChooseForMe" class="ghostbtn" title="Play in a world that fits this mix. The cards stay unranked.">Choose for me</button>
         </div>
         <div id="worldSelectGrid" class="worldSelectGrid" role="list"></div>
         <button id="worldSelectBack" type="button" class="ghostbtn worldSelectBack">Different song</button>
       </div>
     </dialog>
 
+    <dialog id="displaySettingsDialog"><button id="displaySettingsClose" type="button" class="ghostbtn">Close</button><div id="displaySettingsBody"></div></dialog>
     <div id="hud" class="hidden">
       <div id="hudLeft">
         <div id="btLatencyControl">
@@ -243,6 +257,7 @@
           <input id="rangeSeek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Song position in seconds" />
           <button id="rangeRestart" type="button" class="ghostbtn">Restart</button>
         </details>
+        <button id="displaySettingsBtn" class="ghostbtn" type="button" title="Display settings">Display</button>
         <button id="pauseBtn" class="ghostbtn iconbtn" type="button" title="Pause">&#9208;</button>
         <button id="stopBtn" class="ghostbtn iconbtn" type="button" title="Stop (back to title)">&#9209;</button>
         <button id="fullscreenBtn" class="ghostbtn iconbtn" type="button" title="Fullscreen (F11)">&#9974;</button>

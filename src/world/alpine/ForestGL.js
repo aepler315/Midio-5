@@ -145,8 +145,8 @@ const SHADE = /* glsl */`
   uniform float uDiag;
   uniform vec4 uNarrative;
   in float vGust;
-  ${MIST_GLSL}
   ${ACTOR_GLSL}
+  ${MIST_GLSL}
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   vec4 shadeTree(vec3 n, vec3 world, float core) {
     float dist = length(world - uCameraPos);
@@ -160,6 +160,7 @@ const SHADE = /* glsl */`
     vec3 hemi = mix(uSkyHorizon * 0.55, uSkyZenith, 0.5 + 0.5 * n.y) * uAmbientScale;
     vec3 lit = base * (hemi * (0.55 + 0.45 * core) + uLightColor * key);
     lit += base * actorLight(world, n);
+    lit *= 1.0 - broshiShadow(world) * .78;
     // Thin crown edges transmit a solar backlight. Both real conifers and
     // alpha-tested silhouettes use their own normal/core with this shared
     // response; key radiance already contains visibility exactly once.

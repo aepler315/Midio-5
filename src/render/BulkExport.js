@@ -1,3 +1,4 @@
+import { DEFAULT_DISPLAY_PREFS } from './DisplayProfile.js';
 // Planning for tools/bulk-export.mjs.
 //
 // The live recorder (SongRecorder.js) captures whatever the screen managed
@@ -287,6 +288,7 @@ export function parseBulkArgs(argv) {
     maxSeconds: null,
     lyrics: false,
     inputs: [],
+    presentation: null,
   };
   const args = [...argv];
   for (let i = 0; i < args.length;) {
@@ -372,6 +374,16 @@ export function parseBulkArgs(argv) {
       i = got.next;
       continue;
     }
+    const displayKey = ['look', 'quality', 'palette', 'dither', 'scaling'].find(key => token === `--${key}` || token.startsWith(`--${key}=`));
+    if (displayKey) {
+      const got = takeOption(args, i, `--${displayKey}`);
+      const choices = { look: ['natural', 'pixel', 'palette'], quality: ['auto', 'economy'], palette: ['range32', 'rgb332'], dither: ['off', 'subtle', 'full'], scaling: ['fit', 'integer'] };
+      if (!choices[displayKey].includes(got.value)) throw new Error(`--${displayKey} must be ${choices[displayKey].join(', ')}`);
+      opts.presentation ??= { ...DEFAULT_DISPLAY_PREFS };
+      opts.presentation[displayKey] = displayKey === 'dither' ? { off: 0, subtle: .35, full: 1 }[got.value] : got.value;
+      i = got.next;
+      continue;
+    }
     if (token.startsWith('--')) throw new Error(`Unknown option ${token}.`);
     opts.inputs.push(token);
     i++;
@@ -407,6 +419,11 @@ Options
   --url <origin>        App origin (default: http://127.0.0.1:8080)
   --lyrics              Look up timed lyrics. Off by default, so a batch
                         does not wait on the network.
+  --look <mode>        natural, pixel, or palette (default: remembered look)
+  --quality <mode>     auto or economy
+  --palette <name>     range32 or rgb332
+  --dither <amount>    off, subtle, or full
+  --scaling <mode>     fit or integer
   --help
 
 Needs ffmpeg on PATH with libx264. Audio is re-encoded to AAC at 192 kbps.
