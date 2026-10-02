@@ -1,3 +1,4 @@
+import { stormAt, drawStormSky } from './alpine/RangeStorm.js';
 import { ridgeAdvectionPxAt } from './RidgeMotionHistory.js';
 import { RidgeMotionHistory, createRidgeMusicSampler } from './RidgeMotionHistory.js';
 import { resolveLandscapePresentation } from './LandscapePresentation.js';
@@ -2398,7 +2399,7 @@ export class BiomeManager {
     // resume from where they left off, which for a diffusion field and two
     // oscillator banks is a valid state rather than a stale one.
     // Optional spectacle is stepped only when this world draws it and the
-    // current quality still wants it. Cathode never draws the manager, so
+    // current quality still wants it, so
     // the policy has to arrive from Simulation before this update; a missing
     // policy still means full quality for worlds that do paint the effect.
     const fx = this.stepOptionalEffects(nowMs, dtSec, energyCurves, calmLevel, wind);
@@ -2595,8 +2596,7 @@ export class BiomeManager {
     };
 
     // Dispatch on world kind. Registered kinds draw themselves and we are
-    // done; 'alpine' falls through to the original path below, and 'cathode'
-    // never arrives here at all (WebGLRenderer routes it to CathodeRenderer).
+    // done; 'alpine' falls through to the original path below.
     // What each module may touch on `this` is fixed by WORLD_CONTRACT and
     // enforced by worldContract.test.js.
     const drawWorldKind = WORLD_RENDERERS.get(this.world?.kind);
@@ -2719,6 +2719,12 @@ export class BiomeManager {
         allowPoint: this._rangeSky?.allowPoint || null,
       }));
     }
+    if (this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
+      this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), {
+        tSec: this.tSec, seed: this.songSeed || 0, pan: this.rangePresentation?.skyPan,
+        light: this._scenicLight, reducedMotion: this.reducedMotion,
+      });
+    if (this._rangeV2Active) this.rangePresentation.drawSkyGiants?.(ctx, canvas);
     // Spirograph resonance mandala, centered on the celestial body so it
     // reads as the sun/moon itself resonating with the track.
     const mandalaColor = this._rotated(this.lerpCache.get(A.celestial.haloColor, B.celestial.haloColor, t));
@@ -4621,7 +4627,7 @@ export class BiomeManager {
   }
 
   /** Presentation policy, independent of draw(). Simulation sets this
-   *  before update so Cathode, which never calls draw(), still sheds. */
+   *  before update so buffers are shed even when drawing is skipped. */
   adoptPerf(perf) {
     this._perf = perf || null;
   }
@@ -4630,7 +4636,7 @@ export class BiomeManager {
    *  current quality. Alpine spectacle is the mandala, cymatics, swarm,
    *  ribbon, space ridge, light rig, murmuration and lightning. Reaction
    *  diffusion feeds the shared ground pass, so every painterly world
-   *  keeps it; Cathode does not consume that pass. */
+   *  keeps it. */
   optionalEffectsActive() {
     const phenomenaFull = !this._perf || !!this._perf.phenomenaFull;
     const constellations = !this._perf || this._perf.constellationsEnabled !== false;
@@ -4641,7 +4647,7 @@ export class BiomeManager {
       cymatics: phenomenaFull && alpine,
       swarm: phenomenaFull && alpine,
       ribbon: phenomenaFull && alpine,
-      reactionDiffusion: phenomenaFull && kind !== 'cathode',
+      reactionDiffusion: phenomenaFull,
       spaceRidge: alpine,
       lightRig: alpine,
       murmuration: this.presentation?.decorativeActors && phenomenaFull && alpine,

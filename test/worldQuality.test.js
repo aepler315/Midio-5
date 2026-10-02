@@ -42,16 +42,16 @@ test('tune and holdout ids are disjoint, and no track stores audio bytes', () =>
   }
 });
 
-test('viewing order is the authored world list, including Cathode, never a score ranking', () => {
+test('viewing order is the authored world list, with all surviving worlds, never a score ranking', () => {
   const order = viewingOrder();
   assert.deepEqual(order, listWorlds().map((w) => w.id));
-  assert.ok(order.includes('cathode'));
+  assert.ok(order.includes('alpine'));
   const dense = corpus.tracks.find((t) => t.id === 'tune-wall-guitars');
   const sheet = evaluateTrack(dense);
   assert.deepEqual(sheet.viewingOrder, order);
   const ranked = sheet.heuristic.byWorld.map((w) => w.id);
   assert.notDeepEqual(sheet.viewingOrder, ranked, 'gallery order must not follow the heuristic');
-  assert.ok(!sheet.heuristic.byWorld.some((w) => w.id === 'cathode'), 'Cathode stays manual-only');
+  assert.ok(!sheet.heuristic.byWorld.some((w) => w.id === 'cathode'), 'removed world stays absent');
 });
 
 test('private scores are heuristics; 70–80 cases sit beside the winner without changing order', () => {

@@ -23,7 +23,6 @@ import { GroundResponse, recentConductorHits } from '../world/alpine/GroundRespo
 import { viewportState } from '../world/alpine/RangeFrame.js';
 import { composedNarrativeEdge } from './NarrativeDraw.js';
 import { narrativePressure } from '../world/alpine/RangeNarrative.js';
-import { quantizeCanvas } from './PaletteQuantize.js';
 
 // Reserve margin (logical stage px) around the visible frame that camera
 // shake/drift/sway/roll are free to pan into without ever exposing raw,
@@ -553,17 +552,6 @@ export class Renderer {
       ctx.setTransform(sx, 0, 0, sy, outputFit.x, outputFit.y);
       sim.assembly.draw(ctx, sim.timeMs);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-    }
-
-    // "8-bit intensive": quantize the finished frame to a 256-color palette.
-    // Last of all, so everything above it -- world, post-FX, HUD chrome --
-    // lands in the same palette rather than a quantized world with
-    // full-color furniture sitting on top. Before the captures below, not
-    // after, so a freeze frame and the highlight reel's thumbnails show what
-    // was actually on screen.
-    if (perf && perf.retroPalette) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      quantizeCanvas(ctx, canvas);
     }
 
     ctx.restore(); // fitted output clip

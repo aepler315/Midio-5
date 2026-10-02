@@ -2,7 +2,7 @@
 // and seeking -- plus a per-pass paint audit of the frame each one composes.
 // Start npm start first. Usage: node tools/worlds-smoke.mjs [url] [outDir]
 //
-// WHY THE PAINT AUDIT. This harness used to cover three of the nine worlds
+// WHY THE PAINT AUDIT. This harness used to cover three of the eight worlds
 // and assert that each frame held more than sixteen distinct colors. That is
 // a liveness check: it proves something rendered, not that the right things
 // did. BiomeManager's fata morgana was called every frame for a week while
@@ -81,10 +81,6 @@ const WORLDS = [
   { name: 'The Nave', kind: 'nave',
     mustPaint: ['_drawSky', '_drawGround', '_drawSignature'],
     watch: ['_drawCelestial'], mustNotPaint: ['_drawStarfield', 'drawDeepSky'] },
-  // Cathode replaces the renderer rather than the scenery, so BiomeManager
-  // never draws for it and there are no BiomeManager passes to audit. Its
-  // frame is checked as a whole instead -- see CATHODE_STATS.
-  { name: 'Cathode', kind: 'cathode', pixelRenderer: true, mustPaint: [], watch: [] },
 ];
 
 await fs.mkdir(out, { recursive: true });
@@ -150,27 +146,6 @@ const PAINT_AUDIT = ({ names, quality = 0 }) => {
   return stats;
 };
 
-/** Cathode draws through its own renderer, so it gets a whole-frame check:
- *  a real pixel frame is neither blank nor uniform. */
-const CATHODE_STATS = () => {
-  const stage = document.querySelector('#stage');
-  const c = document.createElement('canvas');
-  c.width = stage.width; c.height = stage.height;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(stage, 0, 0);
-  const px = ctx.getImageData(0, 0, c.width, c.height).data;
-  const colors = new Set();
-  let nonBlank = 0;
-  for (let i = 0; i < px.length; i += 4) {
-    colors.add(px[i] + ',' + px[i + 1] + ',' + px[i + 2]);
-    if (px[i] + px[i + 1] + px[i + 2] > 12) nonBlank++;
-  }
-  return {
-    colors: colors.size,
-    litFraction: +(nonBlank / (c.width * c.height)).toFixed(3),
-    rendererIsPixel: window.__SMW.renderer?.constructor?.name || null,
-  };
-};
 
 const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
@@ -259,12 +234,8 @@ try {
       // The per-pass audit, on the energetic passage -- the busiest frame,
       // and the one where every optional layer is in play.
       const auditConfiguration = await page.evaluate(renderWorldFrame, { atMs: 18000, quality: 0 });
-      let paint = null, cathode = null;
-      if (world.pixelRenderer) {
-        cathode = await page.evaluate(CATHODE_STATS);
-        assert.ok(cathode.colors > 4, name + ' composes a real pixel frame');
-        assert.ok(cathode.litFraction > 0.05, name + ' frame is not essentially blank');
-      } else {
+      let paint = null;
+      {
         paint = await page.evaluate(PAINT_AUDIT, { names: [...world.mustPaint, ...world.watch, ...(world.mustNotPaint || [])] });
         for (const pass of world.mustPaint) {
           const s = paint[pass];
@@ -320,7 +291,7 @@ try {
         }
       }
             assert.deepEqual(errors, [], name + ' has no browser errors');
-      report.worlds.push({ name, kind, liveState, seekTimes, samples, auditConfiguration, paint, cathode, degradedConfiguration, degradedPaint, motion, errors });
+      report.worlds.push({ name, kind, liveState, seekTimes, samples, auditConfiguration, paint, degradedConfiguration, degradedPaint, motion, errors });
       const painted = paint
         ? Object.entries(paint).filter(([, s]) => s.paintedPx > 0).map(([k]) => k).join(', ')
         : 'pixel renderer';

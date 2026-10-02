@@ -126,17 +126,6 @@ export const WORLD_IDENTITIES = Object.freeze({
     castPlacement: 'figures occupy the nave floor beneath the vault',
     sharedEffects: ENCLOSED,
   }),
-  cathode: policy({
-    kind: 'cathode',
-    vocabulary: { particles: [], effects: [], landmarks: [] },
-    foreground: { maxHeight: 0, hanging: false },
-    landmark: 'a four-color CRT tube and raster horizon',
-    signatureMotion: 'scanline crawl and sprite response',
-    lightSource: 'phosphor emission from the tube',
-    paletteFloor: 1,
-    castPlacement: 'figures resolve as sprites inside the screen',
-    sharedEffects: ENCLOSED,
-  }),
 });
 
 /** Return an immutable policy for a kind, world, or previously resolved policy. */

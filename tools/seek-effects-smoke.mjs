@@ -11,7 +11,7 @@ try {
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/soundfonts/', route => route.fulfill({ json: [] }));
   await page.goto(withAllWorlds(process.argv[2] || 'http://127.0.0.1:8080'));
-  for (const worldId of ['redline', 'cathode']) {
+  for (const worldId of ['redline']) {
   await page.locator('#demoBtn').click();
   await page.locator('#worldSelect:not(.hidden)').waitFor({ timeout: 90000 });
   await page.locator(`.worldCard[data-world-id="${worldId}"]`).click();

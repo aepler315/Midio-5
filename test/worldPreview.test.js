@@ -57,7 +57,7 @@ test('explanatory copy is derived from measurements and never ranks the world', 
   assert.match(naveNoLabels, /invent/i);
   const naveLabels = describeWorldResponse('nave', { bass: 0.5 }, { hasLabels: true });
   assert.match(naveLabels, /returning/i);
-  for (const kind of ['alpine', 'city', 'abyssal', 'airless', 'strip', 'foundry', 'overgrowth', 'nave', 'cathode']) {
+  for (const kind of ['alpine', 'city', 'abyssal', 'airless', 'strip', 'foundry', 'overgrowth', 'nave']) {
     const text = describeWorldResponse(kind, { onset: 0.5, bass: 0.5, groove: 0.5, phrase: 0.5 });
     assert.equal(/%|best|score|match/i.test(text), false, kind);
   }

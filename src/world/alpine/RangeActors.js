@@ -141,6 +141,9 @@ export function rangeActorsAt(sim, timeMs) {
   // peak amount, so a review can see the figures without waiting for one.
   const forced = sim.biomes?.actorPeakOverride;
   if (Number.isFinite(forced)) for (const id of ACTOR_IDS) now[id].peak = unit(forced);
+  else if (forced && typeof forced === 'object') for (const id of ACTOR_IDS) {
+    if (Number.isFinite(forced[id])) now[id].peak = unit(forced[id]);
+  }
   // Where Midio was a few seconds ago: the tail of his wake.
   now.midio.trail = score.at(t - ACTOR_WAKE_MS).midio.travel;
   return Object.freeze({ timeMs: t, presence: x * x * (3 - 2 * x), ...now });

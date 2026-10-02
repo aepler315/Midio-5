@@ -2,8 +2,7 @@
 
 Checked against the implementation on September 18, 2026. This document
 separates implemented behavior from tests and remaining acceptance work.
-The main painterly path is `src/render/Renderer.js`; Cathode has its own
-renderer and CRT pipeline. Directors consume timeline/simulation state;
+The main painterly path is `src/render/Renderer.js`.
 the renderer consumes their output rather than analyzing audio itself.
 
 ## Impact and trail inventory
@@ -68,7 +67,7 @@ space dust, aurora and nebula bloom are excluded. Their celestial objects
 remain the underwater sun and rose window. The default open-sky behavior is
 unchanged. The final film grade remains a separate, shared color treatment.
 
-Redline and Cathode travel integrate smoothed song energy into cumulative
+Redline travel integrate smoothed song energy into cumulative
 distance. They no longer multiply the current rate by elapsed song age.
 Direct and backward seeks therefore agree with the integrated timeline.
 
@@ -90,7 +89,6 @@ explicit preference is stored. The per-effect flash helper caps alpha at
   final opacity (including focus weighting) and switches to `source-over`.
 - Drop shockwave rings, shock blits and speed lines cap opacity and switch to `source-over`;
   the chromatic displacement is also halved.
-- Cathode suppresses screen hits/tearing and reduces raster travel speed.
 - Film grading is a slow color treatment, not a beat flash. Celestial light
   compression and bloom's steady base have separate rules.
 
@@ -189,7 +187,7 @@ is a fresh destination state, not replay of every earlier random particle.
 | Static shading containment | `npm run test:shading` |
 | Whole-system effect lifecycle across seeks | `npm run test:seek` |
 | Upload/playback/replacement/stop | `npm run test:smoke` |
-| Nine-world selection/playback/seek/reduced motion and paint checks | `npm run test:worlds` |
+| Eight-world selection/playback/seek/reduced motion and paint checks | `npm run test:worlds` |
 | Uploaded-song chooser, pointer Preview/Play | `npm run test:chooser` |
 | Desktop/narrow keyboard selection, native modality, Tab wrapping, Escape and focus return | `npm run test:chooser-keyboard` |
 

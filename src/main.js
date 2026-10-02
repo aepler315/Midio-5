@@ -15,7 +15,7 @@ import {
   validateDecodedAudioBuffer, validateDecodedByteLength,
 } from './audio/loadLimits.js';
 import { Simulation } from './sim/Simulation.js';
-import { createRenderer, resolveRendererMode } from './render/WebGLRenderer.js';
+import { resolveRendererMode } from './render/WebGLRenderer.js';
 import { hitTestComposerStrip } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
@@ -58,9 +58,12 @@ import { RangePresentation, resolveRangeMode } from './world/alpine/RangePresent
 import { residencyBudgetFor } from './render/GraphicsResidency.js';
 import {
   DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
-  isPalettePreset, displayLimitedSize, autoStageSize, shouldSuggestLandscape,
+ displayLimitedSize, autoStageSize, shouldSuggestLandscape,
 } from './render/StagePresets.js';
-import { quantizeCanvas } from './render/PaletteQuantize.js';
+import { createPresentingRenderer } from './render/PresentingRenderer.js';
+import { PixelPresentation, fitPixelRect } from './render/PixelPresentation.js';
+import { shouldDrawFrame } from './render/FrameCadence.js';
+import { readDisplayPrefs, writeDisplayPrefs, resolvePresentation, resolveDisplayPrefs } from './render/DisplayProfile.js';
 import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
@@ -85,7 +88,7 @@ import {
 import { buildWorldVariant, scoreWorlds, pickRecommended, formatFitDiagnostic } from './world/WorldScore.js';
 import { buildSongProfile, PROFILE_VERSION } from './audio/SongProfile.js';
 import {
-  DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getCustomWorld, getWorld, listWorlds,
+  DEFAULT_WORLD_ID, setCustomWorld, clearCustomWorld, getCustomWorld, getWorld, listWorlds, resolveWorldId,
 } from './world/Worlds.js';
 import { buildWorldChoices, moveChoiceIndex } from './ui/WorldChooser.js';
 import {
@@ -422,6 +425,11 @@ let lastSongSeed = null; // 32-bit seed used for the run that just finished
 const STAGE_W = 1280;
 const STAGE_H = 720;
 const STAGE_RES_KEY = 'smw:stageRes';
+function displayStorage() { try { return localStorage; } catch { return null; } }
+let displayPrefs = readDisplayPrefs(displayStorage());
+writeDisplayPrefs(displayStorage(), displayPrefs);
+let presentation = resolvePresentation(displayPrefs);
+const displayControls = Object.fromEntries(['look', 'quality', 'palette', 'dither', 'scaling'].map(key => [key, document.getElementById(`display-${key}`)]));
 const STAGE_FPS_KEY = 'smw:stageFps';
 let simTime = 0;
 let acc = 0;
@@ -474,6 +482,17 @@ const perfStartLevel = resolvePerfStartLevel(
 // on every change and silently discarded on every reload. It matters most
 // for exactly the machine 8-bit mode exists for: the device that cannot
 // afford 1080p was handed 1080p again on every load.
+function syncDisplayControls() {
+  for (const [key, control] of Object.entries(displayControls)) if (control) {
+    control.value = String(displayPrefs[key]);
+    control.disabled = (key === 'palette' || key === 'dither') && displayPrefs.look !== 'palette'
+      || key === 'scaling' && displayPrefs.look === 'natural';
+  }
+  if (stageResEl) stageResEl.disabled = presentation.pixelated;
+  const grid = document.getElementById('pixelGridHint');
+  if (grid) grid.hidden = !presentation.pixelated;
+}
+
 function storedStagePreset() {
   try { return resolveStagePreset(localStorage.getItem(STAGE_RES_KEY)); } catch { return null; }
 }
@@ -507,11 +526,28 @@ function persistFpsCap(fps) {
 }
 
 let fpsCapMs = 1000 / readFpsCap();
-let lastDrawMs = 0;
+let lastDrawMs = null;
+let titleLastDrawMs = null;
 /** Exact backing-store size while tools/bulk-export.mjs is driving frames.
  *  Display-fit and the perf ladder both stand aside for it. */
 let bulkExportSize = null;
 let bulkExportArmed = false;
+let bulkPresentation = null;
+let titlePresentation = null;
+function effectivePresentation() { return bulkPresentation || presentation; }
+function fitPixelLayout() {
+  const p = effectivePresentation();
+  const integer = p.pixelated && p.scaling === 'integer' && !bulkExportSize;
+  canvas.classList.toggle('integerPixels', integer);
+  canvas.parentElement.classList.toggle('pixelDisplay', p.pixelated);
+  if (integer) {
+    const box = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const fit = fitPixelRect(320, 180, box.width * dpr, box.height * dpr, 'integer');
+    canvas.style.setProperty('--pixel-width', `${fit.width / dpr}px`);
+    canvas.style.setProperty('--pixel-height', `${fit.height / dpr}px`);
+  }
+}
 
 /** `?bulkExport=1&exportW=&exportH=` arms export on the next song start.
  *  An odd or unusable size reads as not armed (evenExportSize -> null);
@@ -542,35 +578,31 @@ function readBulkExportFromUrl() {
  *  Under perf pressure the backing store shrinks (PerfGovernor.resolutionScale),
  *  CSS-upscaled to fill the viewport — the single biggest win at 4K. */
 function fitCanvas() {
+  const active = effectivePresentation();
+  renderer?.setPresentation(active);
+  titlePresentation?.setPresentation(active);
+  fitPixelLayout();
   if (bulkExportSize) {
     const { w, h } = bulkExportSize;
     if (perfGovernor) {
-      perfGovernor.retro = false;
-      perfGovernor.holdQuality = true;
-      perfGovernor.targetCanvasWidth = w;
-      perfGovernor.canvasWidth = w;
+      perfGovernor.targetCanvasWidth = active.pixelated ? 320 : w;
+      perfGovernor.canvasWidth = active.pixelated ? 320 : w;
     }
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
-    const ctx2d = canvas.getContext('2d');
-    if (ctx2d) ctx2d.imageSmoothingEnabled = true;
-    canvas.classList.remove('retro');
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    canvas.classList.toggle('retro', active.pixelated);
     landscapeHintEl?.classList.remove('is-visible');
     return;
   }
   const preset = readStagePreset();
   const dims = stageDims(preset);
   const adaptive = isAutoPreset(preset);
-  const retro = isRetroPreset(preset);
+  const retro = active.pixelated;
   // Set BEFORE resolutionScale is read: in 8-bit mode the governor is pinned
   // to its cheapest rung, and the scale it reports depends on that level.
   // `retro` must be assigned first -- retroPalette only ever holds alongside
   // it, and clearing retro clears the palette pass with it.
   if (perfGovernor) {
-    perfGovernor.retro = retro;
-    perfGovernor.retroPalette = isPalettePreset(preset);
+    perfGovernor.economy = active.quality === 'economy';
   }
   // Clamp to what the display can actually present BEFORE the governor's own
   // scale: the preset is a ceiling, and on a phone (especially in portrait,
@@ -579,10 +611,10 @@ function fitCanvas() {
   // nothing. A desktop displaying the stage at or above its preset size is
   // unaffected -- this only ever reduces.
   const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
-  const fit = adaptive
+  const fit = retro ? { w: 320, h: 180 } : adaptive
     ? autoStageSize(canvas.clientWidth, canvas.clientHeight, dpr, isCoarsePointer)
     : displayLimitedSize(dims.w, dims.h, canvas.clientWidth, canvas.clientHeight, dpr);
-  const scale = perfGovernor ? perfGovernor.resolutionScale(fit.h, { adaptive }) : 1;
+  const scale = !retro && perfGovernor ? perfGovernor.resolutionScale(fit.h, { adaptive }) : 1;
   const w = Math.round(fit.w * scale);
   const h = Math.round(fit.h * scale);
   if (canvas.width !== w || canvas.height !== h) {
@@ -635,11 +667,24 @@ function randomizeSeed() {
     const qSeed = parseSeed(params.get('seed'));
     if (qSeed != null) setSeedInput(qSeed);
   } catch { /* ignore */ }
+  for (const [key, control] of Object.entries(displayControls)) {
+    if (!control) continue;
+    control.value = String(displayPrefs[key]);
+    control.addEventListener('change', () => {
+      displayPrefs = { ...displayPrefs, [key]: key === 'dither' ? Number(control.value) : control.value };
+      presentation = resolvePresentation(displayPrefs);
+      writeDisplayPrefs(displayStorage(), displayPrefs);
+      syncDisplayControls();
+      perfGovernor?.forgetRecoveryHistory();
+      fitCanvas();
+    });
+  }
+  syncDisplayControls();
   if (stageResEl) {
     // Storage first, and only then whatever the markup defaults to -- see
     // storedStagePreset() for why asking readStagePreset() here restored
     // nothing at all.
-    stageResEl.value = String(storedStagePreset() ?? readStagePreset());
+    stageResEl.value = String(isRetroPreset(storedStagePreset()) ? DEFAULT_STAGE_PRESET : storedStagePreset() ?? readStagePreset());
     stageResEl.addEventListener('change', () => {
       persistStagePreset(resolveStagePreset(stageResEl.value) ?? DEFAULT_STAGE_PRESET);
       // Someone reaching for this menu has changed the workload, so what the
@@ -1439,6 +1484,7 @@ function startChooserPreviews() {
 }
 
 function playSelectedWorld(baseWorldId) {
+  baseWorldId = resolveWorldId(baseWorldId);
   const baseWorld = listWorlds().find((world) => world.id === baseWorldId);
   if (!baseWorld) return;
 
@@ -1581,7 +1627,7 @@ function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
 /** Rebuild the current song at an exact frame size and arm the export clock.
  *  The seed and the decoded buffer carry over, so each resolution is the
  *  same performance. */
-function beginBulkExport({ width, height } = {}) {
+function beginBulkExport({ width, height, presentation: override } = {}) {
   const size = evenExportSize({ w: width, h: height });
   if (!size) throw new Error(`Export size must be even and at least 2×2 (got ${width}×${height}).`);
   if (!lastTimelineData) throw new Error('Load a song before exporting.');
@@ -1592,6 +1638,8 @@ function beginBulkExport({ width, height } = {}) {
     playBuffer: lastAudioBuffer || undefined,
     exportMode: true,
     exportSize: size,
+    exportPresentation: override ? resolvePresentation(resolveDisplayPrefs({ saved: override })) : { ...effectivePresentation() },
+    exportQualityLevel: perfGovernor?.level ?? perfStartLevel,
     startAtMs: 0,
     fitDiagnostic: lastFitDiagnostic,
   };
@@ -1631,6 +1679,7 @@ function confirmWorld(id) {
 }
 
 function startConfirmedWorld(pending, id) {
+  id = resolveWorldId(id);
   stopWorldPreview();
   lastWorldId = id;
   pending.data.worldId = id;
@@ -1733,7 +1782,9 @@ function startTimeline(timelineData, extra = {}) {
   lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0, keepUserCamera: false };
   const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
   const exportMode = !!(exportModeFlag || fromUrl);
+  const exportQualityLevel = extra.exportQualityLevel ?? perfGovernor?.level ?? perfStartLevel;
   if (exportMode) {
+    bulkPresentation = extra.exportPresentation || { ...presentation };
     const requested = exportSize || fromUrl || bulkExportSize;
     const size = evenExportSize(requested);
     if (!size) {
@@ -1745,6 +1796,7 @@ function startTimeline(timelineData, extra = {}) {
   } else {
     bulkExportSize = null;
     bulkExportArmed = false;
+    bulkPresentation = null;
   }
   // Bulk export is a full capture on a stepped clock: the same zero lead and
   // frame-0 prime as captureMode, so it rides that path (and CaptureClock's
@@ -1765,6 +1817,7 @@ function startTimeline(timelineData, extra = {}) {
   // idle -> about-to-freeze transition never fires and the song never
   // completes -- the engine would just run forever.
   timelineData.durationMs = resolveDurationMs(timelineData.timeline, timelineData.durationMs);
+  timelineData.worldId = resolveWorldId(timelineData.worldId || lastWorldId || DEFAULT_WORLD_ID);
   timelineData.ridgeResponse ??= getWorld(timelineData.worldId || lastWorldId || DEFAULT_WORLD_ID)?.response;
   ensureRidgeMusicSession(timelineData);
   lastTimelineData = timelineData;
@@ -1781,13 +1834,12 @@ function startTimeline(timelineData, extra = {}) {
   // chosen preset, rather than spending the first song at full quality
   // until something calls fitCanvas() again.
   perfGovernor = new PerfGovernor({
-    startLevel: exportMode ? 0 : perfStartLevel,
-    retro: exportMode ? false : isRetroPreset(readStagePreset()),
-    retroPalette: exportMode ? false : isPalettePreset(readStagePreset()),
+    startLevel: exportMode ? exportQualityLevel : perfStartLevel,
+    economy: effectivePresentation().quality === 'economy',
   });
   // An offline frame's period is its draw time, which the ladder would read
   // as pressure and shed the picture the file exists to keep.
-  if (exportMode) perfGovernor.holdQuality = true;
+  if (exportMode) perfGovernor.freezeQuality(effectivePresentation().quality === 'economy' ? PERF_MAX_LEVEL : exportQualityLevel);
   fitCanvas(); // sync the new governor's canvasWidth/scale to the live buffer
   // World construction (parallax strips, landmarks) is CPU-heavy; surface a
   // progress line so a multi-second bake never looks like a dead freeze.
@@ -1892,7 +1944,7 @@ function startTimeline(timelineData, extra = {}) {
   // overlay. The world is passed too: one that brings its own pipeline
   // (Cathode) replaces the renderer outright rather than branching inside
   // it. Created here, per song, which is after the world is known.
-  renderer = createRenderer(canvas, rendererMode, getWorld(sim.worldId));
+  renderer = createPresentingRenderer({ canvas, mode: rendererMode, presentation: effectivePresentation(), residency: sharedResidency() });
   if (rangePresentation) {
     rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen, exportMode });
     renderer.rangePresentation = rangePresentation;
@@ -1903,6 +1955,7 @@ function startTimeline(timelineData, extra = {}) {
   // across songs since they're a machine-level setting, not a per-song one.
   visionLoop = new VisionLoop(canvas, paramBus, sim, { enabled: false, perfGovernor, ...readVisionConfig() });
   debugOverlay = new DebugOverlay(debugOverlayEl, sim, paramBus, visionLoop, perfGovernor, drawErrors);
+  debugOverlay.presentationDiagnostics = () => renderer?.diagnostics;
   debugOverlay.onVisionConfigChange = persistVisionConfig;
   renderTracks(timelineData.tracks, timelineData.pairs);
   if (filmstripEl) { filmstripEl.innerHTML = ''; filmstripEl.classList.add('hidden'); }
@@ -2050,6 +2103,8 @@ function startTimeline(timelineData, extra = {}) {
     exportReady: exportMode,
     get durationMs() { return conductor?.durationMs || 0; },
     get exportSize() { return { width: canvas.width, height: canvas.height }; },
+    get presentationDiagnostics() { return renderer?.diagnostics || titlePresentation?.diagnostics; },
+    get displayPrefs() { return { ...displayPrefs }; },
     beginBulkExport: (size) => beginBulkExport(size),
     renderExportFrame: (timeMs, options) => renderExportFrame(timeMs, options),
     get perfLevel() { return perfGovernor?.level ?? null; },
@@ -3188,6 +3243,18 @@ if (sfDirBtnEl) {
 
 // --- SoundFont switcher popup (§ replaces the old </>  cycler arrows,
 // which had no way to show *which* fonts exist or let you set any aside).
+// Reuse the same real controls during playback; closing restores their title home.
+const displayDialog = document.getElementById('displaySettingsDialog');
+const titleSettings = document.getElementById('titleSettings');
+const settingsHome = titleSettings?.parentElement;
+document.getElementById('displaySettingsBtn')?.addEventListener('click', () => {
+  document.getElementById('displaySettingsBody').append(titleSettings);
+  titleSettings.open = true;
+  displayDialog.showModal();
+});
+document.getElementById('displaySettingsClose')?.addEventListener('click', () => displayDialog.close());
+displayDialog?.addEventListener('close', () => settingsHome.append(titleSettings));
+
 // The settings gear opens straight to the hidden-fonts ("unhide") view; the
 // F key (below) opens the visible-fonts list.
 if (settingsBtnEl) settingsBtnEl.addEventListener('click', () => openFontModal('hidden'));
@@ -3316,8 +3383,7 @@ function frame(tRaf) {
   // FPS cap: skip the draw when we're ahead of the target frame period.
   // The sim still steps at full rate so audio sync stays tight; only the
   // GPU-bound draw is throttled.
-  const drawElapsed = tRaf - lastDrawMs;
-  if (drawElapsed < fpsCapMs - 1) {
+  if (!shouldDrawFrame(tRaf, lastDrawMs, 1000 / fpsCapMs)) {
     rafHandle = requestAnimationFrame(frame);
     return;
   }
@@ -3429,7 +3495,7 @@ function frame(tRaf) {
 
   // One composite per rendered frame, after the stage is final --
   // visionLoop samples the same canvas here, which is what says so.
-  songRecorder?.captureFrame();
+  songRecorder?.captureFrame(renderer?.getCaptureSource());
   updateRecordReadout(tRaf);
   visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
@@ -3513,6 +3579,8 @@ function clientToStage(e) {
  *  instant a song starts. */
 function titleFrame(tRaf) {
   if (running) return;
+  if (!shouldDrawFrame(tRaf, titleLastDrawMs, 1000 / fpsCapMs)) { titleRafHandle = requestAnimationFrame(titleFrame); return; }
+  titleLastDrawMs = tRaf;
   // Rebuilt whenever the backing store changes size, not just once: the
   // backdrop bakes its star and nebula positions against the dimensions it
   // was constructed with, so one built for a 1920x1080 buffer draws almost
@@ -3521,14 +3589,17 @@ function titleFrame(tRaf) {
   if (!titleBackdrop || titleBackdrop.width !== canvas.width || titleBackdrop.height !== canvas.height) {
     titleBackdrop = new TitleBackdrop({ seed: 1, width: canvas.width, height: canvas.height });
   }
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  titlePresentation ??= new PixelPresentation({ canvas, presentation: effectivePresentation(), residency: sharedResidency() });
+  const source = titlePresentation.beginFrame();
+  if (!source) { titleRafHandle = requestAnimationFrame(titleFrame); return; }
+  const ctx = source.getContext('2d');
+  ctx.clearRect(0, 0, source.width, source.height);
   titleBackdrop.draw(ctx, tRaf / 1000);
+  titlePresentation.finishFrame();
   // 8-bit intensive quantizes the title screen too. The song path runs this
   // from Renderer.draw(); doing it here as well means choosing the mode
   // visibly does something on the screen you choose it from, instead of
   // looking inert until a song starts.
-  if (isPalettePreset(readStagePreset())) quantizeCanvas(ctx, canvas);
   titleRafHandle = requestAnimationFrame(titleFrame);
 }
 
@@ -3597,7 +3668,7 @@ function seekSong(ms) {
   const wasPaused = paused;
   const seed = sim.songSeed;
   const buffer = lastAudioBuffer;
-  const selectedSection = (renderer?.canvasRenderer || renderer)?.composer?.selectedSection;
+  const selectedSection = renderer?.composer?.selectedSection;
   const hudInFrame = !!renderer?.hudInFrame;
   const showSectionLabels = !!sim.showSectionLabels;
   startTimeline(lastTimelineData, { songSeed: seed, startAtMs: t, keepUserCamera: true,
@@ -3612,7 +3683,7 @@ function seekSong(ms) {
     updatePauseButtonUI();
   }
   renderer.draw(sim, 1);
-  const composer = (renderer.canvasRenderer || renderer).composer;
+  const composer = renderer.composer;
   if (composer && selectedSection != null) composer.selectedSection = selectedSection;
 }
 
@@ -3816,7 +3887,7 @@ function canvasTap(p, button, atMs = null) {
   wakeHud();
   if (!p) return;
   const hit = hitTestComposerStrip(renderer, p.x, p.y, { width: STAGE_W, height: STAGE_H });
-  const composer = (renderer?.canvasRenderer || renderer)?.composer;
+  const composer = renderer?.composer;
   // Mouse buttons mirror the keys: left pairs with F (low), right with J
   // (high). Anything else (middle, back/forward) stays an unroled tap rather
   // than being silently filed as one of the two hands.
@@ -3859,7 +3930,7 @@ window.addEventListener('keydown', (e) => {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
     if (filmstripModalEl && !filmstripModalEl.classList.contains('hidden')) closeFilmstripModal();
     // Close section detail overlay on the seekbar.
-    const composer = (renderer?.canvasRenderer || renderer)?.composer;
+    const composer = renderer?.composer;
     if (composer && composer.selectedSection >= 0) {
       composer.selectedSection = -1;
     }
@@ -4756,3 +4827,9 @@ exportBtnEl?.addEventListener('click', () => {
 });
 
 syncRecordUI();
+
+// The title has a presentation owner before there is a song simulation.
+if (!window.__SMW) window.__SMW = {
+  get presentationDiagnostics() { return titlePresentation?.diagnostics; },
+  get displayPrefs() { return { ...displayPrefs }; },
+};

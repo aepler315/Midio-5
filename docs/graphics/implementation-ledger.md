@@ -124,3 +124,7 @@ Design choice: extend WorldIdentity with physical-content/foreground rules and c
 - After Hours energetic inspection showed a luminous generated backdrop competing with small window districts. Added failing actual adaptation test, then attenuated only its sky at materialization while preserving musical hue and localized lights. Full suite: 2841 pass; lint/diff check pass.
 
 - Subsequent composed inspection found the fixed ground pass could still cover Foundry's furnace under camera pull-back. Actual draw-order regression now requires machinery after ground. Assemblies use groundView.stage and sampled ground height; furnace mouths keep warm material color while sustained heat controls intensity. Focused 25 tests and full 2841-test suite pass; lint passes.
+
+## 2026-10-02 pixel presentation upgrade
+
+Cathode retired from the registry, renderer, preview and policies. Removed playback IDs normalize to The Range; historical evidence above retains its original revision context. Global pixel preferences survive.

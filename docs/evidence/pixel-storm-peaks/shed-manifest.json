@@ -1,0 +1,692 @@
+{
+  "phase": "shed",
+  "timestamp": "2026-10-02T10:16:31.149Z",
+  "baseline": "96908d0",
+  "commit": "3634e4469c2cb91ee0039957179d226b52c08b7f",
+  "browser": "153.0.8010.0",
+  "fixtureSha256": "122fe0ddd4e0dea7fa3646b91abb3f8b5324a6cfe0c95f376153f524a14a08df",
+  "viewport": [
+    1280,
+    720
+  ],
+  "dpr": 1,
+  "seed": 24681357,
+  "size": [
+    960,
+    540
+  ],
+  "errors": [],
+  "results": [
+    {
+      "actor": "midio",
+      "phase": "after",
+      "view": {
+        "mode": "v2",
+        "active": true,
+        "reason": null,
+        "viewId": "teton-jackson-lake",
+        "forcedCandidate": false,
+        "forcedViewId": "teton-jackson-lake",
+        "diag": null,
+        "generation": 1,
+        "runtime": "ready",
+        "arrival": 1,
+        "incomingFade": 1,
+        "incomingViewId": null,
+        "seamP": 1,
+        "failures": {},
+        "deferred": [],
+        "frameId": 5,
+        "progress01": 0.46461379474045184,
+        "scene": {
+          "prepared": [
+            "teton-jackson-lake"
+          ],
+          "pending": [],
+          "contextLost": false,
+          "size": {
+            "width": 1056,
+            "height": 636
+          },
+          "stats": {
+            "depthPasses": 5,
+            "partitions": 15,
+            "lastPartitionMs": 1.199999999254942,
+            "mirrorPasses": 3
+          },
+          "sideB": false
+        },
+        "residency": {
+          "budget": "desktop",
+          "budgetBytes": 268435456,
+          "pendingBytes": 0,
+          "liveBytes": 98557063,
+          "denials": 0,
+          "overcommits": 0,
+          "byOwner": {
+            "range-terrain-cpu": {
+              "pending": 0,
+              "live": 8185208,
+              "count": 1
+            },
+            "range-material": {
+              "pending": 0,
+              "live": 12582910,
+              "count": 1
+            },
+            "range-terrain-gpu": {
+              "pending": 0,
+              "live": 66959377,
+              "count": 1
+            },
+            "range-targets": {
+              "pending": 0,
+              "live": 8059392,
+              "count": 1
+            },
+            "range-skyline": {
+              "pending": 0,
+              "live": 41472,
+              "count": 1
+            },
+            "crest-light": {
+              "pending": 0,
+              "live": 2728704,
+              "count": 1
+            }
+          },
+          "pinned": [
+            "range:render-target",
+            "range:ground-target",
+            "range:render-target-B",
+            "range:terrain-gpu:teton-jackson-lake:desktop",
+            "range:terrain-cpu:teton-jackson-lake",
+            "range:material:dry-conifer"
+          ],
+          "cancelledGenerations": [],
+          "peakBytes": 180611490,
+          "peakByOwner": {
+            "legacy-strips#2": 37641104,
+            "range-terrain-cpu": 8185208,
+            "range-material": 12582910,
+            "range-terrain-gpu": 66959377,
+            "range-scratch": 55242891
+          },
+          "entryCount": 6,
+          "generations": [
+            0,
+            1
+          ]
+        },
+        "narrative": {
+          "relief": 1,
+          "atmosphere": 1,
+          "materials": 1,
+          "features": 1,
+          "spaceAuthority": 1,
+          "skyDark": 1,
+          "traceResolution": 1,
+          "revelation": 1,
+          "progress": 0.5001905487804866,
+          "cast": {
+            "midio": 0,
+            "broshi": 0,
+            "midasus": 0
+          },
+          "handoff": {
+            "midio": 1,
+            "broshi": 1,
+            "midasus": 1
+          },
+          "sources": {
+            "midio": {
+              "source": "lane:MIDIO",
+              "activity": 0,
+              "pitchActivity": 0,
+              "pitch01": 0.5
+            },
+            "broshi": {
+              "source": "lane:BROSHI",
+              "activity": 0.16903080521406935,
+              "pitchActivity": 0,
+              "pitch01": 0.5
+            },
+            "midasus": {
+              "source": "lane:MIDASUS",
+              "activity": 0.13529722851230166,
+              "pitchActivity": 0,
+              "pitch01": 0.5
+            }
+          }
+        },
+        "timings": {
+          "lastCopyMs": 0.10000000149011612,
+          "lastPartitionMs": 1.199999999254942,
+          "frameId": 5,
+          "frameRenderMs": 5.699999999254942,
+          "frameCopyMs": 0.5
+        },
+        "catalogVersion": 19
+      },
+      "timeMs": 19999.999999999953,
+      "actors": {
+        "timeMs": 19999.999999999953,
+        "presence": 1,
+        "midio": {
+          "glow": 0.248063579201712,
+          "travel": 6.395818710327129,
+          "peak": 1,
+          "trail": 5.140695571899399
+        },
+        "broshi": {
+          "glow": 0.17470119893550903,
+          "travel": 9.261922836303695,
+          "peak": 0
+        },
+        "midasus": {
+          "glow": 0.1603843420743956,
+          "travel": 7.607910156249984,
+          "peak": 0
+        }
+      },
+      "light": {
+        "space": "scenic-stage logical px; ground anchor converted through recorded view transforms",
+        "state": {
+          "sun": {
+            "xFrac": 0.6307680184491182,
+            "yFrac": 0.1333903783058087,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.5876569354106769,
+            "altitude01": 0.882769573991183,
+            "visibility": 1,
+            "directGain": 1.6,
+            "colorHex": "#fff6dc"
+          },
+          "moon": {
+            "xFrac": 0.92,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.021875,
+            "scale": 1.5876569354106769,
+            "altitude01": 0,
+            "visibility": 0,
+            "directGain": 0,
+            "colorHex": "#c8d8ff"
+          },
+          "activeBody": "sun",
+          "night01": 0,
+          "dawn01": 0.007178678966078778,
+          "dusk01": 0,
+          "darkness01": 0,
+          "ambientMultiplier": 1
+        },
+        "celestial": {
+          "xFrac": 0.6307680184491182,
+          "yFrac": 0.1333903783058087,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 1.5876569354106769,
+          "altitude01": 0.882769573991183,
+          "visibility": 1,
+          "directGain": 1.6,
+          "colorHex": "#fff6dc",
+          "body": "sun",
+          "intensity": 1.594257056827137
+        },
+        "ground": {
+          "x": 888.1213699763584,
+          "y": 113.11504080332577,
+          "colorHex": "#fff6dc",
+          "intensity": 1.594257056827137,
+          "dirX": -0.24303268070435227,
+          "dirY": 0.9700181009185634,
+          "celestialYFrac": 0.1333903783058087,
+          "space": "ground"
+        },
+        "ambientMultiplier": 1,
+        "night01": 0,
+        "dawn01": 0.007178678966078778,
+        "dusk01": 0,
+        "sky": {
+          "top": "#2f5c9a",
+          "mid": "#6798cb",
+          "horizon": "#c6d8e4",
+          "air": "#c6d8e4"
+        }
+      },
+      "storm": {
+        "amount": 0,
+        "flash": 0,
+        "break01": 0,
+        "wet01": 0
+      },
+      "debug": {
+        "peak": [
+          0,
+          0,
+          0
+        ],
+        "layout": {
+          "centers": [
+            [
+              -6870.707441395247,
+              2055.39990234375,
+              2654.5528915840887
+            ],
+            [
+              -5040,
+              2433.550048828125,
+              2240
+            ],
+            [
+              -2214.581516848357,
+              1945.1395263671875,
+              -114.22321698827272
+            ]
+          ],
+          "skyCenters": [
+            [
+              -5355.040795151318,
+              3632.165036157963,
+              1739.3104354026573
+            ],
+            [
+              -5040,
+              2433.550048828125,
+              2240
+            ],
+            [
+              -5355.040795151318,
+              3632.165036157963,
+              1739.3104354026573
+            ]
+          ],
+          "spans": [
+            8077.285986328125,
+            5384.857324218749,
+            8615.77171875
+          ],
+          "right": [
+            -0.5082836546204543,
+            0,
+            -0.861189715710583
+          ],
+          "forward": [
+            -0.861189715710583,
+            0,
+            0.5082836546204543
+          ],
+          "hasLake": true
+        },
+        "camera": [
+          2833.763992477502,
+          2509.447320745069,
+          -3019.838888301841
+        ],
+        "mist": [
+          1000000000,
+          0
+        ],
+        "spans": [
+          8077.285986328125,
+          5384.857324218749,
+          8615.77171875
+        ],
+        "center": [
+          [
+            -6870.707441395247,
+            2055.39990234375,
+            2654.5528915840887
+          ],
+          [
+            -5040,
+            2433.550048828125,
+            2240
+          ],
+          [
+            -2214.581516848357,
+            1945.1395263671875,
+            -114.22321698827272
+          ]
+        ],
+        "hasTexture": true,
+        "mirrorAmount": 0
+      },
+      "giant": 4,
+      "name": "teton-jackson-lake-midio-shed.png"
+    },
+    {
+      "actor": "midio",
+      "phase": "after",
+      "view": {
+        "mode": "v2",
+        "active": true,
+        "reason": null,
+        "viewId": "tombstone-north-klondike",
+        "forcedCandidate": false,
+        "forcedViewId": "tombstone-north-klondike",
+        "diag": null,
+        "generation": 1,
+        "runtime": "ready",
+        "arrival": 1,
+        "incomingFade": 1,
+        "incomingViewId": null,
+        "seamP": 1,
+        "failures": {},
+        "deferred": [],
+        "frameId": 5,
+        "progress01": 0.46461379474045184,
+        "scene": {
+          "prepared": [
+            "tombstone-north-klondike"
+          ],
+          "pending": [],
+          "contextLost": false,
+          "size": {
+            "width": 1056,
+            "height": 636
+          },
+          "stats": {
+            "depthPasses": 5,
+            "partitions": 15,
+            "lastPartitionMs": 0.8000000007450581
+          },
+          "sideB": false
+        },
+        "residency": {
+          "budget": "desktop",
+          "budgetBytes": 268435456,
+          "pendingBytes": 0,
+          "liveBytes": 111844062,
+          "denials": 0,
+          "overcommits": 0,
+          "byOwner": {
+            "range-terrain-cpu": {
+              "pending": 0,
+              "live": 12351923,
+              "count": 1
+            },
+            "range-material": {
+              "pending": 0,
+              "live": 12582910,
+              "count": 1
+            },
+            "range-terrain-gpu": {
+              "pending": 0,
+              "live": 76079661,
+              "count": 1
+            },
+            "range-targets": {
+              "pending": 0,
+              "live": 8059392,
+              "count": 1
+            },
+            "range-skyline": {
+              "pending": 0,
+              "live": 41472,
+              "count": 1
+            },
+            "crest-light": {
+              "pending": 0,
+              "live": 2728704,
+              "count": 1
+            }
+          },
+          "pinned": [
+            "range:render-target",
+            "range:ground-target",
+            "range:render-target-B",
+            "range:terrain-gpu:tombstone-north-klondike:desktop",
+            "range:terrain-cpu:tombstone-north-klondike",
+            "range:material:tundra"
+          ],
+          "cancelledGenerations": [],
+          "peakBytes": 193898489,
+          "peakByOwner": {
+            "legacy-strips#2": 37641104,
+            "range-terrain-cpu": 12351923,
+            "range-material": 12582910,
+            "range-terrain-gpu": 76079661,
+            "range-scratch": 55242891
+          },
+          "entryCount": 6,
+          "generations": [
+            0,
+            1
+          ]
+        },
+        "narrative": {
+          "relief": 1,
+          "atmosphere": 1,
+          "materials": 1,
+          "features": 1,
+          "spaceAuthority": 1,
+          "skyDark": 1,
+          "traceResolution": 1,
+          "revelation": 1,
+          "progress": 0.5001905487804866,
+          "cast": {
+            "midio": 0,
+            "broshi": 0,
+            "midasus": 0
+          },
+          "handoff": {
+            "midio": 1,
+            "broshi": 1,
+            "midasus": 1
+          },
+          "sources": {
+            "midio": {
+              "source": "lane:MIDIO",
+              "activity": 0,
+              "pitchActivity": 0,
+              "pitch01": 0.5
+            },
+            "broshi": {
+              "source": "lane:BROSHI",
+              "activity": 0.16903080521406935,
+              "pitchActivity": 0,
+              "pitch01": 0.5
+            },
+            "midasus": {
+              "source": "lane:MIDASUS",
+              "activity": 0.13529722851230166,
+              "pitchActivity": 0,
+              "pitch01": 0.5
+            }
+          }
+        },
+        "timings": {
+          "lastCopyMs": 0.09999999776482582,
+          "lastPartitionMs": 0.8000000007450581,
+          "frameId": 5,
+          "frameRenderMs": 3.599999997764826,
+          "frameCopyMs": 3.400000002235174
+        },
+        "catalogVersion": 19
+      },
+      "timeMs": 19999.999999999953,
+      "actors": {
+        "timeMs": 19999.999999999953,
+        "presence": 1,
+        "midio": {
+          "glow": 0.248063579201712,
+          "travel": 6.395818710327129,
+          "peak": 1,
+          "trail": 5.140695571899399
+        },
+        "broshi": {
+          "glow": 0.17470119893550903,
+          "travel": 9.261922836303695,
+          "peak": 0
+        },
+        "midasus": {
+          "glow": 0.1603843420743956,
+          "travel": 7.607910156249984,
+          "peak": 0
+        }
+      },
+      "light": {
+        "space": "scenic-stage logical px; ground anchor converted through recorded view transforms",
+        "state": {
+          "sun": {
+            "xFrac": 0.6307680184491182,
+            "yFrac": 0.1333903783058087,
+            "radiusFrac": 0.021875000000000002,
+            "scale": 1.5876569354106769,
+            "altitude01": 0.882769573991183,
+            "visibility": 1,
+            "directGain": 1.6,
+            "colorHex": "#fff6dc"
+          },
+          "moon": {
+            "xFrac": 0.92,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.021875,
+            "scale": 1.5876569354106769,
+            "altitude01": 0,
+            "visibility": 0,
+            "directGain": 0,
+            "colorHex": "#c8d8ff"
+          },
+          "activeBody": "sun",
+          "night01": 0,
+          "dawn01": 0.007178678966078778,
+          "dusk01": 0,
+          "darkness01": 0,
+          "ambientMultiplier": 1
+        },
+        "celestial": {
+          "xFrac": 0.6307680184491182,
+          "yFrac": 0.1333903783058087,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 1.5876569354106769,
+          "altitude01": 0.882769573991183,
+          "visibility": 1,
+          "directGain": 1.6,
+          "colorHex": "#fff6dc",
+          "body": "sun",
+          "intensity": 1.594257056827137
+        },
+        "ground": {
+          "x": 888.1213699763584,
+          "y": 113.11504080332577,
+          "colorHex": "#fff6dc",
+          "intensity": 1.594257056827137,
+          "dirX": -0.24303268070435227,
+          "dirY": 0.9700181009185634,
+          "celestialYFrac": 0.1333903783058087,
+          "space": "ground"
+        },
+        "ambientMultiplier": 1,
+        "night01": 0,
+        "dawn01": 0.007178678966078778,
+        "dusk01": 0,
+        "sky": {
+          "top": "#2f5c9a",
+          "mid": "#6798cb",
+          "horizon": "#c6d8e4",
+          "air": "#c6d8e4"
+        }
+      },
+      "storm": {
+        "amount": 0,
+        "flash": 0,
+        "break01": 0,
+        "wet01": 0
+      },
+      "debug": {
+        "peak": [
+          0,
+          0,
+          0
+        ],
+        "layout": {
+          "centers": [
+            [
+              -3285.4891417312137,
+              744.70458984375,
+              612.177453872896
+            ],
+            [
+              -5520,
+              1653.199951171875,
+              3120
+            ],
+            [
+              -3285.4891417312137,
+              744.70458984375,
+              612.177453872896
+            ]
+          ],
+          "skyCenters": [
+            [
+              -5908.598679586483,
+              2826.416926543232,
+              2682.9268521121476
+            ],
+            [
+              -5520,
+              1653.199951171875,
+              3120
+            ],
+            [
+              -5908.598679586483,
+              2826.416926543232,
+              2682.9268521121476
+            ]
+          ],
+          "spans": [
+            5955.10054467197,
+            3970.067029781313,
+            6352.107247650101
+          ],
+          "right": [
+            -0.6196209601953171,
+            0,
+            -0.7849011821157064
+          ],
+          "forward": [
+            -0.7849011821157064,
+            0,
+            0.6196209601953171
+          ],
+          "hasLake": false
+        },
+        "camera": [
+          843.2973142153805,
+          2243.5298597653227,
+          -2566.5544979057504
+        ],
+        "mist": [
+          1000000000,
+          0
+        ],
+        "spans": [
+          5955.10054467197,
+          3970.067029781313,
+          6352.107247650101
+        ],
+        "center": [
+          [
+            -3285.4891417312137,
+            744.70458984375,
+            612.177453872896
+          ],
+          [
+            -5520,
+            1653.199951171875,
+            3120
+          ],
+          [
+            -3285.4891417312137,
+            744.70458984375,
+            612.177453872896
+          ]
+        ],
+        "hasTexture": true,
+        "mirrorAmount": 0
+      },
+      "giant": 4,
+      "name": "tombstone-north-klondike-midio-shed.png"
+    }
+  ]
+}

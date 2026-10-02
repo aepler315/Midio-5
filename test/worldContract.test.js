@@ -27,7 +27,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // out here so that removing a renderer can never quietly look intentional.
 const UNREGISTERED_KINDS = {
   alpine: 'the original path, still inline in BiomeManager.draw()',
-  cathode: 'routed to CathodeRenderer by WebGLRenderer, never reaches BiomeManager',
 };
 
 function worldModuleSources(includeShared = true) {

@@ -22,12 +22,13 @@ function fakeTrack({ withRequestFrame = true } = {}) {
 function fakeCanvas({ withRequestFrame = true } = {}) {
   const canvas = {
     width: 0, height: 0,
-    draws: [], fills: [], streams: [],
+    draws: [], fills: [], streams: [], samplers: [],
     getContext: () => ({
       set fillStyle(v) { canvas._fill = v; },
       get fillStyle() { return canvas._fill; },
       fillRect: (...a) => canvas.fills.push(a),
-      drawImage: (...a) => canvas.draws.push(a),
+      imageSmoothingEnabled: true,
+      drawImage(...a) { canvas.draws.push(a); canvas.samplers.push(this.imageSmoothingEnabled); },
     }),
     captureStream(fps) {
       const track = fakeTrack({ withRequestFrame });
@@ -352,4 +353,25 @@ test('elapsed time is zero unless something is actually recording', () => {
   rec.start({ presetId: '720p' });
   scope.advance(4500);
   assert.equal(rec.elapsedMs, 4500);
+});
+
+ test('pixel sampling follows each capture without changing output dimensions', () => {
+  const rec = new SongRecorder({ stage: { width: 320, height: 180 }, scope: fakeScope() });
+  rec.start({ presetId: '720p', deferFirstFrame: true });
+  const output = rec._canvas;
+  for (const pixelated of [true, false, true]) rec.captureFrame({ pixelated });
+  assert.deepEqual(output.samplers, [false, true, false]);
+  assert.equal(output.width, 1280);
+  assert.equal(output.height, 720);
+  assert.equal(rec._videoTrack.frames, 3);
+});
+test('capture source and integer scaling preserve bars through mode changes', () => {
+  const source = { width: 320, height: 180 };
+  const rec = new SongRecorder({ stage, scope: fakeScope() });
+  rec.start({ presetId: 'car', deferFirstFrame: true });
+  rec.captureFrame({ canvas: source, pixelated: true, scaling: 'integer' });
+  assert.equal(rec._canvas.draws.at(-1)[0], source);
+  assert.deepEqual(rec._canvas.draws.at(-1).slice(1), [80, 60, 640, 360]);
+  rec.captureFrame({ canvas: source, pixelated: true, scaling: 'fit' });
+  assert.deepEqual(rec._canvas.draws.at(-1).slice(1), [0, 15, 800, 450]);
 });

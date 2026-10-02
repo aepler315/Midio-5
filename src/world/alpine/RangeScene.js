@@ -1,3 +1,4 @@
+import { giantLayout, giantAmounts } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
 // here, renders transparent terrain partitions that RangePresentation copies
@@ -329,6 +330,8 @@ export class RangeScene {
       r.clear(true, true, false);
       r.render(p.depthScene, this.mirrorCamera);
       for (const band of BANDS) r.render(p.scenes[band], this.mirrorCamera);
+      if (u.uGiantPeak.value[0] > .001 && u.uMidioCloud.value < .5)
+        r.render(p.actors.reflection.scene, this.mirrorCamera);
       u.uClipBelow.value = -1e9;
       m.frame = frame.frameId;
       m.view = viewId;
@@ -385,7 +388,7 @@ export class RangeScene {
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
-      let surface, geos, material, forest, stageGL, featureMaterial;
+      let surface, geos, material, forest, stageGL, featureMaterial, actors;
       const featureGeometries = {};
       const stale = () => {
         if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
@@ -493,7 +496,7 @@ export class RangeScene {
         // The cast: lanterns and swarms, moved between band scenes as they
         // travel (RangeActors.js picks their routes from what the rail sees).
         const waterLevelM = waterLevel(cpu.data);
-        const actors = new ActorsGL(THREE, uniforms);
+        actors = new ActorsGL(THREE, uniforms);
         const routes = actorRoutes(cpu.data, view, { waterLevelM, seed: hashSeed(`${view.id}:cast`) });
         // Per-band depth scenes for travel frames, where a side's nearer
         // bands are drawn only in some columns (same geometry and material;
@@ -514,6 +517,7 @@ export class RangeScene {
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
           forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
+          giantLayout: giantLayout(cpu.data, view, [uniforms.uHeightRange.value.x, uniforms.uHeightRange.value.y], waterLevelM),
           rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key, actors, actorRoutes: routes,
         };
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
@@ -533,6 +537,7 @@ export class RangeScene {
           // that publishes.
           this.residency?.release(cpu.key);
           forest?.dispose();
+          actors?.dispose();
           stageGL?.dispose();
           material?.dispose();
           featureMaterial?.dispose();
@@ -767,7 +772,7 @@ export class RangeScene {
     u.uDeformDir.value.set(m.waveDir[0], m.waveDir[1]);
     u.uDeformPhase.value = m.phaseRad;
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
-    m.gusts.forEach((g, i) => { u.uGustAge.value[i] = g.ageSec; u.uGustAmp.value[i] = g.amp01; u.uGustDir.value[i] = g.dir; });
+    m.gusts.forEach((g, i) => { u.uGustAge.value[i] = g.ageSec; u.uGustAmp.value[i] = g.amp01 * (1 + (frame.storm?.amount || 0) * .8); u.uGustDir.value[i] = g.dir; });
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
         for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     for (const tree of p.forest?.depth || []) tree.visible = !n || n.materials > .01;
@@ -778,11 +783,16 @@ export class RangeScene {
     const dir = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.camera).sub(this.camera.position).normalize();
     u.uLightDir.value.copy(dir.normalize());
     const night = frame.light.night01;
+    const storm = frame.storm || { amount: 0, flash: 0, wet01: 0, break01: 0 };
     const strength = c.body ? c.intensity : 0;
     hexToLinear(THREE, c.colorHex, u.uLightColor.value).multiplyScalar(strength);
     // Receiver fill fades once; sky radiance also feeds air and water's
     // reflection, so it keeps the frame's authored environment colors.
     u.uAmbientScale.value = 2.5 * (frame.light.ambientMultiplier ?? 1);
+    u.uStorm.value.set(storm.amount, storm.flash, storm.break01, storm.wet01);
+    u.uLightColor.value.multiplyScalar(1 - storm.amount * .8);
+    u.uLightColor.value.add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * 1.3));
+    u.uAmbientScale.value *= 1 - storm.amount * .55;
     u.uSolarTransmission.value = c.body === 'sun' && strength > 0 ? .18 : 0;
     if (frame.light.sky) {
       hexToLinear(THREE, frame.light.sky.top, u.uSkyZenith.value).multiplyScalar(0.9);
@@ -801,10 +811,27 @@ export class RangeScene {
       u.uAirColor.value.multiply(tint);
     }
     u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night) * (p.rules?.airScale ?? RULE_DEFAULTS.airScale);
+    const amounts = giantAmounts(frame);
+    const layout = p.giantLayout;
+    if (layout) {
+      u.uGiantPeak.value = amounts;
+      layout.centers.forEach((center, i) => u.uGiantCenter.value[i].set(...center));
+      layout.skyCenters.forEach((center, i) => u.uSkyGiantCenter.value[i].set(...center));
+      if (layout.hasLake) u.uGiantCenter.value[0].y = p.waterLevelM;
+      u.uGiantSpan.value = layout.spans;
+      u.uGiantRight.value.set(...layout.right); u.uGiantForward.value.set(...layout.forward);
+      // Project from the sun when its angle meets the caster plane. At
+      // grazing angles, the actor's lantern takes over without singularities.
+      const sunRay = u.uLightDir.value;
+      u.uShadowRay.value.copy(Math.abs(sunRay.dot(u.uGiantForward.value)) > .25 && c.body === 'sun'
+        ? sunRay : u.uGiantForward.value.clone().add(new THREE.Vector3(0,.25,0)).normalize());
+      u.uMidioCloud.value = layout.hasLake && Number.isFinite(p.mirrorLevelM) ? 0 : 1;
+      u.uGiantTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
+    }
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0),
-      sea01: frame.cloudSea01 ?? 0, cameraY: this.camera.position.y });
+      sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .88, u.uMidioCloud.value * amounts[0] * .88), cameraY: this.camera.position.y });
     const quality = rangeQuality(frame.qualityLevel);
     u.uMistDensity.value = mp.density * (n?.atmosphere ?? 1);
     u.uMistSteps.value = quality.mistSteps;
@@ -820,6 +847,10 @@ export class RangeScene {
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
     u.uCameraPos.value.copy(this.camera.position);
     this._setActors(p, frame);
+    if (layout && (c.body !== 'sun' || Math.abs(u.uLightDir.value.dot(u.uGiantForward.value)) <= .25)) {
+      const lantern = u.uActorPos.value[1].clone().sub(u.uGiantCenter.value[1]).normalize();
+      if (Math.abs(lantern.dot(u.uGiantForward.value)) > .25) u.uShadowRay.value.copy(lantern);
+    }
   }
 
   /**
@@ -879,7 +910,7 @@ export class RangeScene {
       v.uColor.value.copy(display);
       v.uGlow.value = s.glow;
       v.uPresence.value = presence * (0.55 + 0.45 * dark);
-      v.uCohere.value = peak;
+      v.uCohere.value = rangeQuality(frame.qualityLevel).landscapeGiants ? 0 : peak;
       v.uTime.value = tSec + k * 37;
       v.uWanderPx.value = look.wanderPx * (1 + 0.5 * s.glow);
       v.uShapePx.value = look.shapePx;
@@ -916,6 +947,33 @@ export class RangeScene {
     const ix = Math.floor((x - grid.originM[0]) / grid.cellSizeM / cells);
     const iz = Math.floor((z - grid.originM[1]) / grid.cellSizeM / cells);
     return data.byIndex.get(`${ix},${iz}`) || null;
+  }
+
+  // Atmosphere has its own copy boundary. It must never enter the terrain
+  // alpha mask consumed by crest light and the sampled mountain skyline.
+  renderSkyGiants(frame, viewId, { side = 'A', bandColumns = null } = {}) {
+    const p = this.prepared.get(viewId);
+    const amounts = giantAmounts(frame);
+    const mirrored = p?.giantLayout.hasLake && Number.isFinite(p.mirrorLevelM);
+    if (!p || this.contextLost || !rangeQuality(frame.qualityLevel).landscapeGiants
+      || !(amounts[2] > .001 || amounts[0] > .001 && !mirrored)) return null;
+    const target = side === 'B' ? this.sideTargets.B : this.target;
+    if (!target) return null;
+    this._setCamera(p.view, frame, p); this._setUniforms(p, frame);
+    const r = this.renderer;
+    if (bandColumns && p.depthScenes) this._travelDepth(p, target, 'far', bandColumns);
+    else {
+      r.setRenderTarget(target); r.setClearColor(0x000000, 0); r.clear(true, true, false);
+      r.render(p.depthScene, this.camera);
+    }
+    if (amounts[2] > .001) r.render(p.actors.clouds.midasus.scene, this.camera);
+    if (amounts[0] > .001 && p.uniforms.uMidioCloud.value > .5) r.render(p.actors.clouds.midio.scene, this.camera);
+    this.depthCache[side].frame = -1;
+    this._setCanvasSize(this.size.width, this.size.height);
+    r.setRenderTarget(null); r.setClearColor(0x000000, 0); r.clear(true, true, false);
+    this._copy.mesh.material.uniforms.uColor.value = target.texture;
+    r.render(this._copy.scene, this._copy.camera);
+    return this.canvas;
   }
 
   /**

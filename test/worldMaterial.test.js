@@ -29,7 +29,7 @@ test('every painterly kind has a material recipe', () => {
   }
   assert.equal(KIND_MATERIAL.airless.aerial, false);
   assert.equal(KIND_MATERIAL.abyssal.aerial, 'invert');
-  assert.equal(KIND_MATERIAL.cathode.aerial, false);
+  assert.equal(KIND_MATERIAL.airless.aerial, false);
 });
 
 test('catchlight is the world\'s own light, never ghost-cream', () => {

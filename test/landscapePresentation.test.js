@@ -20,7 +20,7 @@ function scene(worldId = 'alpine', silent = false) {
 }
 
 // Catches construction or callback ownership returning through any public start mode.
-for (const world of ['alpine', 'cathode', 'fathom', 'farside']) {
+for (const world of ['alpine', 'fathom', 'farside']) {
   for (const mode of ['opening', 'silence', 'middle', 'final', 'seek', 'restart', 'export']) {
     test(`${world} ${mode} keeps transport without constructing or updating the trio`, () => {
       const sim = scene(world, mode === 'silence');

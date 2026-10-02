@@ -157,7 +157,12 @@ export const MIST_GLSL = /* glsl */`
     vec3 hit = cam + (p - cam) * clamp((cam.y - uMistTop) / (cam.y - p.y), 0.0, 1.0);
     vec2 q = (hit.xz + vec2(uMistTime * 3.0, uMistTime * 1.2)) / ${SEA_BILLOW_M.toFixed(1)};
     float b = 0.55 * mistVnoise(q) + 0.3 * mistVnoise(q * 2.3 + vec2(5.1, 1.7)) + 0.15 * mistVnoise(q * 5.1 + vec2(-2.3, 8.4));
-    return uMistColor * mix(1.0, 0.5 + 0.9 * b * b, uMistFill);
+    vec3 color=uMistColor * mix(1.0, 0.5 + 0.9 * b * b, uMistFill);
+    float giant=giantCloud(hit);
+    // Billowing crowns and shaded troughs form the figure on the cloud
+    // plane. The real ray/terrain intersection supplies its occlusion.
+    vec3 crown=max(uMistColor,vec3(.09,.13,.19))*(.85+b*.95);
+    return mix(color*(1.0-max(uGiantPeak[2],uGiantPeak[0]*uMidioCloud)*.25),crown,giant*.9);
   }
 `;
 

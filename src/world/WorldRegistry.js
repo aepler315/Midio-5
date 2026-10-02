@@ -29,13 +29,11 @@ import { drawFoundryWorld, drawMachinery } from './foundry/drawFoundry.js';
 import { drawUnderstoryWorld, drawCanopy } from './understory/drawUnderstory.js';
 import { drawNaveWorld, drawVault } from './nave/drawNave.js';
 
-// kind -> the function that draws it. Two of the nine kinds are absent on
-// purpose and worldContract.test.js asserts exactly these two:
+// kind -> the function that draws it. The alpine kind is absent on
+// purpose and worldContract.test.js asserts that fall-through:
 //   'alpine'  -- the original path, still inline in BiomeManager.draw() below
 //                the dispatch. Every module here began as a translation of
 //                it, so it is the fall-through rather than an entry.
-//   'cathode' -- never reaches BiomeManager at all. WebGLRenderer routes
-//                `world.renderer === 'pixel'` to CathodeRenderer instead.
 export const WORLD_RENDERERS = new Map([
   ['city', drawCityWorld],
   ['airless', drawFarsideWorld],

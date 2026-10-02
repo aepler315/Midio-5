@@ -179,3 +179,9 @@ as the frames take to draw.
   rather than stretched. This is the only check that can see the two places
   the feature touches the app — the render-loop hook and the audio tap —
   both of which fail silently.
+
+## Pixel look and output size
+
+Recording preserves the active Look with the final source sampler: Pixel and Palette use nearest-neighbour sampling. Bulk export snapshots look and effective quality independently of output dimensions. Pixel looks compose and quantize at 320×180, then fit the finished frame into the selected export size with black bars. Integer scaling stays a whole physical-pixel multiple where it fits. Natural keeps its current direct render path.
+
+The CLI accepts `--look`, `--quality`, `--palette`, `--dither` and `--scaling`; see [display presentation](pixel-presentation.md).

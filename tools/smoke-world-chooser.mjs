@@ -48,7 +48,7 @@ try {
   const names = await cards.locator('.worldCardName').allInnerTexts();
   assert.equal(new Set(names).size, 9, 'exactly one card per registered world');
   assert.ok(names.includes('The Range'));
-  assert.ok(names.includes('Cathode'));
+  assert.ok(!names.includes('Cathode'));
 
   const body = await page.locator('#worldSelect').innerText();
   assert.equal(/%|best match|is-best/i.test(body), false, 'no public ranking copy');

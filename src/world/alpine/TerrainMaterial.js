@@ -87,6 +87,7 @@ export const SCENE_FRAG = /* glsl */`
   uniform float uAirHeightFalloff;
   uniform vec3 uCameraPos;
   uniform float uDiag;
+  uniform vec4 uStorm; // squall, cloud lightning, clearing, wet receivers
   uniform float uAmbientScale;
   uniform int uDebugMask;
   uniform float uExposure;
@@ -331,6 +332,7 @@ export const SCENE_FRAG = /* glsl */`
       // Newly exposed ground stays dark and wet before its canopy returns.
       albedo = mix(albedo * 0.58, albedo, ice.z);
     }
+    if (!water) { albedo *= 1.0 - uStorm.w * .18; rough *= 1.0 - uStorm.w * .4; }
     // Light: the celestial as a soft wrap-diffuse key, sky hemisphere fill,
     // occlusion from curvature and drainage (gullies sit in shade).
     float wrap = 0.18;
@@ -345,6 +347,18 @@ export const SCENE_FRAG = /* glsl */`
     vec3 lit = albedo * (hemi * ao + uLightColor * key * mix(0.85, 1.0, ao));
     // The cast's lanterns light the ground around them.
     lit += albedo * actorLight(vRenderedWorld, nShade);
+    // Broken cloud transmits the real solar key in broad moving swathes
+    // across wet receivers; world coordinates keep them fixed to the land.
+    float opening=smoothstep(.35,.72,vnoise12(vRenderedWorld.xz/1100.0+vec2(uTime*.02,0.0)));
+    lit += albedo*uLightColor*key*uStorm.z*opening*.85;
+    if (!water && uGiantPeak[1] > 0.0) {
+      vec3 delta=vRenderedWorld-uGiantCenter[1];
+      float lantern=1.0-smoothstep(uGiantSpan[1]*.45,uGiantSpan[1]*.85,length(vec2(dot(delta,uGiantRight),delta.y)));
+      // A broad spill from Broshi's lantern gives his shadow contrast in
+      // dark dawn. In daylight the scene's key remains dominant.
+      lit += albedo * max(vec3(.3,.22,.16)-hemi*.08,vec3(0.0))*lantern*uGiantPeak[1];
+      lit *= 1.0 - broshiShadow(vRenderedWorld)*.96;
+    }
     if (uDebugMask == 3) { outColor = vec4(albedo * 4.0, 1.0); return; }
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
     if (uDebugMask == 5) { outColor = vec4(vec3(key), 1.0); return; }
@@ -481,6 +495,7 @@ export function sceneUniforms(THREE, base) {
     uCameraPos: { value: new THREE.Vector3() },
     uDiag: { value: 0 },
     uHasMaterial: { value: 0 },
+    uStorm: { value: new THREE.Vector4() },
     uAmbientScale: { value: 2.5 },
     uDebugMask: { value: 0 },
     uTime: { value: 0 },

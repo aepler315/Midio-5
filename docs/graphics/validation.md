@@ -2,7 +2,7 @@
 
 ## Current candidate
 
-The 2026-09-22 completion branch retains all nine public world IDs and Cathode's dedicated raster path. Terrain work is confined to The Range's optional real-profile path; missing profiles still use procedural terrain.
+The current registry retains eight public worlds. Cathode is retired; removed IDs normalize to The Range. Terrain work is confined to The Range's optional real-profile path; missing profiles still use procedural terrain.
 
 Local checks at functional candidate `e158f3dddf1e3db804cf27e81f36e451cd0edf96`:
 

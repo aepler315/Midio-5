@@ -134,9 +134,7 @@ test('every registered world is listed and has the required fields', () => {
   const worlds = listWorlds();
   // Exact, not >=: the count is the guard that catches a world silently
   // dropping out of the registry. Bump it deliberately when adding one.
-  // 8 painterly worlds + Cathode, which is manual-only but still listed
-  // (the select screen offers it; only the scorer ignores it).
-  assert.equal(worlds.length, 9);
+  assert.deepEqual(worlds.map(w => w.id), ['alpine', 'nocturne', 'farside', 'fathom', 'redline', 'foundry', 'understory', 'nave']);
   for (const w of worlds) {
     assert.ok(w.id, `missing id`);
     assert.ok(w.name, `${w.id} missing name`);
@@ -550,11 +548,11 @@ test('diagnostics separate style affinity, analysis confidence, and predicted pr
 
 test('manual-only worlds and explicit exclusions stay out of Choose-for-me', () => {
   const feat = baseFeat();
-  const withCathode = scoreWorlds(feat, listWorlds());
-  const cathode = withCathode.find((r) => r.id === 'cathode');
+  const withCathode = scoreWorlds(feat, [...listWorlds(), { ...getWorld('alpine'), id: 'manual-fixture', manualOnly: true }]);
+  const cathode = withCathode.find((r) => r.id === 'manual-fixture');
   assert.equal(cathode.eligible, false);
   assert.ok(cathode.parts.problems.some((p) => p.code === 'manual-only'));
-  assert.notEqual(pickRecommended(withCathode).id, 'cathode');
+  assert.notEqual(pickRecommended(withCathode).id, 'manual-fixture');
 
   const excluded = scoreWorlds(feat, undefined, { exclude: ['alpine'] });
   assert.equal(excluded.find((r) => r.id === 'alpine').eligible, false);

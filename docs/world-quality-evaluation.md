@@ -40,8 +40,7 @@ preset (`EVAL_QUALITY` in `src/eval/WorldQuality.js`):
 Annotated `passages` on a track win over derivation. A missing energy curve
 falls back to proportional positions. Never invent a beat from BPM.
 
-Stills use the same world instance playback will use. Cathode stays in the
-gallery as a manual choice; it is not an automatic recommendation.
+Stills use the same world instance playback will use. The gallery contains the eight surviving worlds.
 
 ## Private heuristic
 
@@ -106,7 +105,7 @@ the tune split does not count. A sheet with filled holdout reviews reports
 
 Filled `blockingDefect` reviews become `autoExclusions`: that track/world
 pair stays out of Choose-for-me until the defect is gone. Manual selection
-is always available, including Cathode.
+is always available for registered worlds.
 
 Section-boundary metrics remain a separate concern: see
 [analysis-evaluation.md](./analysis-evaluation.md) and `npm run bench:sections`.

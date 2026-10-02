@@ -134,8 +134,8 @@ const RETRO_PARTICLE_MUL = 0.35; // vs 0.6 at the ladder's particle rung
 const RETRO_DANCE_COLUMN_WIDTH = 128;
 
 export class PerfGovernor {
-  constructor({ startLevel = 0, retro = false, retroPalette = false } = {}) {
-    this._retro = !!retro;
+  constructor({ startLevel = 0, retro = false, economy = retro, retroPalette = false } = {}) {
+    this._retro = !!economy;
     // "8-bit intensive": the palette pass rides on top of the retro floor,
     // never on its own -- quantizing a 4K frame would cost many times what
     // the whole rest of the frame does. Kept as its own flag rather than a
@@ -143,6 +143,7 @@ export class PerfGovernor {
     // exchange for a look, which is the one thing the ladder never does.
     this._retroPalette = !!retroPalette && this._retro;
     this._holdQuality = false;
+    this._heldLevel = 0;
     // Evidence fixtures pin an exact rung (setFixtureLevel). Null when off.
     this._fixtureLevel = null;
     this.level = this._retro ? MAX_LEVEL : Math.max(0, Math.min(MAX_LEVEL, startLevel));
@@ -195,6 +196,10 @@ export class PerfGovernor {
    *  within a minute of smooth play put every expensive pass back on --
    *  undoing the mode the player explicitly asked for, and doing it slowly
    *  enough to look like a mystery rather than a setting. */
+  // Compatibility alias for old integrations. Presentation no longer owns cost.
+  get economy() { return this._retro; }
+  set economy(on) { this.retro = on; }
+
   get retro() { return this._retro; }
 
   set retro(on) {
@@ -233,12 +238,17 @@ export class PerfGovernor {
    *  however long the frame took to draw, which at 2160p is the signal the
    *  ladder uses to shed the picture the file was opened to keep. Holding
    *  level 0 means every frame is the full show. */
+  freezeQuality(level = this.level) {
+    this._heldLevel = Math.max(0, Math.min(MAX_LEVEL, level));
+    this.holdQuality = true;
+  }
+
   get holdQuality() { return this._holdQuality; }
 
   set holdQuality(on) {
     this._holdQuality = !!on;
     if (this._fixtureLevel !== null) { this.level = this._fixtureLevel; return; }
-    if (this._holdQuality) this.level = 0;
+    if (this._holdQuality) this.level = this._heldLevel;
   }
 
   /** Controlled evidence captures pin an exact rung, 0..MAX_LEVEL, which
@@ -249,7 +259,7 @@ export class PerfGovernor {
   setFixtureLevel(level) {
     if (level === null) {
       this._fixtureLevel = null;
-      if (this._holdQuality) this.level = 0;
+      if (this._holdQuality) this.level = this._heldLevel;
       else if (this._retro) this.level = MAX_LEVEL;
       return;
     }
@@ -265,7 +275,7 @@ export class PerfGovernor {
   /** Call once per rendered frame with the raw rAF-to-rAF delta. */
   sample(deltaMs, nowMs) {
     if (this._fixtureLevel !== null) { this.level = this._fixtureLevel; return; }
-    if (this._holdQuality) { this.level = 0; return; }
+    if (this._holdQuality) { this.level = this._heldLevel; return; }
     // 8-bit mode holds the floor: neither shedding (already at the bottom)
     // nor recovering (see the `retro` setter -- recovery is exactly the
     // failure mode pinning exists to prevent).

@@ -1,0 +1,20 @@
+{
+  "runtime": "v24.19.0",
+  "scope": "transform only, warm lookup; excludes Canvas readback/upload",
+  "results": [
+    {
+      "palette": "range32",
+      "frames": 120,
+      "pixelsPerFrame": 57600,
+      "meanTransformMs": 1.9924699249999978,
+      "microsecondsPerPixel": 0.03459149175347218
+    },
+    {
+      "palette": "rgb332",
+      "frames": 120,
+      "pixelsPerFrame": 57600,
+      "meanTransformMs": 0.3966523666666651,
+      "microsecondsPerPixel": 0.006886325810185158
+    }
+  ]
+}

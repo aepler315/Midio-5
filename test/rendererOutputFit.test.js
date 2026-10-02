@@ -71,13 +71,11 @@ for (const [width, height, x, y, scale] of [[540, 960, 0, 328.125, .421875], [10
   });
 }
 
-test('letterbox bars are opaque and restored after pixel operations that bypass clipping', () => {
-  const f = renderFixture(540, 960, { retro: true });
-  const pixelAt = f.events.findIndex(e => e.kind === 'pixels');
-  assert.ok(pixelAt >= 0, 'production quantize wrote image data');
-  const bars = f.events.slice(pixelAt + 1).filter(e => e.kind === 'fill');
+test('natural compositor restores opaque output bars without a palette readback', () => {
+  const f = renderFixture(540, 960);
+  assert.equal(f.events.some(e => e.kind === 'pixels'), false);
+  const bars = f.events.filter(e => e.kind === 'fill' && e.color === '#000000').slice(-2);
   assert.deepEqual(bars.map(e => e.rect), [[0, 0, 540, 328.125], [0, 631.875, 540, 328.125]]);
-  for (const bar of bars) { assert.equal(bar.color, '#000000'); assert.equal(bar.clip, null); }
 });
 
 test('camera zoom preserves fitting while fixed ground and HUD remain at nominal scale', () => {

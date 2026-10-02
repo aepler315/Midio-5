@@ -170,3 +170,7 @@ Worth re-checking on real hardware before anyone goes looking further.
    layer at 99% means a DOM/CSS repaint, not canvas.
 4. Vary the **window** size with the stage size held fixed. Anything that
    moves is display-resolution work, and no stage preset will help it.
+
+## Display profiles (October 2026)
+
+Look and workload now have independent controls. Economy pins rung 6; Pixel and Palette alone do not pin quality. The same 30/60 cap gates title and playback draws without changing the simulation clock. Palette processing has one presentation boundary and a 57,600-pixel ceiling, with readback and transform timings reported separately. See [pixel presentation](pixel-presentation.md) and its current evidence; the earlier measurements above remain historical.

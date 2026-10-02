@@ -212,7 +212,7 @@ async function sharedWorlds() {
       import('/src/sim/Simulation.js'), import('/src/core/Conductor.js'), import('/src/core/ParamBus.js'),
       import('/src/render/WebGLRenderer.js'), import('/src/world/Worlds.js')]);
     const rows = [];
-    for (const [world, mode] of [['fathom', 'canvas'], ['farside', 'webgl'], ['cathode', 'canvas']]) {
+    for (const [world, mode] of [['fathom', 'canvas'], ['farside', 'webgl']]) {
       const c = new Conductor(); c.load({ timeline: window.__SMW.conductor.timeline, durationMs: 120000, bpm: 120, barGrid: [] });
       const sim = new Simulation(c, new ParamBus(), { worldId: world, songSeed: 2917029651, energyCurves: window.__SMW.sim.energyCurves });
       const canvas = document.createElement('canvas'); canvas.width = 960; canvas.height = 540; document.body.append(canvas);
@@ -234,7 +234,6 @@ async function sharedWorlds() {
   for (const r of rows) {
     assert.equal(r.actors, false); assert.ok(r.colors > 16);
     if (r.mode === 'webgl') assert.equal(r.backend, 'webgl');
-    if (r.world === 'cathode') { assert.ok(r.bossDraws > 0 && r.bossCells > 0); assert.equal(r.policy.cathodeBoss, true); }
     await fs.writeFile(path.join(out, `shared-${r.world}.png`), Buffer.from(r.png, 'base64')); delete r.png;
   }
   assert.deepEqual(opened.errors, []);

@@ -71,12 +71,6 @@ export const KIND_CAPABILITIES = {
     materialMix: 0.34,
     response: { smoothingMs: 1400, accentCooldownMs: 260, maxAccents: 3, macroMs: 7500 },
   },
-  cathode: {
-    palette: 'four-color',
-    geometry: ['pixel'],
-    materialMix: 0,
-    response: { smoothingMs: 80, accentCooldownMs: 100, maxAccents: 3, macroMs: 4000 },
-  },
 };
 
 export function capabilitiesFor(kind) {
@@ -232,8 +226,8 @@ function materializePalette(generated, stock, mix) {
 
 /**
  * @returns {{ world, proof, baseId, degraded }}
- * `world.id` is the playback overlay ('custom' for painterly, the registered
- * id for Cathode). `world.registeredId` is always the stable gallery id.
+ * `world.id` is the playback overlay ('custom', or the registered ID for
+ * manual-only fixtures). `world.registeredId` is always the stable gallery id.
  * `world.instanceId` is per-song so a previous adaptation cannot stick.
  */
 export function adaptWorld(baseWorld, songProfile, data = null) {
@@ -248,7 +242,7 @@ export function adaptWorld(baseWorld, songProfile, data = null) {
   const degraded = { dna: false, palette: false, geometry: false };
   const proof = { dna: null, adaptVersion: ADAPT_VERSION };
 
-  const overlayId = base.renderer === 'pixel' || base.kind === 'cathode' || base.manualOnly
+  const overlayId = base.manualOnly
     ? base.id
     : 'custom';
 
@@ -259,10 +253,7 @@ export function adaptWorld(baseWorld, songProfile, data = null) {
   let characterScheme = null;
   let dna = null;
 
-  if (caps.palette === 'four-color') {
-    // Cathode's ramps are hardware. Never synthesize into them.
-    palettes = base.palettes;
-  } else {
+  {
     try {
       dna = buildSongDNA({ ...(data || {}), profile, structure: data?.structure ?? null });
     } catch (err) {

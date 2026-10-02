@@ -65,6 +65,11 @@ function manager(overrides = {}) {
 
 function ctx() {
   return {
+    createLinearGradient: () => ({ addColorStop() {} }),
+    createRadialGradient: () => ({ addColorStop() {} }),
+    scale() {}, arc() {},
+    moveTo() {}, lineTo() {}, closePath() {}, fill() {},
+    ellipse() {}, bezierCurveTo() {},
     globalAlpha: 1,
     fillStyle: '#000',
     save() {}, restore() {}, fillRect() {}, beginPath() {}, translate() {}, rotate() {},

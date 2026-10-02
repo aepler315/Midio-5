@@ -31,7 +31,7 @@ LAN access, or set `PORT` to change the port.
    tempo, pitch, and section structure become one song profile.
 3. Choose a world. Every card is equal. Preview the **same** quiet stretch
    and the **same** peak in each world, then **Play**. **Choose for me**
-   is optional and never ranks the cards. **Cathode** is always a hand pick.
+   is optional and never ranks the cards.
 4. Watch the performance. Midio plays himself; there is no movement control
    or failure condition. Optional taps help calibrate the groove.
 
@@ -167,8 +167,7 @@ Musical casting assigns clean melodic material to **Midasus**, bass to
 be identified. With uploaded stems, filenames and each stem's activity
 help assign the notes.
 
-The world registry contains nine styles. Eight are painterly landforms.
-**Cathode** is a four-color CRT with its own pixel renderer.
+The world registry contains eight landscape styles. Cathode has been retired; old playback IDs resolve to The Range.
 
 - **The Range** — mountains that breathe with the mix.
 - **After Hours** — a city that glows with the groove.
@@ -178,7 +177,6 @@ The world registry contains nine styles. Eight are painterly landforms.
 - **The Foundry** — an industrial world that only stops when the song does.
 - **Understory** — a forest. Nothing is built. Everything grows.
 - **The Nave** — a cathedral whose glass rebuilds with returning sections.
-- **Cathode** — a machine dreaming in four colors. Manual pick only.
 
 After analysis, the chooser shows one equal card per world, in authored
 order. A **Preview** plays the same quiet or peak passage through that
@@ -189,7 +187,7 @@ a dense mix is filtered rather than amplified. There is no privileged
 
 **Choose for me** uses a private post-adaptation fit: would this world's
 response sit in a sweet spot for this song, without clipping into noise.
-Ties stay ties. Cathode and any explicit exclusion stay out of that pick.
+Ties stay ties. Explicit exclusions stay out of that pick.
 The number is never shown on the cards.
 
 The parallax ranges are laid out as a timeline rather than as decoration.
@@ -338,3 +336,5 @@ upload regression suite.
   the current upload page does not expose its search/connect controls.
 - [SoundFont tooling](soundfonts/README.md) — retained synthesis support;
   uploaded recordings play their own audio with the timeline synth muted.
+
+Display settings now separate **Natural / Pixel / Palette** from **Auto / Economy** quality. Open **Display** during playback to change them. [Pixel presentation](docs/pixel-presentation.md) explains migration, palettes and exports; [landscape peaks](docs/landscape-peaks.md) explains climax storms and the three landscape-scale instrument characters.

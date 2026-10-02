@@ -8,7 +8,7 @@ import { buildWorldChoices } from '../src/ui/WorldChooser.js';
 const WORLDS = [
   { id: 'alpine', name: 'The Range', tagline: 'Mountains that breathe with the mix.', kind: 'alpine' },
   { id: 'nocturne', name: 'After Hours', tagline: 'A city that glows with the groove.', kind: 'city' },
-  { id: 'cathode', name: 'Cathode', tagline: 'A machine dreaming in four colors.', kind: 'cathode', manualOnly: true },
+  { id: 'manual-fixture', name: 'Manual fixture', tagline: 'Synthetic manual-only choice.', kind: 'manual-fixture', manualOnly: true },
 ];
 
 function ids(choices) {
@@ -26,7 +26,7 @@ test('chooser replaces a tailored base world instead of adding a duplicate card'
   assert.deepEqual(ids(choices), [
     { worldId: 'alpine', playWorldId: 'custom', name: 'The Range', tagline: 'Mountains that breathe with the mix.', kind: 'alpine' },
     { worldId: 'nocturne', playWorldId: 'nocturne', name: 'After Hours', tagline: 'A city that glows with the groove.', kind: 'city' },
-    { worldId: 'cathode', playWorldId: 'cathode', name: 'Cathode', tagline: 'A machine dreaming in four colors.', kind: 'cathode' },
+    { worldId: 'manual-fixture', playWorldId: 'manual-fixture', name: 'Manual fixture', tagline: 'Synthetic manual-only choice.', kind: 'manual-fixture' },
   ]);
   assert.equal(choices.every((c) => typeof c.description === 'string' && c.description.length > 0), true);
   assert.equal(choices[2].manualOnly, true);
@@ -38,7 +38,7 @@ test('chooser uses each registered world directly when there is no tailored vari
   assert.deepEqual(choices.map(({ worldId, playWorldId }) => ({ worldId, playWorldId })), [
     { worldId: 'alpine', playWorldId: 'alpine' },
     { worldId: 'nocturne', playWorldId: 'nocturne' },
-    { worldId: 'cathode', playWorldId: 'cathode' },
+    { worldId: 'manual-fixture', playWorldId: 'manual-fixture' },
   ]);
 });
 
@@ -51,7 +51,7 @@ test('chooser copy never ranks worlds or mentions a score', () => {
   assert.match(chooser, /Choose how your song looks/);
   assert.match(chooser, /Choose for me/);
   assert.match(chooser, /not a ranking/i);
-  assert.match(chooser, /Cathode is always a hand pick/);
+  assert.equal(chooser.includes('Cathode'), false);
   assert.equal(/%|\bscore\b|\bbest match\b|\bwinner\b/i.test(chooser), false);
   const title = html.match(/class="titleTagline"[^>]*>([^<]+)/)[1];
   assert.match(title, /Pick a world/);

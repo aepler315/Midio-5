@@ -25,5 +25,6 @@ export function rangeQuality(level = 0) {
     poolReflections: q < 6,
     sunShafts: q < 3,
     waterMirror: q < 4,
+    landscapeGiants: q < 4,
   };
 }

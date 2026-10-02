@@ -599,6 +599,19 @@ export class RangePresentation {
     this._scratchBytes = 0;
   }
 
+  drawSkyGiants(ctx, stage) {
+    if (!this.active || !this.frame) return false;
+    const cols = this.incomingViewId ? this._travelBandColumns(stage.width) : null;
+    const render = (id, side) => this.scene.renderSkyGiants?.(this.frame, id, { side, bandColumns: cols?.[side] });
+    if (this.incomingViewId) return this._compositeSides(ctx, stage, 'L2',
+      () => render(this.viewId, 'A'), () => render(this.incomingViewId, 'B'));
+    const image = render(this.viewId, 'A');
+    if (!image) return false;
+    ctx.save(); ctx.globalAlpha = this.arrival; ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(image, 0, 0, stage.width, stage.height); ctx.restore();
+    return true;
+  }
+
   /** Composite one partition into `ctx` over the scenic stage, under the
    *  transform currently in effect (applied exactly once). */
   drawPartition(ctx, pass, stage) {

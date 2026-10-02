@@ -33,7 +33,7 @@ const check = (name, ok, detail = '') => {
 };
 
 const wav = path.join(out, 'export-fixture.wav');
-execFileSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'gen-test-wav.mjs'), wav, '120', '20']);
+execFileSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'gen-test-wav.mjs'), wav, '120', String(Number(process.env.EXPORT_FIXTURE_SECONDS) || 20)]);
 
 /** Decode a file the page just wrote, and report what is actually in it. */
 const inspect = async (page, bytes, mime) => page.evaluate(async ({ b64, type }) => {
@@ -142,6 +142,7 @@ try {
   const lyrics = page.locator('#lyricGroundingBtn');
   if (await lyrics.getAttribute('aria-pressed') === 'true') await lyrics.click();
   await page.locator('#stageRes').selectOption('720');
+  if (process.env.EXPORT_LOOK) await page.selectOption('#display-look', process.env.EXPORT_LOOK);
 
   const candidate = await page.evaluate(async () => {
     const { pickMimeType } = await import('/src/render/VideoExport.js');
@@ -166,7 +167,7 @@ try {
   check('recording is armed', await page.getAttribute('#recordBtn', 'aria-pressed') === 'true');
   // Armed includes preparation; wait for the real recorder before measuring.
   await page.waitForFunction(() => document.getElementById('recordBtn').title === 'Stop recording and save the video', null, { timeout: 120000 });
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(Number(process.env.EXPORT_RECORD_MS) || 4000);
   // The HUD holds itself open while recording: its stop control is the only
   // way out, and a faded HUD sits under the canvas.
   check('the HUD stays reachable while recording', await page.locator('#recordBtn').isVisible());
@@ -191,7 +192,7 @@ try {
   check('the saved file has sound in it', hud.audioBytes === null || hud.audioBytes > 0, `${hud.audioBytes} audio bytes decoded`);
 
   // --- full-song export at the car preset
-  await page.evaluate(() => window.__SMW.seek(17000));
+  await page.evaluate(() => window.__SMW.seek(window.__SMW.durationMs - 3000));
   await page.locator('#completePanel:not(.hidden)').waitFor({ timeout: 120000 });
   await page.selectOption('#exportPreset', 'car');
   check('the export note names the target and the format',

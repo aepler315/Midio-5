@@ -73,7 +73,7 @@ for (const [kind, draw] of [['overgrowth', drawUnderstoryWorld], ['foundry', dra
     assert.equal(paintSky(draw, true, 'starTwinkle', kind).length, 2);
   });
 }
-for (const kind of ['overgrowth', 'foundry', 'nave', 'abyssal', 'cathode']) {
+for (const kind of ['overgrowth', 'foundry', 'nave', 'abyssal']) {
   test(`${kind} shared sky boundary rejects inherited space dust and stars`, () => {
     assert.equal(paintSky(null, true, 'starTwinkle', kind).length, 2);
   });

@@ -222,3 +222,10 @@ test('stepExportClock takes the same whole steps every frame across a long rende
     assert.ok(Math.abs(simTime - 600_000) < 1e-3, `${fps}fps ended at ${simTime}`);
   }
 });
+
+test('bulk display overrides are explicit and validated', () => {
+  const opts = parseBulkArgs(['--look', 'palette', '--quality', 'economy', '--palette', 'rgb332', '--dither', 'full', '--scaling', 'integer', 'song.wav']);
+  assert.deepEqual(opts.presentation, { version: 1, look: 'palette', quality: 'economy', palette: 'rgb332', dither: 1, scaling: 'integer' });
+  assert.equal(parseBulkArgs(['song.wav']).presentation, null);
+  assert.throws(() => parseBulkArgs(['--look', 'bad']), /look/);
+});
