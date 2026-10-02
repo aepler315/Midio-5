@@ -148,3 +148,26 @@ test('the sky turns with the camera: a far landmark and the clouds pan alike', a
     if (move.crane) assert.ok(turn.y > 0.005, 'craning up tips the sky up the frame');
   }
 });
+
+test('the sky pan uses the scene\'s own moved pose and follows a late-joining view only as it fades in', async () => {
+  const { RangePresentation } = await import('../src/world/alpine/RangePresentation.js');
+  const { cameraBasis } = await import('../src/world/terrain/SceneTravel.js');
+  const rail = { eyeM: [0, 2000, 0], targetM: [0, 1000, 20000], fovYDeg: 40 };
+  // Each view's scene pose: A swung one way, B the other (as if lifted or
+  // turned by the scene's own constraints).
+  const swing = (yaw) => {
+    const f = cameraBasis(rail).forward, c = Math.cos(yaw), s = Math.sin(yaw);
+    return { ...rail, targetM: [rail.eyeM[0] + (f[0] * c - f[2] * s) * 2e4, rail.eyeM[1] + f[1] * 2e4, rail.eyeM[2] + (f[0] * s + f[2] * c) * 2e4] };
+  };
+  const proj = { fovYDeg: 40, aspect: 16 / 9 };
+  const scene = { movedPose: (v) => ({ rail, proj, pose: swing(v.id === 'a' ? 0.04 : -0.04) }) };
+  const frame = { cameraMove: { yaw: 0 }, scenicViewport: { logicalWidth: 1280, logicalHeight: 720 } };
+  const pan = (seamP, incomingFade, incoming = { id: 'b' }) =>
+    RangePresentation.prototype._skyPan.call({ scene, seamP, incomingFade }, { id: 'a' }, incoming, frame);
+  const alone = pan(0.5, 1, null);
+  assert.ok(Math.abs(alone.x) > 0.02, 'the scene pose drives the pan');
+  assert.deepEqual(pan(0.5, 0), alone, 'a view that has just joined (still invisible) moves nothing');
+  const half = pan(0.5, 1), end = pan(1, 1);
+  assert.ok(Math.abs(half.x) < Math.abs(alone.x));
+  assert.ok(Math.sign(end.x) === -Math.sign(alone.x), 'across the seam the pan is the incoming view\'s');
+});

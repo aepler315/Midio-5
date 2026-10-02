@@ -514,23 +514,29 @@ export class RangePresentation {
   /** How far the camera's section move has swung and tilted the sky, in
    *  NDC of the rendered lens ({x, y}): the sky's clouds turn with the land
    *  instead of holding still on the screen. Each view's own rail is the
-   *  reference, and during a travel the turn and lens blend across the
-   *  seam, so a handoff between views never jumps the clouds. The rail
-   *  progress and lens are RangeScene._setCamera's. */
+   *  reference; the moved pose is the scene's own (ground clearance
+   *  included, RangeScene.movedPose). During a travel the turn and lens
+   *  blend as the incoming view shows (seam and late-join fade), so a
+   *  handoff between views never jumps the clouds. */
   _skyPan(view, incoming, frame) {
     const still = { x: 0, y: 0 };
     if (!frame?.cameraMove || !frame.scenicViewport) return still;
     const vp = frame.scenicViewport;
     const one = (v) => {
-      const rail = cameraPoseAt(v, v.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
-      const proj = scenicProjection(rail.fovYDeg, vp);
-      const turn = skyTurn(applyCameraMoves(rail, frame.cameraMove, null), cameraBasis(rail).forward);
+      let rail, proj, pose;
+      if (typeof this.scene.movedPose === 'function') ({ rail, proj, pose } = this.scene.movedPose(v, frame));
+      else {
+        rail = cameraPoseAt(v, v.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+        proj = scenicProjection(rail.fovYDeg, vp);
+        pose = applyCameraMoves(rail, frame.cameraMove, null);
+      }
+      const turn = skyTurn(pose, cameraBasis(rail).forward);
       return { ...turn, tanY: Math.tan((proj.fovYDeg * Math.PI) / 360), aspect: proj.aspect };
     };
     try {
       const a = one(view);
       const b = incoming ? one(incoming) : a;
-      const k = incoming ? Math.min(1, Math.max(0, this.seamP ?? 0)) : 0;
+      const k = incoming ? Math.min(1, Math.max(0, (this.seamP ?? 0) * (this.incomingFade ?? 1))) : 0;
       const mix = (key) => a[key] + (b[key] - a[key]) * k;
       const tanY = mix('tanY'), aspect = mix('aspect');
       if (!(tanY > 0 && aspect > 0)) return still;

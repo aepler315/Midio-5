@@ -702,7 +702,11 @@ export class RangeScene {
     };
   }
 
-  _setCamera(view, frame, p = null) {
+  /** This frame's camera for a view: the rail pose, the lens, and the pose
+   *  after the section move and the listener's zoom, lifted clear of the
+   *  rendered ground. Computed once per frame and view and shared by the
+   *  partition passes and the sky (RangePresentation._skyPan). */
+  movedPose(view, frame, p = this.prepared.get(view.id) || null) {
     const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
     const proj = scenicProjection(rail.fovYDeg, frame.scenicViewport);
     // This view's VISIBLE frustum (the overscan margin excluded): the
@@ -723,6 +727,11 @@ export class RangeScene {
         heightRangeM: p?.uniforms ? [p.uniforms.uHeightRange.value.x, p.uniforms.uHeightRange.value.y] : null });
       poses.set(view.id, pose);
     }
+    return { rail, proj, pose, tanX, tanY };
+  }
+
+  _setCamera(view, frame, p = null) {
+    const { proj, pose, tanX, tanY } = this.movedPose(view, frame, p);
     const cam = this.camera;
     if (frame.userCamera) rangeUserCamera.noteFrame({ tanX, tanY, userScale: pose.userScale, frameId: frame.frameId });
     cam.fov = proj.fovYDeg;
