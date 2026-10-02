@@ -186,9 +186,10 @@ function swellOf(sections, timeMs, fromMs, toMs) {
     if (age >= span) break;
     const sec = sections[i], prev = sections[i - 1];
     // A decorative cut only paces the schedule (no musical event), and a
-    // repeat of the same part never swells, louder or not.
+    // repeat of the same part never swells, louder or not -- unless the
+    // song's author cued the change, which always counts.
     if (sec?.provenance === 'decorative') continue;
-    if (partOf(sec) != null && partOf(sec) === partOf(prev)) continue;
+    if (sec?.provenance !== 'authored' && partOf(sec) != null && partOf(sec) === partOf(prev)) continue;
     const strength = Math.max(changeFloor, boundaryLift01(sec, prev));
     const env = smoothstep(0, riseMs, age) * (1 - smoothstep(riseMs + holdMs, span, age));
     best = Math.max(best, strength * env);

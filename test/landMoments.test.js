@@ -89,3 +89,8 @@ test('the swell keeps one direction for the whole song', () => {
   assert.deepEqual(landMotion(a, 0.5, { seed: 7 }).waveDir, landMotion(b, 0.5, { seed: 7 }).waveDir);
   assert.deepEqual(landMotion(a, 0.5, { seed: 7 }).waveDir, landWaveDir(7));
 });
+
+test('an authored section cue swells even when the analysis gave both sides one label', () => {
+  const secs = [{ startMs: 0, label: 0 }, { startMs: 32000, label: 0, provenance: 'authored' }];
+  assert.ok(landMoment01(secs, 32000 + LAND_SWELL.riseMs + 1000) >= LAND_SWELL.changeFloor - 1e-9);
+});
