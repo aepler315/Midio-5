@@ -162,8 +162,13 @@ export function cyclePhase01(nowMs, cycle) {
 // for the body of the song, and sets as it ends, leaving the last seconds
 // in afterglow. A song clock stands in for the repeating cycle anywhere a
 // `cycle` is taken (dayNight, cyclePhase01, resolveCelestialState).
-/** The dark before dawn: this fraction of the song, within [min, max]. */
-export const SONG_PREDAWN = Object.freeze({ frac: 0.07, minMs: 9000, maxMs: 22000 });
+/** Dark to sunrise: this fraction of the song, within [min, max]. The
+ *  first `holdFrac` of it stays fully dark; after that the night lifts at
+ *  an even pace (not in one rush), so with the sun's slow climb past the
+ *  horizon a long song's sunrise takes about half a minute. A short song
+ *  gets at least 12 s, still about a fifth of the night per two seconds
+ *  at most. */
+export const SONG_PREDAWN = Object.freeze({ frac: 0.25, minMs: 12000, maxMs: 24000, holdFrac: 0.1 });
 /** After sunset, to the end. */
 export const SONG_AFTERGLOW = Object.freeze({ frac: 0.06, minMs: 8000, maxMs: 18000 });
 /** The sun lingers low: its arc runs at (1 - k cos 2*pi*u) of its mean
@@ -189,7 +194,13 @@ export function songSkyClock(durationMs) {
     durationMs: d, sunriseMs, sunsetMs,
     phaseAt(ms) {
       const t = Math.min(d, Math.max(0, Number.isFinite(ms) ? ms : 0));
-      if (t < sunriseMs) return MOON_SET_PHASE + (1 - MOON_SET_PHASE) * (t / sunriseMs);
+      if (t < sunriseMs) {
+        // dayNight's night is a smoothstep across this stretch of phase;
+        // walking it by the inverse smoothstep makes the night lift evenly.
+        const s = Math.min(1, Math.max(0, (t / sunriseMs - SONG_PREDAWN.holdFrac) / (1 - SONG_PREDAWN.holdFrac)));
+        const even = 0.5 - Math.sin(Math.asin(1 - 2 * s) / 3);
+        return MOON_SET_PHASE + (1 - MOON_SET_PHASE) * even;
+      }
       if (t < sunsetMs) {
         const u = (t - sunriseMs) / day;
         return SUN_SET_PHASE * (u - SONG_SUN_LINGER * Math.sin(2 * Math.PI * u) / (2 * Math.PI));

@@ -211,6 +211,14 @@ Ashton asked for songs to open just before sunrise in near-total darkness, with 
 - **The cast.** The actors' light is strongest in the dark (gain x1.6 at night, x0.45 at noon) and the lanterns soften by day. Broshi starts from the far end of his route so he and Midio do not move as one, and Midasus has her three baby stars, small lights trailing her.
 - Evidence (Teton, 90 s song): `teton-jackson-lake-day-{02,09,13,45,80,83,89}s.jpg`.
 
+## A slow sunrise and one wind for the clouds (2026-10-02)
+
+Ashton saw the sun come up "in an instant" and the clouds move as if by accident.
+
+- **Sunrise.** The night used to lift in about 7 s: dayNight's night is a smoothstep across the last stretch of phase before the sun, and the clock walked that stretch at an even pace. The dark before dawn is now 25% of the song (12-24 s). Its first 10% stays fully dark, and after that the clock walks the stretch by the inverse smoothstep, so the night lifts at an even rate. With the sun's slow climb (gold until it is about 0.1 up), a three-minute song's sunrise now runs from first light at about 4 s to full colour at about 50 s. A test holds the night to no more than a tenth per two seconds in a two-minute song or longer, and a fifth in the shortest song that holds a day (30 s).
+- **Clouds.** The banks drifted at 4-10 px/s each and two wisps rode along with the moon or sun disc. All banks now drift on one wind, the same way at 0.25% of the width per second (lower banks a little faster), and nothing follows the disc. `RangePresentation._skyPan` measures how far the section move has swung and tilted the sky (`skyTurn`: where the rail's own view direction lies in the moved pose, as tangents), turns that into NDC with the lens the scene renders with (`scenicProjection`), and the clouds pan and rise by it, so they hang over the land when the camera turns or cranes. Each view's rail is its own reference, and during a travel the turn and lens blend across the seam, so a handoff never jumps them.
+- Evidence (Teton, 180 s song): `teton-jackson-lake-dawn-grid.jpg` (2-60 s).
+
 ## Task 16: resource, lifecycle and performance
 
 ### Fixes found by exercising real (unforced) play

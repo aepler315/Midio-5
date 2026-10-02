@@ -2693,13 +2693,15 @@ export class BiomeManager {
         sun.xFrac, sun.yFrac, this._moonPhase01(), this.celestialState?.moon,
       );
     });
-    // Range v2: sparse, low-contrast cloud banks (two wisps crossing the
-    // moon), lit on the side facing the celestial, clear of the SpaceRidge.
+    // Range v2: sparse, low-contrast cloud banks drifting on one wind and
+    // turning with the camera, lit on the side facing the celestial, clear
+    // of the SpaceRidge.
     if (this._rangeV2Active && this._pass('range-clouds')) {
       const halo = hexToRgb(this._scenicLight.colorHex);
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
-      const moon = this._moonDisc;
-      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, moon }), {
+      const pan = this.rangePresentation?.skyPan;
+      const panPx = (pan?.x || 0) * canvas.width / 2, panYPx = -(pan?.y || 0) * canvas.height / 2;
+      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, panPx, panYPx }), {
         dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
         lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
         light: this._scenicLight, directGain: this._scenicLight.intensity,

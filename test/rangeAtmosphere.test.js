@@ -74,20 +74,30 @@ test('the shader twin uses the same constants', () => {
   }
 });
 
-test('sky hierarchy: a secondary moon and sparse clouds that drift purely in time', async () => {
+test('sky hierarchy: a secondary moon and sparse clouds that drift together, purely in time', async () => {
   const { rangeV2MoonRadius, rangeCloudBanks } = await import('../src/world/alpine/RangeSkyComposition.js');
   const R = rangeV2MoonRadius(1280, 1);
   assert.ok(Math.abs((2 * R) / 1280 - 0.035) < 0.002, 'about 3.5% of the width across');
   assert.ok(rangeV2MoonRadius(1280, 5) <= 1280 * 0.0175 * 1.25 + 1e-9, 'approach growth is capped');
-  const a = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, moon: { x: 150, y: 160, R } });
-  const b = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, moon: { x: 150, y: 160, R } });
+  const a = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7 });
+  const b = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7 });
   assert.deepEqual(a, b);
   assert.ok(a.length <= 8, 'sparse');
-  const wisps = a.filter((k) => k.id.startsWith('wisp'));
-  assert.equal(wisps.length, 2);
-  for (const w of wisps) assert.ok(Math.abs(w.y - 160) < R, 'wisps cross the moon');
+  // One wind: every bank drifts the same way, slowly (a few px a second).
   const later = rangeCloudBanks({ width: 1280, height: 720, tSec: 31, seed: 7 });
-  assert.ok(Math.abs(later[0].x - a[0].x) < 12, 'slow drift');
+  for (let i = 0; i < a.length; i++) {
+    const dx = later[i].x - a[i].x;
+    if (Math.abs(dx) > 100) continue; // wrapped round, off frame
+    assert.ok(dx > 0 && dx < 5, `${a[i].id} moved ${dx}`);
+  }
+  // A camera swing and tilt carry the whole sky together.
+  const panned = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, panPx: 40, panYPx: -12 });
+  for (let i = 0; i < a.length; i++) {
+    const dx = panned[i].x - a[i].x;
+    assert.ok(Math.abs(panned[i].y - a[i].y + 12) < 1e-9);
+    if (Math.abs(dx) > 100) continue;
+    assert.ok(Math.abs(dx - 40) < 1e-6, `${a[i].id} panned ${dx}`);
+  }
 });
 
 test('fewer fog samples (the quality ladder) approximate the full integral and never exceed the full sample count', () => {
@@ -111,4 +121,53 @@ test('fewer fog samples (the quality ladder) approximate the full integral and n
   // The shader bounds its loop the same way.
   assert.match(MIST_GLSL, /if \(float\(i\) >= n\) break;/);
   assert.match(MIST_GLSL, /od \*= uMistDensity \* L \/ n;/);
+});
+
+test('the sky turns with the camera: a far landmark and the clouds pan alike', async () => {
+  const { skyTurn } = await import('../src/world/alpine/RangeSkyComposition.js');
+  const { applyCameraMoves } = await import('../src/world/alpine/RangeCamera.js');
+  const { cameraBasis, projectPoint } = await import('../src/world/terrain/SceneTravel.js');
+  const rail = { eyeM: [0, 2000, 0], targetM: [0, 1000, 20000], fovYDeg: 40 };
+  const ref = cameraBasis(rail).forward;
+  const still = skyTurn(rail, ref);
+  assert.ok(Math.abs(still.x) < 1e-9 && Math.abs(still.y) < 1e-9);
+  // A star straight down the rail's view (clouds hang far beyond the land):
+  // in NDC of any lens the turn lands where it does, sideways for a swing,
+  // up the frame for a crane.
+  const peak = rail.eyeM.map((v, i) => v + ref[i] * 1e8);
+  for (const move of [{ yaw: 0.05 }, { crane: 0.03 }, { yaw: -0.04, crane: 0.02 }]) {
+    const moved = applyCameraMoves(rail, { dolly: 0, yaw: 0, crane: 0, truck: 0, kind: 'orbit', ...move }, null);
+    const turn = skyTurn(moved, ref);
+    for (const fovYDeg of [18, 40]) {
+      const tanY = Math.tan(fovYDeg * Math.PI / 360);
+      const q = projectPoint({ ...moved, fovYDeg }, 16 / 9, peak);
+      assert.ok(Math.abs(turn.x / (tanY * 16 / 9) - q.x) < 2e-3, `${JSON.stringify(move)} x at ${fovYDeg}`);
+      assert.ok(Math.abs(turn.y / tanY - q.y) < 2e-3, `${JSON.stringify(move)} y at ${fovYDeg}`);
+    }
+    if (move.yaw) assert.ok(Math.abs(turn.x) > 0.01);
+    if (move.crane) assert.ok(turn.y > 0.005, 'craning up tips the sky up the frame');
+  }
+});
+
+test('the sky pan uses the scene\'s own moved pose and follows a late-joining view only as it fades in', async () => {
+  const { RangePresentation } = await import('../src/world/alpine/RangePresentation.js');
+  const { cameraBasis } = await import('../src/world/terrain/SceneTravel.js');
+  const rail = { eyeM: [0, 2000, 0], targetM: [0, 1000, 20000], fovYDeg: 40 };
+  // Each view's scene pose: A swung one way, B the other (as if lifted or
+  // turned by the scene's own constraints).
+  const swing = (yaw) => {
+    const f = cameraBasis(rail).forward, c = Math.cos(yaw), s = Math.sin(yaw);
+    return { ...rail, targetM: [rail.eyeM[0] + (f[0] * c - f[2] * s) * 2e4, rail.eyeM[1] + f[1] * 2e4, rail.eyeM[2] + (f[0] * s + f[2] * c) * 2e4] };
+  };
+  const proj = { fovYDeg: 40, aspect: 16 / 9 };
+  const scene = { movedPose: (v) => ({ rail, proj, pose: swing(v.id === 'a' ? 0.04 : -0.04) }) };
+  const frame = { cameraMove: { yaw: 0 }, scenicViewport: { logicalWidth: 1280, logicalHeight: 720 } };
+  const pan = (seamP, incomingFade, incoming = { id: 'b' }) =>
+    RangePresentation.prototype._skyPan.call({ scene, seamP, incomingFade }, { id: 'a' }, incoming, frame);
+  const alone = pan(0.5, 1, null);
+  assert.ok(Math.abs(alone.x) > 0.02, 'the scene pose drives the pan');
+  assert.deepEqual(pan(0.5, 0), alone, 'a view that has just joined (still invisible) moves nothing');
+  const half = pan(0.5, 1), end = pan(1, 1);
+  assert.ok(Math.abs(half.x) < Math.abs(alone.x));
+  assert.ok(Math.sign(end.x) === -Math.sign(alone.x), 'across the seam the pan is the incoming view\'s');
 });

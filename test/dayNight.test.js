@@ -211,7 +211,7 @@ test('cyclePhase01 wraps to [0,1) and matches the phase dayNight works in', () =
 test('a song opens in darkness before dawn and closes after sunset', async () => {
   const { songSkyClock, SONG_DAY_MIN_MS } = await import('../src/world/DayNight.js');
   const clock = songSkyClock(180000);
-  assert.ok(clock.sunriseMs >= 9000 && clock.sunriseMs <= 22000);
+  assert.ok(clock.sunriseMs >= 20000 && clock.sunriseMs <= 24000, `${clock.sunriseMs}`);
   assert.ok(clock.sunsetMs < 180000 && clock.sunsetMs >= 180000 - 18000);
   const at = (ms) => dayNight(ms, clock);
   assert.equal(at(0).night, 1);
@@ -219,6 +219,16 @@ test('a song opens in darkness before dawn and closes after sunset', async () =>
   assert.equal(at(0).moonAlt, 0);
   // The sky pales before the sun is up, and the sun is up just after.
   assert.ok(at(clock.sunriseMs - 2000).night < at(1000).night);
+  // The night lifts evenly over the dawn, never in a rush: in a long song
+  // no two seconds take away more than a tenth of it, and even in the
+  // shortest song that holds a day, no more than a fifth.
+  for (const [d, most] of [[180000, 0.1], [120000, 0.1], [80000, 0.13], [45000, 0.2], [SONG_DAY_MIN_MS, 0.2]]) {
+    const c = songSkyClock(d);
+    for (let t = 0; t < c.sunriseMs; t += 250) {
+      const drop = dayNight(t, c).night - dayNight(t + 2000, c).night;
+      assert.ok(drop <= most, `${d} ms song: night falls ${drop.toFixed(3)} at ${t}`);
+    }
+  }
   assert.ok(at(clock.sunriseMs + 2000).sunAlt > 0);
   // Noon mid-song; the sun lingers low (slower near the horizon).
   const mid = (clock.sunriseMs + clock.sunsetMs) / 2;
