@@ -138,11 +138,26 @@ function glacialViewWeight(presentation, biomes) {
   return (fromIce ? 1 - t : 0) + (toIce ? t : 0);
 }
 
+/** Range v2 views fly a real 3D camera (RangeCamera.js) whose moves are
+ *  authored to the song's structure. Frame-wide beat sway and calm drift on
+ *  top of that read as an accidental, wobbling camera, so they fade out as
+ *  the view arrives. */
+function rangeViewWeight(presentation) {
+  if (!presentation?.enabled || !presentation.active) return 0;
+  const a = Number(presentation.arrival);
+  return Number.isFinite(a) ? clamp01(a) : 1;
+}
+
 export function presentationCamera(camera, presentation, biomes) {
-  const weight = glacialViewWeight(presentation, biomes);
+  const ice = glacialViewWeight(presentation, biomes);
+  const range = rangeViewWeight(presentation);
+  const weight = Math.max(ice, range);
   if (!weight) return camera;
   const gain = 1 - 0.92 * weight;
-  return { ...camera, shakeX: camera.shakeX * gain, shakeY: camera.shakeY * gain, roll: (camera.roll || 0) * gain };
+  // Ambient sway and drift go entirely on Range views; impact shake and roll
+  // keep a trace (8%) so a landing still registers.
+  const ax = (camera.ambientX || 0) * range, ay = (camera.ambientY || 0) * range;
+  return { ...camera, shakeX: (camera.shakeX - ax) * gain, shakeY: (camera.shakeY - ay) * gain, roll: (camera.roll || 0) * gain };
 }
 
 /** Put the pilot cast on a narrow bottom ledge. This only changes the shared

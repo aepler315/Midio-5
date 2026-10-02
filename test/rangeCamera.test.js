@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyCameraMoves, cameraMoveKeys, rangeCameraMoveAt, RangeUserCamera,
-  NEUTRAL_MOVE, MOVE_LIMITS, MIN_MOVE_MS, USER_FX_MAX,
+  NEUTRAL_MOVE, OPENING_MOVE, MOVE_LIMITS, MIN_MOVE_MS, MOVE_TRAVEL_MS, USER_FX_MAX,
 } from '../src/world/alpine/RangeCamera.js';
 import { wheelZoomFactor } from '../src/ui/RangeZoomInput.js';
 import { cameraBasis, projectPoint } from '../src/world/terrain/SceneTravel.js';
@@ -12,9 +12,11 @@ const DUR = 180000;
 const POSE = { eyeM: [0, 1500, 20000], targetM: [0, 2500, 0], fovYDeg: 35 };
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-test('moves start neutral, end on the wide risen finale, and stay inside their limits', () => {
+test('moves open risen, end on the wide risen finale, and stay inside their limits', () => {
   const keys = cameraMoveKeys(SECTIONS, DUR, 7);
-  assert.deepEqual({ ...keys[0], tMs: 0 }, { tMs: 0, ...NEUTRAL_MOVE });
+  assert.deepEqual(keys[0], { fromMs: 0, tMs: 0, ...OPENING_MOVE });
+  assert.equal(keys[1].kind, 'establish');
+  assert.ok(keys[1].crane < OPENING_MOVE.crane, 'the opening settles down into the land');
   const last = keys.at(-1);
   assert.equal(last.tMs, DUR);
   assert.equal(last.kind, 'finale');
@@ -27,10 +29,36 @@ test('moves start neutral, end on the wide risen finale, and stay inside their l
   }
 });
 
-test('a short section rides along with the move in progress', () => {
+test('moves start on structural turns, far apart, and travel then hold', () => {
   const keys = cameraMoveKeys(SECTIONS, DUR, 7);
-  for (let i = 1; i < keys.length; i++) assert.ok(keys[i].tMs - keys[i - 1].tMs >= MIN_MOVE_MS);
-  assert.ok(!keys.some((k) => k.tMs === 24000), 'the 4 s section at 20 s must not start its own move');
+  const starts = keys.slice(1, -1).map((k) => k.fromMs);
+  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= MIN_MOVE_MS);
+  for (const t of starts) assert.ok(SECTIONS.some((s) => s.startMs === t), `move at ${t} is not on a section boundary`);
+  assert.ok(!starts.includes(24000), 'a section 4 s after another must not start its own move');
+  for (let i = 1; i < keys.length; i++) {
+    assert.ok(keys[i].fromMs >= keys[i - 1].tMs, 'moves never overlap');
+    if (keys[i].kind !== 'finale') assert.ok(keys[i].tMs - keys[i].fromMs >= MOVE_TRAVEL_MS[0] - 1e-9 && keys[i].tMs - keys[i].fromMs <= MOVE_TRAVEL_MS[1]);
+  }
+  // Between moves the camera holds perfectly still.
+  const at = (t) => rangeCameraMoveAt({ timeMs: t, sections: SECTIONS, durationMs: DUR, seed: 7 });
+  const k = keys[1], next = keys[2];
+  assert.ok(next.fromMs > k.tMs + 1000, 'a hold follows the first move');
+  assert.deepEqual(at(k.tMs + 1), at(next.fromMs - 1));
+  assert.equal(at(k.tMs + 1).kind, 'hold');
+});
+
+test('the biggest energy change wins a crowded stretch', () => {
+  const secs = [{ startMs: 0, relEnergy01: 0.5 }, { startMs: 30000, relEnergy01: 0.55 }, { startMs: 38000, relEnergy01: 1 }, { startMs: 90000, relEnergy01: 0.5 }];
+  const keys = cameraMoveKeys(secs, DUR, 1);
+  const starts = keys.slice(1, -1).map((k) => k.fromMs);
+  assert.ok(starts.includes(38000) && !starts.includes(30000), String(starts));
+});
+
+test('a falling section pulls back and rises', () => {
+  const keys = cameraMoveKeys([{ startMs: 0, relEnergy01: 0.5 }, { startMs: 30000, relEnergy01: 1 }, { startMs: 80000, relEnergy01: 0.1 }], DUR, 3);
+  const push = keys.find((k) => k.fromMs === 30000), back = keys.find((k) => k.fromMs === 80000);
+  assert.equal(back.kind, 'pullback');
+  assert.ok(back.dolly < push.dolly && back.crane > push.crane);
 });
 
 test('the move is a continuous pure function of heard time', () => {
@@ -126,7 +154,7 @@ test('wheel deltas map to gentle zoom factors in every delta mode', () => {
 
 test('a loud section pushes in', () => {
   const keys = cameraMoveKeys([{ startMs: 0, relEnergy01: 0.2 }, { startMs: 30000, relEnergy01: 1 }, { startMs: 80000, relEnergy01: 0.2 }], DUR, 3);
-  const loud = keys.find((k) => k.tMs === 80000);
+  const loud = keys.find((k) => k.fromMs === 30000);
   assert.equal(loud.kind, 'push');
   assert.ok(loud.dolly > 0.1);
 });
@@ -203,6 +231,8 @@ test('a view clamps the zoom snapshot into its own cone', () => {
 test('a short song makes no move shorter than the minimum before its finale', () => {
   const keys = cameraMoveKeys([{ startMs: 0, relEnergy01: 1 }], 21000, 1);
   assert.deepEqual(keys.map((k) => k.kind), ['rest', 'finale']);
+  const keys2 = cameraMoveKeys([{ startMs: 0, relEnergy01: 1 }, { startMs: 8000, relEnergy01: 0 }], 60000, 1);
+  assert.deepEqual(keys2.map((k) => k.kind), ['rest', 'establish', 'finale']);
 });
 
 test('a low view keeps the deformation pad over high ground, not over its floor', () => {

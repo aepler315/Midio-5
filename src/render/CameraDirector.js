@@ -111,6 +111,10 @@ export class CameraDirector {
   constructor() {
     this.shakeX = 0;
     this.shakeY = 0;
+    // The ambient part of shakeX/Y (calm drift + beat sway), kept apart so
+    // a scene with its own 3D camera (Range) can drop it.
+    this.ambientX = 0;
+    this.ambientY = 0;
     this._shakeAmp = 0;
     this._shakeT = 0;
     this._shakeSeed = Math.random() * 1000;
@@ -215,8 +219,10 @@ export class CameraDirector {
       swayY = sway.y;
     }
 
-    this.shakeX = shakeX * motionMul + driftX + swayX;
-    this.shakeY = shakeY * motionMul + driftY + swayY;
+    this.ambientX = driftX + swayX;
+    this.ambientY = driftY + swayY;
+    this.shakeX = shakeX * motionMul + this.ambientX;
+    this.shakeY = shakeY * motionMul + this.ambientY;
 
     // Zoom: critically-damped-ish exponential ease toward _zoomTarget, same
     // discipline as the shake/roll ring-downs above -- it must never snap
