@@ -164,10 +164,14 @@ const partOf = (s) => s?.motifId ?? s?.label ?? null;
  *  `history` ({ sections, throughMs }) is the section list the show was
  *  playing on before a live re-analysis replaced it: boundaries before
  *  `throughMs` are the ones already heard on it, so a swell under way
- *  carries on and a boundary the new list adds in the past starts none. */
+ *  carries on and a boundary the new list adds in the past starts none.
+ *  `rejoinMs` is where the rebuilt show actually rejoined the music: a
+ *  boundary crossed while it was being built (never drawn) starts none. */
 export function landMoment01(sections, timeMs, history = null) {
-  const through = Array.isArray(history?.sections) && Number.isFinite(history.throughMs) ? history.throughMs : -Infinity;
-  return Math.max(swellOf(history?.sections, timeMs, -Infinity, through), swellOf(sections, timeMs, through, Infinity));
+  const has = Array.isArray(history?.sections) && Number.isFinite(history.throughMs);
+  const through = has ? history.throughMs : -Infinity;
+  const rejoin = has ? Math.max(through, Number.isFinite(history.rejoinMs) ? history.rejoinMs : through) : -Infinity;
+  return Math.max(swellOf(history?.sections, timeMs, -Infinity, through), swellOf(sections, timeMs, rejoin, Infinity));
 }
 
 function swellOf(sections, timeMs, fromMs, toMs) {

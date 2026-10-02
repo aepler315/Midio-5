@@ -1934,6 +1934,9 @@ function startTimeline(timelineData, extra = {}) {
   if (captureMode) captureClock.beginFullCapture(startedAt);
   else captureClock.resetLive(startedAt);
   const presentationLeadMs = captureClock.leadMs;
+  // A live re-analysis rejoins here, after the build: the land's swells
+  // start from boundaries after this point only (RangeFrame.landMoment01).
+  if (keepAudio) sim.biomes?.commitLandRejoin?.(startedAt + presentationLeadMs);
   if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs);
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.

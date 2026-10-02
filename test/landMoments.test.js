@@ -66,3 +66,14 @@ test('a live re-analysis keeps the swells already heard and starts none in the p
   assert.ok(landMoment01(after, 54000, history) > 0.3);
   assert.equal(landMoment01(before, 54000), 0);
 });
+
+test('boundaries crossed while the show was rebuilt start no swell after it rejoins', () => {
+  // Cutoff captured at 36 s; the rebuilt show rejoins the kept audio at 40 s.
+  const before = [{ startMs: 0, label: 'a' }];
+  const after = [{ startMs: 0, label: 'a' }, { startMs: 38000, label: 'b' }, { startMs: 41000, label: 'c' }];
+  const history = { sections: before, throughMs: 36000, rejoinMs: 40000 };
+  assert.equal(landMoment01(after, 40000, history), 0, 'the 38 s change was never seen, so it starts nothing');
+  assert.ok(landMoment01(after, 44000, history) > 0.3, 'the 41 s change swells as usual');
+  // Without the rejoin time the 38 s change would pop in mid-rise.
+  assert.ok(landMoment01(after, 40000, { sections: before, throughMs: 36000 }) > 0);
+});

@@ -984,6 +984,13 @@ export class BiomeManager {
     this._releaseCrestLight();
   }
 
+  /** The rebuilt show has rejoined the music at `ms`: boundaries the new
+   *  analysis put between the committed time and here were crossed while
+   *  the world was being built, so they start no land swell. */
+  commitLandRejoin(ms) {
+    if (this._landHistory && Number.isFinite(ms)) this._landHistory = { ...this._landHistory, rejoinMs: ms };
+  }
+
   _buildSchedule(barGrid, energyCurves, durationMs, songSeed, lyricSections = null, structure = null, conductorSchedule = null) {
     // The song's beat, in seconds -- the unit the ranges' weathering is cut
     // on (RidgeShape.couloirCarve's pulse). Taken from the MEDIAN bar
