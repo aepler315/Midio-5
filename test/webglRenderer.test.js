@@ -156,6 +156,18 @@ test('glacial scenic flight reduces frame shake while retaining cast visibility 
   assert.deepEqual(rendererModule.presentationCamera(camera, glacier, biomes), damped, 'pure across redraw/seek');
 });
 
+test('Range views drop beat sway and calm drift and keep only a trace of impact shake', () => {
+  const camera = { shakeX: 14, shakeY: 9, ambientX: 4, ambientY: 9, roll: .02, zoom: 1 };
+  const biomes = { currentBlend: { from: 'TAIGA', to: 'TAIGA', t: 1 } };
+  const range = { enabled: true, active: true, arrival: 1, captionViewFor: () => ({}) };
+  const out = rendererModule.presentationCamera(camera, range, biomes);
+  assert.ok(Math.abs(out.shakeX - 10 * .08) < 1e-9 && Math.abs(out.shakeY) < 1e-9);
+  assert.ok(Math.abs(out.roll) <= .002);
+  const arriving = rendererModule.presentationCamera(camera, { ...range, arrival: 0 }, biomes);
+  assert.equal(arriving, camera, 'nothing changes before the view arrives');
+  assert.equal(rendererModule.presentationCamera(camera, { ...range, active: false }, biomes), camera);
+});
+
 test('glacial foreground placement moves support, cast and pool together while ordinary scenes hold', () => {
   assert.equal(typeof rendererModule.groundPresentationOffsetY, 'function');
   assert.equal(typeof rendererModule.applyFixedGroundTransform, 'function');

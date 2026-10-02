@@ -1,9 +1,11 @@
 // Range v2 camera moves, on top of a view's authored rail pose:
 //
-//   rangeCameraMoveAt()   slow cinematic moves -- push in, drift, orbit,
-//                         crane -- one per song section, as a pure function
-//                         of heard time (seek, pause and export land on the
-//                         same shot). The song ends on a wide, risen shot.
+//   rangeCameraMoveAt()   slow cinematic moves -- push in, pull back,
+//                         orbit, drift -- one per structural turn of the
+//                         song, each starting on the turn, travelling and
+//                         then holding. A pure function of heard time (seek,
+//                         pause and export land on the same shot). The song
+//                         opens risen in the dark and ends wide and risen.
 //   RangeUserCamera       the listener's zoom (scroll wheel, two-finger
 //                         pinch). The eye flies along the ray under the
 //                         pointer, so the place under the cursor stays put.
@@ -22,18 +24,28 @@
 import { cameraBasis } from '../terrain/SceneTravel.js';
 import { hashSeed, mulberry32 } from '../../utils/math.js';
 
-export const MOVE_KINDS = Object.freeze(['push', 'drift', 'orbit', 'crane']);
+export const MOVE_KINDS = Object.freeze(['establish', 'push', 'pullback', 'orbit', 'drift']);
 export const NEUTRAL_MOVE = Object.freeze({ dolly: 0, yaw: 0, crane: 0, truck: 0, kind: 'rest' });
-// Sections shorter than this ride along with the move in progress; a new
-// move every few seconds reads as a nervous camera, not a cinematic one.
-export const MIN_MOVE_MS = 8000;
-// The closing move (the sunset shot) starts this long before the end, or
-// at the last section boundary, whichever leaves it more room.
+// Moves start only at the song's big structural turns, at least this far
+// apart. Sections in between ride along: a new move every few seconds
+// reads as a nervous, accidental camera rather than a directed one.
+export const MIN_MOVE_MS = 20000;
+// Each move starts on its section boundary, travels for part of the span
+// and then holds still until the next turn, so every move has a visible
+// start and end. Its travel time lies within these bounds.
+export const MOVE_TRAVEL_FRAC = 0.6;
+export const MOVE_TRAVEL_MS = Object.freeze([12000, 30000]);
+// An energy change at a boundary at least this big makes it a push in
+// (rising) or a pull back (falling); smaller ones orbit or drift.
+const ENERGY_TURN = 0.15;
+// The closing move (the sunset shot) starts this long before the end.
 export const FINALE_MS = 20000;
 // Amplitudes, as fractions of the rail's eye-to-target distance D (yaw in
 // radians). D is kilometres, so these are big on the ground and small on
 // screen: a 3 km push toward a summit 20 km away.
 export const MOVE_LIMITS = Object.freeze({ dolly: [0, 0.16], yaw: [-0.06, 0.06], crane: [0, 0.035], truck: [-0.025, 0.025] });
+// The song opens risen over the dark land and settles in as the sun comes up.
+export const OPENING_MOVE = Object.freeze({ dolly: 0, yaw: 0, crane: 0.03, truck: 0, kind: 'rest' });
 const FINALE = Object.freeze({ dolly: 0, crane: 0.03, truck: 0 });
 
 // User zoom: each unit of `fx` moves the eye one rail distance D forward.
@@ -64,58 +76,83 @@ const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
 const keyCache = new WeakMap();
 
-/** Keyframes {tMs, dolly, yaw, crane, truck, kind}: the camera reaches key
- *  k at its time and eases from key k-1 to key k across the span between. */
+/** Boundaries where the song turns: section starts at least MIN_MOVE_MS
+ *  apart (and from the start and the finale), the biggest energy changes
+ *  first, so moves land on the turns a listener actually hears. */
+function structuralTurns(list, finaleAt) {
+  const energyOf = (s) => clamp(Number(s?.relEnergy01 ?? 0.5) || 0, 0, 1);
+  const cands = [];
+  for (let i = 1; i < list.length; i++) {
+    const t = Number(list[i]?.startMs);
+    if (!(t >= MIN_MOVE_MS) || finaleAt - t < MIN_MOVE_MS) continue;
+    cands.push({ tMs: t, section: list[i], delta: energyOf(list[i]) - energyOf(list[i - 1]) });
+  }
+  cands.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.tMs - y.tMs);
+  const picked = [];
+  for (const c of cands) {
+    if (picked.every((p) => Math.abs(p.tMs - c.tMs) >= MIN_MOVE_MS)) picked.push(c);
+  }
+  return picked.sort((x, y) => x.tMs - y.tMs);
+}
+
+const travelMs = (span) => Math.min(span, clamp(MOVE_TRAVEL_FRAC * span, MOVE_TRAVEL_MS[0], MOVE_TRAVEL_MS[1]));
+
+/** Keyframes {fromMs, tMs, dolly, yaw, crane, truck, kind}: the camera
+ *  holds key k-1 until fromMs, eases to key k by tMs, then holds. */
 export function cameraMoveKeys(sections, durationMs, seed = 0) {
   const dur = Number(durationMs) || 0;
-  if (!(dur > 0)) return [{ tMs: 0, ...NEUTRAL_MOVE }];
+  if (!(dur > 0)) return [{ fromMs: 0, tMs: 0, ...NEUTRAL_MOVE }];
   const cached = Array.isArray(sections) && keyCache.get(sections);
   if (cached && cached.dur === dur && cached.seed === seed) return cached.keys;
   const list = Array.isArray(sections) ? sections : [];
   const finaleAt = Math.max(0, dur - FINALE_MS);
-  // Accepted boundaries: section starts at least MIN_MOVE_MS apart, before
-  // the finale. The section running from each one picks the next move.
-  const starts = [{ tMs: 0, section: list[0] || null }];
-  for (const s of list) {
-    const t = Number(s?.startMs);
-    if (!(t > 0) || t >= finaleAt) continue;
-    if (t - starts.at(-1).tMs < MIN_MOVE_MS || finaleAt - t < MIN_MOVE_MS) continue;
-    starts.push({ tMs: t, section: s });
-  }
+  const energyOf = (s) => clamp(Number(s?.relEnergy01 ?? 0.5) || 0, 0, 1);
   const rand = mulberry32(hashSeed(`range-camera:${seed}`));
-  const keys = [{ tMs: 0, ...NEUTRAL_MOVE }];
-  let lastKind = null;
-  for (let i = 0; i < starts.length; i++) {
+  // Orbits and drifts alternate sides; the seed picks the first one.
+  let side = rand() < 0.5 ? -1 : 1;
+  let steady = 0;
+  const keys = [{ fromMs: 0, tMs: 0, ...OPENING_MOVE }];
+  // Spans: the opening, then one per structural turn, then the finale.
+  const spans = [{ tMs: 0, section: list[0] || null, delta: 0, opening: true }, ...structuralTurns(list, finaleAt)];
+  for (let i = 0; i < spans.length; i++) {
+    const start = spans[i].tMs;
+    const end = i + 1 < spans.length ? spans[i + 1].tMs : finaleAt;
+    if (end - start < MOVE_TRAVEL_MS[0]) continue;
     const cur = keys.at(-1);
-    const end = i + 1 < starts.length ? starts[i + 1].tMs : finaleAt;
-    if (end - cur.tMs < MIN_MOVE_MS) continue;
-    const energy = clamp(Number(starts[i].section?.relEnergy01 ?? 0.5) || 0, 0, 1);
-    let kind = MOVE_KINDS[Math.floor(rand() * MOVE_KINDS.length) % MOVE_KINDS.length];
-    // A loud section pushes in toward the peaks.
-    if (energy >= 0.6 && lastKind !== 'push') kind = 'push';
-    if (kind === lastKind) kind = MOVE_KINDS[(MOVE_KINDS.indexOf(kind) + 1) % MOVE_KINDS.length];
-    lastKind = kind;
-    const r = rand();
-    const next = { ...cur, tMs: end, kind };
-    if (kind === 'push') {
-      // Loud sections lean in; a push that would barely move pulls back.
-      let d = lerp(0.03, MOVE_LIMITS.dolly[1], energy);
-      if (Math.abs(d - cur.dolly) < 0.04) d = cur.dolly > 0.08 ? 0.01 : 0.14;
-      next.dolly = d;
-    } else if (kind === 'drift') {
-      next.truck = -(Math.sign(cur.truck) || (r < 0.5 ? -1 : 1)) * lerp(0.012, MOVE_LIMITS.truck[1], r);
-    } else if (kind === 'orbit') {
-      next.yaw = -(Math.sign(cur.yaw) || (r < 0.5 ? -1 : 1)) * lerp(0.025, MOVE_LIMITS.yaw[1], r);
+    const energy = energyOf(spans[i].section);
+    const next = { ...cur, fromMs: start, tMs: start + travelMs(end - start) };
+    if (spans[i].opening) {
+      // Settle down out of the risen opening shot and lean in a little.
+      next.kind = 'establish';
+      next.crane = 0.008;
+      next.dolly = lerp(0.03, 0.07, energy);
+    } else if (spans[i].delta >= ENERGY_TURN && MOVE_LIMITS.dolly[1] - cur.dolly >= 0.05) {
+      // The music lifts: push in toward the peaks and come down to them.
+      next.kind = 'push';
+      next.dolly = Math.max(cur.dolly + 0.05, lerp(0.08, MOVE_LIMITS.dolly[1], energy));
+      next.dolly = Math.min(next.dolly, MOVE_LIMITS.dolly[1]);
+      next.crane = 0;
+    } else if (spans[i].delta <= -ENERGY_TURN && (cur.dolly >= 0.04 || cur.crane <= 0.02)) {
+      // The music falls away: pull back and rise to look over the land.
+      next.kind = 'pullback';
+      next.dolly = Math.max(0, cur.dolly - 0.08);
+      next.crane = lerp(0.015, MOVE_LIMITS.crane[1], 1 - energy);
+    } else if (steady++ % 2 === 0) {
+      // Steady music: a slow orbit round the target, swinging across.
+      side = -side;
+      next.kind = 'orbit';
+      next.yaw = side * lerp(0.035, MOVE_LIMITS.yaw[1], rand());
     } else {
-      // Quiet sections rise and look down over the land; a risen camera
-      // settles back.
-      next.crane = cur.crane > 0.015 ? 0 : lerp(0.015, MOVE_LIMITS.crane[1], 1 - energy);
+      next.kind = 'drift';
+      side = -side;
+      next.truck = side * lerp(0.015, MOVE_LIMITS.truck[1], rand());
     }
     keys.push(next);
   }
-  // The finale: pull back wide and rise, holding half the last orbit.
+  // The finale (the sunset): pull back wide and rise, easing the orbit
+  // halfway home, arriving as the song ends.
   const last = keys.at(-1);
-  keys.push({ tMs: dur, ...FINALE, yaw: last.yaw * 0.5, kind: 'finale' });
+  keys.push({ fromMs: Math.max(finaleAt, last.tMs), tMs: dur, ...FINALE, yaw: last.yaw * 0.5, kind: 'finale' });
   if (Array.isArray(sections)) keyCache.set(sections, { dur, seed, keys });
   return keys;
 }
@@ -126,13 +163,15 @@ export function rangeCameraMoveAt({ timeMs = 0, sections = null, durationMs = 0,
   if (reducedMotion || preview || !(durationMs > 0)) return NEUTRAL_MOVE;
   const keys = cameraMoveKeys(sections, durationMs, seed);
   const t = clamp(Number(timeMs) || 0, 0, durationMs);
+  // The key being travelled to (or held at): the last one that has begun.
   let k = 1;
-  while (k < keys.length - 1 && keys[k].tMs <= t) k++;
+  while (k < keys.length - 1 && keys[k + 1].fromMs <= t) k++;
   const a = keys[k - 1], b = keys[k] || a;
-  const u = b.tMs > a.tMs ? smoother(clamp((t - a.tMs) / (b.tMs - a.tMs), 0, 1)) : 1;
+  const span = b.tMs - b.fromMs;
+  const u = span > 0 ? smoother(clamp((t - b.fromMs) / span, 0, 1)) : (t >= b.tMs ? 1 : 0);
   return {
     dolly: lerp(a.dolly, b.dolly, u), yaw: lerp(a.yaw, b.yaw, u),
-    crane: lerp(a.crane, b.crane, u), truck: lerp(a.truck, b.truck, u), kind: b.kind,
+    crane: lerp(a.crane, b.crane, u), truck: lerp(a.truck, b.truck, u), kind: u > 0 && u < 1 ? b.kind : 'hold',
   };
 }
 
