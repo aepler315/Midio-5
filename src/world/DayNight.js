@@ -165,8 +165,10 @@ export function cyclePhase01(nowMs, cycle) {
 /** Dark to sunrise: this fraction of the song, within [min, max]. The
  *  first `holdFrac` of it stays fully dark; after that the night lifts at
  *  an even pace (not in one rush), so with the sun's slow climb past the
- *  horizon a long song's sunrise takes about half a minute. */
-export const SONG_PREDAWN = Object.freeze({ frac: 0.2, minMs: 9000, maxMs: 24000, holdFrac: 0.15 });
+ *  horizon a long song's sunrise takes about half a minute. A short song
+ *  gets at least 12 s, still about a fifth of the night per two seconds
+ *  at most. */
+export const SONG_PREDAWN = Object.freeze({ frac: 0.25, minMs: 12000, maxMs: 24000, holdFrac: 0.1 });
 /** After sunset, to the end. */
 export const SONG_AFTERGLOW = Object.freeze({ frac: 0.06, minMs: 8000, maxMs: 18000 });
 /** The sun lingers low: its arc runs at (1 - k cos 2*pi*u) of its mean

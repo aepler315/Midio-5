@@ -90,10 +90,11 @@ test('sky hierarchy: a secondary moon and sparse clouds that drift together, pur
     if (Math.abs(dx) > 100) continue; // wrapped round, off frame
     assert.ok(dx > 0 && dx < 5, `${a[i].id} moved ${dx}`);
   }
-  // A camera swing carries the whole sky together.
-  const panned = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, panPx: 40 });
+  // A camera swing and tilt carry the whole sky together.
+  const panned = rangeCloudBanks({ width: 1280, height: 720, tSec: 30, seed: 7, panPx: 40, panYPx: -12 });
   for (let i = 0; i < a.length; i++) {
     const dx = panned[i].x - a[i].x;
+    assert.ok(Math.abs(panned[i].y - a[i].y + 12) < 1e-9);
     if (Math.abs(dx) > 100) continue;
     assert.ok(Math.abs(dx - 40) < 1e-6, `${a[i].id} panned ${dx}`);
   }
@@ -123,16 +124,27 @@ test('fewer fog samples (the quality ladder) approximate the full integral and n
 });
 
 test('the sky turns with the camera: a far landmark and the clouds pan alike', async () => {
-  const { skyPanNdc } = await import('../src/world/alpine/RangeSkyComposition.js');
+  const { skyTurn } = await import('../src/world/alpine/RangeSkyComposition.js');
   const { applyCameraMoves } = await import('../src/world/alpine/RangeCamera.js');
   const { cameraBasis, projectPoint } = await import('../src/world/terrain/SceneTravel.js');
   const rail = { eyeM: [0, 2000, 0], targetM: [0, 1000, 20000], fovYDeg: 40 };
   const ref = cameraBasis(rail).forward;
-  assert.equal(Math.abs(skyPanNdc(rail, ref, 16 / 9)) < 1e-9, true);
-  const swung = applyCameraMoves(rail, { dolly: 0, yaw: 0.05, crane: 0, truck: 0, kind: 'orbit' }, null);
-  const pan = skyPanNdc(swung, ref, 16 / 9);
-  assert.ok(Math.abs(pan) > 0.02, `${pan}`);
-  // A peak 80 km out along the rail's view slides the same way.
-  const peak = rail.eyeM.map((v, i) => v + ref[i] * 80000);
-  assert.ok(Math.sign(projectPoint(swung, 16 / 9, peak).x) === Math.sign(pan));
+  const still = skyTurn(rail, ref);
+  assert.ok(Math.abs(still.x) < 1e-9 && Math.abs(still.y) < 1e-9);
+  // A star straight down the rail's view (clouds hang far beyond the land):
+  // in NDC of any lens the turn lands where it does, sideways for a swing,
+  // up the frame for a crane.
+  const peak = rail.eyeM.map((v, i) => v + ref[i] * 1e8);
+  for (const move of [{ yaw: 0.05 }, { crane: 0.03 }, { yaw: -0.04, crane: 0.02 }]) {
+    const moved = applyCameraMoves(rail, { dolly: 0, yaw: 0, crane: 0, truck: 0, kind: 'orbit', ...move }, null);
+    const turn = skyTurn(moved, ref);
+    for (const fovYDeg of [18, 40]) {
+      const tanY = Math.tan(fovYDeg * Math.PI / 360);
+      const q = projectPoint({ ...moved, fovYDeg }, 16 / 9, peak);
+      assert.ok(Math.abs(turn.x / (tanY * 16 / 9) - q.x) < 2e-3, `${JSON.stringify(move)} x at ${fovYDeg}`);
+      assert.ok(Math.abs(turn.y / tanY - q.y) < 2e-3, `${JSON.stringify(move)} y at ${fovYDeg}`);
+    }
+    if (move.yaw) assert.ok(Math.abs(turn.x) > 0.01);
+    if (move.crane) assert.ok(turn.y > 0.005, 'craning up tips the sky up the frame');
+  }
 });

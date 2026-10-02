@@ -1,4 +1,4 @@
-import { projectPoint } from '../terrain/SceneTravel.js';
+import { cameraBasis } from '../terrain/SceneTravel.js';
 /** One frame's Range-specific upper-sky ownership. Keep faint star depth
  * behind the live ridge while reserving its body for incidental figures. */
 export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = false } = {}) {
@@ -70,11 +70,11 @@ export const CLOUD_DRIFT_W_PER_SEC = 0.0025;
 /**
  * Deterministic cloud banks for a frame: sparse, elongated, drifting slowly
  * in heard time (pure: pause holds, seek reconstructs). Every bank moves
- * with the one wind (nearer, lower banks a little faster), and `panPx`
- * carries them with the camera's turn, so they hang in the sky over the
+ * with the one wind (nearer, lower banks a little faster), and `panPx` /
+ * `panYPx` carry them with the camera's turn and tilt, so they hang in the sky over the
  * land instead of sliding across the screen on their own.
  */
-export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, panPx = 0, count = 7 }) {
+export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, panPx = 0, panYPx = 0, count = 7 }) {
   const banks = [];
   const span = width * 1.6;
   for (let i = 0; i < count; i++) {
@@ -82,22 +82,24 @@ export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, panPx = 0, 
     const speed = width * CLOUD_DRIFT_W_PER_SEC * (0.85 + 0.3 * y01);
     const raw = hash(i, seed + 2) * span + tSec * speed + panPx;
     const x = ((raw % span) + span) % span - width * 0.3;
-    const y = height * (0.06 + 0.3 * y01);
+    const y = height * (0.06 + 0.3 * y01) + panYPx;
     const w = width * (0.12 + 0.16 * hash(i, seed + 4));
     banks.push({ id: `bank${i}`, x, y, w, h: w * (0.1 + 0.06 * hash(i, seed + 5)), alpha: 0.28 + 0.14 * hash(i, seed + 6), puffs: 7 });
   }
   return banks;
 }
 
-/** How far the sky has turned across the frame, in NDC (-1..1 = the frame's
- *  half-width): where the direction `refForward` (the unmoved rail's view
- *  direction) lands for `pose`. Clouds pan by this times half the width
- *  when the camera swings. */
-export function skyPanNdc(pose, refForward, aspect) {
-  if (!pose || !refForward) return 0;
-  const far = pose.eyeM.map((v, i) => v + refForward[i] * 1e7);
-  const q = projectPoint(pose, aspect, far);
-  return q && Number.isFinite(q.x) ? q.x : 0;
+/** How far the sky has turned for a camera pose, as tangents (independent
+ *  of any lens): where the direction `refForward` (the unmoved rail's view
+ *  direction) lies right of (x) and above (y) the pose's view axis. Divide
+ *  by the rendered tan(fovY/2) (times the aspect, for x) to get NDC. */
+export function skyTurn(pose, refForward) {
+  if (!pose || !refForward) return { x: 0, y: 0 };
+  const { forward, right, up } = cameraBasis(pose);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const depth = dot(refForward, forward);
+  if (!(depth > 1e-6)) return { x: 0, y: 0 };
+  return { x: dot(refForward, right) / depth, y: dot(refForward, up) / depth };
 }
 
 /** Paint cloud banks: a dark body with a lit rim toward the light. */

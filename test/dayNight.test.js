@@ -219,10 +219,15 @@ test('a song opens in darkness before dawn and closes after sunset', async () =>
   assert.equal(at(0).moonAlt, 0);
   // The sky pales before the sun is up, and the sun is up just after.
   assert.ok(at(clock.sunriseMs - 2000).night < at(1000).night);
-  // The night lifts evenly over the dawn, never in a rush: no two seconds
-  // take away more than a tenth of it.
-  for (let t = 0; t < clock.sunriseMs; t += 250) {
-    assert.ok(at(t).night - at(t + 2000).night < 0.1, `night falls too fast at ${t}`);
+  // The night lifts evenly over the dawn, never in a rush: in a long song
+  // no two seconds take away more than a tenth of it, and even in the
+  // shortest song that holds a day, no more than a fifth.
+  for (const [d, most] of [[180000, 0.1], [120000, 0.1], [80000, 0.13], [45000, 0.2], [SONG_DAY_MIN_MS, 0.2]]) {
+    const c = songSkyClock(d);
+    for (let t = 0; t < c.sunriseMs; t += 250) {
+      const drop = dayNight(t, c).night - dayNight(t + 2000, c).night;
+      assert.ok(drop <= most, `${d} ms song: night falls ${drop.toFixed(3)} at ${t}`);
+    }
   }
   assert.ok(at(clock.sunriseMs + 2000).sunAlt > 0);
   // Noon mid-song; the sun lingers low (slower near the horizon).

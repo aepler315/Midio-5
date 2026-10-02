@@ -12,10 +12,10 @@
 // generation -- takes the legacy path for that frame with a recorded
 // reason; the cast and music never wait on the GPU.
 import { travelSpans } from '../TravelSeam.js';
-import { buildRangeFrame, viewportState } from './RangeFrame.js';
+import { buildRangeFrame, viewportState, scenicProjection } from './RangeFrame.js';
 import { cameraPoseAt, cameraBasis } from '../terrain/SceneTravel.js';
 import { applyCameraMoves } from './RangeCamera.js';
-import { skyPanNdc } from './RangeSkyComposition.js';
+import { skyTurn } from './RangeSkyComposition.js';
 import { forcedSceneChoice } from '../terrain/SceneCatalog.js';
 import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
 import { noteViewShown } from '../terrain/RangeHistory.js';
@@ -500,7 +500,7 @@ export class RangePresentation {
       sceneAssignments: this.sceneByBiome, forcedView: this.forced, renderedViews: [view, incoming].filter(Boolean),
     });
     this.scene.prepareShafts?.(this.frame, incoming ? [view.id, incoming.id] : [view.id]);
-    this.skyPanNdc = this._skyPan(view, this.frame);
+    this.skyPan = this._skyPan(view, incoming, this.frame);
     this.viewId = view.id;
     this.active = true;
     this.reason = null;
@@ -511,18 +511,31 @@ export class RangePresentation {
     return true;
   }
 
-  /** How far the camera's section move has swung the sky across the frame
-   *  (NDC): the sky's clouds turn with the land instead of holding still on
-   *  the screen. The rail itself is the reference, so a travel between
-   *  views never jumps the clouds. Same rail progress as RangeScene._setCamera. */
-  _skyPan(view, frame) {
-    if (!frame?.cameraMove) return 0;
+  /** How far the camera's section move has swung and tilted the sky, in
+   *  NDC of the rendered lens ({x, y}): the sky's clouds turn with the land
+   *  instead of holding still on the screen. Each view's own rail is the
+   *  reference, and during a travel the turn and lens blend across the
+   *  seam, so a handoff between views never jumps the clouds. The rail
+   *  progress and lens are RangeScene._setCamera's. */
+  _skyPan(view, incoming, frame) {
+    const still = { x: 0, y: 0 };
+    if (!frame?.cameraMove || !frame.scenicViewport) return still;
+    const vp = frame.scenicViewport;
+    const one = (v) => {
+      const rail = cameraPoseAt(v, v.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+      const proj = scenicProjection(rail.fovYDeg, vp);
+      const turn = skyTurn(applyCameraMoves(rail, frame.cameraMove, null), cameraBasis(rail).forward);
+      return { ...turn, tanY: Math.tan((proj.fovYDeg * Math.PI) / 360), aspect: proj.aspect };
+    };
     try {
-      const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
-      const vp = frame.scenicViewport;
-      const aspect = vp?.logicalWidth > 0 && vp?.logicalHeight > 0 ? vp.logicalWidth / vp.logicalHeight : 16 / 9;
-      return skyPanNdc(applyCameraMoves(rail, frame.cameraMove, null), cameraBasis(rail).forward, aspect);
-    } catch { return 0; }
+      const a = one(view);
+      const b = incoming ? one(incoming) : a;
+      const k = incoming ? Math.min(1, Math.max(0, this.seamP ?? 0)) : 0;
+      const mix = (key) => a[key] + (b[key] - a[key]) * k;
+      const tanY = mix('tanY'), aspect = mix('aspect');
+      if (!(tanY > 0 && aspect > 0)) return still;
+      return { x: mix('x') / (tanY * aspect), y: mix('y') / tanY };
+    } catch { return still; }
   }
 
   /**
