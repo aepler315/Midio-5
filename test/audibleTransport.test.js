@@ -87,7 +87,7 @@ test('actual Conductor seek retains the same heard-time kick envelope without fi
     mgr.dispose(); return result;
   }
   const straight = frame(false, 1100, 0), seek = frame(true, 1100, 0), lagged = frame(true, 1250, 150);
-  assert.ok(straight.music.kickM > 0);
+  assert.ok(straight.music.source.kickM > 0, 'the kick is heard (the land itself stays still between moments)');
   assert.deepEqual(seek.music, straight.music);
   assert.deepEqual(lagged.music, straight.music, 'a future dispatch must not replace the last heard kick');
   assert.equal(lagged.timeMs, 1100);

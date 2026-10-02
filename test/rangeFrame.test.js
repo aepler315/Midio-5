@@ -14,7 +14,7 @@ test('narrative frames remove all emitters and retain source activity at final h
   const f = buildRangeFrame({ frameId: 1, sim, pose, scenicViewport: vp(1280, 720, 1280, 720), groundViewport: vp(1280, 720, 1280, 720) });
   assert.equal(f.narrative.revelation, 1);
   assert.ok(f.emitters.every(e => !e.visible && e.presence === 0));
-  assert.ok(f.music.melodicM > 0, 'lead lane transfers even when its role is BASS');
+  assert.ok(f.music.source.melodicM > 0, 'lead lane transfers even when its role is BASS');
   sim.biomes.tSec = 0;
   const opening = buildRangeFrame({ frameId: 2, sim, pose });
   assert.equal(opening.narrative.revelation, 0);

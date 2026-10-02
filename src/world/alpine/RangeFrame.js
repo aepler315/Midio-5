@@ -148,6 +148,51 @@ export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, ki
   return state;
 }
 
+/** The land moves only at the song's big moments (Ashton, 2026-10-02:
+ *  constant heaving with every kick and phrase read as accidental). At a
+ *  section change the range swells over `riseMs`, holds, and settles over
+ *  `settleMs`; a lift into a louder section swells fully, any other change
+ *  by `changeFloor`, a repeat of the same part not at all. Metres are
+ *  before view calibration (RANGE_MOTION_REFERENCE_M is the reference). */
+export const LAND_SWELL = Object.freeze({ riseMs: 3000, holdMs: 2000, settleMs: 9000, changeFloor: 0.35,
+  waveM: 50, liftM: 40, waveHz: 0.012 });
+
+const partOf = (s) => s?.motifId ?? s?.label ?? null;
+
+/** How far the land is into a swell at `timeMs` (0 still .. 1 a full
+ *  lift), from the section boundaries alone: pure in heard time. */
+export function landMoment01(sections, timeMs) {
+  if (!Array.isArray(sections)) return 0;
+  const { riseMs, holdMs, settleMs, changeFloor } = LAND_SWELL;
+  const span = riseMs + holdMs + settleMs;
+  let best = 0;
+  for (let i = sections.length - 1; i >= 1; i--) {
+    const age = timeMs - (sections[i]?.startMs ?? Infinity);
+    if (age < 0) continue;
+    if (age >= span) break;
+    const sec = sections[i], prev = sections[i - 1];
+    const same = partOf(sec) != null && partOf(sec) === partOf(prev);
+    const strength = Math.max(same ? 0 : changeFloor, boundaryLift01(sec, prev));
+    const env = smoothstep(0, riseMs, age) * (1 - smoothstep(riseMs + holdMs, span, age));
+    best = Math.max(best, strength * env);
+  }
+  return best;
+}
+
+/** The land's geometry for a frame: the rhythmic, melodic and gesture
+ *  channels are kept as `source` (for evidence and the water) but move
+ *  nothing; only the moment's slow swell and lift do, at a fixed target
+ *  size, so the land is still between moments. */
+export function landMotion(music, moment01, { tSec = 0, reducedMotion = false } = {}) {
+  const m = reducedMotion ? 0 : unit(moment01);
+  const out = { ...music, source: music, landMoment01: m,
+    amplitudeM: LAND_SWELL.waveM * m,
+    kickM: 0, gestureM: 0, melodicM: 0, structuralM: LAND_SWELL.liftM * m,
+    phaseRad: 2 * Math.PI * LAND_SWELL.waveHz * tSec, calibrationActivity01: 1 };
+  out.totalBoundM = out.amplitudeM + out.structuralM;
+  return out;
+}
+
 export const RANGE_MOTION_REFERENCE_M = 106.7;
 
 /** The kicks' fronts in flight at `timeMs`, newest first. Each keeps the
@@ -297,6 +342,7 @@ export function buildRangeFrame({
     reducedMotion, motif, activity01: ridgeSample?.activity01 ?? sampled.energy,
     motionPresence01: ridgeSample?.motionPresence01, calibrationActivity01: ridgeSample?.pressureEnergy01,
   });
+  const land = landMotion(music, landMoment01(mgr.sections, timeMs), { tSec: timeMs / 1000, reducedMotion });
   const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
   const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
     stateKey: mgr.ridgeMusicSession.stateKey,
@@ -338,7 +384,7 @@ export function buildRangeFrame({
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
     userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
-    light: lightState, music, ridges, narrative, groundBars, emitters,
+    light: lightState, music: land, ridges, narrative, groundBars, emitters,
     waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,
