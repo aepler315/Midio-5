@@ -160,19 +160,30 @@ export const LAND_SWELL = Object.freeze({ riseMs: 3000, holdMs: 2000, settleMs: 
 const partOf = (s) => s?.motifId ?? s?.label ?? null;
 
 /** How far the land is into a swell at `timeMs` (0 still .. 1 a full
- *  lift), from the section boundaries alone: pure in heard time. */
-export function landMoment01(sections, timeMs) {
+ *  lift), from the section boundaries alone: pure in heard time.
+ *  `history` ({ sections, throughMs }) is the section list the show was
+ *  playing on before a live re-analysis replaced it: boundaries before
+ *  `throughMs` are the ones already heard on it, so a swell under way
+ *  carries on and a boundary the new list adds in the past starts none. */
+export function landMoment01(sections, timeMs, history = null) {
+  const through = Array.isArray(history?.sections) && Number.isFinite(history.throughMs) ? history.throughMs : -Infinity;
+  return Math.max(swellOf(history?.sections, timeMs, -Infinity, through), swellOf(sections, timeMs, through, Infinity));
+}
+
+function swellOf(sections, timeMs, fromMs, toMs) {
   if (!Array.isArray(sections)) return 0;
   const { riseMs, holdMs, settleMs, changeFloor } = LAND_SWELL;
   const span = riseMs + holdMs + settleMs;
   let best = 0;
   for (let i = sections.length - 1; i >= 1; i--) {
-    const age = timeMs - (sections[i]?.startMs ?? Infinity);
-    if (age < 0) continue;
+    const start = sections[i]?.startMs ?? Infinity;
+    const age = timeMs - start;
+    if (age < 0 || start < fromMs || start >= toMs) continue;
     if (age >= span) break;
     const sec = sections[i], prev = sections[i - 1];
-    const same = partOf(sec) != null && partOf(sec) === partOf(prev);
-    const strength = Math.max(same ? 0 : changeFloor, boundaryLift01(sec, prev));
+    // A repeat of the same part never swells, louder or not.
+    if (partOf(sec) != null && partOf(sec) === partOf(prev)) continue;
+    const strength = Math.max(changeFloor, boundaryLift01(sec, prev));
     const env = smoothstep(0, riseMs, age) * (1 - smoothstep(riseMs + holdMs, span, age));
     best = Math.max(best, strength * env);
   }
@@ -342,7 +353,7 @@ export function buildRangeFrame({
     reducedMotion, motif, activity01: ridgeSample?.activity01 ?? sampled.energy,
     motionPresence01: ridgeSample?.motionPresence01, calibrationActivity01: ridgeSample?.pressureEnergy01,
   });
-  const land = landMotion(music, landMoment01(mgr.sections, timeMs), { tSec: timeMs / 1000, reducedMotion });
+  const land = landMotion(music, landMoment01(mgr.sections, timeMs, mgr._landHistory), { tSec: timeMs / 1000, reducedMotion });
   const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
   const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
     stateKey: mgr.ridgeMusicSession.stateKey,

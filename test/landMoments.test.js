@@ -47,3 +47,22 @@ test('kicks, melody and gesture move nothing; the moment alone shapes the land',
   assert.ok(swell.totalBoundM <= LAND_SWELL.waveM + LAND_SWELL.liftM);
   assert.equal(sceneDeformation(landMotion(loud, 1, { tSec: 12, reducedMotion: true }), 900, 400, 1800, [0, 2000]), 0);
 });
+
+test('a louder repeat of the same part still never swells', () => {
+  const secs = [{ startMs: 0, label: 'a', meanEnergy: 0.1, relEnergy01: 0.1 }, { startMs: 20000, label: 'a', meanEnergy: 0.9, relEnergy01: 1 }];
+  for (let t = 20000; t < 20000 + span; t += 500) assert.equal(landMoment01(secs, t), 0);
+});
+
+test('a live re-analysis keeps the swells already heard and starts none in the past', () => {
+  // Playing on the opening analysis: a change at 30 s. The whole-song
+  // analysis lands at 36 s with that boundary moved to 33 s and a new one at 35 s.
+  const before = [{ startMs: 0, label: 'a' }, { startMs: 30000, label: 'b' }];
+  const after = [{ startMs: 0, label: 'a' }, { startMs: 33000, label: 'b' }, { startMs: 35000, label: 'c' }, { startMs: 50000, label: 'd' }];
+  const history = { sections: before, throughMs: 36000 };
+  for (let t = 36000; t < 46000; t += 1000 / 24) {
+    assert.equal(landMoment01(after, t, history), landMoment01(before, t), `${t}`);
+  }
+  // Boundaries after the handoff come from the new analysis.
+  assert.ok(landMoment01(after, 54000, history) > 0.3);
+  assert.equal(landMoment01(before, 54000), 0);
+});

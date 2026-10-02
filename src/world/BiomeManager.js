@@ -823,6 +823,10 @@ export class BiomeManager {
 
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
     if (chapterState?.previous) this.refineChapterPlan(chapterState.previous, chapterState.committedThroughMs || 0);
+    // The sections the show was playing on before a live re-analysis: the
+    // land's swells already heard come from them (RangeFrame.landMoment01).
+    this._landHistory = Array.isArray(chapterState?.landSections)
+      ? { sections: chapterState.landSections, throughMs: chapterState.committedThroughMs || 0 } : null;
     // Strips are baked AFTER the schedule exists (moved here from right
     // after construction's field init) so _buildStripSet can key each
     // profile's per-label variant (lithology/landform/landmarks/heightMul --

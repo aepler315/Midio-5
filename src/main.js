@@ -3576,7 +3576,7 @@ function adoptFullAnalysisLive(data) {
     keepUserCamera: true,
     preservePause: wasPaused,
     fitDiagnostic: sim.fitDiagnostic,
-    chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs },
+    chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs, landSections: sim.biomes.sections },
   });
   if (!running || !sim) return;
   if (wasPaused) { paused = true; updatePauseButtonUI(); }
