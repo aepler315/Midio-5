@@ -7,7 +7,7 @@
 // frame: crowns bend and catch light as it passes (gustAt). Light, sky
 // fill and aerial perspective match the terrain so trees sit in the same
 // air.
-import { DEFORM_GLSL, TOPO_GLSL, gustUniforms } from './TerrainMaterial.js';
+import { DEFORM_GLSL, gustUniforms } from './TerrainMaterial.js';
 import { GUST_FRONTS, GUST_SWEEP_SEC } from './Gust.js';
 
 import { MIST_GLSL } from './RangeAtmosphere.js';
@@ -25,7 +25,6 @@ const PARTING_LEAN = 0.2;
 
 export const TREE_COMMON = /* glsl */`
   ${DEFORM_GLSL}
-  ${TOPO_GLSL}
   uniform float uTime;
   // Gust fronts in flight: seconds since each front's kick, its strength,
   // and its way across the frame (+1 left to right, -1 right to left).
@@ -46,8 +45,6 @@ export const TREE_COMMON = /* glsl */`
   out float vId;
   out float vGust;
   vec3 rootOf() { vec3 r = iPos; r.y += deformAt(iPos); return r; }
-  // Where the map shows through the land, its trees fold down into it.
-  float standing() { return 1.0 - topoMask(iPos.xz); }
   bool hiddenByGlacier() {
     vec3 ice = glacierAt(iPos);
     return ice.x > 0.5 || iVar.y > ice.z;
@@ -96,17 +93,16 @@ const MESH_VERT = /* glsl */`
   out vec3 vNormal;
   void main() {
     vec3 root = rootOf();
-    float keep = standing();
     float y01 = position.y;
     vec2 w = windAt(y01);
-    vec3 p = root + keep * vec3(position.x * iSize.y + w.x, position.y * iSize.x, position.z * iSize.y + w.y);
+    vec3 p = root + vec3(position.x * iSize.y + w.x, position.y * iSize.x, position.z * iSize.y + w.y);
     vWorld = p;
     vLocal = vec2(position.x, position.y);
     vVar = iVar.x; vId = iVar.y;
     vNormal = normalize(vec3(normal.x / iSize.y, normal.y / iSize.x, normal.z / iSize.y));
     gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
     // Quality thinning: a stable subset by each tree's own id.
-    if (iVar.y > uForestKeep || keep < 0.02 || hiddenByGlacier()) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    if (iVar.y > uForestKeep || hiddenByGlacier()) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 `;
 
@@ -123,14 +119,13 @@ const BOARD_VERT = /* glsl */`
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), toCam));
     float y01 = position.y;
     vec2 w = windAt(y01);
-    float keep = standing();
-    vec3 p = root + keep * (right * position.x * iSize.y + vec3(w.x, position.y * iSize.x, w.y));
+    vec3 p = root + right * position.x * iSize.y + vec3(w.x, position.y * iSize.x, w.y);
     vWorld = p;
     vLocal = position.xy;
     vVar = iVar.x; vId = iVar.y;
     vRight = right; vToCam = toCam;
     gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-    if (iVar.y > uForestKeep || keep < 0.02 || hiddenByGlacier()) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    if (iVar.y > uForestKeep || hiddenByGlacier()) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }
 `;
 
@@ -179,7 +174,7 @@ const SHADE = /* glsl */`
     lit += (uSkyHorizon * uAmbientScale * 0.5 + uLightColor * 0.5) * (${GUST_SHEEN.toFixed(3)} * vGust * crown);
     float heightTerm = exp(-max(0.0, world.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
     float air = 1.0 - exp(-dist * uAirDensity * (0.35 + 0.65 * heightTerm));
-    vec3 color = mix(tonemap(lit * uExposure), uMistColor, mistAmount(uCameraPos, world));
+    vec3 color = mix(tonemap(lit * uExposure), mistColorAt(uCameraPos, world), mistAmount(uCameraPos, world));
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96));
     if (uDiag > 0.5) return vec4(1.0, 0.0, 1.0, 1.0);
     color = mix(uSkyHorizon, color, uNarrative.z);
@@ -313,7 +308,7 @@ function instanced(THREE, base, instances, stride, indices) {
  * depthByBand: { far, mid, near } (depth meshes per band), bytes, counts, dispose }.
  */
 export function createForest(THREE, placed, uniforms, { partitioned = true } = {}) {
-  const u = { ...uniforms, uTime: uniforms.uTime || { value: 0 }, uForestKeep: uniforms.uForestKeep || { value: 1 }, uTopo: uniforms.uTopo || { value: 0 },
+  const u = { ...uniforms, uTime: uniforms.uTime || { value: 0 }, uForestKeep: uniforms.uForestKeep || { value: 1 },
     ...(uniforms.uGustAge ? {} : gustUniforms()), ...(uniforms.uActorPos ? {} : actorUniforms(THREE)) };
   const mat = (vert, frag, depth = false) => {
     const m = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vert, fragmentShader: frag, uniforms: u });

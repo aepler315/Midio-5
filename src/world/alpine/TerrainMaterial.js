@@ -53,28 +53,6 @@ export const DEFORM_GLSL = /* glsl */`
   }
 `;
 
-/** The Forest Service map under the land. uTopo (0..1) is how much of it
- *  shows: patches surface across the valley and join up as it rises.
- *  Shared by the terrain (which draws the map) and the forest (which sinks
- *  into it), so a tree never stands on paper. */
-export const TOPO_GLSL = /* glsl */`
-  uniform float uTopo;
-  float topoHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-  float topoNoise(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(topoHash(i), topoHash(i + vec2(1.0, 0.0)), f.x), mix(topoHash(i + vec2(0.0, 1.0)), topoHash(i + vec2(1.0, 1.0)), f.x), f.y);
-  }
-  // 0 = land, 1 = map. Large patches with a broken edge; none at uTopo 0,
-  // all of it at 1.
-  float topoMask(vec2 xz) {
-    if (uTopo <= 0.0) return 0.0;
-    float n = topoNoise(xz / 2600.0) * 0.62 + topoNoise(xz / 700.0 + 17.0) * 0.38;
-    float front = uTopo * 1.3 - 0.15;
-    return smoothstep(n - 0.035, n + 0.035, front);
-  }
-`;
-
 export const SCENE_VERT = /* glsl */`
   invariant gl_Position;
   ${DEFORM_GLSL}
@@ -100,7 +78,6 @@ export const SCENE_FRAG = /* glsl */`
   precision highp float;
   uniform sampler2D uSurface;
   ${DEFORM_GLSL}
-  ${TOPO_GLSL}
   uniform vec3 uLightDir;
   uniform vec3 uLightColor;
   uniform vec3 uSkyZenith;
@@ -241,7 +218,6 @@ export const SCENE_FRAG = /* glsl */`
     vec3 albedo;
     vec3 nShade = n;
     float rough = 0.85;
-    float topoWood = 0.0, topoSnow = 0.0; // the map's woodland tint and white
     if (uHasMaterial < 0.5) {
       albedo = mix(vec3(0.34), vec3(0.24), clamp(curv * 3.0, 0.0, 1.0));
       if (water) albedo = vec3(0.10, 0.13, 0.16);
@@ -283,8 +259,6 @@ export const SCENE_FRAG = /* glsl */`
       float snowLine = rSnowline + (breakup - 0.5) * 260.0 - curv * 180.0;
       float snow = smoothstep(snowLine, max(snowLine + 1.0, snowLine + (rSnowFull - rSnowline)), h);
       snow *= 1.0 - smoothstep(rSnowMaxSlope - 10.0, rSnowMaxSlope + 6.0, slopeDeg - max(curv, 0.0) * 25.0);
-      topoWood = forest / max(rForestDensity, 1e-3);
-      topoSnow = snow;
       // Canopy: the third, farthest forest scale (instanced trees nearer).
       // Two rotated canopy samples at unrelated scales hide the tile grid.
       vec4 cn = mix(texture(tCanopy, vWorld.xz / sCanopy), texture(tCanopy, mat2(0.8, -0.6, 0.6, 0.8) * vWorld.xz / (sCanopy * 1.73)), 0.5);
@@ -357,35 +331,6 @@ export const SCENE_FRAG = /* glsl */`
       // Newly exposed ground stays dark and wet before its canopy returns.
       albedo = mix(albedo * 0.58, albedo, ice.z);
     }
-    // The Forest Service map under the land: paper, woodland green, blue
-    // water and streams, brown contours every 40 m (index every 200 m;
-    // blue on snow and ice) and the red one-mile section grid, all fixed
-    // to the source ground. Still lit by the scene, so it keeps the
-    // valley's relief, time of day and haze. Derivatives are taken outside
-    // the branch; lines fade out where they would crowd within a pixel.
-    float topo = topoMask(vWorld.xz);
-    float cv = h / 40.0, cfw = max(fwidth(cv), 1e-4);
-    float iv = h / 200.0, ifw = max(fwidth(iv), 1e-4);
-    vec2 sv = vWorld.xz / 1609.34, sfw = max(fwidth(sv), vec2(1e-4));
-    if (topo > 0.0) {
-      float minor = (1.0 - smoothstep(0.35, 1.0, abs(fract(cv + 0.5) - 0.5) / cfw)) * (1.0 - smoothstep(0.3, 0.7, cfw));
-      float index = (1.0 - smoothstep(0.8, 1.5, abs(fract(iv + 0.5) - 0.5) / ifw)) * (1.0 - smoothstep(0.3, 0.7, ifw));
-      vec2 sd = abs(fract(sv + 0.5) - 0.5) / sfw;
-      float grid = (1.0 - smoothstep(0.4, 1.2, min(sd.x, sd.y))) * (1.0 - smoothstep(0.2, 0.5, max(sfw.x, sfw.y)));
-      float stream = water ? 0.0 : smoothstep(0.62, 0.8, flowN) * smoothstep(1.5, 4.0, slopeDeg);
-      float white = max(topoSnow, ice.y);
-      vec3 map = mix(vec3(0.43, 0.40, 0.34), vec3(0.26, 0.36, 0.17), 0.75 * smoothstep(0.15, 0.45, topoWood));
-      map = mix(map, vec3(0.62, 0.62, 0.60), white);
-      if (water) map = vec3(0.20, 0.40, 0.60);
-      map = mix(map, vec3(0.50, 0.05, 0.03), grid * 0.55);
-      map = mix(map, mix(vec3(0.28, 0.13, 0.04), vec3(0.04, 0.16, 0.42), white), max(minor * 0.7, index) * (water ? 0.0 : 0.9));
-      map = mix(map, vec3(0.04, 0.16, 0.42), stream * 0.8);
-      // A thin inked edge where the map meets the land.
-      map *= 1.0 - 0.35 * topo * (1.0 - topo) * 4.0;
-      albedo = mix(albedo, map, topo);
-      nShade = normalize(mix(nShade, n, topo));
-      rough = mix(rough, 0.9, topo);
-    }
     // Light: the celestial as a soft wrap-diffuse key, sky hemisphere fill,
     // occlusion from curvature and drainage (gullies sit in shade).
     float wrap = 0.18;
@@ -425,8 +370,8 @@ export const SCENE_FRAG = /* glsl */`
       // flat white sheet that outshone the mountains.
       vec3 skyReflect = mix(uSkyZenith, uSkyHorizon, 0.3) * 0.5;
       // With the backdrop to reflect, the sky arrives with the mirror below.
-      float skyHere = fres * (1.0 - topo) * (1.0 - uBackdropAmount * uMirrorAmount);
-      lit = mix(lit, skyReflect * rWaterSkyMix, skyHere) + uLightColor * glint * (1.0 - topo);
+      float skyHere = fres * (1.0 - uBackdropAmount * uMirrorAmount);
+      lit = mix(lit, skyReflect * rWaterSkyMix, skyHere) + uLightColor * glint;
     }
     // Aerial perspective, applied once here and nowhere else.
     float heightTerm = exp(-max(0.0, vRenderedWorld.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
@@ -439,7 +384,10 @@ export const SCENE_FRAG = /* glsl */`
     vec3 physical = mix(neutral, tonemap(lit * uExposure), uNarrative.z);
     if (water || ice.y > .01) physical = mix(neutral, physical, uNarrative.w);
     vec3 color = mix(uSkyHorizon, physical, uNarrative.x);
-    color = mix(color, uMistColor, mistAmount(uCameraPos, vRenderedWorld) * uNarrative.y);
+    float mist = mistAmount(uCameraPos, vRenderedWorld) * uNarrative.y;
+    color = mix(color, mistColorAt(uCameraPos, vRenderedWorld), mist);
+    // Under a cloud sea the lake's mirror and glints are hidden with it.
+    float clear = 1.0 - mist * uMistFill;
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96) * uNarrative.y);
     // The lake mirrors the ground above it. The mirror image already holds
     // the air along its own (longer) path, so it replaces the water's colour
@@ -467,13 +415,13 @@ export const SCENE_FRAG = /* glsl */`
       // Stiller and glossier than physical water: a lake seen from high
       // above still holds its shores (magical naturalism, like the lift).
       float reflectance = clamp(0.3 + 0.7 * waterFres, 0.0, 0.9) * (1.0 - 0.4 * paw);
-      color = mix(color, mirrored * 0.9, reflectance * have * (1.0 - topo) * uNarrative.z * uNarrative.w);
+      color = mix(color, mirrored * 0.9, reflectance * have * clear * uNarrative.z * uNarrative.w);
     }
     if (water) {
       // Lanterns over the water lay a path of glints; Midio's wake catches
       // his light. Over the mirror, through the air.
       vec3 glow = actorGlint(vRenderedWorld, V, waterN) * 0.6 + uActorColor[0] * wake * 0.12;
-      color += glow * (1.0 - topo) * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0));
+      color += glow * clear * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0));
     }
     // A narrow physical silhouette supplies the main opening ink. Sparse
     // source-space hints are drawn separately against this same depth.
@@ -528,7 +476,7 @@ export function sceneUniforms(THREE, base) {
     uAirHeightFalloff: { value: 1 / 2500 },
     // Valley mist (RangeAtmosphere): off until the scene sets it per frame.
     uMistDensity: { value: 0 }, uMistBase: { value: 0 }, uMistHeight: { value: 220 }, uMistTime: { value: 0 },
-    uMistSteps: { value: MIST_SAMPLES },
+    uMistSteps: { value: MIST_SAMPLES }, uMistTop: { value: 1e9 }, uMistFill: { value: 0 },
     uMistColor: { value: new THREE.Color(0.4, 0.43, 0.48) },
     uCameraPos: { value: new THREE.Vector3() },
     uDiag: { value: 0 },
@@ -542,8 +490,6 @@ export function sceneUniforms(THREE, base) {
     uExposure: { value: 2.0 },
     uNarrative: { value: new THREE.Vector4(1, 1, 1, 1) },
     uNarrativeInk: { value: 0 },
-    // How much of the map under the land shows (TopoReveal).
-    uTopo: { value: 0 },
     // Lake mirror (WaterMirror.js), off until the scene draws one.
     uMirror: { value: null }, uMirrorMatrix: { value: new THREE.Matrix4() }, uMirrorAmount: { value: 0 },
     uMirrorLevel: { value: 0 }, uMirrorRipple: { value: 0 }, uClipBelow: { value: -1e9 },
