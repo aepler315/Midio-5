@@ -1,0 +1,34 @@
+{
+  "id": "garcia-peaks",
+  "name": "Garcia Peaks",
+  "landmark": "Cuchillo Mountain",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -107.825,
+    33.127,
+    -107.352,
+    33.525
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.35
+  },
+  "scores": {
+    "energy": 0.272,
+    "rawness": 0.275,
+    "grandeur": 0.188,
+    "dominance": 0.516
+  },
+  "features": {
+    "reliefM": 845.5,
+    "slopeMPerKm": 124.6,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 52.6,
+    "dominance": 0.5,
+    "summitM": 2817.8,
+    "lengthKm": 68.3
+  }
+}

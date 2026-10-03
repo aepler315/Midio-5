@@ -1,0 +1,34 @@
+{
+  "id": "pine-forest-range",
+  "name": "Pine Forest Range",
+  "landmark": "Duffer Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -118.995,
+    41.463,
+    -118.466,
+    41.861
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.224,
+    "rawness": 0.19,
+    "grandeur": 0.291,
+    "dominance": 0.46
+  },
+  "features": {
+    "reliefM": 1309.2,
+    "slopeMPerKm": 121.4,
+    "peaksPer10Km": 1.5,
+    "roughnessM": 47.6,
+    "dominance": 0.5,
+    "summitM": 2862.6,
+    "lengthKm": 59.7
+  }
+}

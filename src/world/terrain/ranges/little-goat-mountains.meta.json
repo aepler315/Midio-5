@@ -1,0 +1,34 @@
+{
+  "id": "little-goat-mountains",
+  "name": "Little Goat Mountains",
+  "landmark": "South Butte",
+  "region": "Idaho, USA",
+  "bbox": [
+    -116.098,
+    46.821,
+    -115.518,
+    47.219
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.17
+  },
+  "scores": {
+    "energy": 0.276,
+    "rawness": 0.267,
+    "grandeur": 0.225,
+    "dominance": 0.309
+  },
+  "features": {
+    "reliefM": 1010.5,
+    "slopeMPerKm": 134.9,
+    "peaksPer10Km": 2.5,
+    "roughnessM": 54.1,
+    "dominance": 0.3,
+    "summitM": 2152.4,
+    "lengthKm": 60.5
+  }
+}

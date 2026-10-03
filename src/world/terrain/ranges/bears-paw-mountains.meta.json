@@ -1,0 +1,34 @@
+{
+  "id": "bears-paw-mountains",
+  "name": "Bears Paw Mountains",
+  "landmark": "Baldy Mountain",
+  "region": "Montana, USA",
+  "bbox": [
+    -109.947,
+    47.95,
+    -109.355,
+    48.348
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.227,
+    "rawness": 0.221,
+    "grandeur": 0.242,
+    "dominance": 0.519
+  },
+  "features": {
+    "reliefM": 1090.4,
+    "slopeMPerKm": 95.5,
+    "peaksPer10Km": 2,
+    "roughnessM": 46.6,
+    "dominance": 0.5,
+    "summitM": 2105.1,
+    "lengthKm": 64.7
+  }
+}

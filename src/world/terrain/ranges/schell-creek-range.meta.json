@@ -1,0 +1,34 @@
+{
+  "id": "schell-creek-range",
+  "name": "Schell Creek Range",
+  "landmark": "South Schell Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.856,
+    39.137,
+    -114.344,
+    39.535
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.236,
+    "rawness": 0.255,
+    "grandeur": 0.142,
+    "dominance": 0.562
+  },
+  "features": {
+    "reliefM": 637.2,
+    "slopeMPerKm": 112.2,
+    "peaksPer10Km": 2.3,
+    "roughnessM": 53.1,
+    "dominance": 0.6,
+    "summitM": 3617,
+    "lengthKm": 42.9
+  }
+}

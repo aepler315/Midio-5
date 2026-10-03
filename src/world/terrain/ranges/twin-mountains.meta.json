@@ -1,0 +1,34 @@
+{
+  "id": "twin-mountains",
+  "name": "Twin Mountains",
+  "landmark": "Point Crawford",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -105.658,
+    41.012,
+    -105.133,
+    41.41
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.071,
+    "rawness": 0.05,
+    "grandeur": 0.154,
+    "dominance": 0.365
+  },
+  "features": {
+    "reliefM": 692.3,
+    "slopeMPerKm": 34.4,
+    "peaksPer10Km": 0.3,
+    "roughnessM": 15.8,
+    "dominance": 0.4,
+    "summitM": 2754.2,
+    "lengthKm": 65.9
+  }
+}

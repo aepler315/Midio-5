@@ -1,0 +1,34 @@
+{
+  "id": "sheeprock-mountains",
+  "name": "Sheeprock Mountains",
+  "landmark": "Black Crook Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -112.798,
+    39.785,
+    -112.282,
+    40.183
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.247,
+    "rawness": 0.221,
+    "grandeur": 0.297,
+    "dominance": 0.406
+  },
+  "features": {
+    "reliefM": 1336.3,
+    "slopeMPerKm": 114.7,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 48.8,
+    "dominance": 0.4,
+    "summitM": 2820.6,
+    "lengthKm": 61.6
+  }
+}

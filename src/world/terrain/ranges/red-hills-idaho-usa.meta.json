@@ -1,0 +1,34 @@
+{
+  "id": "red-hills-idaho-usa",
+  "name": "Red Hills",
+  "landmark": "Bell Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -113.471,
+    44.038,
+    -112.919,
+    44.436
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.28
+  },
+  "scores": {
+    "energy": 0.313,
+    "rawness": 0.333,
+    "grandeur": 0.224,
+    "dominance": 0.641
+  },
+  "features": {
+    "reliefM": 1010.1,
+    "slopeMPerKm": 121.8,
+    "peaksPer10Km": 3.3,
+    "roughnessM": 61.6,
+    "dominance": 0.6,
+    "summitM": 3705.8,
+    "lengthKm": 46
+  }
+}

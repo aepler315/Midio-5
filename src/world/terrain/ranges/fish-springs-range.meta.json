@@ -1,0 +1,34 @@
+{
+  "id": "fish-springs-range",
+  "name": "Fish Springs Range",
+  "landmark": "George H. Hansen Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -113.697,
+    39.526,
+    -113.183,
+    39.924
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.13
+  },
+  "scores": {
+    "energy": 0.243,
+    "rawness": 0.212,
+    "grandeur": 0.282,
+    "dominance": 0.515
+  },
+  "features": {
+    "reliefM": 1269.2,
+    "slopeMPerKm": 115.8,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 45,
+    "dominance": 0.5,
+    "summitM": 2575.6,
+    "lengthKm": 41.7
+  }
+}

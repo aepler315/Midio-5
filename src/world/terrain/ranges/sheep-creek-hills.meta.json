@@ -1,0 +1,34 @@
+{
+  "id": "sheep-creek-hills",
+  "name": "Sheep Creek Hills",
+  "landmark": "Sublette Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -111.271,
+    42.055,
+    -110.737,
+    42.453
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.108,
+    "rawness": 0.118,
+    "grandeur": 0.075,
+    "dominance": 0.585
+  },
+  "features": {
+    "reliefM": 335.3,
+    "slopeMPerKm": 58.9,
+    "peaksPer10Km": 0.9,
+    "roughnessM": 29.2,
+    "dominance": 0.6,
+    "summitM": 2859.3,
+    "lengthKm": 42.1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "trainer-hills",
+  "name": "Trainer Hills",
+  "landmark": "Ure Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -121.537,
+    39.11,
+    -121.026,
+    39.508
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.174,
+    "rawness": 0.158,
+    "grandeur": 0.226,
+    "dominance": 0.281
+  },
+  "features": {
+    "reliefM": 1018.7,
+    "slopeMPerKm": 79,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 37,
+    "dominance": 0.3,
+    "summitM": 1124.7,
+    "lengthKm": 67.5
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "bristol-range",
+  "name": "Bristol Range",
+  "landmark": "Bristol Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.852,
+    37.836,
+    -114.35,
+    38.234
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.18,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.169,
+    "rawness": 0.133,
+    "grandeur": 0.32,
+    "dominance": 0.587
+  },
+  "features": {
+    "reliefM": 1438,
+    "slopeMPerKm": 84,
+    "peaksPer10Km": 0.9,
+    "roughnessM": 39.6,
+    "dominance": 0.6,
+    "summitM": 2854.5,
+    "lengthKm": 67.9
+  }
+}

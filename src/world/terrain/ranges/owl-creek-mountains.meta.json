@@ -1,0 +1,34 @@
+{
+  "id": "owl-creek-mountains",
+  "name": "Owl Creek Mountains",
+  "landmark": "Jenkins Mountain",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -108.794,
+    43.275,
+    -108.249,
+    43.673
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.2,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.179,
+    "rawness": 0.133,
+    "grandeur": 0.337,
+    "dominance": 0.496
+  },
+  "features": {
+    "reliefM": 1514.9,
+    "slopeMPerKm": 78.1,
+    "peaksPer10Km": 1,
+    "roughnessM": 33.8,
+    "dominance": 0.5,
+    "summitM": 2981.7,
+    "lengthKm": 66.7
+  }
+}

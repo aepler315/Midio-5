@@ -1,0 +1,34 @@
+{
+  "id": "jerky-mountains",
+  "name": "Jerky Mountains",
+  "landmark": "Whitewater Baldy",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.878,
+    33.125,
+    -108.405,
+    33.523
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.328,
+    "rawness": 0.31,
+    "grandeur": 0.324,
+    "dominance": 0.283
+  },
+  "features": {
+    "reliefM": 1458.9,
+    "slopeMPerKm": 170.8,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 71.4,
+    "dominance": 0.3,
+    "summitM": 3313.5,
+    "lengthKm": 41.7
+  }
+}

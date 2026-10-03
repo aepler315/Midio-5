@@ -1,0 +1,34 @@
+{
+  "id": "nightingale-mountains",
+  "name": "Nightingale Mountains",
+  "landmark": "Nightingale Mountains",
+  "region": "Nevada, USA",
+  "bbox": [
+    -119.524,
+    39.89,
+    -119.008,
+    40.288
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.212,
+    "rawness": 0.173,
+    "grandeur": 0.268,
+    "dominance": 0.367
+  },
+  "features": {
+    "reliefM": 1207.5,
+    "slopeMPerKm": 95.2,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 33.1,
+    "dominance": 0.4,
+    "summitM": 2478.7,
+    "lengthKm": 42.1
+  }
+}

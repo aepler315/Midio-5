@@ -1,0 +1,34 @@
+{
+  "id": "north-fork-range",
+  "name": "North Fork Range",
+  "landmark": "Scott Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -116.065,
+    43.983,
+    -115.513,
+    44.381
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.194,
+    "rawness": 0.171,
+    "grandeur": 0.244,
+    "dominance": 0.226
+  },
+  "features": {
+    "reliefM": 1099.7,
+    "slopeMPerKm": 95,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 40.2,
+    "dominance": 0.2,
+    "summitM": 2558.5,
+    "lengthKm": 41.7
+  }
+}

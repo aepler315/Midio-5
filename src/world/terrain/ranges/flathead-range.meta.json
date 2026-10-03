@@ -1,0 +1,34 @@
+{
+  "id": "flathead-range",
+  "name": "Flathead Range",
+  "landmark": "Mount Saint Nicholas",
+  "region": "Montana, USA",
+  "bbox": [
+    -113.848,
+    48.193,
+    -113.253,
+    48.591
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.18
+  },
+  "scores": {
+    "energy": 0.465,
+    "rawness": 0.488,
+    "grandeur": 0.195,
+    "dominance": 0.456
+  },
+  "features": {
+    "reliefM": 878.4,
+    "slopeMPerKm": 232.4,
+    "peaksPer10Km": 4.7,
+    "roughnessM": 91.4,
+    "dominance": 0.5,
+    "summitM": 2884.4,
+    "lengthKm": 42.1
+  }
+}

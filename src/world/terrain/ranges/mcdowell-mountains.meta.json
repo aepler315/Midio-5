@@ -1,0 +1,34 @@
+{
+  "id": "mcdowell-mountains",
+  "name": "McDowell Mountains",
+  "landmark": "East End",
+  "region": "Arizona, USA",
+  "bbox": [
+    -112.038,
+    33.481,
+    -111.563,
+    33.879
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.199,
+    "rawness": 0.186,
+    "grandeur": 0.209,
+    "dominance": 0.652
+  },
+  "features": {
+    "reliefM": 939.1,
+    "slopeMPerKm": 91.7,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 39.5,
+    "dominance": 0.7,
+    "summitM": 1378.6,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "mcallister-range",
+  "name": "McAllister Range",
+  "landmark": "Towers Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -112.607,
+    34.035,
+    -112.129,
+    34.433
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.278,
+    "rawness": 0.236,
+    "grandeur": 0.384,
+    "dominance": 0.307
+  },
+  "features": {
+    "reliefM": 1727.1,
+    "slopeMPerKm": 120.9,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 50.9,
+    "dominance": 0.3,
+    "summitM": 2426.8,
+    "lengthKm": 66.3
+  }
+}

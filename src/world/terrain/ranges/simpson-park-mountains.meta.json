@@ -1,0 +1,34 @@
+{
+  "id": "simpson-park-mountains",
+  "name": "Simpson Park Mountains",
+  "landmark": "Simpson Park Mountains",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.788,
+    39.706,
+    -116.272,
+    40.104
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.23
+  },
+  "scores": {
+    "energy": 0.229,
+    "rawness": 0.23,
+    "grandeur": 0.157,
+    "dominance": 0.447
+  },
+  "features": {
+    "reliefM": 707.7,
+    "slopeMPerKm": 113.7,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 46.7,
+    "dominance": 0.4,
+    "summitM": 2780.9,
+    "lengthKm": 42.1
+  }
+}

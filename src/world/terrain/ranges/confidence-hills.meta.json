@@ -1,0 +1,34 @@
+{
+  "id": "confidence-hills",
+  "name": "Confidence Hills",
+  "landmark": "Smith Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -116.932,
+    35.818,
+    -116.443,
+    36.216
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.2
+  },
+  "scores": {
+    "energy": 0.335,
+    "rawness": 0.396,
+    "grandeur": 0.283,
+    "dominance": 0.347
+  },
+  "features": {
+    "reliefM": 1273.9,
+    "slopeMPerKm": 215.3,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 125.8,
+    "dominance": 0.3,
+    "summitM": 1939.7,
+    "lengthKm": 41.7
+  }
+}

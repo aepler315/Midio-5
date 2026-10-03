@@ -1,0 +1,34 @@
+{
+  "id": "raft-river-mountains",
+  "name": "Raft River Mountains",
+  "landmark": "George Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -113.748,
+    41.69,
+    -113.217,
+    42.088
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.19,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.178,
+    "rawness": 0.135,
+    "grandeur": 0.319,
+    "dominance": 0.378
+  },
+  "features": {
+    "reliefM": 1436.6,
+    "slopeMPerKm": 80.8,
+    "peaksPer10Km": 1.1,
+    "roughnessM": 33.9,
+    "dominance": 0.4,
+    "summitM": 3026.9,
+    "lengthKm": 65.5
+  }
+}

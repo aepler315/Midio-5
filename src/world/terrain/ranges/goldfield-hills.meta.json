@@ -1,0 +1,34 @@
+{
+  "id": "goldfield-hills",
+  "name": "Goldfield Hills",
+  "landmark": "Goldfield Hills",
+  "region": "Nevada, USA",
+  "bbox": [
+    -117.497,
+    37.41,
+    -116.998,
+    37.808
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.159,
+    "rawness": 0.14,
+    "grandeur": 0.184,
+    "dominance": 0.463
+  },
+  "features": {
+    "reliefM": 830.2,
+    "slopeMPerKm": 89.7,
+    "peaksPer10Km": 1.1,
+    "roughnessM": 35.2,
+    "dominance": 0.5,
+    "summitM": 2545.7,
+    "lengthKm": 45.2
+  }
+}

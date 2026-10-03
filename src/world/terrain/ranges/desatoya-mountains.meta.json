@@ -1,0 +1,34 @@
+{
+  "id": "desatoya-mountains",
+  "name": "Desatoya Mountains",
+  "landmark": "Desatoya North Twin",
+  "region": "Nevada, USA",
+  "bbox": [
+    -118.015,
+    39.17,
+    -117.504,
+    39.568
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.214,
+    "rawness": 0.172,
+    "grandeur": 0.334,
+    "dominance": 0.403
+  },
+  "features": {
+    "reliefM": 1502.1,
+    "slopeMPerKm": 124.4,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 50.7,
+    "dominance": 0.4,
+    "summitM": 3035.2,
+    "lengthKm": 60.8
+  }
+}

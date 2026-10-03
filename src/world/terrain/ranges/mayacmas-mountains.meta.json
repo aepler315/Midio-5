@@ -1,0 +1,34 @@
+{
+  "id": "mayacmas-mountains",
+  "name": "Mayacmas Mountains",
+  "landmark": "Cobb Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -122.994,
+    38.608,
+    -122.487,
+    39.006
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.23
+  },
+  "scores": {
+    "energy": 0.256,
+    "rawness": 0.275,
+    "grandeur": 0.186,
+    "dominance": 0.519
+  },
+  "features": {
+    "reliefM": 836.7,
+    "slopeMPerKm": 139.9,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 67.8,
+    "dominance": 0.5,
+    "summitM": 1430.3,
+    "lengthKm": 45.2
+  }
+}

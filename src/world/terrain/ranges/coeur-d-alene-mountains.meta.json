@@ -1,0 +1,34 @@
+{
+  "id": "coeur-d-alene-mountains",
+  "name": "Coeur d'Alene Mountains",
+  "landmark": "Black Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -116.036,
+    47.513,
+    -115.448,
+    47.911
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.14
+  },
+  "scores": {
+    "energy": 0.28,
+    "rawness": 0.304,
+    "grandeur": 0.155,
+    "dominance": 0.307
+  },
+  "features": {
+    "reliefM": 697.5,
+    "slopeMPerKm": 126.2,
+    "peaksPer10Km": 2.9,
+    "roughnessM": 60,
+    "dominance": 0.3,
+    "summitM": 2070.7,
+    "lengthKm": 41.7
+  }
+}

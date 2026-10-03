@@ -1,0 +1,34 @@
+{
+  "id": "argus-range",
+  "name": "Argus Range",
+  "landmark": "Maturango Peak",
+  "region": "California, USA",
+  "bbox": [
+    -117.74,
+    35.921,
+    -117.251,
+    36.32
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.308,
+    "rawness": 0.313,
+    "grandeur": 0.415,
+    "dominance": 0.406
+  },
+  "features": {
+    "reliefM": 1867.6,
+    "slopeMPerKm": 149.2,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 87.9,
+    "dominance": 0.4,
+    "summitM": 2681.7,
+    "lengthKm": 63.2
+  }
+}

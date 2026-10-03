@@ -1,0 +1,34 @@
+{
+  "id": "white-hills-arizona-usa",
+  "name": "White Hills",
+  "landmark": "Senator Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -114.562,
+    35.637,
+    -114.074,
+    36.035
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.12,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.214,
+    "rawness": 0.21,
+    "grandeur": 0.216,
+    "dominance": 0.303
+  },
+  "features": {
+    "reliefM": 974.1,
+    "slopeMPerKm": 90.9,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 43.7,
+    "dominance": 0.3,
+    "summitM": 1578,
+    "lengthKm": 41.7
+  }
+}

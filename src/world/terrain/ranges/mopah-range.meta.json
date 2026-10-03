@@ -1,0 +1,34 @@
+{
+  "id": "mopah-range",
+  "name": "Mopah Range",
+  "landmark": "Mopah Range",
+  "region": "California, USA",
+  "bbox": [
+    -114.978,
+    34.074,
+    -114.499,
+    34.472
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.233,
+    "rawness": 0.213,
+    "grandeur": 0.209,
+    "dominance": 0.37
+  },
+  "features": {
+    "reliefM": 940.2,
+    "slopeMPerKm": 101.9,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 36.8,
+    "dominance": 0.4,
+    "summitM": 1302.5,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "pinon-range",
+  "name": "Piñon Range",
+  "landmark": "Ravens Nest",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.272,
+    40.303,
+    -115.752,
+    40.701
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.23
+  },
+  "scores": {
+    "energy": 0.264,
+    "rawness": 0.286,
+    "grandeur": 0.171,
+    "dominance": 0.571
+  },
+  "features": {
+    "reliefM": 767.5,
+    "slopeMPerKm": 141.4,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 68.3,
+    "dominance": 0.6,
+    "summitM": 2659.9,
+    "lengthKm": 42.1
+  }
+}

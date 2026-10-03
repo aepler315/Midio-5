@@ -1,0 +1,34 @@
+{
+  "id": "calico-hills-nevada-usa",
+  "name": "Calico Hills",
+  "landmark": "Calico Hills",
+  "region": "Nevada, USA",
+  "bbox": [
+    -119.505,
+    41.001,
+    -118.98,
+    41.399
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.226,
+    "rawness": 0.202,
+    "grandeur": 0.264,
+    "dominance": 0.422
+  },
+  "features": {
+    "reliefM": 1189.1,
+    "slopeMPerKm": 118.6,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 48.6,
+    "dominance": 0.4,
+    "summitM": 2614.2,
+    "lengthKm": 60.1
+  }
+}

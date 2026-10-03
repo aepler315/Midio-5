@@ -1,0 +1,34 @@
+{
+  "id": "conger-range",
+  "name": "Conger Range",
+  "landmark": "Conger Range",
+  "region": "Utah, USA",
+  "bbox": [
+    -114.072,
+    38.951,
+    -113.563,
+    39.349
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.28,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.158,
+    "rawness": 0.139,
+    "grandeur": 0.221,
+    "dominance": 0.434
+  },
+  "features": {
+    "reliefM": 994.8,
+    "slopeMPerKm": 71.8,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 33.1,
+    "dominance": 0.4,
+    "summitM": 2470.5,
+    "lengthKm": 69
+  }
+}

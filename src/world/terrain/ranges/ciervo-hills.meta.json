@@ -1,0 +1,34 @@
+{
+  "id": "ciervo-hills",
+  "name": "Ciervo Hills",
+  "landmark": "Ciervo Hills",
+  "region": "California, USA",
+  "bbox": [
+    -120.826,
+    36.274,
+    -120.334,
+    36.672
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.17
+  },
+  "scores": {
+    "energy": 0.239,
+    "rawness": 0.24,
+    "grandeur": 0.264,
+    "dominance": 0.428
+  },
+  "features": {
+    "reliefM": 1187.7,
+    "slopeMPerKm": 111.3,
+    "peaksPer10Km": 2,
+    "roughnessM": 58.5,
+    "dominance": 0.4,
+    "summitM": 1596.6,
+    "lengthKm": 66.3
+  }
+}

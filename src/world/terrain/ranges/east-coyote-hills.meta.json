@@ -1,0 +1,34 @@
+{
+  "id": "east-coyote-hills",
+  "name": "East Coyote Hills",
+  "landmark": "San Juan Hill",
+  "region": "California, USA",
+  "bbox": [
+    -117.976,
+    33.715,
+    -117.5,
+    34.113
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.16,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.189,
+    "rawness": 0.14,
+    "grandeur": 0.337,
+    "dominance": 0.813
+  },
+  "features": {
+    "reliefM": 1515.3,
+    "slopeMPerKm": 67.4,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 27,
+    "dominance": 0.8,
+    "summitM": 1667.3,
+    "lengthKm": 59.7
+  }
+}

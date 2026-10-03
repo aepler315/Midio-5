@@ -1,0 +1,34 @@
+{
+  "id": "scott-mountains",
+  "name": "Scott Mountains",
+  "landmark": "Scott Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -122.986,
+    41.063,
+    -122.46,
+    41.461
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.34,
+    "rawness": 0.353,
+    "grandeur": 0.194,
+    "dominance": 0.532
+  },
+  "features": {
+    "reliefM": 875,
+    "slopeMPerKm": 149.9,
+    "peaksPer10Km": 3.5,
+    "roughnessM": 63.5,
+    "dominance": 0.5,
+    "summitM": 2591.3,
+    "lengthKm": 62.8
+  }
+}

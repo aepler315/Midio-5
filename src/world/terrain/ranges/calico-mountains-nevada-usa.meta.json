@@ -1,0 +1,34 @@
+{
+  "id": "calico-mountains-nevada-usa",
+  "name": "Calico Mountains",
+  "landmark": "Buckskin Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -117.818,
+    41.59,
+    -117.288,
+    41.988
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.241,
+    "rawness": 0.23,
+    "grandeur": 0.36,
+    "dominance": 0.418
+  },
+  "features": {
+    "reliefM": 1621.3,
+    "slopeMPerKm": 133.9,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 72.5,
+    "dominance": 0.4,
+    "summitM": 2965.2,
+    "lengthKm": 63.6
+  }
+}

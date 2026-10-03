@@ -1,0 +1,34 @@
+{
+  "id": "gros-ventre-range",
+  "name": "Gros Ventre Range",
+  "landmark": "Black Peak",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -110.633,
+    43.215,
+    -110.089,
+    43.613
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.23
+  },
+  "scores": {
+    "energy": 0.302,
+    "rawness": 0.302,
+    "grandeur": 0.332,
+    "dominance": 0.205
+  },
+  "features": {
+    "reliefM": 1491.8,
+    "slopeMPerKm": 142.2,
+    "peaksPer10Km": 2.5,
+    "roughnessM": 73,
+    "dominance": 0.2,
+    "summitM": 3561.8,
+    "lengthKm": 60.5
+  }
+}

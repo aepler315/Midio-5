@@ -1,0 +1,34 @@
+{
+  "id": "pedregosa-mountains",
+  "name": "Pedregosa Mountains",
+  "landmark": "Erickson Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -109.516,
+    31.563,
+    -109.051,
+    31.961
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.12,
+    "artifact": 0.14
+  },
+  "scores": {
+    "energy": 0.238,
+    "rawness": 0.223,
+    "grandeur": 0.265,
+    "dominance": 0.5
+  },
+  "features": {
+    "reliefM": 1190.4,
+    "slopeMPerKm": 114.5,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 50.8,
+    "dominance": 0.5,
+    "summitM": 2971.4,
+    "lengthKm": 41.7
+  }
+}

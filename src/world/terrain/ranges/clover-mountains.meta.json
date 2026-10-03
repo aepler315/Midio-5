@@ -1,0 +1,34 @@
+{
+  "id": "clover-mountains",
+  "name": "Clover Mountains",
+  "landmark": "Elly Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.717,
+    37.26,
+    -114.219,
+    37.658
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.256,
+    "rawness": 0.264,
+    "grandeur": 0.155,
+    "dominance": 0.38
+  },
+  "features": {
+    "reliefM": 696.4,
+    "slopeMPerKm": 110.2,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 46.8,
+    "dominance": 0.4,
+    "summitM": 2384.4,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "mutton-mountains",
+  "name": "Mutton Mountains",
+  "landmark": "Shaniko Butte",
+  "region": "Oregon, USA",
+  "bbox": [
+    -121.494,
+    44.786,
+    -120.936,
+    45.184
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.119,
+    "rawness": 0.116,
+    "grandeur": 0.125,
+    "dominance": 0.583
+  },
+  "features": {
+    "reliefM": 560.3,
+    "slopeMPerKm": 50.2,
+    "peaksPer10Km": 1.1,
+    "roughnessM": 24,
+    "dominance": 0.6,
+    "summitM": 1357.1,
+    "lengthKm": 65.9
+  }
+}

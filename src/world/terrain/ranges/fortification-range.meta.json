@@ -1,0 +1,34 @@
+{
+  "id": "fortification-range",
+  "name": "Fortification Range",
+  "landmark": "Fortification Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.696,
+    38.357,
+    -114.19,
+    38.755
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.19,
+    "artifact": 0.01
+  },
+  "scores": {
+    "energy": 0.101,
+    "rawness": 0.081,
+    "grandeur": 0.168,
+    "dominance": 0.74
+  },
+  "features": {
+    "reliefM": 757.7,
+    "slopeMPerKm": 61.7,
+    "peaksPer10Km": 0.5,
+    "roughnessM": 26.2,
+    "dominance": 0.7,
+    "summitM": 2689.6,
+    "lengthKm": 41.7
+  }
+}

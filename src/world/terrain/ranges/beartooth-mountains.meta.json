@@ -1,0 +1,34 @@
+{
+  "id": "beartooth-mountains",
+  "name": "Beartooth Mountains",
+  "landmark": "Granite Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -110.088,
+    44.964,
+    -109.527,
+    45.362
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.286,
+    "rawness": 0.282,
+    "grandeur": 0.275,
+    "dominance": 0.294
+  },
+  "features": {
+    "reliefM": 1236,
+    "slopeMPerKm": 150.5,
+    "peaksPer10Km": 2.3,
+    "roughnessM": 68.7,
+    "dominance": 0.3,
+    "summitM": 3880,
+    "lengthKm": 60.8
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "mimbres-mountains",
+  "name": "Mimbres Mountains",
+  "landmark": "Hillsboro",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.015,
+    32.754,
+    -107.544,
+    33.152
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.23,
+    "rawness": 0.192,
+    "grandeur": 0.315,
+    "dominance": 0.281
+  },
+  "features": {
+    "reliefM": 1418,
+    "slopeMPerKm": 94.9,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 38.3,
+    "dominance": 0.3,
+    "summitM": 3096.9,
+    "lengthKm": 66.3
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "langford-mountains",
+  "name": "Langford Mountains",
+  "landmark": "Hornbrook Mountain",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.745,
+    32.263,
+    -108.277,
+    32.661
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.18,
+    "artifact": 0.15
+  },
+  "scores": {
+    "energy": 0.143,
+    "rawness": 0.104,
+    "grandeur": 0.257,
+    "dominance": 0.48
+  },
+  "features": {
+    "reliefM": 1158.2,
+    "slopeMPerKm": 59.9,
+    "peaksPer10Km": 0.9,
+    "roughnessM": 23.5,
+    "dominance": 0.5,
+    "summitM": 2446.7,
+    "lengthKm": 66.3
+  }
+}

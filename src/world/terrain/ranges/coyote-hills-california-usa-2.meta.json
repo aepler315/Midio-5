@@ -1,0 +1,34 @@
+{
+  "id": "coyote-hills-california-usa-2",
+  "name": "Coyote Hills",
+  "landmark": "Mount Ingalls",
+  "region": "California, USA",
+  "bbox": [
+    -120.885,
+    39.795,
+    -120.369,
+    40.193
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.24
+  },
+  "scores": {
+    "energy": 0.251,
+    "rawness": 0.265,
+    "grandeur": 0.157,
+    "dominance": 0.69
+  },
+  "features": {
+    "reliefM": 708.6,
+    "slopeMPerKm": 124.3,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 56.3,
+    "dominance": 0.7,
+    "summitM": 2547,
+    "lengthKm": 41.7
+  }
+}

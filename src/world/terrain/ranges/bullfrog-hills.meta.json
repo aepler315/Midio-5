@@ -1,0 +1,34 @@
+{
+  "id": "bullfrog-hills",
+  "name": "Bullfrog Hills",
+  "landmark": "Bare Mountain Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.954,
+    36.667,
+    -116.46,
+    37.065
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.229,
+    "rawness": 0.226,
+    "grandeur": 0.212,
+    "dominance": 0.714
+  },
+  "features": {
+    "reliefM": 954,
+    "slopeMPerKm": 102.6,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 47,
+    "dominance": 0.7,
+    "summitM": 2200.7,
+    "lengthKm": 67.5
+  }
+}

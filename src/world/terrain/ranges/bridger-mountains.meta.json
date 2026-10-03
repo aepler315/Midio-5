@@ -1,0 +1,34 @@
+{
+  "id": "bridger-mountains",
+  "name": "Bridger Mountains",
+  "landmark": "Copper Mountain",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -108.199,
+    43.246,
+    -107.654,
+    43.645
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.22,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.151,
+    "rawness": 0.138,
+    "grandeur": 0.24,
+    "dominance": 0.374
+  },
+  "features": {
+    "reliefM": 1080.6,
+    "slopeMPerKm": 66.6,
+    "peaksPer10Km": 1,
+    "roughnessM": 36.9,
+    "dominance": 0.4,
+    "summitM": 2527.8,
+    "lengthKm": 67.9
+  }
+}

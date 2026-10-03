@@ -1,0 +1,34 @@
+{
+  "id": "sawtooth-range-colorado-usa",
+  "name": "Sawtooth Range",
+  "landmark": "Mount Zirkel",
+  "region": "Colorado, USA",
+  "bbox": [
+    -106.924,
+    40.632,
+    -106.402,
+    41.03
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.229,
+    "rawness": 0.243,
+    "grandeur": 0.168,
+    "dominance": 0.369
+  },
+  "features": {
+    "reliefM": 755.4,
+    "slopeMPerKm": 108.1,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 52.8,
+    "dominance": 0.4,
+    "summitM": 3688.9,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "never-summer-mountains",
+  "name": "Never Summer Mountains",
+  "landmark": "Never Summer Mountains",
+  "region": "Colorado, USA",
+  "bbox": [
+    -106.159,
+    40.225,
+    -105.639,
+    40.623
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.299,
+    "rawness": 0.305,
+    "grandeur": 0.171,
+    "dominance": 0.459
+  },
+  "features": {
+    "reliefM": 769.8,
+    "slopeMPerKm": 153.7,
+    "peaksPer10Km": 2.8,
+    "roughnessM": 61.6,
+    "dominance": 0.5,
+    "summitM": 4121.4,
+    "lengthKm": 42.1
+  }
+}

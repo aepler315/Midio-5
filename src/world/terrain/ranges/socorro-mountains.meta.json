@@ -1,0 +1,34 @@
+{
+  "id": "socorro-mountains",
+  "name": "Socorro Mountains",
+  "landmark": "Socorro Mountains",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -107.206,
+    33.851,
+    -106.729,
+    34.249
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.2,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.177,
+    "rawness": 0.133,
+    "grandeur": 0.324,
+    "dominance": 0.382
+  },
+  "features": {
+    "reliefM": 1458.2,
+    "slopeMPerKm": 87.7,
+    "peaksPer10Km": 1,
+    "roughnessM": 36.7,
+    "dominance": 0.4,
+    "summitM": 3282.4,
+    "lengthKm": 41.7
+  }
+}

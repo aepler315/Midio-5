@@ -1,0 +1,34 @@
+{
+  "id": "smoky-range",
+  "name": "Smoky Range",
+  "landmark": "Moose Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -114.725,
+    48.444,
+    -114.127,
+    48.842
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.18
+  },
+  "scores": {
+    "energy": 0.299,
+    "rawness": 0.294,
+    "grandeur": 0.268,
+    "dominance": 0.3
+  },
+  "features": {
+    "reliefM": 1207.8,
+    "slopeMPerKm": 128.9,
+    "peaksPer10Km": 2.8,
+    "roughnessM": 58.2,
+    "dominance": 0.3,
+    "summitM": 2455.6,
+    "lengthKm": 61.2
+  }
+}

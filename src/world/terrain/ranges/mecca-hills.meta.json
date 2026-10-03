@@ -1,0 +1,34 @@
+{
+  "id": "mecca-hills",
+  "name": "Mecca Hills",
+  "landmark": "Blake Hill",
+  "region": "California, USA",
+  "bbox": [
+    -116.165,
+    33.42,
+    -115.69,
+    33.818
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.214,
+    "rawness": 0.161,
+    "grandeur": 0.351,
+    "dominance": 0.386
+  },
+  "features": {
+    "reliefM": 1578.9,
+    "slopeMPerKm": 99.8,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 36.9,
+    "dominance": 0.4,
+    "summitM": 1620.1,
+    "lengthKm": 72.9
+  }
+}

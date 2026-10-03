@@ -1,0 +1,34 @@
+{
+  "id": "san-luis-mountains",
+  "name": "San Luis Mountains",
+  "landmark": "San Luis Mountains",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.987,
+    31.148,
+    -108.524,
+    31.546
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.182,
+    "rawness": 0.171,
+    "grandeur": 0.179,
+    "dominance": 0.49
+  },
+  "features": {
+    "reliefM": 804.4,
+    "slopeMPerKm": 96.7,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 40.3,
+    "dominance": 0.5,
+    "summitM": 2512.6,
+    "lengthKm": 41.7
+  }
+}

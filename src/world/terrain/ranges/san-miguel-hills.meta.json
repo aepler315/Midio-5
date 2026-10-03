@@ -1,0 +1,34 @@
+{
+  "id": "san-miguel-hills",
+  "name": "San Miguel Hills",
+  "landmark": "North Peak",
+  "region": "California, USA",
+  "bbox": [
+    -122.727,
+    37.362,
+    -122.228,
+    37.76
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.34,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.086,
+    "rawness": 0.065,
+    "grandeur": 0.171,
+    "dominance": 0.504
+  },
+  "features": {
+    "reliefM": 769.4,
+    "slopeMPerKm": 36.5,
+    "peaksPer10Km": 0.5,
+    "roughnessM": 17.4,
+    "dominance": 0.5,
+    "summitM": 733.1,
+    "lengthKm": 62.4
+  }
+}

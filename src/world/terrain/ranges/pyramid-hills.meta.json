@@ -1,0 +1,34 @@
+{
+  "id": "pyramid-hills",
+  "name": "Pyramid Hills",
+  "landmark": "Orchard Peak",
+  "region": "California, USA",
+  "bbox": [
+    -120.377,
+    35.539,
+    -119.89,
+    35.937
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.127,
+    "rawness": 0.1,
+    "grandeur": 0.207,
+    "dominance": 0.535
+  },
+  "features": {
+    "reliefM": 932.9,
+    "slopeMPerKm": 50.4,
+    "peaksPer10Km": 0.9,
+    "roughnessM": 20.7,
+    "dominance": 0.5,
+    "summitM": 1236.5,
+    "lengthKm": 65.9
+  }
+}

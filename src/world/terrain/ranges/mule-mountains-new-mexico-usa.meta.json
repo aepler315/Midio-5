@@ -1,0 +1,34 @@
+{
+  "id": "mule-mountains-new-mexico-usa",
+  "name": "Mule Mountains",
+  "landmark": "Queens Crown",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.975,
+    33.059,
+    -108.502,
+    33.457
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.273,
+    "rawness": 0.27,
+    "grandeur": 0.263,
+    "dominance": 0.454
+  },
+  "features": {
+    "reliefM": 1182.5,
+    "slopeMPerKm": 121,
+    "peaksPer10Km": 2.5,
+    "roughnessM": 56.8,
+    "dominance": 0.5,
+    "summitM": 3314.3,
+    "lengthKm": 44.9
+  }
+}

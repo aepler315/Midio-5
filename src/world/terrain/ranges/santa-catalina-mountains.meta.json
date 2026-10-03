@@ -1,0 +1,34 @@
+{
+  "id": "santa-catalina-mountains",
+  "name": "Santa Catalina Mountains",
+  "landmark": "Mount Lemmon",
+  "region": "Arizona, USA",
+  "bbox": [
+    -111.023,
+    32.244,
+    -110.554,
+    32.642
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.265,
+    "rawness": 0.217,
+    "grandeur": 0.391,
+    "dominance": 0.479
+  },
+  "features": {
+    "reliefM": 1759.5,
+    "slopeMPerKm": 137.8,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 55.8,
+    "dominance": 0.5,
+    "summitM": 2787.4,
+    "lengthKm": 41.7
+  }
+}

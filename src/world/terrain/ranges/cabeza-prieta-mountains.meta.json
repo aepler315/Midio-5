@@ -1,0 +1,34 @@
+{
+  "id": "cabeza-prieta-mountains",
+  "name": "Cabeza Prieta Mountains",
+  "landmark": "Buck Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -114.128,
+    32.184,
+    -113.66,
+    32.582
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.25,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.187,
+    "rawness": 0.188,
+    "grandeur": 0.148,
+    "dominance": 0.462
+  },
+  "features": {
+    "reliefM": 665.7,
+    "slopeMPerKm": 71,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 32.3,
+    "dominance": 0.5,
+    "summitM": 846.3,
+    "lengthKm": 41.7
+  }
+}

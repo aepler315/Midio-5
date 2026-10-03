@@ -1,0 +1,34 @@
+{
+  "id": "silver-peak-range",
+  "name": "Silver Peak Range",
+  "landmark": "Piper Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -118.158,
+    37.505,
+    -117.658,
+    37.903
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.19,
+    "artifact": 0.14
+  },
+  "scores": {
+    "energy": 0.283,
+    "rawness": 0.287,
+    "grandeur": 0.387,
+    "dominance": 0.538
+  },
+  "features": {
+    "reliefM": 1741.6,
+    "slopeMPerKm": 151.8,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 87.8,
+    "dominance": 0.5,
+    "summitM": 3218.3,
+    "lengthKm": 59.7
+  }
+}

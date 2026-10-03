@@ -1,0 +1,34 @@
+{
+  "id": "montana-mountains",
+  "name": "Montana Mountains",
+  "landmark": "Montana Mountains",
+  "region": "Nevada, USA",
+  "bbox": [
+    -118.374,
+    41.599,
+    -117.844,
+    41.998
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.17,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.226,
+    "rawness": 0.211,
+    "grandeur": 0.293,
+    "dominance": 0.489
+  },
+  "features": {
+    "reliefM": 1319.4,
+    "slopeMPerKm": 96,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 48,
+    "dominance": 0.5,
+    "summitM": 2588.4,
+    "lengthKm": 60.5
+  }
+}

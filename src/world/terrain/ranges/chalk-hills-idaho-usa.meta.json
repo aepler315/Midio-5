@@ -1,0 +1,34 @@
+{
+  "id": "chalk-hills-idaho-usa",
+  "name": "Chalk Hills",
+  "landmark": "Windy Point",
+  "region": "Idaho, USA",
+  "bbox": [
+    -117.156,
+    43.222,
+    -116.612,
+    43.62
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.124,
+    "rawness": 0.113,
+    "grandeur": 0.151,
+    "dominance": 0.37
+  },
+  "features": {
+    "reliefM": 681.7,
+    "slopeMPerKm": 58.4,
+    "peaksPer10Km": 1,
+    "roughnessM": 26.4,
+    "dominance": 0.4,
+    "summitM": 1607.8,
+    "lengthKm": 41.7
+  }
+}

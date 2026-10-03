@@ -1,0 +1,34 @@
+{
+  "id": "moore-spring-hills",
+  "name": "Moore Spring Hills",
+  "landmark": "Big Rawhide Butte",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -104.761,
+    42.388,
+    -104.224,
+    42.786
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.059,
+    "rawness": 0.055,
+    "grandeur": 0.052,
+    "dominance": 0.365
+  },
+  "features": {
+    "reliefM": 233.1,
+    "slopeMPerKm": 31.4,
+    "peaksPer10Km": 0.5,
+    "roughnessM": 12.1,
+    "dominance": 0.5,
+    "summitM": 1869.5,
+    "lengthKm": 41.7
+  }
+}

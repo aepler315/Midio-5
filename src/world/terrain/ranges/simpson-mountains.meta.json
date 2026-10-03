@@ -1,0 +1,34 @@
+{
+  "id": "simpson-mountains",
+  "name": "Simpson Mountains",
+  "landmark": "Simpson Mountains",
+  "region": "Utah, USA",
+  "bbox": [
+    -112.976,
+    39.777,
+    -112.46,
+    40.175
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.179,
+    "rawness": 0.148,
+    "grandeur": 0.26,
+    "dominance": 0.507
+  },
+  "features": {
+    "reliefM": 1169.9,
+    "slopeMPerKm": 93.2,
+    "peaksPer10Km": 1.1,
+    "roughnessM": 38.4,
+    "dominance": 0.5,
+    "summitM": 2818.1,
+    "lengthKm": 43.7
+  }
+}

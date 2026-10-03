@@ -2,29 +2,259 @@
  "source": "RESOLVE Ecoregions 2017 (Dinerstein et al. 2017), CC-BY 4.0",
  "method": "majority of a 7x7 grid over each range's bounding box",
  "ranges": {
+  "abajo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.78
+  },
   "absaroka-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "South Central Rockies forests",
    "share": 0.76
+  },
+  "adobe-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
+  },
+  "adobe-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "agai-pah-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "ajo-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "alabama-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.76
+  },
+  "alamo-hueco-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
   },
   "alaska-range": {
    "biome": "N/A",
    "ecoregion": "Rock and Ice",
    "share": 0.76
   },
+  "albion-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "aldrich-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1
+  },
   "aleutian-range": {
    "biome": "Boreal Forests/Taiga",
    "ecoregion": "Alaska Peninsula montane taiga",
    "share": 0.65
+  },
+  "alexander-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
   },
   "alligator-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "alvarez-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.96
+  },
+  "amedee-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.53
+  },
+  "anaconda-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.9
+  },
+  "anchorite-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.86
+  },
+  "animas-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.96
+  },
+  "ant-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.73
+  },
+  "antelope-hills-california-usa": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.73
+  },
+  "antelope-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
+  "antelope-range-nevada-usa-2": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "antelope-range-nevada-usa-3": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "antelope-range-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
+  },
+  "antelope-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.76
+  },
+  "anthracite-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "apache-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "ararat-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.82
+  },
+  "arco-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.76
+  },
   "arctic-cordillera": {
    "biome": "Tundra",
    "ecoregion": "Canadian High Arctic tundra",
+   "share": 1
+  },
+  "argus-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "arica-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.94
+  },
+  "aspen-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.51
+  },
+  "augusta-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "baboquivari-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.59
+  },
+  "badger-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "bailey-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central Pacific Northwest coastal forests",
+   "share": 0.63
+  },
+  "bald-hills-california-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.63
+  },
+  "bald-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.59
+  },
+  "bald-knolls": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.86
+  },
+  "bald-mountain-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.67
+  },
+  "bald-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.84
+  },
+  "baldwin-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.82
+  },
+  "bally-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.9
+  },
+  "bannock-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.92
+  },
+  "bare-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "barn-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "barnett-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "basaltic-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.76
+  },
+  "bear-lodge-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
    "share": 1
   },
   "bear-paw-ridge": {
@@ -32,40 +262,325 @@
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "bear-river-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.65
+  },
+  "bears-paw-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.53
+  },
+  "beartooth-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.92
+  },
+  "beaver-creek-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.71
+  },
+  "beaver-dam-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.82
+  },
+  "beaverhead-mountains-idaho-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.61
+  },
   "beaverhead-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "South Central Rockies forests",
    "share": 0.8
+  },
+  "beezley-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 1
+  },
+  "belmont-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "belted-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "berkeley-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.67
+  },
+  "bernasconi-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.59
+  },
+  "big-belt-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.51
+  },
+  "big-blue-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.61
+  },
+  "big-burro-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
+  "big-hatchet-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.98
+  },
+  "big-hole-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.55
+  },
+  "big-horn-mountains-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "big-horn-mountains-montana-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.59
   },
   "big-horn-mountains": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Wyoming Basin shrub steppe",
    "share": 0.51
   },
+  "big-snowy-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.67
+  },
+  "big-valley-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.57
+  },
+  "bighorn-crags": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "bighorn-mountains-wyoming-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "bighorn-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.86
+  },
+  "bilk-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.69
+  },
+  "bird-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.67
+  },
+  "bird-spring-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "bitterroot-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "bitterroot-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "black-canyon-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "black-hills-arizona-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.92
+  },
+  "black-hills-california-usa-2": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.55
+  },
+  "black-hills-california-usa-3": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.88
+  },
+  "black-hills-california-usa-4": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.86
+  },
+  "black-hills-oregon-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.96
+  },
+  "black-hills-utah-usa-2": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "black-hills-utah-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.57
+  },
+  "black-hills-washington-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central Pacific Northwest coastal forests",
+   "share": 0.57
+  },
+  "black-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.78
+  },
+  "black-mountains-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "black-mountains-utah-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "black-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.55
+  },
+  "black-pine-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.82
+  },
   "black-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Arizona Mountains forests",
    "share": 1
+  },
+  "black-rock-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.61
+  },
+  "blackfoot-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.53
+  },
+  "blackington-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.55
+  },
+  "bloody-run-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.69
   },
   "blue-buck-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "North Cascades conifer forests",
    "share": 0.76
   },
+  "blue-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1
+  },
+  "blue-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
   "blue-ridge": {
    "biome": "Temperate Broadleaf & Mixed Forests",
    "ecoregion": "Appalachian-Blue Ridge forests",
    "share": 0.76
+  },
+  "blue-spring-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "blue-wing-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "bodie-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.86
+  },
+  "bodie-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.86
+  },
+  "boise-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
   },
   "bon-ayre-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "bone-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.51
+  },
   "book-cliffs": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Colorado Plateau shrublands",
    "share": 1
+  },
+  "boulder-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.53
+  },
+  "boulder-mountains-montana-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.71
+  },
+  "boundary-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 0.82
   },
   "boundary-ranges": {
    "biome": "Boreal Forests/Taiga",
@@ -77,20 +592,385 @@
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "box-springs-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.49
+  },
+  "boylston-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 0.9
+  },
+  "bradshaw-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.96
+  },
+  "bridger-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "bridger-range": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.61
+  },
+  "briones-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.76
+  },
+  "bristol-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "bristol-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "brockman-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "brokeoff-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.67
+  },
+  "bruneau-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.98
+  },
+  "brushy-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "buck-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.86
+  },
+  "buckskin-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "buckskin-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "buckskin-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.9
+  },
+  "buena-vista-hills-california-usa": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.82
+  },
+  "buena-vista-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.9
+  },
+  "buffalo-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.84
+  },
+  "bull-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 1
+  },
+  "bull-run-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.92
+  },
+  "bull-valley-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "bulldog-knolls": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.9
+  },
+  "bullfrog-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.92
+  },
+  "bullion-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "burbank-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "buried-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "burnt-springs-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "butte-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "caballo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.98
+  },
+  "cabeza-prieta-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "cactus-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "cady-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "calapooya-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 1
+  },
+  "calico-hills-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.76
+  },
+  "calico-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "calico-mountains-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.92
+  },
+  "calico-peaks": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "caliente-range": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.59
+  },
   "california-cascades": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Central-Southern Cascades Forests",
    "share": 0.69
+  },
+  "call-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.98
+  },
+  "calumet-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.9
+  },
+  "campbell-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.49
   },
   "canadian-rockies": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "canby-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 1
+  },
+  "candelaria-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "canyon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "capay-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.84
+  },
+  "capitan-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.51
+  },
+  "cardwell-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central Pacific Northwest coastal forests",
+   "share": 0.67
+  },
+  "caribou-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "carrizo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.78
+  },
   "carson-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Sierra Nevada forests",
    "share": 0.67
+  },
+  "cascade-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 0.76
+  },
+  "casmalia-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.57
+  },
+  "castle-dome-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "castle-mountains-montana-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.9
+  },
+  "castle-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "cathedral-peaks": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "cathedral-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.96
+  },
+  "cedar-hills-idaho-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "cedar-mountain-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "cedar-mountains-utah-usa-2": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "cedar-mountains-utah-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "cedar-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "cedar-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "centennial-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.76
+  },
+  "cerbat-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "cerrillos-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.9
+  },
+  "chalk-hills-idaho-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "chalk-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 0.78
+  },
+  "cheese-and-raisins-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "chehalem-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Willamette Valley oak savanna",
+   "share": 0.96
+  },
+  "chelan-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 1
+  },
+  "cherry-creek-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.9
+  },
+  "chesterfield-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.47
   },
   "chewelah-mountains": {
    "biome": "Temperate Conifer Forests",
@@ -102,34 +982,399 @@
    "ecoregion": "North Cascades conifer forests",
    "share": 0.92
   },
+  "chico-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Western shortgrass prairie",
+   "share": 0.98
+  },
+  "chief-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
   "chigmit-mountains": {
    "biome": "Tundra",
    "ecoregion": "Alaska-St. Elias Range tundra",
    "share": 0.84
+  },
+  "chino-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 1
   },
   "chiricahua-mountains": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Chihuahuan desert",
    "share": 0.9
   },
+  "chiwaukum-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 1
+  },
+  "chowchilla-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 1
+  },
+  "chuckwalla-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.98
+  },
   "chugach-mountains": {
    "biome": "N/A",
    "ecoregion": "Rock and Ice",
    "share": 0.86
+  },
+  "chupadera-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.67
+  },
+  "church-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.71
+  },
+  "chuska-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.86
+  },
+  "ciervo-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.73
+  },
+  "cimarron-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "circle-i-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.96
+  },
+  "clan-alpine-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "clark-mountain-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "clark-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 1
+  },
+  "clear-lake-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 1
+  },
+  "clearwater-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "clipper-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "clover-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
   },
   "coast-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "British Columbia coastal conifer forests",
    "share": 0.94
   },
+  "coburg-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 0.76
+  },
+  "cochetopa-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "cocoon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "coeur-d-alene-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "cold-springs-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 0.84
+  },
+  "coleman-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "collegiate-peaks": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "columbia-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 0.82
+  },
+  "comobari-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.92
+  },
+  "confidence-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "confusion-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "conger-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "connell-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.98
+  },
+  "connley-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.63
+  },
+  "continental-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "cookes-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.65
+  },
+  "copper-mountains-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.82
+  },
+  "copper-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "coppersmith-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.59
+  },
+  "cornucopia-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.71
+  },
+  "cornudas-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "coso-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "cotterel-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "cottonwood-mountains-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.47
+  },
+  "cottonwood-mountains-california-usa-2": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.51
+  },
+  "cottonwood-mountains-california-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.96
+  },
+  "cottonwood-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.76
+  },
   "countess-of-dufferin-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Central Pacific Northwest coastal forests",
    "share": 0.71
   },
+  "coxcomb-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.65
+  },
+  "coyote-hills-california-usa-2": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.98
+  },
+  "coyote-hills-california-usa": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.98
+  },
+  "coyote-hills-new-mexico-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.69
+  },
+  "coyote-hills-oregon-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1
+  },
+  "coyote-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.65
+  },
+  "crafton-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.78
+  },
+  "crater-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "crawford-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "crazy-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 0.76
+  },
+  "crazy-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.55
+  },
+  "cricket-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "crowcamp-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.96
+  },
   "crowell-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "crystal-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "crystal-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 1
+  },
+  "cucomungo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.67
+  },
+  "cuddy-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 0.94
+  },
+  "cultus-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.96
+  },
+  "cuprite-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "cuyamaca-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.45
+  },
+  "danforth-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.73
+  },
+  "danskin-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.82
+  },
+  "darwin-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "date-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.59
+  },
+  "datil-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.57
+  },
+  "dead-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "deep-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
    "share": 1
   },
   "deep-creek-range": {
@@ -137,20 +1382,460 @@
    "ecoregion": "Great Basin shrub steppe",
    "share": 0.9
   },
+  "deer-creek-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.84
+  },
+  "deer-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.51
+  },
+  "delamar-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.9
+  },
+  "delano-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.98
+  },
+  "desatoya-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "desert-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "desert-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.69
+  },
+  "desert-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "desert-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.98
+  },
+  "detroit-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "devils-hole-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "diabase-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "diablo-range-california-usa": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.98
+  },
+  "diablo-range-new-mexico-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
   "diablo-range": {
    "biome": "Mediterranean Forests, Woodlands & Scrub",
    "ecoregion": "California interior chaparral and woodlands",
    "share": 0.67
+  },
+  "diamond-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "diamond-mountains-california-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.98
+  },
+  "diamond-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "dickie-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.8
+  },
+  "division-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.71
+  },
+  "dog-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "dolly-varden-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "dome-rock-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "domenigoni-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.51
+  },
+  "dona-ana-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.86
+  },
+  "donkey-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.67
+  },
+  "doty-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central Pacific Northwest coastal forests",
+   "share": 0.9
+  },
+  "double-h-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.69
+  },
+  "dragoon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "dripping-spring-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.51
+  },
+  "dry-hills-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "dry-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "duck-creek-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.82
+  },
+  "duckwater-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "dugway-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
   },
   "duncan-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "North Cascades conifer forests",
    "share": 0.8
   },
+  "dunnigan-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.73
+  },
+  "eagletail-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "east-coyote-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 1
+  },
+  "east-gate-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "east-hess-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.55
+  },
+  "east-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "east-humboldt-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "east-mormon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "east-pahranagat-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "east-potrillo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "east-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "east-sand-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.98
+  },
+  "east-tintic-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "egan-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "el-paso-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.96
+  },
+  "eldorado-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "eleana-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.67
+  },
+  "elk-mountains-colorado-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "elk-mountains-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.98
+  },
+  "elk-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.98
+  },
+  "elkhead-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.61
+  },
+  "elkhorn-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.8
+  },
+  "elko-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "elwha-river-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central Pacific Northwest coastal forests",
+   "share": 0.55
+  },
+  "ely-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "ely-springs-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "enchantment-peaks": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 1
+  },
+  "english-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.76
+  },
+  "entiat-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.86
+  },
+  "escalante-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.73
+  },
+  "eugene-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "excelsior-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
   "fairweather-range": {
    "biome": "N/A",
    "ecoregion": "Rock and Ice",
    "share": 0.86
+  },
+  "farley-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1
+  },
+  "ferber-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "fish-creek-mountains-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "fish-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.98
+  },
+  "fish-creek-range-idaho-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.96
+  },
+  "fish-creek-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "fish-springs-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "flathead-alps": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "flathead-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "fletcher-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.86
+  },
+  "flint-creek-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.57
+  },
+  "florida-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.96
+  },
+  "flowery-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "flynn-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern California coastal forests",
+   "share": 0.73
+  },
+  "foote-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "fort-sage-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.63
+  },
+  "fortification-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "fox-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.71
+  },
+  "fox-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "fra-cristobal-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.92
+  },
+  "franklin-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.39
+  },
+  "freak-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.67
   },
   "freezeout-ridge": {
    "biome": "Temperate Conifer Forests",
@@ -162,20 +1847,600 @@
    "ecoregion": "Colorado Rockies forests",
    "share": 0.88
   },
+  "fry-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "funeral-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "gabbs-valley-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "gabilan-range": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.98
+  },
+  "galiuro-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.8
+  },
+  "gallatin-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.94
+  },
+  "gallinas-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.55
+  },
+  "gallo-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.61
+  },
+  "gannett-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "gap-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "garcia-peaks": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.71
+  },
+  "garfield-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
   "garibaldi-ranges": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "British Columbia coastal conifer forests",
    "share": 0.98
+  },
+  "garnet-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.57
+  },
+  "gas-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "general-eisenhower-range-not-official": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.78
+  },
+  "gerald-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.73
+  },
+  "gila-bend-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "gila-mountains-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.86
+  },
+  "gila-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "gillis-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "gilson-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "gilsonite-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "glass-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "godfrey-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.61
+  },
+  "gold-mountain-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.82
+  },
+  "golden-gate-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "goldfield-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "good-sight-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "goose-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.94
+  },
+  "gore-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "goshute-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "grampian-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.73
+  },
+  "grand-canyon-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.78
+  },
+  "granite-mountains-california-usa-2": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "granite-mountains-california-usa-3": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "granite-mountains-california-usa": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.61
+  },
+  "granite-mountains-wyoming-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "granite-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.98
+  },
+  "granite-range-montana-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.8
+  },
+  "granite-range-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "granite-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.55
+  },
+  "granite-wash-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "grant-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "grapevine-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.55
+  },
+  "grass-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.67
+  },
+  "grassy-hills-idaho-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "grassy-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "grassy-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "grassy-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 1
+  },
+  "grave-creek-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.47
+  },
+  "gravel-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "gravel-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 1
+  },
+  "gravelly-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.59
+  },
+  "gray-hills-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "gray-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.88
+  },
+  "grayback-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.69
+  },
+  "grays-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.96
   },
   "green-mountains": {
    "biome": "Temperate Broadleaf & Mixed Forests",
    "ecoregion": "New England-Acadian forests",
    "share": 0.98
   },
+  "green-valley-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "greenhorn-mountains-oregon-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1
+  },
+  "greenhorn-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.86
+  },
+  "greenhorn-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.51
+  },
+  "greenwater-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "grenadier-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "griswold-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.84
+  },
+  "groom-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "gros-ventre-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "grouse-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.61
+  },
+  "guadalupe-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "guijarral-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.94
+  },
+  "gumbo-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "gumdrop-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "gyp-hills-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.63
+  },
+  "gyp-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.78
+  },
+  "h-d-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "hagerhorst-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 1
+  },
+  "halfpint-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.71
+  },
+  "hampton-buttes": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.63
+  },
+  "hannan-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "hansel-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "harcuvar-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "hardscrabble-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.8
+  },
+  "harmony-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.53
+  },
+  "harquahala-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "hays-canyon-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.88
+  },
+  "haystack-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "henry-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.84
+  },
+  "henrys-lake-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.73
+  },
+  "hexie-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.9
+  },
+  "hidden-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "hieroglyphic-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.57
+  },
+  "high-rock-canyon-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.82
+  },
+  "highland-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.59
+  },
+  "highland-range-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "highland-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "highwood-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.49
+  },
+  "hitt-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 0.8
+  },
+  "hog-ranch-buttes": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 1
+  },
+  "hog-ranch-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.9
+  },
+  "hogup-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "home-camp-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.86
+  },
+  "honeycomb-buttes": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "hoodoo-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.71
+  },
+  "hoodoo-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "hooknose-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
+  },
+  "horn-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.78
+  },
+  "horned-toad-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.73
+  },
+  "horse-heaven-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.69
+  },
+  "horse-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "horse-range-oregon-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 0.9
+  },
+  "horse-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "horse-spring-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "horseshoe-hills-montana-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.61
+  },
+  "hot-creek-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "hot-spring-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "hot-springs-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "house-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "huachuca-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.92
   },
   "hualapai-mountains": {
    "biome": "Temperate Conifer Forests",
@@ -192,9 +2457,104 @@
    "ecoregion": "Northern Rockies conifer forests",
    "share": 0.86
   },
+  "humboldt-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "hungry-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "huntoon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.84
+  },
+  "ibex-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "ichabod-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.78
+  },
+  "idaho-canyon-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "in-ko-pah-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.59
+  },
+  "independence-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.53
+  },
+  "indian-hills-nevada-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.63
+  },
+  "indian-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.98
+  },
+  "indian-peak-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "indian-peaks": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "inyo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.53
+  },
+  "irish-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.94
+  },
   "iron-mountains-washington-usa": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "iron-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.73
+  },
+  "ishawooa-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.76
+  },
+  "ivanpah-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "jacalitos-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.94
+  },
+  "jack-morrow-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
    "share": 1
   },
   "jackson-mountains": {
@@ -202,9 +2562,149 @@
    "ecoregion": "Great Basin shrub steppe",
    "share": 0.94
   },
+  "jacumba-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.47
+  },
+  "jamul-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 1
+  },
+  "jarbidge-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.82
+  },
+  "jarilla-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.92
+  },
+  "jemez-mountains-sandoval-county": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.84
+  },
+  "jerky-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "jicarilla-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Western shortgrass prairie",
+   "share": 0.51
+  },
+  "jim-sage-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "john-long-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.86
+  },
+  "johnnie-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "judith-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.55
+  },
+  "jumbled-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "junction-house-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.57
+  },
+  "juniper-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.98
+  },
+  "kalmia-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.59
+  },
+  "kamma-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "kelly-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "kelsey-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 1
+  },
+  "kelso-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "kendrick-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.92
+  },
+  "kern-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
   "kettle-river-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "kettleman-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.92
+  },
+  "kilgore-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 0.69
+  },
+  "king-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern California coastal forests",
+   "share": 0.67
+  },
+  "kingston-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "kinsley-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "kirkland-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.96
+  },
+  "kit-fox-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
    "share": 1
   },
   "klamath-mountains": {
@@ -212,14 +2712,119 @@
    "ecoregion": "Klamath-Siskiyou forests",
    "share": 1
   },
+  "kreyenhagen-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.96
+  },
+  "krum-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "kupk-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "la-garita-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "la-loma-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.47
+  },
+  "la-madera-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.71
+  },
+  "la-panza-range": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 1
+  },
+  "la-plata-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.82
+  },
   "la-sal-mountains": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Colorado Plateau shrublands",
    "share": 0.71
   },
+  "laguna-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.39
+  },
+  "lake-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.94
+  },
+  "lake-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "lakeside-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "lakeview-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.47
+  },
   "lance-hills": {
    "biome": "Temperate Grasslands, Savannas & Shrublands",
    "ecoregion": "Palouse prairie",
+   "share": 1
+  },
+  "langford-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.82
+  },
+  "laramie-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.57
+  },
+  "larkspur-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.55
+  },
+  "las-aguilas-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.94
+  },
+  "las-guijas-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.61
+  },
+  "las-vegas-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.96
+  },
+  "last-chance-range-california-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.96
+  },
+  "last-chance-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
    "share": 1
   },
   "laurentian-mountains": {
@@ -227,10 +2832,55 @@
    "ecoregion": "Eastern Canadian Forest-Boreal transition",
    "share": 1
   },
+  "lava-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "lavender-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "leach-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.55
+  },
+  "lead-mine-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "leitendorf-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "lemhi-range": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.51
+  },
+  "leucite-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "lewis-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "lillooet-ranges": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Okanogan dry forests",
    "share": 0.94
+  },
+  "limestone-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
   },
   "linder-ridge": {
    "biome": "Temperate Conifer Forests",
@@ -242,9 +2892,149 @@
    "ecoregion": "Montana Valley and Foothill grasslands",
    "share": 0.98
   },
+  "little-burro-mountains-new-mexico-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.82
+  },
+  "little-burro-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
+  "little-chuckwalla-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "little-florida-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.96
+  },
+  "little-goat-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "little-hatchet-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.98
+  },
+  "little-high-rock-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.94
+  },
+  "little-mule-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "little-pigeon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "little-rockies": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.9
+  },
+  "little-rocky-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.67
+  },
+  "little-rough-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "little-san-bernardino-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.86
+  },
+  "little-snowy-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.63
+  },
+  "little-valley-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.55
+  },
+  "little-white-horse-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "little-wolf-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 1
+  },
   "livingston-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "loco-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.78
+  },
+  "lodi-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "lompoc-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.49
+  },
+  "los-buellis-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 1
+  },
+  "lost-creek-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.92
+  },
+  "lost-river-range": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.65
+  },
+  "louderback-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "lucy-gray-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "luera-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.53
+  },
+  "lukachukai-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.57
+  },
+  "ma-ha-tuak-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
    "share": 1
   },
   "madison-range": {
@@ -252,19 +3042,289 @@
    "ecoregion": "South Central Rockies forests",
    "share": 0.73
   },
+  "magdalena-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.41
+  },
+  "mahogany-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "mahogany-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
   "mahoosuc-range": {
    "biome": "Temperate Broadleaf & Mixed Forests",
    "ecoregion": "New England-Acadian forests",
    "share": 1
+  },
+  "majuba-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "malad-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.59
+  },
+  "mallard-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "mangas-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.92
+  },
+  "manzanita-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.55
+  },
+  "manzano-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.37
+  },
+  "marble-mountains-california-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 1
+  },
+  "marble-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "maricopa-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "marys-river-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.71
+  },
+  "massacre-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "maury-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 0.92
+  },
+  "maverick-springs-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "mayacmas-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 1
+  },
+  "mazatzal-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.59
+  },
+  "mcallister-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.88
+  },
+  "mccoy-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "mccracken-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.55
+  },
+  "mccullough-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "mcdowell-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "mckinney-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.9
+  },
+  "mcpherson-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "mecca-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.73
   },
   "medicine-bow-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Colorado Rockies forests",
    "share": 0.9
   },
+  "medicine-lodge-big-game-winter-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.88
+  },
+  "medicine-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "merriam-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.65
+  },
+  "mesa-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.76
+  },
+  "mescal-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "mesquite-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "mid-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "middle-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "middle-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "million-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "mimbres-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.94
+  },
+  "mine-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.86
+  },
+  "mineral-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "mineral-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 0.92
+  },
   "mission-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "mission-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "moccasin-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "mockingbird-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.98
+  },
+  "mogollon-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "mohon-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.98
+  },
+  "mokomoke-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "monitor-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "montana-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.65
+  },
+  "monte-cristo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "monte-cristo-range-utah-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.92
+  },
+  "monte-cristo-range-washington-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.63
+  },
+  "monte-cristo-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "montezuma-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.71
+  },
+  "montezuma-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
    "share": 1
   },
   "monument-valley": {
@@ -272,10 +3332,180 @@
    "ecoregion": "Colorado Plateau shrublands",
    "share": 1
   },
+  "moore-spring-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Western shortgrass prairie",
+   "share": 1
+  },
+  "moose-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "mopah-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.67
+  },
+  "moquith-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "mormon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "mosquito-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "mount-bennett-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.96
+  },
+  "mount-irish-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "mountain-boy-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "mountain-home-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "mud-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "muddy-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "muddy-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.63
+  },
+  "muggins-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "mule-mountains-new-mexico-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "mule-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.96
+  },
+  "mummy-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "murphy-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "music-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.53
+  },
+  "mutton-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 0.45
+  },
+  "needle-mountains-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "needle-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "needle-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "never-summer-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
   "neville-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "North Cascades conifer forests",
    "share": 0.67
+  },
+  "new-pass-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "new-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.71
+  },
+  "new-river-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.76
+  },
+  "new-york-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "newberry-mountains-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "newberry-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "newcastle-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Puget lowland forests",
+   "share": 0.67
+  },
+  "newfoundland-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "nightingale-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "ninety-percent-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.53
   },
   "north-boulder-ridge": {
    "biome": "Temperate Conifer Forests",
@@ -287,10 +3517,120 @@
    "ecoregion": "North Cascades conifer forests",
    "share": 1
   },
+  "north-fork-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "north-hansel-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.82
+  },
+  "north-hills-montana-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 0.45
+  },
+  "north-moccasin-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.73
+  },
+  "north-pahroc-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "north-pinyon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.55
+  },
+  "north-promontory-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "north-sand-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.88
+  },
+  "o-neill-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "o-wi-yu-kuts-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 0.92
+  },
+  "oat-hills-california-usa-2": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.8
+  },
+  "oat-hills-california-usa-3": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.63
+  },
+  "oat-hills-california-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.71
+  },
+  "oat-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.55
+  },
+  "ochoco-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1
+  },
+  "ogilby-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "old-woman-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
   "olympic-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Central Pacific Northwest coastal forests",
    "share": 0.33
+  },
+  "onaqui-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "oquirrh-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "ord-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "oregon-buttes": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "oregon-canyon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
   },
   "oregon-cascades": {
    "biome": "Temperate Conifer Forests",
@@ -302,19 +3642,209 @@
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "organ-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.88
+  },
+  "orocopia-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.57
+  },
+  "ortega-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.94
+  },
+  "ortiz-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.57
+  },
+  "osgood-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "owl-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "owl-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "owyhee-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.96
+  },
   "pacific-ranges": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "British Columbia coastal conifer forests",
    "share": 0.67
+  },
+  "pah-rah-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "pahsimeroi-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.78
+  },
+  "pahvant-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.57
+  },
+  "painted-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "painted-rock-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "pajarito-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.76
+  },
+  "palen-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "palmetto-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "palo-verde-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "palomas-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "palos-verdes-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.35
+  },
+  "palouse-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 0.53
   },
   "panamint-range": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Mojave desert",
    "share": 0.94
   },
+  "pancake-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "panhandle-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.51
+  },
+  "panoche-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.98
+  },
+  "panorama-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.82
+  },
+  "paradise-hills-washington-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 1
+  },
+  "paradise-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.61
+  },
+  "paradise-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "paradise-range-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.82
+  },
+  "park-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.94
+  },
+  "park-range-colorado-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "park-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.84
+  },
   "park-ranges": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "patagonia-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.61
+  },
+  "paulina-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.92
+  },
+  "peacock-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.47
+  },
+  "pedley-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.84
+  },
+  "pedregosa-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.84
+  },
+  "pedro-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "peko-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
    "share": 1
   },
   "pelke-divide": {
@@ -322,29 +3852,379 @@
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "peloncillo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
   "peninsular-ranges": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Baja California desert",
    "share": 0.53
+  },
+  "peralta-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 1
+  },
+  "phillips-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.61
+  },
+  "picabo-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.67
+  },
+  "picacho-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "picket-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 1
+  },
+  "pike-creek-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.9
+  },
+  "pilot-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "pilot-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
   },
   "pinaleno-mountains": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Chihuahuan desert",
    "share": 0.92
   },
+  "pine-forest-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.73
+  },
+  "pine-grove-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
+  },
+  "pine-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.71
+  },
+  "pine-nut-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
   "pine-valley-mountains": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Great Basin shrub steppe",
    "share": 0.37
+  },
+  "pinon-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "pinos-altos-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.9
+  },
+  "pinto-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.96
+  },
+  "pintwater-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.94
+  },
+  "pinyon-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.8
+  },
+  "pioche-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "pioneer-mountains-montana-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.8
+  },
+  "pioneer-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.92
+  },
+  "piute-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "platte-river-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "pleasantview-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.84
+  },
+  "pleito-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.49
+  },
+  "plomosa-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "poachie-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.96
+  },
+  "pocatello-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "poison-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.88
+  },
+  "poorman-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.51
+  },
+  "portneuf-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
   },
   "pot-hills": {
    "biome": "Temperate Grasslands, Savannas & Shrublands",
    "ecoregion": "Palouse prairie",
    "share": 0.94
   },
+  "potrero-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.78
+  },
+  "poverty-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.69
+  },
+  "pretty-bird-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.86
+  },
+  "preuss-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 0.57
+  },
+  "promontory-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "providence-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "pryor-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.45
+  },
+  "pueblo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "puente-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.57
+  },
+  "puerto-blanco-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "puma-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "pumpkin-buttes": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 1
+  },
+  "purple-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "pyramid-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.84
+  },
+  "quail-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "quilcene-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "British Columbia coastal conifer forests",
+   "share": 0.55
+  },
+  "quinn-canyon-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.94
+  },
+  "rabbit-ears-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "raft-river-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.78
+  },
   "rainier": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Central-Southern Cascades Forests",
+   "share": 1
+  },
+  "rampart-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "rand-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "ranger-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "rattlesnake-hills-washington-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 1
+  },
+  "rattlesnake-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "rawhide-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "rawhide-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.76
+  },
+  "rawson-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.65
+  },
+  "red-hills-california-usa-2": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.51
+  },
+  "red-hills-california-usa": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.96
+  },
+  "red-hills-idaho-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.65
+  },
+  "red-hills-nevada-usa-2": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.67
+  },
+  "red-hills-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "red-hills-wyoming-usa-2": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.98
+  },
+  "red-hills-wyoming-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "red-mountains-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
+  },
+  "red-mountains-wyoming-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "red-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.35
+  },
+  "resting-spring-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "reveille-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
    "share": 1
   },
   "revelation-mountains": {
@@ -352,14 +4232,254 @@
    "ecoregion": "Alaska-St. Elias Range tundra",
    "share": 1
   },
+  "rhyolite-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "richeau-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.63
+  },
+  "rico-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "rincon-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.94
+  },
+  "ritter-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.96
+  },
+  "river-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "riverside-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "roberts-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "robledo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "rocky-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.86
+  },
   "rocky-mountains": {
    "biome": "Temperate Grasslands, Savannas & Shrublands",
    "ecoregion": "Montana Valley and Foothill grasslands",
    "share": 0.59
   },
+  "rodman-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "romero-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "rosamond-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.8
+  },
+  "rosecrans-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.8
+  },
+  "rosita-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.92
+  },
+  "roskruge-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "rough-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.63
+  },
+  "ruby-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.9
+  },
+  "ruby-range-montana-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.61
+  },
+  "ruby-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "sacramento-mountains-california-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.92
+  },
+  "sacramento-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "saddle-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 1
+  },
+  "saddle-peak-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "saddleback-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 0.67
+  },
+  "sage-hen-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "sagehen-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.98
+  },
+  "sahwave-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
   "saint-elias-mountains": {
    "biome": "Tundra",
    "ecoregion": "Pacific Coastal Mountain icefields and tundra",
+   "share": 1
+  },
+  "salado-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.92
+  },
+  "saline-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.71
+  },
+  "salish-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "saliz-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "salmon-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 1
+  },
+  "salmon-river-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.82
+  },
+  "salmon-river-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "salt-marsh-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "salt-river-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.8
+  },
+  "salt-spring-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "samaria-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
+  },
+  "san-andres-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.84
+  },
+  "san-antonio-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "san-augustin-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.84
+  },
+  "san-bernardino-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.78
+  },
+  "san-emigdio-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.84
+  },
+  "san-felipe-hills-california-usa": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 1
+  },
+  "san-felipe-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.65
+  },
+  "san-francisco-mountains-utah-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "san-francisco-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
    "share": 1
   },
   "san-gabriel-mountains": {
@@ -372,15 +4492,130 @@
    "ecoregion": "California montane chaparral and woodlands",
    "share": 0.51
   },
+  "san-jose-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.57
+  },
+  "san-juan-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "san-luis-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "san-luis-mountains-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.9
+  },
+  "san-luis-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.73
+  },
+  "san-marcos-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.82
+  },
+  "san-mateo-mountains-new-mexico-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
   "san-mateo-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Arizona Mountains forests",
    "share": 0.67
   },
+  "san-miguel-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern California coastal forests",
+   "share": 0.2
+  },
+  "san-miguel-mountains-colorado-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.96
+  },
+  "san-miguel-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "san-pedro-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.35
+  },
+  "san-pedro-peaks": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.9
+  },
+  "san-pitch-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.98
+  },
+  "san-rafael-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.63
+  },
   "san-rafael-mountains": {
    "biome": "Mediterranean Forests, Woodlands & Scrub",
    "ecoregion": "California montane chaparral and woodlands",
    "share": 0.84
+  },
+  "san-ysidro-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.96
+  },
+  "sand-hills-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "sand-hills-idaho-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.94
+  },
+  "sand-hills-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "sand-hills-wyoming-usa-2": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.59
+  },
+  "sand-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.57
+  },
+  "sand-springs-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "sandia-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.63
+  },
+  "sangre-de-christo-mountains-new-mexico": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.94
   },
   "sangre-de-cristo-mountains": {
    "biome": "Temperate Conifer Forests",
@@ -392,6 +4627,126 @@
    "ecoregion": "Colorado Rockies forests",
    "share": 0.69
   },
+  "santa-ana-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 1
+  },
+  "santa-catalina-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.57
+  },
+  "santa-cruz-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.61
+  },
+  "santa-fe-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.98
+  },
+  "santa-lucia-range": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "Santa Lucia Montane Chaparral & Woodlands",
+   "share": 0.78
+  },
+  "santa-margarita-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 1
+  },
+  "santa-maria-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.98
+  },
+  "santa-monica-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.65
+  },
+  "santa-rita-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.84
+  },
+  "santa-rosa-hills-california-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.78
+  },
+  "santa-rosa-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.53
+  },
+  "santa-rosa-mountains-california-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.63
+  },
+  "santa-rosa-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "santa-rosa-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.51
+  },
+  "santa-susana-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.86
+  },
+  "santa-teresa-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.59
+  },
+  "santa-ynez-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.76
+  },
+  "sawatch-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "sawmill-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 1
+  },
+  "sawtooth-mountains-california-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.43
+  },
+  "sawtooth-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "sawtooth-range-california-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.71
+  },
+  "sawtooth-range-colorado-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "sawtooth-range-montana-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 0.73
+  },
   "sawtooth": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "South Central Rockies forests",
@@ -400,6 +4755,36 @@
   "scalawag-ridge": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "schell-creek-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
+  },
+  "scodie-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.67
+  },
+  "scott-bar-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 1
+  },
+  "scott-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 1
+  },
+  "seaman-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "selenite-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
    "share": 1
   },
   "selkirk-mountains-washington-usa": {
@@ -412,10 +4797,175 @@
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
+  "seminoe-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "sentinel-bluffs": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 1
+  },
+  "sentinel-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.71
+  },
+  "session-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "sessions-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.59
+  },
+  "seven-troughs-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "shadow-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "shandin-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.65
+  },
+  "sheep-creek-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 0.51
+  },
+  "sheep-creek-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "sheep-hills-idaho-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "sheep-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 0.98
+  },
+  "sheep-hole-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "sheep-mountain-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "sheephead-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "sheeprock-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "sheepshead-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "shelton-buttes": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 0.73
+  },
+  "sherman-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.71
+  },
+  "ship-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.98
+  },
+  "shirley-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 1
+  },
+  "shoshone-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.78
+  },
+  "shoshone-range-idaho-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "shoshone-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "sierra-aguilada": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "sierra-ancha": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.9
+  },
+  "sierra-azul": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.55
+  },
+  "sierra-blanca": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
+  "sierra-cuchillo": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "sierra-de-las-uvas": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "sierra-de-los-valles": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.94
+  },
+  "sierra-de-salinas": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "Santa Lucia Montane Chaparral & Woodlands",
+   "share": 0.76
+  },
   "sierra-de-san-pedro-martir": {
    "biome": "Mediterranean Forests, Woodlands & Scrub",
    "ecoregion": "California montane chaparral and woodlands",
    "share": 0.59
+  },
+  "sierra-de-toledo": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.88
   },
   "sierra-estrella": {
    "biome": "Deserts & Xeric Shrublands",
@@ -427,6 +4977,11 @@
    "ecoregion": "Sierra Madre del Sur pine-oak forests",
    "share": 0.88
   },
+  "sierra-madre-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.76
+  },
   "sierra-madre-occidental": {
    "biome": "Tropical & Subtropical Coniferous Forests",
    "ecoregion": "Sierra Madre Occidental pine-oak forests",
@@ -437,24 +4992,239 @@
    "ecoregion": "Sierra Madre Oriental pine-oak forests",
    "share": 0.98
   },
+  "sierra-madre": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.8
+  },
   "sierra-mixteca": {
    "biome": "Tropical & Subtropical Coniferous Forests",
    "ecoregion": "Sierra Madre de Oaxaca pine-oak forests",
    "share": 0.57
+  },
+  "sierra-nacimiento": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.78
+  },
+  "sierra-pinta": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "sierra-prieta": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.9
   },
   "sierra-whitney": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Sierra Nevada forests",
    "share": 0.73
   },
+  "sierrita-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.53
+  },
+  "sikort-chuapo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "silurian-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "silver-city-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.73
+  },
+  "silver-island-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "silver-peak-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "simcoe-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.78
+  },
+  "simi-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California coastal sage and chaparral",
+   "share": 1
+  },
+  "simpson-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "simpson-park-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "singatse-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "sinkavata-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "siskiyou-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 1
+  },
   "skagit-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "North Cascades conifer forests",
    "share": 1
   },
+  "skedaddle-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.55
+  },
   "skeena-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Central British Columbia Mountain forests",
+   "share": 0.9
+  },
+  "slate-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "slate-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "slow-elk-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "sluiskin-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 1
+  },
+  "slumbering-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
+  },
+  "smoke-creek-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.57
+  },
+  "smoky-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "smoky-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "snake-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.65
+  },
+  "snake-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.86
+  },
+  "snowcrest-range": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.67
+  },
+  "snowstorm-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.61
+  },
+  "snowy-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.9
+  },
+  "socorro-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.59
+  },
+  "soda-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "soda-springs-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "soldier-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.78
+  },
+  "solomon-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.73
+  },
+  "sonoma-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.98
+  },
+  "sonoma-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "south-comobabi-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.92
+  },
+  "south-hills-montana-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.61
+  },
+  "south-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.69
+  },
+  "south-moccasin-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.39
+  },
+  "south-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
    "share": 0.9
   },
   "south-ridge": {
@@ -462,14 +5232,209 @@
    "ecoregion": "North Cascades conifer forests",
    "share": 0.65
   },
+  "south-virgin-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "spangler-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "spanish-peaks": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.76
+  },
+  "specter-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "sperry-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "spike-e-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "spokane-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.65
+  },
+  "spotted-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "spring-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.9
+  },
+  "spur-of-pahrock-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "st-joe-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "stansbury-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "state-line-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "steins-peak-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "stepladder-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.98
+  },
+  "stillwater-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
   "strawberry-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Blue Mountains forests",
    "share": 1
   },
+  "striped-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "sublett-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "sublette-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.69
+  },
+  "sulphur-spring-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "summit-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
+  "summit-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "swan-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "sweet-grass-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.96
+  },
+  "sylvania-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.71
+  },
+  "t-a-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.67
+  },
   "taconic-mountains": {
    "biome": "Temperate Broadleaf & Mixed Forests",
    "ecoregion": "New England-Acadian forests",
+   "share": 1
+  },
+  "talc-city-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.94
+  },
+  "taos-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.84
+  },
+  "tarryall-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "tatoosh-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 1
+  },
+  "tejon-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.63
+  },
+  "telephone-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.67
+  },
+  "temblor-range": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.73
+  },
+  "tendoy-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.67
+  },
+  "tenmile-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "tenmile-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "tepee-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 0.86
+  },
+  "terraced-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "terrill-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
    "share": 1
   },
   "tetons": {
@@ -477,15 +5442,60 @@
    "ecoregion": "South Central Rockies forests",
    "share": 1
   },
+  "the-sand-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Wyoming Basin shrub steppe",
+   "share": 0.76
+  },
   "the-summit-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "the-west-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.98
+  },
+  "thomas-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "three-brothers-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "three-buttes-montana-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.71
+  },
+  "three-buttes": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.84
+  },
+  "threemile-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
    "share": 1
   },
   "thudaka-range": {
    "biome": "Boreal Forests/Taiga",
    "ecoregion": "Northern Cordillera forests",
    "share": 1
+  },
+  "tierra-blanca-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.76
+  },
+  "tikaboo-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.98
   },
   "timber-ridge": {
    "biome": "Temperate Conifer Forests",
@@ -497,6 +5507,46 @@
    "ecoregion": "North Cascades conifer forests",
    "share": 0.96
   },
+  "timpahute-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "tinajas-altas-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "toana-john-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 1
+  },
+  "toano-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.8
+  },
+  "tobacco-root-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.65
+  },
+  "tobin-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "tognini-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "topatopa-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.94
+  },
   "toquima-range": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Great Basin shrub steppe",
@@ -507,29 +5557,269 @@
    "ecoregion": "Alaska-St. Elias Range tundra",
    "share": 1
   },
+  "tortilla-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.55
+  },
+  "tortolita-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.53
+  },
+  "toutle-mountain-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 1
+  },
   "tower-of-london-range": {
    "biome": "Boreal Forests/Taiga",
    "ecoregion": "Northern Cordillera forests",
    "share": 1
+  },
+  "trainer-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.53
   },
   "trans-mexican-volcanic-belt": {
    "biome": "Tropical & Subtropical Coniferous Forests",
    "ecoregion": "Trans-Mexican Volcanic Belt pine-oak forests",
    "share": 0.51
   },
+  "traverse-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.67
+  },
+  "tres-hermanas-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.96
+  },
+  "trigo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "trinity-mountains-idaho-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "trinity-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Klamath-Siskiyou forests",
+   "share": 0.71
+  },
+  "trinity-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "truckee-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "tucalota-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.69
+  },
+  "tucson-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.63
+  },
+  "tularosa-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.88
+  },
+  "tule-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "tule-springs-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.67
+  },
+  "tumacacori-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.98
+  },
+  "tumey-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.76
+  },
+  "tunitcha-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
+  "tunnel-spring-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "tunp-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.63
+  },
+  "turkey-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Western shortgrass prairie",
+   "share": 0.57
+  },
+  "turtle-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.76
+  },
+  "tusas-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "tuscarora-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.78
+  },
+  "tushar-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.88
+  },
   "twin-mountains-washington-usa": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
    "share": 0.82
+  },
+  "twin-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.71
+  },
+  "twin-sisters-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 1
+  },
+  "uinta-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.49
+  },
+  "upham-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.98
+  },
+  "upper-blue-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Colorado Plateau shrublands",
+   "share": 0.88
+  },
+  "ute-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
   },
   "vaca-mountains": {
    "biome": "Mediterranean Forests, Woodlands & Scrub",
    "ecoregion": "California interior chaparral and woodlands",
    "share": 0.84
   },
+  "vallecito-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.84
+  },
+  "valley-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
+  "vekol-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 1
+  },
+  "venice-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
+   "share": 0.57
+  },
+  "vera-cruz-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.69
+  },
+  "verdi-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Sierra Nevada forests",
+   "share": 0.67
+  },
+  "verdugo-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.78
+  },
+  "virgin-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 0.86
+  },
+  "virginia-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "virginia-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "virtue-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1
+  },
+  "volcan-mountains": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California montane chaparral and woodlands",
+   "share": 0.55
+  },
+  "volcanic-hills-nevada-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "vontrigger-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "vulture-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.98
+  },
   "waddington-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "British Columbia coastal conifer forests",
+   "share": 1
+  },
+  "wah-wah-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
    "share": 1
   },
   "wallowa-mountains": {
@@ -537,10 +5827,190 @@
    "ecoregion": "Blue Mountains forests",
    "share": 1
   },
+  "warner-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.65
+  },
+  "wasatch-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.57
+  },
   "wasatch": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Wasatch and Uinta montane forests",
    "share": 0.78
+  },
+  "washburn-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "waterman-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "weaver-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.82
+  },
+  "webster-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "weepah-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "wellington-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.84
+  },
+  "wellsville-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.76
+  },
+  "wenatchee-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.96
+  },
+  "west-elk-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "west-gate-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "west-hess-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.61
+  },
+  "west-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.88
+  },
+  "west-humboldt-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "west-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.78
+  },
+  "west-needle-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "west-potrillo-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 1
+  },
+  "west-riverside-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.71
+  },
+  "west-tintic-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "western-centennial-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.43
+  },
+  "wet-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.84
+  },
+  "whipple-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Sonoran desert",
+   "share": 0.96
+  },
+  "whiskey-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.96
+  },
+  "whistler-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "white-cloud-peaks": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.98
+  },
+  "white-hills-arizona-usa": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "white-hills-california-usa-2": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Mojave desert",
+   "share": 1
+  },
+  "white-hills-idaho-usa": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Montana Valley and Foothill grasslands",
+   "share": 0.73
+  },
+  "white-hills-utah-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Wasatch and Uinta montane forests",
+   "share": 0.88
+  },
+  "white-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "white-inyo-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.73
+  },
+  "white-knob-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.67
+  },
+  "white-mountains-arizona-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 1
+  },
+  "white-mountains-idaho-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.8
+  },
+  "white-mountains-washington-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 1
   },
   "white-mountains": {
    "biome": "Deserts & Xeric Shrublands",
@@ -552,15 +6022,145 @@
    "ecoregion": "Great Basin shrub steppe",
    "share": 0.9
   },
+  "white-river-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.9
+  },
+  "white-rock-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "white-throne-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "whitefish-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "whitehorse-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 0.57
+  },
+  "whitewater-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Chihuahuan desert",
+   "share": 0.96
+  },
+  "wickenburg-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.67
+  },
+  "widow-valley-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Eastern Cascades forests",
+   "share": 0.94
+  },
+  "wild-horse-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Snake-Columbia shrub steppe",
+   "share": 0.92
+  },
+  "wilkes-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central-Southern Cascades Forests",
+   "share": 0.63
+  },
+  "willapa-hills": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Central Pacific Northwest coastal forests",
+   "share": 1
+  },
+  "williams-fork-mountains-colorado-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 0.96
+  },
+  "williams-fork-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "williams-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Colorado Rockies forests",
+   "share": 1
+  },
+  "williams-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 0.63
+  },
+  "wilson-creek-range": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 1
+  },
+  "wilson-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 0.96
+  },
+  "wind-river-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.98
+  },
+  "wolf-mountains": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Northern Shortgrass prairie",
+   "share": 0.78
+  },
+  "wood-hills": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.92
+  },
+  "wooley-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "worthington-mountains": {
+   "biome": "Deserts & Xeric Shrublands",
+   "ecoregion": "Great Basin shrub steppe",
+   "share": 0.96
+  },
   "wrangell-mountains": {
    "biome": "Tundra",
    "ecoregion": "Alaska-St. Elias Range tundra",
+   "share": 1
+  },
+  "wyoming-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 0.9
+  },
+  "yellowjacket-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "South Central Rockies forests",
+   "share": 1
+  },
+  "yountville-hills": {
+   "biome": "Mediterranean Forests, Woodlands & Scrub",
+   "ecoregion": "California interior chaparral and woodlands",
    "share": 1
   },
   "yukon-ranges": {
    "biome": "Tundra",
    "ecoregion": "Ogilvie-MacKenzie alpine tundra",
    "share": 1
+  },
+  "zuni-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Arizona Mountains forests",
+   "share": 0.57
   }
  }
 }

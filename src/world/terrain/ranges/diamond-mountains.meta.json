@@ -1,0 +1,34 @@
+{
+  "id": "diamond-mountains",
+  "name": "Diamond Mountains",
+  "landmark": "Christina Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.054,
+    39.66,
+    -115.539,
+    40.058
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.237,
+    "rawness": 0.24,
+    "grandeur": 0.155,
+    "dominance": 0.359
+  },
+  "features": {
+    "reliefM": 697.9,
+    "slopeMPerKm": 105.3,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 43.5,
+    "dominance": 0.4,
+    "summitM": 2973.1,
+    "lengthKm": 42.1
+  }
+}

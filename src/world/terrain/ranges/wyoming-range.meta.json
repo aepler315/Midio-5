@@ -1,0 +1,34 @@
+{
+  "id": "wyoming-range",
+  "name": "Wyoming Range",
+  "landmark": "Wyoming Peak",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -110.893,
+    42.405,
+    -110.356,
+    42.803
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.17
+  },
+  "scores": {
+    "energy": 0.244,
+    "rawness": 0.253,
+    "grandeur": 0.125,
+    "dominance": 0.459
+  },
+  "features": {
+    "reliefM": 561.6,
+    "slopeMPerKm": 103.5,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 42.3,
+    "dominance": 0.5,
+    "summitM": 3456.4,
+    "lengthKm": 42.1
+  }
+}

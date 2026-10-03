@@ -1,0 +1,34 @@
+{
+  "id": "samaria-mountains",
+  "name": "Samaria Mountains",
+  "landmark": "Sheep Dip Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -112.428,
+    41.799,
+    -111.896,
+    42.197
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.22,
+    "rawness": 0.204,
+    "grandeur": 0.213,
+    "dominance": 0.472
+  },
+  "features": {
+    "reliefM": 958,
+    "slopeMPerKm": 104.5,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 42.1,
+    "dominance": 0.5,
+    "summitM": 2539.9,
+    "lengthKm": 42.5
+  }
+}

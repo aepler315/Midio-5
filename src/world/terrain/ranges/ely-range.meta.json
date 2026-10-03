@@ -1,0 +1,34 @@
+{
+  "id": "ely-range",
+  "name": "Ely Range",
+  "landmark": "Mount Montezuma",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.984,
+    38.383,
+    -114.478,
+    38.781
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.249,
+    "rawness": 0.234,
+    "grandeur": 0.258,
+    "dominance": 0.618
+  },
+  "features": {
+    "reliefM": 1161,
+    "slopeMPerKm": 133.8,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 56.4,
+    "dominance": 0.6,
+    "summitM": 3345.9,
+    "lengthKm": 41.7
+  }
+}

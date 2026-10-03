@@ -1,0 +1,34 @@
+{
+  "id": "mosquito-range",
+  "name": "Mosquito Range",
+  "landmark": "Mosquito Range",
+  "region": "Colorado, USA",
+  "bbox": [
+    -106.438,
+    39.001,
+    -105.928,
+    39.399
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.25
+  },
+  "scores": {
+    "energy": 0.319,
+    "rawness": 0.302,
+    "grandeur": 0.309,
+    "dominance": 0.232
+  },
+  "features": {
+    "reliefM": 1389.2,
+    "slopeMPerKm": 155,
+    "peaksPer10Km": 2.7,
+    "roughnessM": 64.8,
+    "dominance": 0.2,
+    "summitM": 4343.3,
+    "lengthKm": 62.8
+  }
+}

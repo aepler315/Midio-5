@@ -1,0 +1,34 @@
+{
+  "id": "temblor-range",
+  "name": "Temblor Range",
+  "landmark": "McKittrick Summit",
+  "region": "California, USA",
+  "bbox": [
+    -120.006,
+    35.091,
+    -119.521,
+    35.49
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.113,
+    "rawness": 0.107,
+    "grandeur": 0.107,
+    "dominance": 0.521
+  },
+  "features": {
+    "reliefM": 482.9,
+    "slopeMPerKm": 52.4,
+    "peaksPer10Km": 1,
+    "roughnessM": 21.6,
+    "dominance": 0.5,
+    "summitM": 1320.1,
+    "lengthKm": 60.5
+  }
+}

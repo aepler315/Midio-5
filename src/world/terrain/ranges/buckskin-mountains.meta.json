@@ -1,0 +1,34 @@
+{
+  "id": "buckskin-mountains",
+  "name": "Buckskin Mountains",
+  "landmark": "Planet Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -114.22,
+    33.968,
+    -113.743,
+    34.366
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.15,
+    "rawness": 0.143,
+    "grandeur": 0.129,
+    "dominance": 0.571
+  },
+  "features": {
+    "reliefM": 580.9,
+    "slopeMPerKm": 62.8,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 25.4,
+    "dominance": 0.6,
+    "summitM": 909.8,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "santa-teresa-mountains",
+  "name": "Santa Teresa Mountains",
+  "landmark": "Mount Turnbull",
+  "region": "Arizona, USA",
+  "bbox": [
+    -110.497,
+    32.875,
+    -110.025,
+    33.273
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.22,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.209,
+    "rawness": 0.157,
+    "grandeur": 0.382,
+    "dominance": 0.476
+  },
+  "features": {
+    "reliefM": 1721.1,
+    "slopeMPerKm": 118.7,
+    "peaksPer10Km": 1,
+    "roughnessM": 49.7,
+    "dominance": 0.5,
+    "summitM": 2506.1,
+    "lengthKm": 41.7
+  }
+}

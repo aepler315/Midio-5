@@ -1,0 +1,34 @@
+{
+  "id": "north-sand-hills",
+  "name": "North Sand Hills",
+  "landmark": "Shipman Mountain",
+  "region": "Colorado, USA",
+  "bbox": [
+    -106.339,
+    40.629,
+    -105.817,
+    41.027
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.148,
+    "rawness": 0.118,
+    "grandeur": 0.302,
+    "dominance": 0.469
+  },
+  "features": {
+    "reliefM": 1359.3,
+    "slopeMPerKm": 78.2,
+    "peaksPer10Km": 0.6,
+    "roughnessM": 40.4,
+    "dominance": 0.5,
+    "summitM": 3850.7,
+    "lengthKm": 62.4
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "gray-hills",
+  "name": "Gray Hills",
+  "landmark": "Gray Hills",
+  "region": "Utah, USA",
+  "bbox": [
+    -112.548,
+    38.279,
+    -112.043,
+    38.677
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.284,
+    "rawness": 0.273,
+    "grandeur": 0.335,
+    "dominance": 0.456
+  },
+  "features": {
+    "reliefM": 1508,
+    "slopeMPerKm": 155,
+    "peaksPer10Km": 2,
+    "roughnessM": 74.4,
+    "dominance": 0.5,
+    "summitM": 3676.2,
+    "lengthKm": 64.7
+  }
+}

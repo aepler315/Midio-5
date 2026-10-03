@@ -1,0 +1,34 @@
+{
+  "id": "clearwater-mountains",
+  "name": "Clearwater Mountains",
+  "landmark": "Sheep Hill",
+  "region": "Idaho, USA",
+  "bbox": [
+    -115.371,
+    45.389,
+    -114.806,
+    45.787
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.213,
+    "rawness": 0.218,
+    "grandeur": 0.156,
+    "dominance": 0.3
+  },
+  "features": {
+    "reliefM": 703.5,
+    "slopeMPerKm": 109.6,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 48.7,
+    "dominance": 0.3,
+    "summitM": 2563.7,
+    "lengthKm": 63.2
+  }
+}

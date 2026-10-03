@@ -1,0 +1,34 @@
+{
+  "id": "deer-creek-range",
+  "name": "Deer Creek Range",
+  "landmark": "Reno Hill",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -106.329,
+    42.38,
+    -105.792,
+    42.778
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.164,
+    "rawness": 0.155,
+    "grandeur": 0.19,
+    "dominance": 0.357
+  },
+  "features": {
+    "reliefM": 856.9,
+    "slopeMPerKm": 73.9,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 35,
+    "dominance": 0.4,
+    "summitM": 2857.3,
+    "lengthKm": 59.7
+  }
+}

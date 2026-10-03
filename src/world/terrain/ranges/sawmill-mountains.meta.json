@@ -1,0 +1,34 @@
+{
+  "id": "sawmill-mountains",
+  "name": "Sawmill Mountains",
+  "landmark": "Mount Trumbull",
+  "region": "Arizona, USA",
+  "bbox": [
+    -113.384,
+    36.211,
+    -112.893,
+    36.609
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.206,
+    "rawness": 0.209,
+    "grandeur": 0.15,
+    "dominance": 0.519
+  },
+  "features": {
+    "reliefM": 673.8,
+    "slopeMPerKm": 100,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 43.5,
+    "dominance": 0.5,
+    "summitM": 2441.5,
+    "lengthKm": 41.7
+  }
+}

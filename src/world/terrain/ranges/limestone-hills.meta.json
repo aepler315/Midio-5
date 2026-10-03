@@ -1,0 +1,34 @@
+{
+  "id": "limestone-hills",
+  "name": "Limestone Hills",
+  "landmark": "Willow Tub Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.566,
+    38.193,
+    -114.061,
+    38.591
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.223,
+    "rawness": 0.224,
+    "grandeur": 0.146,
+    "dominance": 0.457
+  },
+  "features": {
+    "reliefM": 655.1,
+    "slopeMPerKm": 84.8,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 34.4,
+    "dominance": 0.5,
+    "summitM": 2835.6,
+    "lengthKm": 41.7
+  }
+}

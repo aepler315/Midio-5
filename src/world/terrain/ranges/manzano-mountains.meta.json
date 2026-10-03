@@ -1,0 +1,34 @@
+{
+  "id": "manzano-mountains",
+  "name": "Manzano Mountains",
+  "landmark": "Manzano Peak",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -106.687,
+    34.392,
+    -106.207,
+    34.79
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.15,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.157,
+    "rawness": 0.122,
+    "grandeur": 0.267,
+    "dominance": 0.263
+  },
+  "features": {
+    "reliefM": 1203.7,
+    "slopeMPerKm": 75.7,
+    "peaksPer10Km": 0.9,
+    "roughnessM": 31.6,
+    "dominance": 0.3,
+    "summitM": 3068.4,
+    "lengthKm": 42.5
+  }
+}

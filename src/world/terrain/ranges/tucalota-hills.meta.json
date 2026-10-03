@@ -1,0 +1,34 @@
+{
+  "id": "tucalota-hills",
+  "name": "Tucalota Hills",
+  "landmark": "Cahuilla Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -117.02,
+    33.378,
+    -116.546,
+    33.776
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.13,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.262,
+    "rawness": 0.196,
+    "grandeur": 0.495,
+    "dominance": 0.482
+  },
+  "features": {
+    "reliefM": 2225.9,
+    "slopeMPerKm": 105.5,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 46.5,
+    "dominance": 0.5,
+    "summitM": 2687.4,
+    "lengthKm": 73.3
+  }
+}

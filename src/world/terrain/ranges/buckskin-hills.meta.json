@@ -1,0 +1,34 @@
+{
+  "id": "buckskin-hills",
+  "name": "Buckskin Hills",
+  "landmark": "Buckskin Hills",
+  "region": "Utah, USA",
+  "bbox": [
+    -114.088,
+    38.898,
+    -113.579,
+    39.296
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.165,
+    "rawness": 0.161,
+    "grandeur": 0.141,
+    "dominance": 0.386
+  },
+  "features": {
+    "reliefM": 636,
+    "slopeMPerKm": 81.6,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 34.8,
+    "dominance": 0.4,
+    "summitM": 2457.1,
+    "lengthKm": 41.7
+  }
+}

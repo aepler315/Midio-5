@@ -1,0 +1,34 @@
+{
+  "id": "grenadier-range",
+  "name": "Grenadier Range",
+  "landmark": "Grenadier Range",
+  "region": "Colorado, USA",
+  "bbox": [
+    -107.83,
+    37.484,
+    -107.331,
+    37.882
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.28
+  },
+  "scores": {
+    "energy": 0.246,
+    "rawness": 0.258,
+    "grandeur": 0.151,
+    "dominance": 0.435
+  },
+  "features": {
+    "reliefM": 680.7,
+    "slopeMPerKm": 144,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 62.3,
+    "dominance": 0.4,
+    "summitM": 4279.9,
+    "lengthKm": 42.5
+  }
+}

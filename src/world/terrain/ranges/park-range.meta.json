@@ -1,0 +1,34 @@
+{
+  "id": "park-range",
+  "name": "Park Range",
+  "landmark": "Moonshine Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.503,
+    38.781,
+    -115.995,
+    39.179
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.15
+  },
+  "scores": {
+    "energy": 0.149,
+    "rawness": 0.151,
+    "grandeur": 0.1,
+    "dominance": 0.695
+  },
+  "features": {
+    "reliefM": 450.3,
+    "slopeMPerKm": 72.9,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 30.5,
+    "dominance": 0.7,
+    "summitM": 3067.7,
+    "lengthKm": 42.5
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "lost-creek-hills",
+  "name": "Lost Creek Hills",
+  "landmark": "Fox Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -119.82,
+    40.826,
+    -119.296,
+    41.224
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.18
+  },
+  "scores": {
+    "energy": 0.162,
+    "rawness": 0.169,
+    "grandeur": 0.128,
+    "dominance": 0.648
+  },
+  "features": {
+    "reliefM": 574.6,
+    "slopeMPerKm": 84.9,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 40.2,
+    "dominance": 0.6,
+    "summitM": 2494.4,
+    "lengthKm": 42.5
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "leach-range",
+  "name": "Leach Range",
+  "landmark": "Murdock Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.629,
+    41.022,
+    -114.103,
+    41.42
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.224,
+    "rawness": 0.225,
+    "grandeur": 0.147,
+    "dominance": 0.44
+  },
+  "features": {
+    "reliefM": 662.1,
+    "slopeMPerKm": 106.5,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 43.4,
+    "dominance": 0.4,
+    "summitM": 2527.7,
+    "lengthKm": 41.7
+  }
+}

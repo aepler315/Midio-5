@@ -1,0 +1,34 @@
+{
+  "id": "picabo-hills",
+  "name": "Picabo Hills",
+  "landmark": "Bell Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -114.383,
+    43.232,
+    -113.839,
+    43.63
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.2,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.295,
+    "rawness": 0.258,
+    "grandeur": 0.38,
+    "dominance": 0.59
+  },
+  "features": {
+    "reliefM": 1708.2,
+    "slopeMPerKm": 127.5,
+    "peaksPer10Km": 2.3,
+    "roughnessM": 54.1,
+    "dominance": 0.6,
+    "summitM": 3243.8,
+    "lengthKm": 68.3
+  }
+}

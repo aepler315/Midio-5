@@ -1,0 +1,34 @@
+{
+  "id": "chupadera-mountains",
+  "name": "Chupadera Mountains",
+  "landmark": "Chupadera Mountains",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -107.224,
+    33.741,
+    -106.747,
+    34.139
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.214,
+    "rawness": 0.167,
+    "grandeur": 0.337,
+    "dominance": 0.363
+  },
+  "features": {
+    "reliefM": 1516.6,
+    "slopeMPerKm": 97.5,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 37.9,
+    "dominance": 0.4,
+    "summitM": 3281.4,
+    "lengthKm": 41.7
+  }
+}

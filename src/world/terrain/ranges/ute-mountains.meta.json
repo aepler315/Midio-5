@@ -1,0 +1,34 @@
+{
+  "id": "ute-mountains",
+  "name": "Ute Mountains",
+  "landmark": "Mount Nutt",
+  "region": "Arizona, USA",
+  "bbox": [
+    -114.595,
+    34.889,
+    -114.112,
+    35.287
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.206,
+    "rawness": 0.21,
+    "grandeur": 0.127,
+    "dominance": 0.512
+  },
+  "features": {
+    "reliefM": 569.6,
+    "slopeMPerKm": 88.6,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 36.6,
+    "dominance": 0.5,
+    "summitM": 1578.9,
+    "lengthKm": 42.5
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "siskiyou-mountains",
+  "name": "Siskiyou Mountains",
+  "landmark": "Preston Peak",
+  "region": "California, USA",
+  "bbox": [
+    -123.878,
+    41.636,
+    -123.347,
+    42.034
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.323,
+    "rawness": 0.314,
+    "grandeur": 0.324,
+    "dominance": 0.346
+  },
+  "features": {
+    "reliefM": 1455.9,
+    "slopeMPerKm": 160.4,
+    "peaksPer10Km": 2.7,
+    "roughnessM": 72.8,
+    "dominance": 0.3,
+    "summitM": 2199.8,
+    "lengthKm": 60.1
+  }
+}

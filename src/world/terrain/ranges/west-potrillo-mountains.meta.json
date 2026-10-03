@@ -1,0 +1,34 @@
+{
+  "id": "west-potrillo-mountains",
+  "name": "West Potrillo Mountains",
+  "landmark": "West Potrillo Mountains",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -107.396,
+    31.826,
+    -106.93,
+    32.224
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.13,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.173,
+    "rawness": 0.186,
+    "grandeur": 0.076,
+    "dominance": 0.519
+  },
+  "features": {
+    "reliefM": 341.9,
+    "slopeMPerKm": 72.2,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 31.1,
+    "dominance": 0.5,
+    "summitM": 1685.2,
+    "lengthKm": 41.7
+  }
+}

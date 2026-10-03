@@ -1,0 +1,34 @@
+{
+  "id": "east-pahranagat-range",
+  "name": "East Pahranagat Range",
+  "landmark": "East Pahranagat Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.48,
+    37.101,
+    -114.983,
+    37.499
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.23
+  },
+  "scores": {
+    "energy": 0.22,
+    "rawness": 0.229,
+    "grandeur": 0.294,
+    "dominance": 0.77
+  },
+  "features": {
+    "reliefM": 1322.9,
+    "slopeMPerKm": 118.3,
+    "peaksPer10Km": 1.5,
+    "roughnessM": 70,
+    "dominance": 0.8,
+    "summitM": 2422.7,
+    "lengthKm": 68.3
+  }
+}

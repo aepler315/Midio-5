@@ -1,0 +1,34 @@
+{
+  "id": "east-gate-range",
+  "name": "East Gate Range",
+  "landmark": "East Gate Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -118.147,
+    39.04,
+    -117.637,
+    39.438
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.17
+  },
+  "scores": {
+    "energy": 0.256,
+    "rawness": 0.276,
+    "grandeur": 0.232,
+    "dominance": 0.552
+  },
+  "features": {
+    "reliefM": 1045.7,
+    "slopeMPerKm": 129.8,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 70.7,
+    "dominance": 0.6,
+    "summitM": 3036,
+    "lengthKm": 41.7
+  }
+}

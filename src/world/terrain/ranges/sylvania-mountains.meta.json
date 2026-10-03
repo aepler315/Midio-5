@@ -1,0 +1,34 @@
+{
+  "id": "sylvania-mountains",
+  "name": "Sylvania Mountains",
+  "landmark": "Sylvania Mountains",
+  "region": "Nevada, USA",
+  "bbox": [
+    -117.965,
+    37.193,
+    -117.467,
+    37.591
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.2
+  },
+  "scores": {
+    "energy": 0.244,
+    "rawness": 0.272,
+    "grandeur": 0.176,
+    "dominance": 0.443
+  },
+  "features": {
+    "reliefM": 791.1,
+    "slopeMPerKm": 150.5,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 76.8,
+    "dominance": 0.4,
+    "summitM": 2635.1,
+    "lengthKm": 41.7
+  }
+}

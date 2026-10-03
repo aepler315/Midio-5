@@ -1,0 +1,34 @@
+{
+  "id": "sawtooth-mountains-california-usa",
+  "name": "Sawtooth Mountains",
+  "landmark": "Monument Peak",
+  "region": "California, USA",
+  "bbox": [
+    -116.656,
+    32.694,
+    -116.185,
+    33.092
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.197,
+    "rawness": 0.183,
+    "grandeur": 0.214,
+    "dominance": 0.338
+  },
+  "features": {
+    "reliefM": 963.3,
+    "slopeMPerKm": 89.2,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 38.6,
+    "dominance": 0.3,
+    "summitM": 1973.8,
+    "lengthKm": 60.5
+  }
+}

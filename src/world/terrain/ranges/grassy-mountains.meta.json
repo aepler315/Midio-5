@@ -1,0 +1,34 @@
+{
+  "id": "grassy-mountains",
+  "name": "Grassy Mountains",
+  "landmark": "Craner Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -113.082,
+    40.681,
+    -112.559,
+    41.079
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.13,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.16,
+    "rawness": 0.16,
+    "grandeur": 0.117,
+    "dominance": 0.563
+  },
+  "features": {
+    "reliefM": 526.3,
+    "slopeMPerKm": 81.7,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 34.3,
+    "dominance": 0.6,
+    "summitM": 2041.8,
+    "lengthKm": 41.7
+  }
+}

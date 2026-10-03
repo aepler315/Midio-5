@@ -1,0 +1,34 @@
+{
+  "id": "wooley-range",
+  "name": "Wooley Range",
+  "landmark": "Diamond Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -111.455,
+    42.596,
+    -110.916,
+    42.994
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.35
+  },
+  "scores": {
+    "energy": 0.243,
+    "rawness": 0.254,
+    "grandeur": 0.117,
+    "dominance": 0.48
+  },
+  "features": {
+    "reliefM": 525.3,
+    "slopeMPerKm": 103,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 41.9,
+    "dominance": 0.5,
+    "summitM": 2777.5,
+    "lengthKm": 41.7
+  }
+}

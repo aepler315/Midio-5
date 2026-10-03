@@ -1,0 +1,34 @@
+{
+  "id": "augusta-mountains",
+  "name": "Augusta Mountains",
+  "landmark": "Augusta Mountains",
+  "region": "Nevada, USA",
+  "bbox": [
+    -117.788,
+    39.817,
+    -117.272,
+    40.215
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.173,
+    "rawness": 0.163,
+    "grandeur": 0.232,
+    "dominance": 0.806
+  },
+  "features": {
+    "reliefM": 1042.2,
+    "slopeMPerKm": 87.9,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 44.5,
+    "dominance": 0.8,
+    "summitM": 2627.7,
+    "lengthKm": 41.7
+  }
+}

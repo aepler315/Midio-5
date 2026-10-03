@@ -1,0 +1,34 @@
+{
+  "id": "palo-verde-mountains",
+  "name": "Palo Verde Mountains",
+  "landmark": "Palo Verde Peak",
+  "region": "California, USA",
+  "bbox": [
+    -115.013,
+    33.13,
+    -114.54,
+    33.529
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.09,
+    "rawness": 0.096,
+    "grandeur": 0.105,
+    "dominance": 0.735
+  },
+  "features": {
+    "reliefM": 474.7,
+    "slopeMPerKm": 42.7,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 25.5,
+    "dominance": 0.7,
+    "summitM": 665.5,
+    "lengthKm": 41.7
+  }
+}

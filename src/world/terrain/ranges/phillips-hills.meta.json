@@ -1,0 +1,34 @@
+{
+  "id": "phillips-hills",
+  "name": "Phillips Hills",
+  "landmark": "Godfrey Peak",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -106.196,
+    33.27,
+    -105.722,
+    33.668
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.19,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.277,
+    "rawness": 0.236,
+    "grandeur": 0.392,
+    "dominance": 0.496
+  },
+  "features": {
+    "reliefM": 1765.2,
+    "slopeMPerKm": 136.7,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 58.5,
+    "dominance": 0.5,
+    "summitM": 3634.4,
+    "lengthKm": 42.1
+  }
+}

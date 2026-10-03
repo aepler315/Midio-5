@@ -1,0 +1,34 @@
+{
+  "id": "webster-range",
+  "name": "Webster Range",
+  "landmark": "Draney Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -111.429,
+    42.545,
+    -110.891,
+    42.943
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.36
+  },
+  "scores": {
+    "energy": 0.285,
+    "rawness": 0.319,
+    "grandeur": 0.084,
+    "dominance": 0.499
+  },
+  "features": {
+    "reliefM": 377,
+    "slopeMPerKm": 136.6,
+    "peaksPer10Km": 3.1,
+    "roughnessM": 60.6,
+    "dominance": 0.5,
+    "summitM": 2757.7,
+    "lengthKm": 42.1
+  }
+}

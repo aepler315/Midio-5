@@ -1,0 +1,34 @@
+{
+  "id": "blackington-hills",
+  "name": "Blackington Hills",
+  "landmark": "La Cebolla",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -106.874,
+    33.956,
+    -106.396,
+    34.354
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.116,
+    "rawness": 0.098,
+    "grandeur": 0.18,
+    "dominance": 0.354
+  },
+  "features": {
+    "reliefM": 809,
+    "slopeMPerKm": 52.8,
+    "peaksPer10Km": 0.8,
+    "roughnessM": 24.4,
+    "dominance": 0.4,
+    "summitM": 2233.9,
+    "lengthKm": 63.6
+  }
+}

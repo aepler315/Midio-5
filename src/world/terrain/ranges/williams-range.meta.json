@@ -1,0 +1,34 @@
+{
+  "id": "williams-range",
+  "name": "Williams Range",
+  "landmark": "Rhodes Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -115.072,
+    46.476,
+    -114.496,
+    46.874
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.195,
+    "rawness": 0.208,
+    "grandeur": 0.123,
+    "dominance": 0.524
+  },
+  "features": {
+    "reliefM": 553,
+    "slopeMPerKm": 91.5,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 43,
+    "dominance": 0.5,
+    "summitM": 2406.3,
+    "lengthKm": 41.7
+  }
+}

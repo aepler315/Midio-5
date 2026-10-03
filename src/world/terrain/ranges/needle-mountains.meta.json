@@ -1,0 +1,34 @@
+{
+  "id": "needle-mountains",
+  "name": "Needle Mountains",
+  "landmark": "North Eolus",
+  "region": "Colorado, USA",
+  "bbox": [
+    -107.871,
+    37.426,
+    -107.372,
+    37.824
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.14
+  },
+  "scores": {
+    "energy": 0.339,
+    "rawness": 0.366,
+    "grandeur": 0.173,
+    "dominance": 0.378
+  },
+  "features": {
+    "reliefM": 776.5,
+    "slopeMPerKm": 172.7,
+    "peaksPer10Km": 3.3,
+    "roughnessM": 76.9,
+    "dominance": 0.4,
+    "summitM": 4199.6,
+    "lengthKm": 42.1
+  }
+}

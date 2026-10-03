@@ -1,0 +1,34 @@
+{
+  "id": "castle-mountains",
+  "name": "Castle Mountains",
+  "landmark": "Crescent Peak",
+  "region": "California, USA",
+  "bbox": [
+    -115.371,
+    35.277,
+    -114.886,
+    35.675
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.218,
+    "rawness": 0.223,
+    "grandeur": 0.137,
+    "dominance": 0.724
+  },
+  "features": {
+    "reliefM": 615.1,
+    "slopeMPerKm": 100.7,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 42.1,
+    "dominance": 0.7,
+    "summitM": 2135.7,
+    "lengthKm": 41.7
+  }
+}
