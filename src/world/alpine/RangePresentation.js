@@ -501,6 +501,7 @@ export class RangePresentation {
     });
     this.scene.prepareShafts?.(this.frame, incoming ? [view.id, incoming.id] : [view.id]);
     this.skyPan = this._skyPan(view, incoming, this.frame);
+    this.scene.skyPan = this.skyPan; // rain curtains and lightning stand where the sky draws them
     this.viewId = view.id;
     this.active = true;
     this.reason = null;

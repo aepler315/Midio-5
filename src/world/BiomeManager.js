@@ -1,4 +1,4 @@
-import { stormAt, drawStormSky } from './alpine/RangeStorm.js';
+import { stormAt, drawStormSky, arrivingStorm } from './alpine/RangeStorm.js';
 import { ridgeAdvectionPxAt } from './RidgeMotionHistory.js';
 import { RidgeMotionHistory, createRidgeMusicSampler } from './RidgeMotionHistory.js';
 import { resolveLandscapePresentation } from './LandscapePresentation.js';
@@ -2719,8 +2719,11 @@ export class BiomeManager {
         allowPoint: this._rangeSky?.allowPoint || null,
       }));
     }
-    if (this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
-      this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), {
+    // Only over the GPU scene, whose land darkens under the deck with it;
+    // the legacy fallback keeps its own daylight palette.
+    // It enters with the arriving scene, at the partitions' own alpha.
+    if (this._rangeV2Active && this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
+      arrivingStorm(this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), this.rangePresentation?.arrival ?? 1), {
         tSec: this.tSec, seed: this.songSeed || 0, pan: this.rangePresentation?.skyPan,
         light: this._scenicLight, reducedMotion: this.reducedMotion,
       });
@@ -5464,7 +5467,9 @@ export class BiomeManager {
     // into the sunrise or sunset's own colour while one burns.
     const darkness = this.celestialState?.darkness01 ?? 0;
     const strength = presence * (0.55 + 0.45 * activity) * (this.reducedFlash ? 0.5 : 1)
-      * clamp01(mask.arrival ?? 1) * (1 - CREST_LIGHT_DARK_CUT * darkness);
+      * clamp01(mask.arrival ?? 1) * (1 - CREST_LIGHT_DARK_CUT * darkness)
+      // No sun reaches the crests under the climax squall's deck.
+      * (1 - clamp01(this.rangePresentation?.frame?.storm?.amount ?? 0));
     if (strength < 0.005) return;
     const W = mask.width, H = mask.height;
     // The band is drawn small and blurred, then enlarged: a smooth falloff
