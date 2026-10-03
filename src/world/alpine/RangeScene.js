@@ -1,4 +1,4 @@
-import { giantLayout, giantAmounts } from './LandscapeGiants.js';
+import { giantLayout, giantAmounts, mirrorGiantSpan, aheadOfEye } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
 // here, renders transparent terrain partitions that RangePresentation copies
@@ -74,6 +74,9 @@ function waterLevel(data) {
   hs.sort((a, b) => a - b);
   return hs[hs.length >> 1];
 }
+
+/** Midio's mirrored sheet keeps this far ahead of a zoomed-in eye. */
+const MIDIO_MIN_AHEAD_M = 600;
 
 export class RangeScene {
   /** `THREE` is the local bundle; `residency` the shared ledger. */
@@ -848,21 +851,28 @@ export class RangeScene {
       u.uGiantPeak.value = amounts;
       layout.centers.forEach((center, i) => u.uGiantCenter.value[i].set(...center));
       layout.skyCenters.forEach((center, i) => u.uSkyGiantCenter.value[i].set(...center));
-      if (layout.hasLake) u.uGiantCenter.value[0].y = p.waterLevelM;
       u.uGiantSpan.value = layout.spans;
+      if (layout.hasLake) {
+        const eye = this.camera.position.toArray();
+        const center = aheadOfEye(layout.centers[0], eye, layout.forward, MIDIO_MIN_AHEAD_M);
+        u.uGiantCenter.value[0].set(center[0], p.waterLevelM, center[2]);
+        const bottom = new THREE.Vector3(0, -.92, .5).unproject(this.camera).sub(this.camera.position);
+        u.uGiantSpan.value = [mirrorGiantSpan(eye, bottom.toArray(), center,
+          p.waterLevelM, MIRROR_LIFT, layout.spans[0]), ...layout.spans.slice(1)];
+      }
+      u.uMirrorAspect.value = layout.hasLake ? 1 / MIRROR_LIFT : 1;
+      u.uSkyGiantSpan.value = layout.skySpan;
       u.uGiantRight.value.set(...layout.right); u.uGiantForward.value.set(...layout.forward);
-      // Project from the sun when its angle meets the caster plane. At
-      // grazing angles, the actor's lantern takes over without singularities.
-      const sunRay = u.uLightDir.value;
-      u.uShadowRay.value.copy(Math.abs(sunRay.dot(u.uGiantForward.value)) > .25 && c.body === 'sun'
-        ? sunRay : u.uGiantForward.value.clone().add(new THREE.Vector3(0,.25,0)).normalize());
+      // Broshi's lantern is carried just behind the viewer, so his shadow
+      // lands on the range in his own proportions (a Brocken spectre).
+      u.uShadowEye.value.copy(this.camera.position);
       u.uMidioCloud.value = layout.hasLake && Number.isFinite(p.mirrorLevelM) ? 0 : 1;
       u.uGiantTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     }
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0),
-      sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .88, u.uMidioCloud.value * amounts[0] * .88), cameraY: this.camera.position.y });
+      sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .3, u.uMidioCloud.value * amounts[0] * .3), cameraY: this.camera.position.y });
     const quality = rangeQuality(frame.qualityLevel);
     u.uMistDensity.value = mp.density * (n?.atmosphere ?? 1);
     u.uMistSteps.value = quality.mistSteps;
@@ -878,10 +888,6 @@ export class RangeScene {
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
     u.uCameraPos.value.copy(this.camera.position);
     this._setActors(p, frame);
-    if (layout && (c.body !== 'sun' || Math.abs(u.uLightDir.value.dot(u.uGiantForward.value)) <= .25)) {
-      const lantern = u.uActorPos.value[1].clone().sub(u.uGiantCenter.value[1]).normalize();
-      if (Math.abs(lantern.dot(u.uGiantForward.value)) > .25) u.uShadowRay.value.copy(lantern);
-    }
   }
 
   /**
