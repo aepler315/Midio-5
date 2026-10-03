@@ -324,6 +324,9 @@ export class RangeScene {
       mirrorTextureMatrix(THREE, this.mirrorCamera, m.matrix);
       for (const fm of p.fringeMeshes || []) fm.visible = false;
       u.uMirrorAmount.value = 0;
+      // A disabled reflection still has an active sampler. Unbind the
+      // previous image before drawing into it to avoid framebuffer feedback.
+      u.uMirror.value = null;
       u.uClipBelow.value = level + MIRROR_CLIP_M;
       r.setRenderTarget(m.target);
       r.setClearColor(0x000000, 0);
