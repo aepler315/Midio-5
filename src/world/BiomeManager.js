@@ -1,4 +1,4 @@
-import { stormAt, drawStormSky } from './alpine/RangeStorm.js';
+import { stormAt, drawStormSky, arrivingStorm } from './alpine/RangeStorm.js';
 import { ridgeAdvectionPxAt } from './RidgeMotionHistory.js';
 import { RidgeMotionHistory, createRidgeMusicSampler } from './RidgeMotionHistory.js';
 import { resolveLandscapePresentation } from './LandscapePresentation.js';
@@ -2721,8 +2721,9 @@ export class BiomeManager {
     }
     // Only over the GPU scene, whose land darkens under the deck with it;
     // the legacy fallback keeps its own daylight palette.
+    // It enters with the arriving scene, at the partitions' own alpha.
     if (this._rangeV2Active && this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
-      this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), {
+      arrivingStorm(this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), this.rangePresentation?.arrival ?? 1), {
         tSec: this.tSec, seed: this.songSeed || 0, pan: this.rangePresentation?.skyPan,
         light: this._scenicLight, reducedMotion: this.reducedMotion,
       });

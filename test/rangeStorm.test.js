@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileStorm, stormAt, rainCurtain, STORM_GLSL } from '../src/world/alpine/RangeStorm.js';
+import { compileStorm, stormAt, rainCurtain, STORM_GLSL, arrivingStorm } from '../src/world/alpine/RangeStorm.js';
 const energyCurves = { globalEnergyNorm: t => t >= 40000 && t < 60000 ? .95 : .25 };
 const sections = [{ startMs: 0, endMs: 40000 }, { startMs: 40000, endMs: 60000 }, { startMs: 60000, endMs: 120000 }];
 const timeline = [{ tMs: 45000, pitch: 38, role: 'RHYTHM', vel: .9 }, { tMs: 45100, pitch: 40, channel: 9, vel: 1 }, { tMs: 47000, pitch: 36, role: 'RHYTHM', vel: 1 }];
@@ -94,4 +94,11 @@ test('rain curtains leave gaps between them and drift slowly on the wind', () =>
 test('the GLSL rain curtain stays the twin of the sky\'s', () => {
   for (const term of ['u * 1.6 + t * 0.003', 'u * 3.7 - t * 0.005', 'smoothstep(0.32, 0.86, a * 0.65 + b * 0.35)'])
     assert.ok(STORM_GLSL.includes(term), term);
+});
+
+test('an arriving scene brings its storm sky in at its own alpha', () => {
+  const storm = { amount: 1, flash: .8, flashU: .3, break01: .5, wet01: 1 };
+  assert.equal(arrivingStorm(storm, 1), storm);
+  assert.deepEqual(arrivingStorm(storm, .25), { amount: .25, flash: .2, flashU: .3, break01: .125, wet01: 1 });
+  assert.equal(arrivingStorm(null, .5), null);
 });

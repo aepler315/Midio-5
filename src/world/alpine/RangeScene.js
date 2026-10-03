@@ -1098,7 +1098,10 @@ export class RangeScene {
     // The scene's key light, re-expressed for the stage: from behind and
     // above, on the celestial's side of the frame.
     const THREE = this.THREE;
-    const key = frame.light.ground;
+    // A lightning flash lights the stage from its strike, as it does the land.
+    const storm = frame.storm, strike = Math.min(1, (storm?.flash || 0) * 3);
+    const key = strike > 0 ? { x: frame.light.ground.x + (((storm.flashU ?? .5) + (u.uRainShift?.value || 0)) * vp.logicalWidth - frame.light.ground.x) * strike,
+      y: frame.light.ground.y + (vp.logicalHeight * .15 - frame.light.ground.y) * strike } : frame.light.ground;
     // Stage normals use +Y upward; the recorded ground anchor is Canvas
     // +Y downward. Keep the existing shallow depth/rock calibration.
     const lightDir = new THREE.Vector3((key.x - vp.logicalWidth * .5) / vp.logicalHeight,

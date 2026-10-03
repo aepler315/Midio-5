@@ -114,6 +114,11 @@ export function stormAt(mgr, timeMs) {
  * ground inside the same curtains, rainCurtain), lightning glows inside the
  * cloud rather than as a bolt laid over the peaks, and as the storm breaks
  * the deck tears into sunlit remnants. The lake's backdrop captures this sky. */
+/** The storm's sky scaled to an arriving scene's alpha (0..1). */
+export function arrivingStorm(storm, arrival = 1) {
+  const a = unit(arrival);
+  return a >= 1 || !storm ? storm : { ...storm, amount: unit(storm.amount) * a, break01: unit(storm.break01) * a, flash: unit(storm.flash) * a };
+}
 export function drawStormSky(ctx, canvas, storm, { tSec = 0, seed = 0, pan = null, light, reducedMotion = false } = {}) {
   const amount = unit(storm?.amount), breaking = unit(storm?.break01), flash = unit(storm?.flash);
   if (amount < .001 && breaking < .001) return;
@@ -147,20 +152,19 @@ export function drawStormSky(ctx, canvas, storm, { tSec = 0, seed = 0, pan = nul
       .filter(b => b.alpha > .01);
     drawRangeClouds(ctx, lit, { dark: [150, 168, 215], lit: [222, 232, 255], light: { x: fx, y: fy }, directGain: 1.2 });
   }
-  // Rain curtains hanging from the deck's base, slanted by the wind; the
-  // terrain passes continue them in front of the far land.
+  // Rain curtains hanging from the deck's base; the terrain passes continue
+  // them in front of the far land, so they hang plumb like the veil does.
   if (amount > .001) {
-    const top = h * .2, bottom = h, slant = w * .05, step = Math.max(1, Math.round(w / 240));
+    const top = h * .2, bottom = h, step = Math.max(1, Math.round(w / 240));
     const fall = ctx.createLinearGradient(0, top, 0, bottom);
     const c = [118 + flash * 90, 128 + flash * 90, 140 + flash * 95].map(Math.round).join(',');
     fall.addColorStop(0, `rgba(${c},0)`); fall.addColorStop(.18, `rgba(${c},1)`); fall.addColorStop(1, `rgba(${c},.8)`);
     ctx.fillStyle = fall;
-    for (let x = -slant; x < w; x += step) {
-      const k = rainCurtain((x + slant * .5) / w - panX, motion);
+    for (let x = 0; x < w; x += step) {
+      const k = rainCurtain((x + step * .5) / w - panX, motion);
       if (k < .01) continue;
       ctx.globalAlpha = k * amount * .5;
-      ctx.beginPath(); ctx.moveTo(x + slant, top); ctx.lineTo(x + slant + step, top);
-      ctx.lineTo(x + step, bottom); ctx.lineTo(x, bottom); ctx.closePath(); ctx.fill();
+      ctx.fillRect(x, top, step, bottom - top);
     }
   }
   ctx.restore();
