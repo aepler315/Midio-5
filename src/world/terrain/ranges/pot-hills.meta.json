@@ -1,0 +1,34 @@
+{
+  "id": "pot-hills",
+  "name": "Pot Hills",
+  "landmark": "Lone Butte",
+  "region": "Washington, USA",
+  "bbox": [
+    -120.03,
+    47.617,
+    -119.441,
+    48.015
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.01
+  },
+  "scores": {
+    "energy": 0.173,
+    "rawness": 0.159,
+    "grandeur": 0.248,
+    "dominance": 0.604
+  },
+  "features": {
+    "reliefM": 1116.6,
+    "slopeMPerKm": 82.9,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 42.4,
+    "dominance": 0.6,
+    "summitM": 1608,
+    "lengthKm": 41.7
+  }
+}

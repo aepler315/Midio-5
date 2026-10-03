@@ -18,9 +18,19 @@ export default {
    "ecoregion": "Alaska Peninsula montane taiga",
    "share": 0.65
   },
+  "alligator-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "arctic-cordillera": {
    "biome": "Tundra",
    "ecoregion": "Canadian High Arctic tundra",
+   "share": 1
+  },
+  "bear-paw-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
    "share": 1
   },
   "beaverhead-mountains": {
@@ -38,10 +48,20 @@ export default {
    "ecoregion": "Arizona Mountains forests",
    "share": 1
   },
+  "blue-buck-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.76
+  },
   "blue-ridge": {
    "biome": "Temperate Broadleaf & Mixed Forests",
    "ecoregion": "Appalachian-Blue Ridge forests",
    "share": 0.76
+  },
+  "bon-ayre-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
   },
   "book-cliffs": {
    "biome": "Deserts & Xeric Shrublands",
@@ -52,6 +72,11 @@ export default {
    "biome": "Boreal Forests/Taiga",
    "ecoregion": "Northern Cordillera forests",
    "share": 0.43
+  },
+  "boundary-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
   },
   "california-cascades": {
    "biome": "Temperate Conifer Forests",
@@ -67,6 +92,16 @@ export default {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Sierra Nevada forests",
    "share": 0.67
+  },
+  "chewelah-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "chickadee-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.92
   },
   "chigmit-mountains": {
    "biome": "Tundra",
@@ -93,6 +128,11 @@ export default {
    "ecoregion": "Central Pacific Northwest coastal forests",
    "share": 0.71
   },
+  "crowell-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "deep-creek-range": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Great Basin shrub steppe",
@@ -103,10 +143,20 @@ export default {
    "ecoregion": "California interior chaparral and woodlands",
    "share": 0.67
   },
+  "duncan-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.8
+  },
   "fairweather-range": {
    "biome": "N/A",
    "ecoregion": "Rock and Ice",
    "share": 0.86
+  },
+  "freezeout-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.92
   },
   "front-range": {
    "biome": "Temperate Conifer Forests",
@@ -123,15 +173,40 @@ export default {
    "ecoregion": "New England-Acadian forests",
    "share": 0.98
   },
+  "hooknose-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "hualapai-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Arizona Mountains forests",
    "share": 0.49
   },
+  "huckleberry-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "huckleberry-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 0.86
+  },
+  "iron-mountains-washington-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "jackson-mountains": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Great Basin shrub steppe",
    "share": 0.94
+  },
+  "kettle-river-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
   },
   "klamath-mountains": {
    "biome": "Temperate Conifer Forests",
@@ -143,6 +218,11 @@ export default {
    "ecoregion": "Colorado Plateau shrublands",
    "share": 0.71
   },
+  "lance-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 1
+  },
   "laurentian-mountains": {
    "biome": "Temperate Broadleaf & Mixed Forests",
    "ecoregion": "Eastern Canadian Forest-Boreal transition",
@@ -152,6 +232,11 @@ export default {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Okanogan dry forests",
    "share": 0.94
+  },
+  "linder-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
   },
   "little-belt-mountains": {
    "biome": "Temperate Grasslands, Savannas & Shrublands",
@@ -188,6 +273,16 @@ export default {
    "ecoregion": "Colorado Plateau shrublands",
    "share": 1
   },
+  "neville-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.67
+  },
+  "north-boulder-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "north-cascades": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "North Cascades conifer forests",
@@ -203,6 +298,11 @@ export default {
    "ecoregion": "Central-Southern Cascades Forests",
    "share": 0.76
   },
+  "oregon-city-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "pacific-ranges": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "British Columbia coastal conifer forests",
@@ -214,6 +314,11 @@ export default {
    "share": 0.94
   },
   "park-ranges": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "pelke-divide": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
    "share": 1
@@ -232,6 +337,11 @@ export default {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Great Basin shrub steppe",
    "share": 0.37
+  },
+  "pot-hills": {
+   "biome": "Temperate Grasslands, Savannas & Shrublands",
+   "ecoregion": "Palouse prairie",
+   "share": 0.94
   },
   "rainier": {
    "biome": "Temperate Conifer Forests",
@@ -288,6 +398,16 @@ export default {
    "ecoregion": "South Central Rockies forests",
    "share": 1
   },
+  "scalawag-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "selkirk-mountains-washington-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "selkirk-mountains": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Northern Rockies conifer forests",
@@ -338,6 +458,11 @@ export default {
    "ecoregion": "Central British Columbia Mountain forests",
    "share": 0.9
   },
+  "south-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.65
+  },
   "strawberry-range": {
    "biome": "Temperate Conifer Forests",
    "ecoregion": "Blue Mountains forests",
@@ -353,10 +478,25 @@ export default {
    "ecoregion": "South Central Rockies forests",
    "share": 1
   },
+  "the-summit-range": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
   "thudaka-range": {
    "biome": "Boreal Forests/Taiga",
    "ecoregion": "Northern Cordillera forests",
    "share": 1
+  },
+  "timber-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1
+  },
+  "timothy-ridge": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "North Cascades conifer forests",
+   "share": 0.96
   },
   "toquima-range": {
    "biome": "Deserts & Xeric Shrublands",
@@ -377,6 +517,11 @@ export default {
    "biome": "Tropical & Subtropical Coniferous Forests",
    "ecoregion": "Trans-Mexican Volcanic Belt pine-oak forests",
    "share": 0.51
+  },
+  "twin-mountains-washington-usa": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 0.82
   },
   "vaca-mountains": {
    "biome": "Mediterranean Forests, Woodlands & Scrub",

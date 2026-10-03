@@ -1,0 +1,34 @@
+{
+  "id": "huckleberry-range",
+  "name": "Huckleberry Range",
+  "landmark": "Monumental Mountain",
+  "region": "Washington, USA",
+  "bbox": [
+    -118.363,
+    48.291,
+    -117.767,
+    48.689
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.263,
+    "rawness": 0.258,
+    "grandeur": 0.224,
+    "dominance": 0.567
+  },
+  "features": {
+    "reliefM": 1006.6,
+    "slopeMPerKm": 144.5,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 61,
+    "dominance": 0.6,
+    "summitM": 1857.8,
+    "lengthKm": 41.7
+  }
+}

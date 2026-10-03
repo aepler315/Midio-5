@@ -53,6 +53,23 @@ export const RANGES = [
   "reliefM": 2754.6
  },
  {
+  "id": "alligator-ridge",
+  "name": "Alligator Ridge",
+  "landmark": "Twin Sisters",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.408,
+   "rawness": 0.461,
+   "grandeur": 0.196,
+   "dominance": 0.331
+  },
+  "lengthKm": 42.5,
+  "reliefM": 881.1
+ },
+ {
   "id": "arctic-cordillera",
   "name": "Arctic Cordillera",
   "landmark": "Mount Biederbick",
@@ -68,6 +85,23 @@ export const RANGES = [
   },
   "lengthKm": 67.9,
   "reliefM": 905.3
+ },
+ {
+  "id": "bear-paw-ridge",
+  "name": "Bear Paw Ridge",
+  "landmark": "Ojibway Knoll",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.263,
+   "rawness": 0.265,
+   "grandeur": 0.192,
+   "dominance": 0.47
+  },
+  "lengthKm": 41.7,
+  "reliefM": 862.6
  },
  {
   "id": "beaverhead-mountains",
@@ -121,6 +155,23 @@ export const RANGES = [
   "reliefM": 676.5
  },
  {
+  "id": "blue-buck-ridge",
+  "name": "Blue Buck Ridge",
+  "landmark": "Starvation Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.291,
+   "rawness": 0.286,
+   "grandeur": 0.265,
+   "dominance": 0.403
+  },
+  "lengthKm": 42.1,
+  "reliefM": 1193.2
+ },
+ {
   "id": "blue-ridge",
   "name": "Blue Ridge Mountains",
   "landmark": "Shenandoah",
@@ -136,6 +187,23 @@ export const RANGES = [
   },
   "lengthKm": 73.3,
   "reliefM": 878
+ },
+ {
+  "id": "bon-ayre-ridge",
+  "name": "Bon Ayre Ridge",
+  "landmark": "Blacktail Butte",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.235,
+   "rawness": 0.241,
+   "grandeur": 0.175,
+   "dominance": 0.546
+  },
+  "lengthKm": 39.8,
+  "reliefM": 785.8
  },
  {
   "id": "book-cliffs",
@@ -170,6 +238,23 @@ export const RANGES = [
   },
   "lengthKm": 41.7,
   "reliefM": 592.2
+ },
+ {
+  "id": "boundary-ridge",
+  "name": "Boundary Ridge",
+  "landmark": "Lead Hill",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.37,
+   "rawness": 0.362,
+   "grandeur": 0.322,
+   "dominance": 0.23
+  },
+  "lengthKm": 62.8,
+  "reliefM": 1447.1
  },
  {
   "id": "california-cascades",
@@ -221,6 +306,40 @@ export const RANGES = [
   },
   "lengthKm": 42.1,
   "reliefM": 1732.7
+ },
+ {
+  "id": "chewelah-mountains",
+  "name": "Chewelah Mountains",
+  "landmark": "Chewelah Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.295,
+   "rawness": 0.286,
+   "grandeur": 0.235,
+   "dominance": 0.486
+  },
+  "lengthKm": 41.7,
+  "reliefM": 1058.5
+ },
+ {
+  "id": "chickadee-ridge",
+  "name": "Chickadee Ridge",
+  "landmark": "Chickadee Ridge",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.348,
+   "rawness": 0.37,
+   "grandeur": 0.183,
+   "dominance": 0.489
+  },
+  "lengthKm": 42.5,
+  "reliefM": 824.5
  },
  {
   "id": "chigmit-mountains",
@@ -308,6 +427,23 @@ export const RANGES = [
   "reliefM": 836.2
  },
  {
+  "id": "crowell-ridge",
+  "name": "Crowell Ridge",
+  "landmark": "Sullivan Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.363,
+   "rawness": 0.379,
+   "grandeur": 0.192,
+   "dominance": 0.469
+  },
+  "lengthKm": 42.5,
+  "reliefM": 862.3
+ },
+ {
   "id": "deep-creek-range",
   "name": "Deep Creek Range",
   "landmark": "Ibapah Peak",
@@ -342,6 +478,23 @@ export const RANGES = [
   "reliefM": 945.9
  },
  {
+  "id": "duncan-ridge",
+  "name": "Duncan Ridge",
+  "landmark": "Juniper Point",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.264,
+   "rawness": 0.276,
+   "grandeur": 0.177,
+   "dominance": 0.605
+  },
+  "lengthKm": 41.7,
+  "reliefM": 798.5
+ },
+ {
   "id": "fairweather-range",
   "name": "Fairweather Range",
   "landmark": "Mount Fairweather",
@@ -357,6 +510,23 @@ export const RANGES = [
   },
   "lengthKm": 65.5,
   "reliefM": 4002.6
+ },
+ {
+  "id": "freezeout-ridge",
+  "name": "Freezeout Ridge",
+  "landmark": "Tiffany Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.335,
+   "rawness": 0.31,
+   "grandeur": 0.386,
+   "dominance": 0.263
+  },
+  "lengthKm": 66.3,
+  "reliefM": 1737.1
  },
  {
   "id": "front-range",
@@ -410,6 +580,23 @@ export const RANGES = [
   "reliefM": 983.5
  },
  {
+  "id": "hooknose-ridge",
+  "name": "Hooknose Ridge",
+  "landmark": "Abercrombie Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.282,
+   "rawness": 0.282,
+   "grandeur": 0.19,
+   "dominance": 0.365
+  },
+  "lengthKm": 41.7,
+  "reliefM": 856.9
+ },
+ {
   "id": "hualapai-mountains",
   "name": "Hualapai Mountains",
   "landmark": "Hayden Peak",
@@ -427,6 +614,57 @@ export const RANGES = [
   "reliefM": 1288.6
  },
  {
+  "id": "huckleberry-range",
+  "name": "Huckleberry Range",
+  "landmark": "Monumental Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.263,
+   "rawness": 0.258,
+   "grandeur": 0.224,
+   "dominance": 0.567
+  },
+  "lengthKm": 41.7,
+  "reliefM": 1006.6
+ },
+ {
+  "id": "huckleberry-ridge",
+  "name": "Huckleberry Ridge",
+  "landmark": "Togo Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.346,
+   "rawness": 0.362,
+   "grandeur": 0.212,
+   "dominance": 0.399
+  },
+  "lengthKm": 64.7,
+  "reliefM": 955.6
+ },
+ {
+  "id": "iron-mountains-washington-usa",
+  "name": "Iron Mountains",
+  "landmark": "Calispell Peak",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.366,
+   "rawness": 0.398,
+   "grandeur": 0.203,
+   "dominance": 0.559
+  },
+  "lengthKm": 41.7,
+  "reliefM": 911.4
+ },
+ {
   "id": "jackson-mountains",
   "name": "Jackson Mountains",
   "landmark": "Parrot Peak",
@@ -442,6 +680,23 @@ export const RANGES = [
   },
   "lengthKm": 41.7,
   "reliefM": 1352.4
+ },
+ {
+  "id": "kettle-river-range",
+  "name": "Kettle River Range",
+  "landmark": "Copper Butte",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.352,
+   "rawness": 0.396,
+   "grandeur": 0.163,
+   "dominance": 0.374
+  },
+  "lengthKm": 42.5,
+  "reliefM": 732.9
  },
  {
   "id": "klamath-mountains",
@@ -478,6 +733,23 @@ export const RANGES = [
   "reliefM": 1787.2
  },
  {
+  "id": "lance-hills",
+  "name": "Lance Hills",
+  "landmark": "Magnison Butte",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.087,
+   "rawness": 0.098,
+   "grandeur": 0.049,
+   "dominance": 0.403
+  },
+  "lengthKm": 41.7,
+  "reliefM": 218.3
+ },
+ {
   "id": "laurentian-mountains",
   "name": "Laurentian Mountains",
   "landmark": "Mont Tremblant",
@@ -510,6 +782,23 @@ export const RANGES = [
   },
   "lengthKm": 67.1,
   "reliefM": 2316.3
+ },
+ {
+  "id": "linder-ridge",
+  "name": "Linder Ridge",
+  "landmark": "Spokane Mount",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "scores": {
+   "energy": 0.19,
+   "rawness": 0.17,
+   "grandeur": 0.208,
+   "dominance": 0.754
+  },
+  "lengthKm": 41.7,
+  "reliefM": 935.1
  },
  {
   "id": "little-belt-mountains",
@@ -631,6 +920,40 @@ export const RANGES = [
   "reliefM": 351.6
  },
  {
+  "id": "neville-ridge",
+  "name": "Neville Ridge",
+  "landmark": "Ruby Hill",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.346,
+   "rawness": 0.362,
+   "grandeur": 0.273,
+   "dominance": 0.446
+  },
+  "lengthKm": 42.1,
+  "reliefM": 1230.4
+ },
+ {
+  "id": "north-boulder-ridge",
+  "name": "North Boulder Ridge",
+  "landmark": "Bulldog Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.319,
+   "rawness": 0.335,
+   "grandeur": 0.216,
+   "dominance": 0.351
+  },
+  "lengthKm": 42.5,
+  "reliefM": 973.8
+ },
+ {
   "id": "north-cascades",
   "name": "North Cascades",
   "landmark": "Glacier Peak",
@@ -680,6 +1003,23 @@ export const RANGES = [
   },
   "lengthKm": 41.7,
   "reliefM": 2173.5
+ },
+ {
+  "id": "oregon-city-ridge",
+  "name": "Oregon City Ridge",
+  "landmark": "Lynx Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.284,
+   "rawness": 0.298,
+   "grandeur": 0.211,
+   "dominance": 0.493
+  },
+  "lengthKm": 41.7,
+  "reliefM": 951.3
  },
  {
   "id": "pacific-ranges",
@@ -733,6 +1073,23 @@ export const RANGES = [
   "reliefM": 1241.3
  },
  {
+  "id": "pelke-divide",
+  "name": "Pelke Divide",
+  "landmark": "South Baldy",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.256,
+   "rawness": 0.264,
+   "grandeur": 0.156,
+   "dominance": 0.509
+  },
+  "lengthKm": 41.7,
+  "reliefM": 702.8
+ },
+ {
   "id": "peninsular-ranges",
   "name": "Peninsular Ranges",
   "landmark": "Volcán Las Tres Vírgenes",
@@ -782,6 +1139,23 @@ export const RANGES = [
   },
   "lengthKm": 62.4,
   "reliefM": 2120.5
+ },
+ {
+  "id": "pot-hills",
+  "name": "Pot Hills",
+  "landmark": "Lone Butte",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.173,
+   "rawness": 0.159,
+   "grandeur": 0.248,
+   "dominance": 0.604
+  },
+  "lengthKm": 41.7,
+  "reliefM": 1116.6
  },
  {
   "id": "rainier",
@@ -971,6 +1345,40 @@ export const RANGES = [
   "reliefM": 654.8
  },
  {
+  "id": "scalawag-ridge",
+  "name": "Scalawag Ridge",
+  "landmark": "Paradise Peak",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.35,
+   "rawness": 0.393,
+   "grandeur": 0.153,
+   "dominance": 0.325
+  },
+  "lengthKm": 41.7,
+  "reliefM": 690.2
+ },
+ {
+  "id": "selkirk-mountains-washington-usa",
+  "name": "Selkirk Mountains",
+  "landmark": "Gypsy Peak",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.337,
+   "rawness": 0.364,
+   "grandeur": 0.135,
+   "dominance": 0.521
+  },
+  "lengthKm": 42.9,
+  "reliefM": 605.5
+ },
+ {
   "id": "selkirk-mountains",
   "name": "Selkirk Mountains",
   "landmark": "Mount Proteus",
@@ -1141,6 +1549,23 @@ export const RANGES = [
   "reliefM": 976.8
  },
  {
+  "id": "south-ridge",
+  "name": "South Ridge",
+  "landmark": "Bear Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.294,
+   "rawness": 0.292,
+   "grandeur": 0.29,
+   "dominance": 0.546
+  },
+  "lengthKm": 41.7,
+  "reliefM": 1302.8
+ },
+ {
   "id": "strawberry-range",
   "name": "Strawberry Range",
   "landmark": "Strawberry Mountain",
@@ -1192,6 +1617,23 @@ export const RANGES = [
   "reliefM": 1139.3
  },
  {
+  "id": "the-summit-range",
+  "name": "The Summit Range",
+  "landmark": "Huckleberry Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.232,
+   "rawness": 0.213,
+   "grandeur": 0.271,
+   "dominance": 0.36
+  },
+  "lengthKm": 64.4,
+  "reliefM": 1219.3
+ },
+ {
   "id": "thudaka-range",
   "name": "Thudaka Range",
   "landmark": "Thudaka Peak",
@@ -1207,6 +1649,40 @@ export const RANGES = [
   },
   "lengthKm": 41.7,
   "reliefM": 814.2
+ },
+ {
+  "id": "timber-ridge",
+  "name": "Timber Ridge",
+  "landmark": "Timber Ridge",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "scores": {
+   "energy": 0.44,
+   "rawness": 0.509,
+   "grandeur": 0.19,
+   "dominance": 0.274
+  },
+  "lengthKm": 41.7,
+  "reliefM": 853.6
+ },
+ {
+  "id": "timothy-ridge",
+  "name": "Timothy Ridge",
+  "landmark": "Rock Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.305,
+   "rawness": 0.265,
+   "grandeur": 0.402,
+   "dominance": 0.262
+  },
+  "lengthKm": 67.5,
+  "reliefM": 1810
  },
  {
   "id": "toquima-range",
@@ -1275,6 +1751,23 @@ export const RANGES = [
   },
   "lengthKm": 42.1,
   "reliefM": 2938.8
+ },
+ {
+  "id": "twin-mountains-washington-usa",
+  "name": "Twin Mountains",
+  "landmark": "Scoop Mountain",
+  "region": "Washington, USA",
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "scores": {
+   "energy": 0.141,
+   "rawness": 0.136,
+   "grandeur": 0.163,
+   "dominance": 0.635
+  },
+  "lengthKm": 41.7,
+  "reliefM": 733.2
  },
  {
   "id": "vaca-mountains",
@@ -1418,33 +1911,50 @@ export const LOADERS = {
   "absaroka-range": () => import('./absaroka-range.js'),
   "alaska-range": () => import('./alaska-range.js'),
   "aleutian-range": () => import('./aleutian-range.js'),
+  "alligator-ridge": () => import('./alligator-ridge.js'),
   "arctic-cordillera": () => import('./arctic-cordillera.js'),
+  "bear-paw-ridge": () => import('./bear-paw-ridge.js'),
   "beaverhead-mountains": () => import('./beaverhead-mountains.js'),
   "big-horn-mountains": () => import('./big-horn-mountains.js'),
   "black-range": () => import('./black-range.js'),
+  "blue-buck-ridge": () => import('./blue-buck-ridge.js'),
   "blue-ridge": () => import('./blue-ridge.js'),
+  "bon-ayre-ridge": () => import('./bon-ayre-ridge.js'),
   "book-cliffs": () => import('./book-cliffs.js'),
   "boundary-ranges": () => import('./boundary-ranges.js'),
+  "boundary-ridge": () => import('./boundary-ridge.js'),
   "california-cascades": () => import('./california-cascades.js'),
   "canadian-rockies": () => import('./canadian-rockies.js'),
   "carson-range": () => import('./carson-range.js'),
+  "chewelah-mountains": () => import('./chewelah-mountains.js'),
+  "chickadee-ridge": () => import('./chickadee-ridge.js'),
   "chigmit-mountains": () => import('./chigmit-mountains.js'),
   "chiricahua-mountains": () => import('./chiricahua-mountains.js'),
   "chugach-mountains": () => import('./chugach-mountains.js'),
   "coast-mountains": () => import('./coast-mountains.js'),
   "countess-of-dufferin-range": () => import('./countess-of-dufferin-range.js'),
+  "crowell-ridge": () => import('./crowell-ridge.js'),
   "deep-creek-range": () => import('./deep-creek-range.js'),
   "diablo-range": () => import('./diablo-range.js'),
+  "duncan-ridge": () => import('./duncan-ridge.js'),
   "fairweather-range": () => import('./fairweather-range.js'),
+  "freezeout-ridge": () => import('./freezeout-ridge.js'),
   "front-range": () => import('./front-range.js'),
   "garibaldi-ranges": () => import('./garibaldi-ranges.js'),
   "green-mountains": () => import('./green-mountains.js'),
+  "hooknose-ridge": () => import('./hooknose-ridge.js'),
   "hualapai-mountains": () => import('./hualapai-mountains.js'),
+  "huckleberry-range": () => import('./huckleberry-range.js'),
+  "huckleberry-ridge": () => import('./huckleberry-ridge.js'),
+  "iron-mountains-washington-usa": () => import('./iron-mountains-washington-usa.js'),
   "jackson-mountains": () => import('./jackson-mountains.js'),
+  "kettle-river-range": () => import('./kettle-river-range.js'),
   "klamath-mountains": () => import('./klamath-mountains.js'),
   "la-sal-mountains": () => import('./la-sal-mountains.js'),
+  "lance-hills": () => import('./lance-hills.js'),
   "laurentian-mountains": () => import('./laurentian-mountains.js'),
   "lillooet-ranges": () => import('./lillooet-ranges.js'),
+  "linder-ridge": () => import('./linder-ridge.js'),
   "little-belt-mountains": () => import('./little-belt-mountains.js'),
   "livingston-range": () => import('./livingston-range.js'),
   "madison-range": () => import('./madison-range.js'),
@@ -1452,15 +1962,20 @@ export const LOADERS = {
   "medicine-bow-mountains": () => import('./medicine-bow-mountains.js'),
   "mission-mountains": () => import('./mission-mountains.js'),
   "monument-valley": () => import('./monument-valley.js'),
+  "neville-ridge": () => import('./neville-ridge.js'),
+  "north-boulder-ridge": () => import('./north-boulder-ridge.js'),
   "north-cascades": () => import('./north-cascades.js'),
   "olympic-mountains": () => import('./olympic-mountains.js'),
   "oregon-cascades": () => import('./oregon-cascades.js'),
+  "oregon-city-ridge": () => import('./oregon-city-ridge.js'),
   "pacific-ranges": () => import('./pacific-ranges.js'),
   "panamint-range": () => import('./panamint-range.js'),
   "park-ranges": () => import('./park-ranges.js'),
+  "pelke-divide": () => import('./pelke-divide.js'),
   "peninsular-ranges": () => import('./peninsular-ranges.js'),
   "pinaleno-mountains": () => import('./pinaleno-mountains.js'),
   "pine-valley-mountains": () => import('./pine-valley-mountains.js'),
+  "pot-hills": () => import('./pot-hills.js'),
   "rainier": () => import('./rainier.js'),
   "revelation-mountains": () => import('./revelation-mountains.js'),
   "rocky-mountains": () => import('./rocky-mountains.js'),
@@ -1472,6 +1987,8 @@ export const LOADERS = {
   "sangre-de-cristo-mountains": () => import('./sangre-de-cristo-mountains.js'),
   "sangre-de-cristo-range": () => import('./sangre-de-cristo-range.js'),
   "sawtooth": () => import('./sawtooth.js'),
+  "scalawag-ridge": () => import('./scalawag-ridge.js'),
+  "selkirk-mountains-washington-usa": () => import('./selkirk-mountains-washington-usa.js'),
   "selkirk-mountains": () => import('./selkirk-mountains.js'),
   "sierra-de-san-pedro-martir": () => import('./sierra-de-san-pedro-martir.js'),
   "sierra-estrella": () => import('./sierra-estrella.js'),
@@ -1482,14 +1999,19 @@ export const LOADERS = {
   "sierra-whitney": () => import('./sierra-whitney.js'),
   "skagit-range": () => import('./skagit-range.js'),
   "skeena-mountains": () => import('./skeena-mountains.js'),
+  "south-ridge": () => import('./south-ridge.js'),
   "strawberry-range": () => import('./strawberry-range.js'),
   "taconic-mountains": () => import('./taconic-mountains.js'),
   "tetons": () => import('./tetons.js'),
+  "the-summit-range": () => import('./the-summit-range.js'),
   "thudaka-range": () => import('./thudaka-range.js'),
+  "timber-ridge": () => import('./timber-ridge.js'),
+  "timothy-ridge": () => import('./timothy-ridge.js'),
   "toquima-range": () => import('./toquima-range.js'),
   "tordrillo-mountains": () => import('./tordrillo-mountains.js'),
   "tower-of-london-range": () => import('./tower-of-london-range.js'),
   "trans-mexican-volcanic-belt": () => import('./trans-mexican-volcanic-belt.js'),
+  "twin-mountains-washington-usa": () => import('./twin-mountains-washington-usa.js'),
   "vaca-mountains": () => import('./vaca-mountains.js'),
   "waddington-range": () => import('./waddington-range.js'),
   "wallowa-mountains": () => import('./wallowa-mountains.js'),

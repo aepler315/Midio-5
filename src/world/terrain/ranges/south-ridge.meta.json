@@ -1,0 +1,34 @@
+{
+  "id": "south-ridge",
+  "name": "South Ridge",
+  "landmark": "Bear Mountain",
+  "region": "Washington, USA",
+  "bbox": [
+    -120.221,
+    48.214,
+    -119.625,
+    48.612
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.28
+  },
+  "scores": {
+    "energy": 0.294,
+    "rawness": 0.292,
+    "grandeur": 0.29,
+    "dominance": 0.546
+  },
+  "features": {
+    "reliefM": 1302.8,
+    "slopeMPerKm": 171.1,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 79.2,
+    "dominance": 0.5,
+    "summitM": 2385.7,
+    "lengthKm": 41.7
+  }
+}

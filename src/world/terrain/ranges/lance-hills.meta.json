@@ -1,0 +1,34 @@
+{
+  "id": "lance-hills",
+  "name": "Lance Hills",
+  "landmark": "Magnison Butte",
+  "region": "Washington, USA",
+  "bbox": [
+    -118.181,
+    47.369,
+    -117.595,
+    47.768
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.087,
+    "rawness": 0.098,
+    "grandeur": 0.049,
+    "dominance": 0.403
+  },
+  "features": {
+    "reliefM": 218.3,
+    "slopeMPerKm": 33.1,
+    "peaksPer10Km": 1,
+    "roughnessM": 18.2,
+    "dominance": 0.6,
+    "summitM": 928.7,
+    "lengthKm": 41.7
+  }
+}

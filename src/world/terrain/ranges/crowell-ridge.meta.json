@@ -1,0 +1,34 @@
+{
+  "id": "crowell-ridge",
+  "name": "Crowell Ridge",
+  "landmark": "Sullivan Mountain",
+  "region": "Washington, USA",
+  "bbox": [
+    -117.549,
+    48.679,
+    -116.948,
+    49.077
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.15
+  },
+  "scores": {
+    "energy": 0.363,
+    "rawness": 0.379,
+    "grandeur": 0.192,
+    "dominance": 0.469
+  },
+  "features": {
+    "reliefM": 862.3,
+    "slopeMPerKm": 163,
+    "peaksPer10Km": 3.8,
+    "roughnessM": 68.6,
+    "dominance": 0.5,
+    "summitM": 2321.1,
+    "lengthKm": 42.5
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "oregon-city-ridge",
+  "name": "Oregon City Ridge",
+  "landmark": "Lynx Mountain",
+  "region": "Washington, USA",
+  "bbox": [
+    -118.723,
+    48.177,
+    -118.128,
+    48.575
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.284,
+    "rawness": 0.298,
+    "grandeur": 0.211,
+    "dominance": 0.493
+  },
+  "features": {
+    "reliefM": 951.3,
+    "slopeMPerKm": 137.6,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 65.1,
+    "dominance": 0.5,
+    "summitM": 2107.2,
+    "lengthKm": 41.7
+  }
+}
