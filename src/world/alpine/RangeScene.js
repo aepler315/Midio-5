@@ -331,6 +331,10 @@ export class RangeScene {
       // previous image before drawing into it to avoid framebuffer feedback.
       u.uMirror.value = null;
       u.uClipBelow.value = level + MIRROR_CLIP_M;
+      // Rain over the reflected land stands where the mirror camera sees it;
+      // the main camera's matrix is restored below, before the partitions.
+      this.mirrorCamera.updateMatrixWorld();
+      u.uViewProj.value.multiplyMatrices(this.mirrorCamera.projectionMatrix, this.mirrorCamera.matrixWorldInverse);
       r.setRenderTarget(m.target);
       r.setClearColor(0x000000, 0);
       r.clear(true, true, false);
