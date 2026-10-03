@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileStorm, stormAt } from '../src/world/alpine/RangeStorm.js';
+import { compileStorm, stormAt, rainCurtain, STORM_GLSL } from '../src/world/alpine/RangeStorm.js';
 const energyCurves = { globalEnergyNorm: t => t >= 40000 && t < 60000 ? .95 : .25 };
 const sections = [{ startMs: 0, endMs: 40000 }, { startMs: 40000, endMs: 60000 }, { startMs: 60000, endMs: 120000 }];
 const timeline = [{ tMs: 45000, pitch: 38, role: 'RHYTHM', vel: .9 }, { tMs: 45100, pitch: 40, channel: 9, vel: 1 }, { tMs: 47000, pitch: 36, role: 'RHYTHM', vel: 1 }];
@@ -70,4 +70,28 @@ test('missing measurements do not invent a climax', () => {
   const score = compileStorm({ durationMs: 60000, sections: [{startMs:0,endMs:20000}] });
   assert.equal(score.section,null);
   assert.equal(score.at(12000).amount,0);
+});
+
+test('each lightning hit lights a different place in the deck, held through its restrike', () => {
+  const score = compileStorm({ energyCurves, sections, durationMs: 120000,
+    timeline: [{ tMs: 45000, pitch: 38, channel: 9, vel: 1 }, { tMs: 46000, pitch: 38, channel: 9, vel: 1 }] });
+  const a = score.at(45020), restrike = score.at(45150), b = score.at(46020);
+  assert.ok(a.flashU >= .18 && a.flashU <= .82);
+  assert.equal(restrike.flashU, a.flashU);
+  assert.ok(restrike.flash > .3 && restrike.flash < a.flash);
+  assert.notEqual(b.flashU, a.flashU);
+  assert.equal(score.at(45400).flash, 0);
+});
+
+test('rain curtains leave gaps between them and drift slowly on the wind', () => {
+  const samples = Array.from({ length: 200 }, (_, i) => rainCurtain(i / 200, 0));
+  assert.ok(samples.some(v => v > .9) && samples.some(v => v < .05));
+  assert.ok(samples.every(v => v >= 0 && v <= 1));
+  const drift = Math.max(...Array.from({ length: 200 }, (_, i) => Math.abs(rainCurtain(i / 200, 1) - rainCurtain(i / 200, 0))));
+  assert.ok(drift > 0 && drift < .1);
+});
+
+test('the GLSL rain curtain stays the twin of the sky\'s', () => {
+  for (const term of ['u * 1.6 + t * 0.003', 'u * 3.7 - t * 0.005', 'smoothstep(0.32, 0.86, a * 0.65 + b * 0.35)'])
+    assert.ok(STORM_GLSL.includes(term), term);
 });

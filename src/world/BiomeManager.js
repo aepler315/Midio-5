@@ -5464,7 +5464,9 @@ export class BiomeManager {
     // into the sunrise or sunset's own colour while one burns.
     const darkness = this.celestialState?.darkness01 ?? 0;
     const strength = presence * (0.55 + 0.45 * activity) * (this.reducedFlash ? 0.5 : 1)
-      * clamp01(mask.arrival ?? 1) * (1 - CREST_LIGHT_DARK_CUT * darkness);
+      * clamp01(mask.arrival ?? 1) * (1 - CREST_LIGHT_DARK_CUT * darkness)
+      // No sun reaches the crests under the climax squall's deck.
+      * (1 - clamp01(this.rangePresentation?.frame?.storm?.amount ?? 0));
     if (strength < 0.005) return;
     const W = mask.width, H = mask.height;
     // The band is drawn small and blurred, then enlarged: a smooth falloff

@@ -9,7 +9,7 @@ export function shaftSize(width, height) {
 export function shaftSource(frame) {
   const source = frame.light?.celestial;
   return source?.body === 'sun' && source.visibility > 0 && source.intensity > 0
-    && Number.isFinite(source.xFrac) && Number.isFinite(source.yFrac) ? { ...source, stormGain: (1 - (frame.storm?.amount || 0) * .85) * (1 + (frame.storm?.break01 || 0) * 2.8) } : null;
+    && Number.isFinite(source.xFrac) && Number.isFinite(source.yFrac) ? { ...source, stormGain: (1 - (frame.storm?.amount || 0)) * (1 + (frame.storm?.break01 || 0) * 2.8) } : null;
 }
 const VERT = /* glsl */`
   out vec2 vUv;
