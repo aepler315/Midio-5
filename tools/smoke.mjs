@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { withAllWorlds, withLegacyRange } from './lib/allWorlds.mjs';
+import { listWorlds } from '../src/world/Worlds.js';
 
 const toolsDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultOutDir = path.join(toolsDir, '..', '.smoke');
@@ -129,7 +130,9 @@ export async function runAudioSmoke({
     // chosen world is adapted on Play; there is no privileged custom card.
     await page.locator('#worldSelect:not(.hidden)').waitFor({ state: 'visible', timeout: 90000 });
     const worldCards = page.locator('#worldSelect .worldCard');
-    check('the picker presents one card per registered world', await worldCards.count() === 9);
+    const cardIds = await worldCards.evaluateAll(cards => cards.map(card => card.dataset.worldId).sort());
+    check('the picker presents one card per registered world',
+      JSON.stringify(cardIds) === JSON.stringify(listWorlds().map(world => world.id).sort()));
     check('the picker gives no world winner styling', await page.locator('.worldCard.is-best').count() === 0);
     const tailoredCard = page.locator('.worldCard[data-world-id="custom"]');
     check('no privileged custom card in the gallery', await tailoredCard.count() === 0);

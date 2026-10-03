@@ -21,7 +21,7 @@ try {
   for (const view of ['teton-jackson-lake', 'tombstone-north-klondike']) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, serviceWorkers: 'block' });
     page.on('pageerror', e => errors.push(e.message));
-    page.on('console', msg => { if (msg.type() === 'error' && /shader|VALIDATE|compile/i.test(msg.text())) errors.push(msg.text()); });
+    page.on('console', msg => { if (/shader|VALIDATE|compile|GL_INVALID_OPERATION|feedback loop/i.test(msg.text()) && ['error', 'warning'].includes(msg.type())) errors.push(msg.text()); });
     if (phase === 'before') {
       await page.route('**/src/world/alpine/*.js', async route => {
         const path = new URL(route.request().url()).pathname.slice(1);
