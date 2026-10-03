@@ -1,0 +1,34 @@
+{
+  "id": "bruneau-range",
+  "name": "Bruneau Range",
+  "landmark": "Merritt Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.106,
+    41.67,
+    -115.575,
+    42.068
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.17,
+    "rawness": 0.164,
+    "grandeur": 0.178,
+    "dominance": 0.623
+  },
+  "features": {
+    "reliefM": 801.3,
+    "slopeMPerKm": 77.9,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 36.1,
+    "dominance": 0.6,
+    "summitM": 2773.6,
+    "lengthKm": 41.7
+  }
+}

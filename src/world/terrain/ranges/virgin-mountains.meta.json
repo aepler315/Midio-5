@@ -1,0 +1,34 @@
+{
+  "id": "virgin-mountains",
+  "name": "Virgin Mountains",
+  "landmark": "Virgin Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.358,
+    36.404,
+    -113.865,
+    36.802
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.273,
+    "rawness": 0.214,
+    "grandeur": 0.457,
+    "dominance": 0.407
+  },
+  "features": {
+    "reliefM": 2058.4,
+    "slopeMPerKm": 127,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 53.1,
+    "dominance": 0.4,
+    "summitM": 2454.9,
+    "lengthKm": 58.5
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "box-springs-mountains",
+  "name": "Box Springs Mountains",
+  "landmark": "McKinley Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -117.439,
+    33.97,
+    -116.961,
+    34.368
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.324,
+    "rawness": 0.309,
+    "grandeur": 0.322,
+    "dominance": 0.301
+  },
+  "features": {
+    "reliefM": 1449.2,
+    "slopeMPerKm": 186.1,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 79.6,
+    "dominance": 0.3,
+    "summitM": 2584.7,
+    "lengthKm": 41.7
+  }
+}

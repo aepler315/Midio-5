@@ -1,0 +1,34 @@
+{
+  "id": "salmon-river-mountains",
+  "name": "Salmon River Mountains",
+  "landmark": "White Valley Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -114.726,
+    44.422,
+    -114.171,
+    44.82
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.2
+  },
+  "scores": {
+    "energy": 0.253,
+    "rawness": 0.264,
+    "grandeur": 0.132,
+    "dominance": 0.524
+  },
+  "features": {
+    "reliefM": 595.9,
+    "slopeMPerKm": 119.7,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 49.8,
+    "dominance": 0.5,
+    "summitM": 3171.1,
+    "lengthKm": 42.9
+  }
+}

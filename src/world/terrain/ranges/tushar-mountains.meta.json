@@ -1,0 +1,34 @@
+{
+  "id": "tushar-mountains",
+  "name": "Tushar Mountains",
+  "landmark": "Delano Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -112.623,
+    38.17,
+    -112.119,
+    38.568
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.294,
+    "rawness": 0.326,
+    "grandeur": 0.247,
+    "dominance": 0.48
+  },
+  "features": {
+    "reliefM": 1110.4,
+    "slopeMPerKm": 163,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 88.5,
+    "dominance": 0.5,
+    "summitM": 3703.2,
+    "lengthKm": 41.7
+  }
+}

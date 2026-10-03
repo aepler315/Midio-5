@@ -1,0 +1,34 @@
+{
+  "id": "sawtooth-range-idaho-usa",
+  "name": "Sawtooth Range",
+  "landmark": "Thompson Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -115.285,
+    43.943,
+    -114.735,
+    44.341
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.27,
+    "rawness": 0.271,
+    "grandeur": 0.191,
+    "dominance": 0.328
+  },
+  "features": {
+    "reliefM": 858.9,
+    "slopeMPerKm": 121.5,
+    "peaksPer10Km": 2.6,
+    "roughnessM": 50.9,
+    "dominance": 0.3,
+    "summitM": 3012.9,
+    "lengthKm": 41.7
+  }
+}

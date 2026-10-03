@@ -1,0 +1,34 @@
+{
+  "id": "sikort-chuapo-mountains",
+  "name": "Sikort Chuapo Mountains",
+  "landmark": "Coffeepot Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -112.858,
+    32.283,
+    -112.389,
+    32.681
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.227,
+    "rawness": 0.233,
+    "grandeur": 0.128,
+    "dominance": 0.563
+  },
+  "features": {
+    "reliefM": 578.1,
+    "slopeMPerKm": 96,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 39.1,
+    "dominance": 0.6,
+    "summitM": 1254.2,
+    "lengthKm": 41.7
+  }
+}

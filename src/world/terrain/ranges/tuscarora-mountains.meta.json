@@ -1,0 +1,34 @@
+{
+  "id": "tuscarora-mountains",
+  "name": "Tuscarora Mountains",
+  "landmark": "Beaver Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.516,
+    40.877,
+    -115.992,
+    41.275
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.182,
+    "rawness": 0.177,
+    "grandeur": 0.158,
+    "dominance": 0.611
+  },
+  "features": {
+    "reliefM": 710.5,
+    "slopeMPerKm": 81.5,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 34.6,
+    "dominance": 0.6,
+    "summitM": 2670.4,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "mid-hills",
+  "name": "Mid Hills",
+  "landmark": "Drum Peak",
+  "region": "California, USA",
+  "bbox": [
+    -115.562,
+    35.032,
+    -115.079,
+    35.43
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.34
+  },
+  "scores": {
+    "energy": 0.239,
+    "rawness": 0.248,
+    "grandeur": 0.21,
+    "dominance": 0.603
+  },
+  "features": {
+    "reliefM": 946.4,
+    "slopeMPerKm": 119.2,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 59,
+    "dominance": 0.6,
+    "summitM": 2231.2,
+    "lengthKm": 43.7
+  }
+}

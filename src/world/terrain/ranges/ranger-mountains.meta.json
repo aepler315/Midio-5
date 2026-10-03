@@ -1,0 +1,34 @@
+{
+  "id": "ranger-mountains",
+  "name": "Ranger Mountains",
+  "landmark": "Ranger Mountains",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.086,
+    36.561,
+    -115.593,
+    36.96
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.193,
+    "rawness": 0.173,
+    "grandeur": 0.197,
+    "dominance": 0.367
+  },
+  "features": {
+    "reliefM": 885.8,
+    "slopeMPerKm": 83.2,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 31.2,
+    "dominance": 0.4,
+    "summitM": 1953,
+    "lengthKm": 64
+  }
+}

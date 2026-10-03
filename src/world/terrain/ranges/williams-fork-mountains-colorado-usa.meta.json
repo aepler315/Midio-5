@@ -1,0 +1,34 @@
+{
+  "id": "williams-fork-mountains-colorado-usa",
+  "name": "Williams Fork Mountains",
+  "landmark": "Dunckley Flat Tops",
+  "region": "Colorado, USA",
+  "bbox": [
+    -107.459,
+    40.028,
+    -106.942,
+    40.426
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.18,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.21,
+    "rawness": 0.19,
+    "grandeur": 0.303,
+    "dominance": 0.431
+  },
+  "features": {
+    "reliefM": 1364.8,
+    "slopeMPerKm": 86.7,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 44,
+    "dominance": 0.4,
+    "summitM": 3688.8,
+    "lengthKm": 68.3
+  }
+}

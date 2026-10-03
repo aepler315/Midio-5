@@ -1,0 +1,34 @@
+{
+  "id": "saliz-mountains",
+  "name": "Saliz Mountains",
+  "landmark": "Saliz Mountains",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -109.091,
+    33.409,
+    -108.617,
+    33.807
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.19
+  },
+  "scores": {
+    "energy": 0.21,
+    "rawness": 0.192,
+    "grandeur": 0.217,
+    "dominance": 0.552
+  },
+  "features": {
+    "reliefM": 977.7,
+    "slopeMPerKm": 91.8,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 37,
+    "dominance": 0.6,
+    "summitM": 3028.4,
+    "lengthKm": 59.7
+  }
+}

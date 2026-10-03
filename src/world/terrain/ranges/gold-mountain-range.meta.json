@@ -1,0 +1,34 @@
+{
+  "id": "gold-mountain-range",
+  "name": "Gold Mountain Range",
+  "landmark": "Gold Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -117.554,
+    37.053,
+    -117.057,
+    37.451
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.265,
+    "rawness": 0.228,
+    "grandeur": 0.331,
+    "dominance": 0.546
+  },
+  "features": {
+    "reliefM": 1491.2,
+    "slopeMPerKm": 126,
+    "peaksPer10Km": 2,
+    "roughnessM": 49.6,
+    "dominance": 0.5,
+    "summitM": 2756.8,
+    "lengthKm": 59.3
+  }
+}

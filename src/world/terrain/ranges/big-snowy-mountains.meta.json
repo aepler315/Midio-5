@@ -1,0 +1,34 @@
+{
+  "id": "big-snowy-mountains",
+  "name": "Big Snowy Mountains",
+  "landmark": "Old Baldy",
+  "region": "Montana, USA",
+  "bbox": [
+    -109.602,
+    46.553,
+    -109.025,
+    46.951
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.143,
+    "rawness": 0.099,
+    "grandeur": 0.297,
+    "dominance": 0.559
+  },
+  "features": {
+    "reliefM": 1336,
+    "slopeMPerKm": 64.3,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 26.7,
+    "dominance": 0.6,
+    "summitM": 2647.8,
+    "lengthKm": 68.3
+  }
+}

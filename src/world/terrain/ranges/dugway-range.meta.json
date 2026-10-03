@@ -1,0 +1,34 @@
+{
+  "id": "dugway-range",
+  "name": "Dugway Range",
+  "landmark": "Castle Mountain",
+  "region": "Utah, USA",
+  "bbox": [
+    -113.399,
+    39.752,
+    -112.883,
+    40.15
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.12,
+    "artifact": 0.13
+  },
+  "scores": {
+    "energy": 0.198,
+    "rawness": 0.184,
+    "grandeur": 0.188,
+    "dominance": 0.428
+  },
+  "features": {
+    "reliefM": 844.6,
+    "slopeMPerKm": 102.9,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 40.2,
+    "dominance": 0.4,
+    "summitM": 2143,
+    "lengthKm": 61.6
+  }
+}

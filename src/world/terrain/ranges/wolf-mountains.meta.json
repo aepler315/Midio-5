@@ -1,0 +1,34 @@
+{
+  "id": "wolf-mountains",
+  "name": "Wolf Mountains",
+  "landmark": "Shortys Hill",
+  "region": "Montana, USA",
+  "bbox": [
+    -107.454,
+    45.1,
+    -106.892,
+    45.498
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.084,
+    "rawness": 0.078,
+    "grandeur": 0.084,
+    "dominance": 0.162
+  },
+  "features": {
+    "reliefM": 377.9,
+    "slopeMPerKm": 38.7,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 16,
+    "dominance": 0.2,
+    "summitM": 1585.7,
+    "lengthKm": 41.7
+  }
+}

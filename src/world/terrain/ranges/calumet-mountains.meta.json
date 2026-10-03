@@ -1,0 +1,34 @@
+{
+  "id": "calumet-mountains",
+  "name": "Calumet Mountains",
+  "landmark": "Calumet Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -115.751,
+    34.034,
+    -115.273,
+    34.432
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.28,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.142,
+    "rawness": 0.109,
+    "grandeur": 0.235,
+    "dominance": 0.752
+  },
+  "features": {
+    "reliefM": 1057.8,
+    "slopeMPerKm": 82.4,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 32.3,
+    "dominance": 0.8,
+    "summitM": 1397,
+    "lengthKm": 41.7
+  }
+}

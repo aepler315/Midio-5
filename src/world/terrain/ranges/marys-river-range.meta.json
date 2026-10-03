@@ -1,0 +1,34 @@
+{
+  "id": "marys-river-range",
+  "name": "Marys River Range",
+  "landmark": "Marys River Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.567,
+    41.551,
+    -115.037,
+    41.949
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.254,
+    "rawness": 0.235,
+    "grandeur": 0.253,
+    "dominance": 0.471
+  },
+  "features": {
+    "reliefM": 1137,
+    "slopeMPerKm": 121.1,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 48.7,
+    "dominance": 0.5,
+    "summitM": 3281.1,
+    "lengthKm": 41.7
+  }
+}

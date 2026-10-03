@@ -1,0 +1,34 @@
+{
+  "id": "monte-cristo-range-washington-usa",
+  "name": "Monte Cristo Range",
+  "landmark": "Monte Cristo Range",
+  "region": "Washington, USA",
+  "bbox": [
+    -121.868,
+    45.718,
+    -121.3,
+    46.116
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.229,
+    "rawness": 0.198,
+    "grandeur": 0.316,
+    "dominance": 0.361
+  },
+  "features": {
+    "reliefM": 1423.8,
+    "slopeMPerKm": 112,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 48,
+    "dominance": 0.4,
+    "summitM": 1786.9,
+    "lengthKm": 68.3
+  }
+}

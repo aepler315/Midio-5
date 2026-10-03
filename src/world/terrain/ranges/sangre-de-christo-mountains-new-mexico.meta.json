@@ -1,0 +1,34 @@
+{
+  "id": "sangre-de-christo-mountains-new-mexico",
+  "name": "Sangre de Christo Mountains, New Mexico",
+  "landmark": "Cerro Vista",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -105.655,
+    36.036,
+    -105.165,
+    36.434
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.15
+  },
+  "scores": {
+    "energy": 0.232,
+    "rawness": 0.218,
+    "grandeur": 0.222,
+    "dominance": 0.613
+  },
+  "features": {
+    "reliefM": 999.6,
+    "slopeMPerKm": 123.8,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 50.8,
+    "dominance": 0.6,
+    "summitM": 3909.9,
+    "lengthKm": 59.7
+  }
+}

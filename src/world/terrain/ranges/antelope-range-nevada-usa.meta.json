@@ -1,0 +1,34 @@
+{
+  "id": "antelope-range-nevada-usa",
+  "name": "Antelope Range",
+  "landmark": "Ninemile Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -116.506,
+    38.948,
+    -115.996,
+    39.346
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.18,
+    "rawness": 0.185,
+    "grandeur": 0.112,
+    "dominance": 0.408
+  },
+  "features": {
+    "reliefM": 504.8,
+    "slopeMPerKm": 93.4,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 39.3,
+    "dominance": 0.4,
+    "summitM": 2988.7,
+    "lengthKm": 41.7
+  }
+}

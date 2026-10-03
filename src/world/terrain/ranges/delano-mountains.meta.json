@@ -1,0 +1,34 @@
+{
+  "id": "delano-mountains",
+  "name": "Delano Mountains",
+  "landmark": "Delano Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.529,
+    41.419,
+    -114,
+    41.817
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.145,
+    "rawness": 0.136,
+    "grandeur": 0.146,
+    "dominance": 0.439
+  },
+  "features": {
+    "reliefM": 655.9,
+    "slopeMPerKm": 71,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 29.9,
+    "dominance": 0.4,
+    "summitM": 2408.9,
+    "lengthKm": 41.7
+  }
+}

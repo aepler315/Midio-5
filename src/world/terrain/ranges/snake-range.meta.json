@@ -1,0 +1,34 @@
+{
+  "id": "snake-range",
+  "name": "Snake Range",
+  "landmark": "Mount Moriah",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.452,
+    39.074,
+    -113.941,
+    39.472
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.19,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.255,
+    "rawness": 0.194,
+    "grandeur": 0.478,
+    "dominance": 0.474
+  },
+  "features": {
+    "reliefM": 2149.1,
+    "slopeMPerKm": 127.3,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 56.1,
+    "dominance": 0.5,
+    "summitM": 3673.5,
+    "lengthKm": 67.9
+  }
+}

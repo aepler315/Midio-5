@@ -1,0 +1,34 @@
+{
+  "id": "patagonia-mountains",
+  "name": "Patagonia Mountains",
+  "landmark": "Mount Washington",
+  "region": "Arizona, USA",
+  "bbox": [
+    -110.957,
+    31.154,
+    -110.494,
+    31.552
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.15,
+    "rawness": 0.154,
+    "grandeur": 0.097,
+    "dominance": 0.55
+  },
+  "features": {
+    "reliefM": 436.8,
+    "slopeMPerKm": 72.2,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 31.2,
+    "dominance": 0.6,
+    "summitM": 1978.7,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "bald-range",
+  "name": "Bald Range",
+  "landmark": "South Burro Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -110.444,
+    40.633,
+    -109.922,
+    41.031
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.233,
+    "rawness": 0.214,
+    "grandeur": 0.302,
+    "dominance": 0.312
+  },
+  "features": {
+    "reliefM": 1358.1,
+    "slopeMPerKm": 108.4,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 50.8,
+    "dominance": 0.3,
+    "summitM": 4091.6,
+    "lengthKm": 62
+  }
+}

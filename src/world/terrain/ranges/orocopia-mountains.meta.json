@@ -1,0 +1,34 @@
+{
+  "id": "orocopia-mountains",
+  "name": "Orocopia Mountains",
+  "landmark": "Mastedon Peak",
+  "region": "California, USA",
+  "bbox": [
+    -116.037,
+    33.535,
+    -115.562,
+    33.933
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.19
+  },
+  "scores": {
+    "energy": 0.194,
+    "rawness": 0.168,
+    "grandeur": 0.252,
+    "dominance": 0.419
+  },
+  "features": {
+    "reliefM": 1135.7,
+    "slopeMPerKm": 93.2,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 38.5,
+    "dominance": 0.4,
+    "summitM": 1623.1,
+    "lengthKm": 62.8
+  }
+}

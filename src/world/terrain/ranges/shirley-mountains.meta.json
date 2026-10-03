@@ -1,0 +1,34 @@
+{
+  "id": "shirley-mountains",
+  "name": "Shirley Mountains",
+  "landmark": "Bald Mountain",
+  "region": "Wyoming, USA",
+  "bbox": [
+    -106.789,
+    41.923,
+    -106.256,
+    42.321
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.12,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.111,
+    "rawness": 0.09,
+    "grandeur": 0.163,
+    "dominance": 0.607
+  },
+  "features": {
+    "reliefM": 733.3,
+    "slopeMPerKm": 56.3,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 22.4,
+    "dominance": 0.6,
+    "summitM": 2787.5,
+    "lengthKm": 41.7
+  }
+}

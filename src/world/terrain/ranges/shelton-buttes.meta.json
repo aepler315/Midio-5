@@ -1,0 +1,34 @@
+{
+  "id": "shelton-buttes",
+  "name": "Shelton Buttes",
+  "landmark": "Blue Creek Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -124.027,
+    41.195,
+    -123.5,
+    41.593
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.255,
+    "rawness": 0.265,
+    "grandeur": 0.207,
+    "dominance": 0.495
+  },
+  "features": {
+    "reliefM": 930,
+    "slopeMPerKm": 116.6,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 56.7,
+    "dominance": 0.5,
+    "summitM": 1736.7,
+    "lengthKm": 42.1
+  }
+}

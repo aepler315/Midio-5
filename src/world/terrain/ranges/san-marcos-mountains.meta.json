@@ -1,0 +1,34 @@
+{
+  "id": "san-marcos-mountains",
+  "name": "San Marcos Mountains",
+  "landmark": "Pala Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -117.282,
+    33.141,
+    -116.809,
+    33.539
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.191,
+    "rawness": 0.165,
+    "grandeur": 0.234,
+    "dominance": 0.72
+  },
+  "features": {
+    "reliefM": 1051.4,
+    "slopeMPerKm": 115,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 45.2,
+    "dominance": 0.7,
+    "summitM": 1868,
+    "lengthKm": 41.7
+  }
+}

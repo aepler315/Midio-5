@@ -1,0 +1,34 @@
+{
+  "id": "chuckwalla-mountains",
+  "name": "Chuckwalla Mountains",
+  "landmark": "Black Butte",
+  "region": "California, USA",
+  "bbox": [
+    -115.581,
+    33.363,
+    -115.107,
+    33.761
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.38
+  },
+  "scores": {
+    "energy": 0.232,
+    "rawness": 0.244,
+    "grandeur": 0.206,
+    "dominance": 0.48
+  },
+  "features": {
+    "reliefM": 925.2,
+    "slopeMPerKm": 115.7,
+    "peaksPer10Km": 2,
+    "roughnessM": 59.3,
+    "dominance": 0.5,
+    "summitM": 1324.2,
+    "lengthKm": 60.1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "calico-peaks",
+  "name": "Calico Peaks",
+  "landmark": "Calico Peaks",
+  "region": "California, USA",
+  "bbox": [
+    -116.728,
+    35.785,
+    -116.239,
+    36.183
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.37
+  },
+  "scores": {
+    "energy": 0.345,
+    "rawness": 0.368,
+    "grandeur": 0.23,
+    "dominance": 0.571
+  },
+  "features": {
+    "reliefM": 1035.8,
+    "slopeMPerKm": 179.3,
+    "peaksPer10Km": 3.2,
+    "roughnessM": 84.3,
+    "dominance": 0.6,
+    "summitM": 1939.4,
+    "lengthKm": 50.7
+  }
+}

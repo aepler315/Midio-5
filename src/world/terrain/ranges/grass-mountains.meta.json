@@ -1,0 +1,34 @@
+{
+  "id": "grass-mountains",
+  "name": "Grass Mountains",
+  "landmark": "Patrick Butte",
+  "region": "Idaho, USA",
+  "bbox": [
+    -116.489,
+    45.119,
+    -115.927,
+    45.517
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.13
+  },
+  "scores": {
+    "energy": 0.254,
+    "rawness": 0.25,
+    "grandeur": 0.259,
+    "dominance": 0.271
+  },
+  "features": {
+    "reliefM": 1165.8,
+    "slopeMPerKm": 118.4,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 56.5,
+    "dominance": 0.3,
+    "summitM": 2658.4,
+    "lengthKm": 41.7
+  }
+}

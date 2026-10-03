@@ -1,0 +1,34 @@
+{
+  "id": "bannock-range",
+  "name": "Bannock Range",
+  "landmark": "Elkhorn Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -112.595,
+    42.138,
+    -112.061,
+    42.536
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.15,
+    "artifact": 0.01
+  },
+  "scores": {
+    "energy": 0.222,
+    "rawness": 0.187,
+    "grandeur": 0.299,
+    "dominance": 0.537
+  },
+  "features": {
+    "reliefM": 1346.4,
+    "slopeMPerKm": 101.9,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 40.5,
+    "dominance": 0.5,
+    "summitM": 2825.8,
+    "lengthKm": 42.1
+  }
+}

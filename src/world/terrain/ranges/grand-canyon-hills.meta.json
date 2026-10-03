@@ -1,0 +1,34 @@
+{
+  "id": "grand-canyon-hills",
+  "name": "Grand Canyon Hills",
+  "landmark": "Curley Peak",
+  "region": "Colorado, USA",
+  "bbox": [
+    -105.551,
+    38.122,
+    -105.047,
+    38.52
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.225,
+    "rawness": 0.216,
+    "grandeur": 0.206,
+    "dominance": 0.425
+  },
+  "features": {
+    "reliefM": 929.1,
+    "slopeMPerKm": 111.4,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 46.8,
+    "dominance": 0.4,
+    "summitM": 3164,
+    "lengthKm": 62.4
+  }
+}

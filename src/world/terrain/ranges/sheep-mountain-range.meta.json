@@ -1,0 +1,34 @@
+{
+  "id": "sheep-mountain-range",
+  "name": "Sheep Mountain Range",
+  "landmark": "East Sister",
+  "region": "Idaho, USA",
+  "bbox": [
+    -115.818,
+    46.688,
+    -115.239,
+    47.086
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.186,
+    "rawness": 0.185,
+    "grandeur": 0.126,
+    "dominance": 0.322
+  },
+  "features": {
+    "reliefM": 565.6,
+    "slopeMPerKm": 98.1,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 38.9,
+    "dominance": 0.3,
+    "summitM": 2087.7,
+    "lengthKm": 41.7
+  }
+}

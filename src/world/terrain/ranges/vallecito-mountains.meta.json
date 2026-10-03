@@ -1,0 +1,34 @@
+{
+  "id": "vallecito-mountains",
+  "name": "Vallecito Mountains",
+  "landmark": "Vallecito Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -116.552,
+    32.83,
+    -116.08,
+    33.228
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.255,
+    "rawness": 0.263,
+    "grandeur": 0.205,
+    "dominance": 0.432
+  },
+  "features": {
+    "reliefM": 923.5,
+    "slopeMPerKm": 115.7,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 55.1,
+    "dominance": 0.4,
+    "summitM": 1893.6,
+    "lengthKm": 41.7
+  }
+}

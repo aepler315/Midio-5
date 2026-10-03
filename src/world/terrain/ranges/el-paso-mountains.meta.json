@@ -1,0 +1,34 @@
+{
+  "id": "el-paso-mountains",
+  "name": "El Paso Mountains",
+  "landmark": "El Paso Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -118.058,
+    35.239,
+    -117.573,
+    35.637
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.15,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.2,
+    "rawness": 0.165,
+    "grandeur": 0.299,
+    "dominance": 0.767
+  },
+  "features": {
+    "reliefM": 1344.4,
+    "slopeMPerKm": 96.7,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 40.4,
+    "dominance": 0.8,
+    "summitM": 2213.6,
+    "lengthKm": 59.7
+  }
+}

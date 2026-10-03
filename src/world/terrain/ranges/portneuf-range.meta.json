@@ -1,0 +1,34 @@
+{
+  "id": "portneuf-range",
+  "name": "Portneuf Range",
+  "landmark": "Bonneville Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -112.41,
+    42.564,
+    -111.871,
+    42.962
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.13
+  },
+  "scores": {
+    "energy": 0.205,
+    "rawness": 0.212,
+    "grandeur": 0.192,
+    "dominance": 0.47
+  },
+  "features": {
+    "reliefM": 863.9,
+    "slopeMPerKm": 129.3,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 62.5,
+    "dominance": 0.5,
+    "summitM": 2821.1,
+    "lengthKm": 42.1
+  }
+}

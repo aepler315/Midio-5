@@ -1,0 +1,34 @@
+{
+  "id": "desert-mountains",
+  "name": "Desert Mountains",
+  "landmark": "Cleaver Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -119.391,
+    39.019,
+    -118.881,
+    39.417
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.114,
+    "rawness": 0.086,
+    "grandeur": 0.19,
+    "dominance": 0.537
+  },
+  "features": {
+    "reliefM": 855.7,
+    "slopeMPerKm": 75.3,
+    "peaksPer10Km": 0.5,
+    "roughnessM": 29.1,
+    "dominance": 0.5,
+    "summitM": 2207.9,
+    "lengthKm": 41.7
+  }
+}

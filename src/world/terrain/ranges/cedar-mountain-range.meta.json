@@ -1,0 +1,34 @@
+{
+  "id": "cedar-mountain-range",
+  "name": "Cedar Mountain Range",
+  "landmark": "Flying W Mountain",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.328,
+    31.723,
+    -107.862,
+    32.121
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.135,
+    "rawness": 0.137,
+    "grandeur": 0.111,
+    "dominance": 0.669
+  },
+  "features": {
+    "reliefM": 500.3,
+    "slopeMPerKm": 66.2,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 30.2,
+    "dominance": 0.7,
+    "summitM": 1887.4,
+    "lengthKm": 41.7
+  }
+}

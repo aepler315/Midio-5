@@ -1,0 +1,34 @@
+{
+  "id": "luera-mountains",
+  "name": "Luera Mountains",
+  "landmark": "Luera Peak",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.115,
+    33.627,
+    -107.64,
+    34.025
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.178,
+    "rawness": 0.173,
+    "grandeur": 0.162,
+    "dominance": 0.539
+  },
+  "features": {
+    "reliefM": 729.7,
+    "slopeMPerKm": 74.1,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 32.8,
+    "dominance": 0.5,
+    "summitM": 2891.6,
+    "lengthKm": 41.7
+  }
+}

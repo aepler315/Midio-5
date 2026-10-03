@@ -1,0 +1,34 @@
+{
+  "id": "bristol-mountains",
+  "name": "Bristol Mountains",
+  "landmark": "Broadwell Mesa",
+  "region": "California, USA",
+  "bbox": [
+    -116.32,
+    34.696,
+    -115.838,
+    35.094
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.01
+  },
+  "scores": {
+    "energy": 0.179,
+    "rawness": 0.173,
+    "grandeur": 0.169,
+    "dominance": 0.537
+  },
+  "features": {
+    "reliefM": 762,
+    "slopeMPerKm": 95.5,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 41,
+    "dominance": 0.5,
+    "summitM": 1203.2,
+    "lengthKm": 41.7
+  }
+}

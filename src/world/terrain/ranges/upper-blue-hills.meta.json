@@ -1,0 +1,34 @@
+{
+  "id": "upper-blue-hills",
+  "name": "Upper Blue Hills",
+  "landmark": "Table Mountain",
+  "region": "Utah, USA",
+  "bbox": [
+    -111.088,
+    37.963,
+    -110.585,
+    38.361
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.34,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.267,
+    "rawness": 0.213,
+    "grandeur": 0.459,
+    "dominance": 0.487
+  },
+  "features": {
+    "reliefM": 2066.3,
+    "slopeMPerKm": 119.7,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 54.2,
+    "dominance": 0.5,
+    "summitM": 3501.2,
+    "lengthKm": 41.7
+  }
+}

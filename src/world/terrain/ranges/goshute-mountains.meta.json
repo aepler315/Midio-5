@@ -1,0 +1,34 @@
+{
+  "id": "goshute-mountains",
+  "name": "Goshute Mountains",
+  "landmark": "Mount Pisgah",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.53,
+    40.225,
+    -114.011,
+    40.623
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.194,
+    "rawness": 0.161,
+    "grandeur": 0.361,
+    "dominance": 0.547
+  },
+  "features": {
+    "reliefM": 1626.5,
+    "slopeMPerKm": 94.8,
+    "peaksPer10Km": 1,
+    "roughnessM": 49.1,
+    "dominance": 0.5,
+    "summitM": 2916,
+    "lengthKm": 67.5
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "calico-hills",
+  "name": "Calico Hills",
+  "landmark": "Black Mountain",
+  "region": "Nevada, USA",
+  "bbox": [
+    -119.168,
+    38.745,
+    -118.66,
+    39.143
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.17,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.25,
+    "rawness": 0.205,
+    "grandeur": 0.354,
+    "dominance": 0.611
+  },
+  "features": {
+    "reliefM": 1591.8,
+    "slopeMPerKm": 111.9,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 43.7,
+    "dominance": 0.6,
+    "summitM": 2799.2,
+    "lengthKm": 65.1
+  }
+}

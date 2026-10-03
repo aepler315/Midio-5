@@ -1,0 +1,34 @@
+{
+  "id": "clipper-mountains",
+  "name": "Clipper Mountains",
+  "landmark": "White Fang",
+  "region": "California, USA",
+  "bbox": [
+    -115.88,
+    34.583,
+    -115.399,
+    34.982
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.25,
+    "rawness": 0.193,
+    "grandeur": 0.412,
+    "dominance": 0.46
+  },
+  "features": {
+    "reliefM": 1852.8,
+    "slopeMPerKm": 128,
+    "peaksPer10Km": 1.5,
+    "roughnessM": 50.7,
+    "dominance": 0.5,
+    "summitM": 2170.5,
+    "lengthKm": 61.2
+  }
+}

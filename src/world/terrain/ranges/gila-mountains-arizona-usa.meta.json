@@ -1,0 +1,34 @@
+{
+  "id": "gila-mountains-arizona-usa",
+  "name": "Gila Mountains",
+  "landmark": "Bryce Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -109.908,
+    32.821,
+    -109.437,
+    33.219
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.247,
+    "rawness": 0.249,
+    "grandeur": 0.223,
+    "dominance": 0.348
+  },
+  "features": {
+    "reliefM": 1004.9,
+    "slopeMPerKm": 140.7,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 64.8,
+    "dominance": 0.3,
+    "summitM": 2124.2,
+    "lengthKm": 41.7
+  }
+}

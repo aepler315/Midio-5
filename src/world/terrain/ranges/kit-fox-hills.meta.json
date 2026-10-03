@@ -1,0 +1,34 @@
+{
+  "id": "kit-fox-hills",
+  "name": "Kit Fox Hills",
+  "landmark": "Tucki Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -117.377,
+    36.3,
+    -116.885,
+    36.698
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.225,
+    "rawness": 0.2,
+    "grandeur": 0.254,
+    "dominance": 0.557
+  },
+  "features": {
+    "reliefM": 1143.1,
+    "slopeMPerKm": 116.4,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 46.1,
+    "dominance": 0.6,
+    "summitM": 2286.6,
+    "lengthKm": 46.8
+  }
+}

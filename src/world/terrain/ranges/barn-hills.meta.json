@@ -1,0 +1,34 @@
+{
+  "id": "barn-hills",
+  "name": "Barn Hills",
+  "landmark": "King Top",
+  "region": "Utah, USA",
+  "bbox": [
+    -113.784,
+    38.782,
+    -113.275,
+    39.18
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.13
+  },
+  "scores": {
+    "energy": 0.219,
+    "rawness": 0.187,
+    "grandeur": 0.28,
+    "dominance": 0.676
+  },
+  "features": {
+    "reliefM": 1258.9,
+    "slopeMPerKm": 120.1,
+    "peaksPer10Km": 1.5,
+    "roughnessM": 47.5,
+    "dominance": 0.7,
+    "summitM": 2934.8,
+    "lengthKm": 61.2
+  }
+}

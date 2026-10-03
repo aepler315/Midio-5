@@ -1,0 +1,34 @@
+{
+  "id": "crowcamp-hills",
+  "name": "Crowcamp Hills",
+  "landmark": "Crowcamp Mountain",
+  "region": "Oregon, USA",
+  "bbox": [
+    -118.778,
+    43.325,
+    -118.233,
+    43.723
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.057,
+    "rawness": 0.042,
+    "grandeur": 0.097,
+    "dominance": 0.542
+  },
+  "features": {
+    "reliefM": 434.6,
+    "slopeMPerKm": 36.7,
+    "peaksPer10Km": 0.2,
+    "roughnessM": 13.8,
+    "dominance": 0.5,
+    "summitM": 1795.3,
+    "lengthKm": 41.7
+  }
+}

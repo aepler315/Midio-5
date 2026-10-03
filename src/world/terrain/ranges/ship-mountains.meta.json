@@ -1,0 +1,34 @@
+{
+  "id": "ship-mountains",
+  "name": "Ship Mountains",
+  "landmark": "Ship Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -115.636,
+    34.304,
+    -115.157,
+    34.702
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.232,
+    "rawness": 0.228,
+    "grandeur": 0.192,
+    "dominance": 0.564
+  },
+  "features": {
+    "reliefM": 862.8,
+    "slopeMPerKm": 105.5,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 45,
+    "dominance": 0.6,
+    "summitM": 1590.5,
+    "lengthKm": 41.7
+  }
+}

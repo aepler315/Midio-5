@@ -1,0 +1,34 @@
+{
+  "id": "rosamond-hills",
+  "name": "Rosamond Hills",
+  "landmark": "Soledad Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -118.43,
+    34.783,
+    -117.947,
+    35.181
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.28,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.167,
+    "rawness": 0.137,
+    "grandeur": 0.27,
+    "dominance": 0.499
+  },
+  "features": {
+    "reliefM": 1216.6,
+    "slopeMPerKm": 72.4,
+    "peaksPer10Km": 1.1,
+    "roughnessM": 32.7,
+    "dominance": 0.5,
+    "summitM": 1950,
+    "lengthKm": 70.2
+  }
+}

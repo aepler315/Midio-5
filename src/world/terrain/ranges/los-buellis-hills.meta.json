@@ -1,0 +1,34 @@
+{
+  "id": "los-buellis-hills",
+  "name": "Los Buellis Hills",
+  "landmark": "Los Buellis Hills",
+  "region": "California, USA",
+  "bbox": [
+    -122.048,
+    37.225,
+    -121.55,
+    37.623
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.233,
+    "rawness": 0.242,
+    "grandeur": 0.136,
+    "dominance": 0.495
+  },
+  "features": {
+    "reliefM": 612.6,
+    "slopeMPerKm": 102.3,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 44.1,
+    "dominance": 0.5,
+    "summitM": 1324.3,
+    "lengthKm": 41.7
+  }
+}

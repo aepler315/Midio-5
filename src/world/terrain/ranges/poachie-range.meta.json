@@ -1,0 +1,34 @@
+{
+  "id": "poachie-range",
+  "name": "Poachie Range",
+  "landmark": "Arrastra Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -113.622,
+    34.222,
+    -113.143,
+    34.62
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.16,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.25,
+    "rawness": 0.242,
+    "grandeur": 0.248,
+    "dominance": 0.434
+  },
+  "features": {
+    "reliefM": 1114.4,
+    "slopeMPerKm": 114,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 51.7,
+    "dominance": 0.4,
+    "summitM": 1556.7,
+    "lengthKm": 59.7
+  }
+}

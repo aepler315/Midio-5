@@ -1,0 +1,34 @@
+{
+  "id": "soldier-mountains",
+  "name": "Soldier Mountains",
+  "landmark": "Smoky Dome",
+  "region": "Idaho, USA",
+  "bbox": [
+    -115.209,
+    43.294,
+    -114.664,
+    43.693
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.21,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.192,
+    "rawness": 0.148,
+    "grandeur": 0.348,
+    "dominance": 0.482
+  },
+  "features": {
+    "reliefM": 1564.3,
+    "slopeMPerKm": 81.1,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 36.2,
+    "dominance": 0.5,
+    "summitM": 3097,
+    "lengthKm": 41.7
+  }
+}

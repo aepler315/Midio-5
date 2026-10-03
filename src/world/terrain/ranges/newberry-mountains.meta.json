@@ -1,0 +1,34 @@
+{
+  "id": "newberry-mountains",
+  "name": "Newberry Mountains",
+  "landmark": "Newberry Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -116.966,
+    34.576,
+    -116.485,
+    34.974
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.11,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.251,
+    "rawness": 0.228,
+    "grandeur": 0.305,
+    "dominance": 0.39
+  },
+  "features": {
+    "reliefM": 1371.8,
+    "slopeMPerKm": 125.2,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 54.6,
+    "dominance": 0.4,
+    "summitM": 1915,
+    "lengthKm": 58.5
+  }
+}

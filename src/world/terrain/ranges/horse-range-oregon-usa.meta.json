@@ -1,0 +1,34 @@
+{
+  "id": "horse-range-oregon-usa",
+  "name": "Horse Range",
+  "landmark": "Brandy Peak",
+  "region": "Oregon, USA",
+  "bbox": [
+    -124.149,
+    42.399,
+    -123.612,
+    42.797
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.07,
+    "artifact": 0.23
+  },
+  "scores": {
+    "energy": 0.317,
+    "rawness": 0.355,
+    "grandeur": 0.154,
+    "dominance": 0.576
+  },
+  "features": {
+    "reliefM": 692.9,
+    "slopeMPerKm": 163.3,
+    "peaksPer10Km": 3.1,
+    "roughnessM": 78.4,
+    "dominance": 0.6,
+    "summitM": 1613.8,
+    "lengthKm": 41.7
+  }
+}

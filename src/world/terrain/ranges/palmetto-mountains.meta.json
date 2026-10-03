@@ -1,0 +1,34 @@
+{
+  "id": "palmetto-mountains",
+  "name": "Palmetto Mountains",
+  "landmark": "Harvey Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -117.84,
+    37.307,
+    -117.342,
+    37.705
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.149,
+    "rawness": 0.139,
+    "grandeur": 0.145,
+    "dominance": 0.662
+  },
+  "features": {
+    "reliefM": 653.7,
+    "slopeMPerKm": 82.3,
+    "peaksPer10Km": 1.1,
+    "roughnessM": 33.2,
+    "dominance": 0.7,
+    "summitM": 2691.8,
+    "lengthKm": 43.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "highwood-mountains",
+  "name": "Highwood Mountains",
+  "landmark": "Highwood Baldy",
+  "region": "Montana, USA",
+  "bbox": [
+    -110.923,
+    47.243,
+    -110.339,
+    47.641
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.222,
+    "rawness": 0.201,
+    "grandeur": 0.293,
+    "dominance": 0.519
+  },
+  "features": {
+    "reliefM": 1317.4,
+    "slopeMPerKm": 102.4,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 47.3,
+    "dominance": 0.5,
+    "summitM": 2334.2,
+    "lengthKm": 41.7
+  }
+}

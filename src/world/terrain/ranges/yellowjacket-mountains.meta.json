@@ -1,0 +1,34 @@
+{
+  "id": "yellowjacket-mountains",
+  "name": "Yellowjacket Mountains",
+  "landmark": "Yellowjacket Mountains",
+  "region": "Idaho, USA",
+  "bbox": [
+    -114.864,
+    44.852,
+    -114.305,
+    45.25
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.335,
+    "rawness": 0.374,
+    "grandeur": 0.156,
+    "dominance": 0.569
+  },
+  "features": {
+    "reliefM": 702,
+    "slopeMPerKm": 147,
+    "peaksPer10Km": 3.6,
+    "roughnessM": 71.9,
+    "dominance": 0.6,
+    "summitM": 3056,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "truckee-range",
+  "name": "Truckee Range",
+  "landmark": "Juniper Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -119.44,
+    39.596,
+    -118.925,
+    39.994
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.154,
+    "rawness": 0.143,
+    "grandeur": 0.168,
+    "dominance": 0.478
+  },
+  "features": {
+    "reliefM": 754.7,
+    "slopeMPerKm": 79,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 34.2,
+    "dominance": 0.5,
+    "summitM": 2198.1,
+    "lengthKm": 42.1
+  }
+}

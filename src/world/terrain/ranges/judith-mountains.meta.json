@@ -1,0 +1,34 @@
+{
+  "id": "judith-mountains",
+  "name": "Judith Mountains",
+  "landmark": "Judith Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -109.513,
+    47.018,
+    -108.931,
+    47.416
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.19,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.176,
+    "rawness": 0.179,
+    "grandeur": 0.178,
+    "dominance": 0.575
+  },
+  "features": {
+    "reliefM": 801.6,
+    "slopeMPerKm": 65.7,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 35.7,
+    "dominance": 0.6,
+    "summitM": 1957,
+    "lengthKm": 41.7
+  }
+}

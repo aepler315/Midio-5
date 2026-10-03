@@ -1,0 +1,34 @@
+{
+  "id": "tejon-hills",
+  "name": "Tejon Hills",
+  "landmark": "Cummings Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -118.813,
+    34.843,
+    -118.33,
+    35.241
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.249,
+    "rawness": 0.217,
+    "grandeur": 0.314,
+    "dominance": 0.567
+  },
+  "features": {
+    "reliefM": 1412.4,
+    "slopeMPerKm": 136.9,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 56.2,
+    "dominance": 0.6,
+    "summitM": 2426.2,
+    "lengthKm": 41.7
+  }
+}

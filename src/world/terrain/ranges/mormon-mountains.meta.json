@@ -1,0 +1,34 @@
+{
+  "id": "mormon-mountains",
+  "name": "Mormon Mountains",
+  "landmark": "Mormon Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.748,
+    36.775,
+    -114.253,
+    37.173
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.245,
+    "rawness": 0.214,
+    "grandeur": 0.308,
+    "dominance": 0.505
+  },
+  "features": {
+    "reliefM": 1386.5,
+    "slopeMPerKm": 132.4,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 54.3,
+    "dominance": 0.5,
+    "summitM": 2246,
+    "lengthKm": 41.7
+  }
+}

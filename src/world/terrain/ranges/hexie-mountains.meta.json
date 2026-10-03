@@ -1,0 +1,34 @@
+{
+  "id": "hexie-mountains",
+  "name": "Hexie Mountains",
+  "landmark": "Ryan Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -116.373,
+    33.787,
+    -115.896,
+    34.185
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.258,
+    "rawness": 0.259,
+    "grandeur": 0.219,
+    "dominance": 0.283
+  },
+  "features": {
+    "reliefM": 983.8,
+    "slopeMPerKm": 117.9,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 53.5,
+    "dominance": 0.3,
+    "summitM": 1722.2,
+    "lengthKm": 42.1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "worthington-mountains",
+  "name": "Worthington Mountains",
+  "landmark": "Worthington Peak",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.862,
+    37.719,
+    -115.361,
+    38.117
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.248,
+    "rawness": 0.21,
+    "grandeur": 0.28,
+    "dominance": 0.692
+  },
+  "features": {
+    "reliefM": 1262,
+    "slopeMPerKm": 131.7,
+    "peaksPer10Km": 1.8,
+    "roughnessM": 46.8,
+    "dominance": 0.7,
+    "summitM": 3075.8,
+    "lengthKm": 60.1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "san-miguel-mountains-colorado-usa",
+  "name": "San Miguel Mountains",
+  "landmark": "Mount Wilson",
+  "region": "Colorado, USA",
+  "bbox": [
+    -108.242,
+    37.64,
+    -107.741,
+    38.038
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.16
+  },
+  "scores": {
+    "energy": 0.357,
+    "rawness": 0.386,
+    "grandeur": 0.203,
+    "dominance": 0.292
+  },
+  "features": {
+    "reliefM": 911.7,
+    "slopeMPerKm": 166.5,
+    "peaksPer10Km": 3.6,
+    "roughnessM": 78.2,
+    "dominance": 0.3,
+    "summitM": 4290.2,
+    "lengthKm": 44.5
+  }
+}

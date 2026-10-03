@@ -1,0 +1,34 @@
+{
+  "id": "foote-range",
+  "name": "Foote Range",
+  "landmark": "Foote Range",
+  "region": "Utah, USA",
+  "bbox": [
+    -114.058,
+    39.231,
+    -113.546,
+    39.629
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.19
+  },
+  "scores": {
+    "energy": 0.175,
+    "rawness": 0.152,
+    "grandeur": 0.213,
+    "dominance": 0.565
+  },
+  "features": {
+    "reliefM": 957.1,
+    "slopeMPerKm": 87.2,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 34.7,
+    "dominance": 0.6,
+    "summitM": 2439.2,
+    "lengthKm": 68.6
+  }
+}

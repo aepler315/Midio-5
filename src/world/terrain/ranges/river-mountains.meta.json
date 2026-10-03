@@ -1,0 +1,34 @@
+{
+  "id": "river-mountains",
+  "name": "River Mountains",
+  "landmark": "River Mountains",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.105,
+    35.832,
+    -114.617,
+    36.23
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.233,
+    "rawness": 0.213,
+    "grandeur": 0.263,
+    "dominance": 0.542
+  },
+  "features": {
+    "reliefM": 1183.1,
+    "slopeMPerKm": 123.6,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 52.3,
+    "dominance": 0.5,
+    "summitM": 1630.7,
+    "lengthKm": 63.6
+  }
+}

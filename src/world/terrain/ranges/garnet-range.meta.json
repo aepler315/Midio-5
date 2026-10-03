@@ -1,0 +1,34 @@
+{
+  "id": "garnet-range",
+  "name": "Garnet Range",
+  "landmark": "Old Baldy Mountain",
+  "region": "Montana, USA",
+  "bbox": [
+    -113.161,
+    46.511,
+    -112.584,
+    46.909
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.17,
+    "artifact": 0.11
+  },
+  "scores": {
+    "energy": 0.152,
+    "rawness": 0.141,
+    "grandeur": 0.151,
+    "dominance": 0.545
+  },
+  "features": {
+    "reliefM": 681.7,
+    "slopeMPerKm": 80.1,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 32.8,
+    "dominance": 0.5,
+    "summitM": 2245.2,
+    "lengthKm": 41.7
+  }
+}

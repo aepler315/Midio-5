@@ -1,0 +1,34 @@
+{
+  "id": "rampart-range",
+  "name": "Rampart Range",
+  "landmark": "Green Mountain",
+  "region": "Colorado, USA",
+  "bbox": [
+    -105.556,
+    39.106,
+    -105.045,
+    39.504
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.271,
+    "rawness": 0.251,
+    "grandeur": 0.26,
+    "dominance": 0.438
+  },
+  "features": {
+    "reliefM": 1170.2,
+    "slopeMPerKm": 144.3,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 57.3,
+    "dominance": 0.4,
+    "summitM": 3786.4,
+    "lengthKm": 41.7
+  }
+}

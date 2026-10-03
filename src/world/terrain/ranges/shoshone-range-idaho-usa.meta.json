@@ -1,0 +1,34 @@
+{
+  "id": "shoshone-range-idaho-usa",
+  "name": "Shoshone Range",
+  "landmark": "Eighty Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -116.242,
+    47.69,
+    -115.653,
+    48.088
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.16
+  },
+  "scores": {
+    "energy": 0.31,
+    "rawness": 0.322,
+    "grandeur": 0.197,
+    "dominance": 0.728
+  },
+  "features": {
+    "reliefM": 885,
+    "slopeMPerKm": 138.6,
+    "peaksPer10Km": 3.1,
+    "roughnessM": 60.8,
+    "dominance": 0.7,
+    "summitM": 2344.9,
+    "lengthKm": 41.7
+  }
+}

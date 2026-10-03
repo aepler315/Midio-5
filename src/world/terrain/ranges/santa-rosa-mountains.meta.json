@@ -1,0 +1,34 @@
+{
+  "id": "santa-rosa-mountains",
+  "name": "Santa Rosa Mountains",
+  "landmark": "Gu Achi Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -112.111,
+    32.149,
+    -111.643,
+    32.547
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.17,
+    "artifact": 0.18
+  },
+  "scores": {
+    "energy": 0.215,
+    "rawness": 0.217,
+    "grandeur": 0.184,
+    "dominance": 0.748
+  },
+  "features": {
+    "reliefM": 827.1,
+    "slopeMPerKm": 103.8,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 47.4,
+    "dominance": 0.7,
+    "summitM": 1382.6,
+    "lengthKm": 41.7
+  }
+}

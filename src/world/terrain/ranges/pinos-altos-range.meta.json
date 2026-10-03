@@ -1,0 +1,34 @@
+{
+  "id": "pinos-altos-range",
+  "name": "Pinos Altos Range",
+  "landmark": "Black Peak",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.398,
+    32.71,
+    -107.927,
+    33.109
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.168,
+    "rawness": 0.157,
+    "grandeur": 0.199,
+    "dominance": 0.516
+  },
+  "features": {
+    "reliefM": 893.7,
+    "slopeMPerKm": 95.6,
+    "peaksPer10Km": 1.1,
+    "roughnessM": 43.2,
+    "dominance": 0.5,
+    "summitM": 2746.1,
+    "lengthKm": 61.2
+  }
+}

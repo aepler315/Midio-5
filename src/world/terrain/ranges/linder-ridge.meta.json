@@ -1,0 +1,34 @@
+{
+  "id": "linder-ridge",
+  "name": "Linder Ridge",
+  "landmark": "Spokane Mount",
+  "region": "Washington, USA",
+  "bbox": [
+    -117.409,
+    47.722,
+    -116.819,
+    48.12
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.19,
+    "rawness": 0.17,
+    "grandeur": 0.208,
+    "dominance": 0.754
+  },
+  "features": {
+    "reliefM": 935.1,
+    "slopeMPerKm": 100.2,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 39.7,
+    "dominance": 0.8,
+    "summitM": 1789.8,
+    "lengthKm": 41.7
+  }
+}

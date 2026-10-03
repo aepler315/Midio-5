@@ -1,0 +1,34 @@
+{
+  "id": "trigo-mountains",
+  "name": "Trigo Mountains",
+  "landmark": "Mohave Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -114.728,
+    33.078,
+    -114.255,
+    33.476
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.17,
+    "artifact": 0.07
+  },
+  "scores": {
+    "energy": 0.184,
+    "rawness": 0.195,
+    "grandeur": 0.107,
+    "dominance": 0.655
+  },
+  "features": {
+    "reliefM": 483.6,
+    "slopeMPerKm": 78.5,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 35.7,
+    "dominance": 0.7,
+    "summitM": 833.5,
+    "lengthKm": 41.7
+  }
+}

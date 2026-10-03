@@ -1,0 +1,34 @@
+{
+  "id": "palouse-range",
+  "name": "Palouse Range",
+  "landmark": "Moscow Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -117.157,
+    46.604,
+    -116.58,
+    47.003
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.153,
+    "rawness": 0.146,
+    "grandeur": 0.148,
+    "dominance": 0.708
+  },
+  "features": {
+    "reliefM": 667,
+    "slopeMPerKm": 71,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 30.3,
+    "dominance": 0.7,
+    "summitM": 1514.2,
+    "lengthKm": 60.1
+  }
+}

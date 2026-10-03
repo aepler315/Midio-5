@@ -1,0 +1,34 @@
+{
+  "id": "lukachukai-mountains",
+  "name": "Lukachukai Mountains",
+  "landmark": "Roof Butte",
+  "region": "Arizona, USA",
+  "bbox": [
+    -109.342,
+    36.262,
+    -108.85,
+    36.66
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.222,
+    "rawness": 0.213,
+    "grandeur": 0.241,
+    "dominance": 0.245
+  },
+  "features": {
+    "reliefM": 1083.7,
+    "slopeMPerKm": 94.6,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 44.6,
+    "dominance": 0.2,
+    "summitM": 2985,
+    "lengthKm": 62
+  }
+}

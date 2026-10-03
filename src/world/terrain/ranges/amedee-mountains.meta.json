@@ -1,0 +1,34 @@
+{
+  "id": "amedee-mountains",
+  "name": "Amedee Mountains",
+  "landmark": "Amedee Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -120.4,
+    40.138,
+    -119.882,
+    40.536
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.118,
+    "rawness": 0.103,
+    "grandeur": 0.15,
+    "dominance": 0.25
+  },
+  "features": {
+    "reliefM": 676.4,
+    "slopeMPerKm": 49.9,
+    "peaksPer10Km": 1,
+    "roughnessM": 20.8,
+    "dominance": 0.3,
+    "summitM": 1896.6,
+    "lengthKm": 41.7
+  }
+}

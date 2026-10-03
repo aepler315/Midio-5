@@ -1,0 +1,34 @@
+{
+  "id": "ogilby-hills",
+  "name": "Ogilby Hills",
+  "landmark": "Stud Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -114.987,
+    32.659,
+    -114.517,
+    33.057
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.22,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.143,
+    "rawness": 0.143,
+    "grandeur": 0.131,
+    "dominance": 0.654
+  },
+  "features": {
+    "reliefM": 588.5,
+    "slopeMPerKm": 72.4,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 33.9,
+    "dominance": 0.7,
+    "summitM": 664.9,
+    "lengthKm": 41.7
+  }
+}

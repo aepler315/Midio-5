@@ -1,0 +1,34 @@
+{
+  "id": "deep-creek-mountains",
+  "name": "Deep Creek Mountains",
+  "landmark": "Deep Creek Peak",
+  "region": "Idaho, USA",
+  "bbox": [
+    -112.924,
+    42.272,
+    -112.388,
+    42.67
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.23
+  },
+  "scores": {
+    "energy": 0.206,
+    "rawness": 0.221,
+    "grandeur": 0.147,
+    "dominance": 0.507
+  },
+  "features": {
+    "reliefM": 661.9,
+    "slopeMPerKm": 100.6,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 50,
+    "dominance": 0.5,
+    "summitM": 2662.6,
+    "lengthKm": 41.7
+  }
+}

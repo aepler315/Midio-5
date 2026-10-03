@@ -1,0 +1,34 @@
+{
+  "id": "elkhead-mountains",
+  "name": "Elkhead Mountains",
+  "landmark": "Black Mountain",
+  "region": "Colorado, USA",
+  "bbox": [
+    -107.649,
+    40.592,
+    -107.127,
+    40.99
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.202,
+    "rawness": 0.194,
+    "grandeur": 0.172,
+    "dominance": 0.588
+  },
+  "features": {
+    "reliefM": 776,
+    "slopeMPerKm": 110,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 44.6,
+    "dominance": 0.6,
+    "summitM": 3120.8,
+    "lengthKm": 42.1
+  }
+}

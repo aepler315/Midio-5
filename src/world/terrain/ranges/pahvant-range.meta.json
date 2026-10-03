@@ -1,0 +1,34 @@
+{
+  "id": "pahvant-range",
+  "name": "Pahvant Range",
+  "landmark": "Pioneer Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -112.428,
+    38.795,
+    -111.919,
+    39.193
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.241,
+    "rawness": 0.203,
+    "grandeur": 0.336,
+    "dominance": 0.235
+  },
+  "features": {
+    "reliefM": 1512.6,
+    "slopeMPerKm": 120.6,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 49.8,
+    "dominance": 0.2,
+    "summitM": 3114.8,
+    "lengthKm": 66.7
+  }
+}

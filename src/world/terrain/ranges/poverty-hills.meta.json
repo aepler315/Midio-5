@@ -1,0 +1,34 @@
+{
+  "id": "poverty-hills",
+  "name": "Poverty Hills",
+  "landmark": "Split Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -118.67,
+    36.822,
+    -118.175,
+    37.22
+  ],
+  "source": "subrange",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.29
+  },
+  "scores": {
+    "energy": 0.545,
+    "rawness": 0.519,
+    "grandeur": 0.697,
+    "dominance": 0.149
+  },
+  "features": {
+    "reliefM": 3134.6,
+    "slopeMPerKm": 272.4,
+    "peaksPer10Km": 3.9,
+    "roughnessM": 136.5,
+    "dominance": 0.1,
+    "summitM": 4318.2,
+    "lengthKm": 65.9
+  }
+}

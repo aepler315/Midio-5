@@ -1,0 +1,34 @@
+{
+  "id": "grayback-mountains",
+  "name": "Grayback Mountains",
+  "landmark": "Blue Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -113.343,
+    34.426,
+    -112.863,
+    34.824
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.181,
+    "rawness": 0.179,
+    "grandeur": 0.168,
+    "dominance": 0.641
+  },
+  "features": {
+    "reliefM": 757.6,
+    "slopeMPerKm": 77.7,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 36,
+    "dominance": 0.6,
+    "summitM": 1954.1,
+    "lengthKm": 41.7
+  }
+}

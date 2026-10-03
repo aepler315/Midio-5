@@ -1,0 +1,34 @@
+{
+  "id": "boundary-hills",
+  "name": "Boundary Hills",
+  "landmark": "Black Mountain",
+  "region": "Utah, USA",
+  "bbox": [
+    -111.497,
+    41.761,
+    -110.966,
+    42.16
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.16,
+    "rawness": 0.157,
+    "grandeur": 0.149,
+    "dominance": 0.465
+  },
+  "features": {
+    "reliefM": 672.1,
+    "slopeMPerKm": 72.4,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 32.7,
+    "dominance": 0.5,
+    "summitM": 2817.7,
+    "lengthKm": 41.7
+  }
+}

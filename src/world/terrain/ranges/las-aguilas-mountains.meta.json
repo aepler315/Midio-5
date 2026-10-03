@@ -1,0 +1,34 @@
+{
+  "id": "las-aguilas-mountains",
+  "name": "Las Aguilas Mountains",
+  "landmark": "Las Aguilas Mountains",
+  "region": "California, USA",
+  "bbox": [
+    -121.25,
+    36.544,
+    -120.756,
+    36.942
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.01,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.245,
+    "rawness": 0.272,
+    "grandeur": 0.114,
+    "dominance": 0.262
+  },
+  "features": {
+    "reliefM": 512.5,
+    "slopeMPerKm": 104.8,
+    "peaksPer10Km": 2.7,
+    "roughnessM": 50.7,
+    "dominance": 0.3,
+    "summitM": 1145.4,
+    "lengthKm": 64
+  }
+}

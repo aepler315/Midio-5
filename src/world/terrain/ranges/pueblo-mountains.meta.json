@@ -1,0 +1,34 @@
+{
+  "id": "pueblo-mountains",
+  "name": "Pueblo Mountains",
+  "landmark": "Pueblo Mountain",
+  "region": "Oregon, USA",
+  "bbox": [
+    -118.916,
+    41.901,
+    -118.383,
+    42.299
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.236,
+    "rawness": 0.213,
+    "grandeur": 0.3,
+    "dominance": 0.428
+  },
+  "features": {
+    "reliefM": 1349.9,
+    "slopeMPerKm": 123,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 54.6,
+    "dominance": 0.4,
+    "summitM": 2625.4,
+    "lengthKm": 60.5
+  }
+}

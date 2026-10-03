@@ -38,7 +38,7 @@ import {
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
 import { rangeCaptionFor, sceneCaptionFor, CAPTION_DELAY_MS } from './ui/RangeCaption.js';
-import { realBiomeByName, ecoregionOfRange } from './world/RealBiomes.js';
+import { realBiomeByName, ecoregionCaption } from './world/RealBiomes.js';
 import { travelMs } from './world/BiomeSchedule.js';
 import { noteRangeShown } from './world/terrain/RangeHistory.js';
 import { groundSpeedMps } from './world/terrain/ProfileTravel.js';
@@ -1755,7 +1755,7 @@ function applyRangeCaptions(timelineData, exportMode) {
           info ? { title: info.title, ecoregion: scene.place } : null)
         : captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
           title: info.title,
-          ecoregion: ecoregionOfRange(entry.ranges.far?.id),
+          ecoregion: ecoregionCaption(entry.ranges.far?.id),
         } : null);
       if (!caption) return;
       const atMs = i === 0 ? 0 : Math.max(0, sec.startMs + travelMs(sec) - CAPTION_DELAY_MS);

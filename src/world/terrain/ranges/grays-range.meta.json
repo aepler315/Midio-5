@@ -1,0 +1,34 @@
+{
+  "id": "grays-range",
+  "name": "Grays Range",
+  "landmark": "Caribou Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -111.582,
+    42.894,
+    -111.041,
+    43.292
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.15
+  },
+  "scores": {
+    "energy": 0.203,
+    "rawness": 0.202,
+    "grandeur": 0.162,
+    "dominance": 0.655
+  },
+  "features": {
+    "reliefM": 731.2,
+    "slopeMPerKm": 113.3,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 48.2,
+    "dominance": 0.7,
+    "summitM": 2980,
+    "lengthKm": 41.7
+  }
+}

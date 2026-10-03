@@ -1,0 +1,34 @@
+{
+  "id": "sacramento-mountains",
+  "name": "Sacramento Mountains",
+  "landmark": "Harley Mountain",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -105.862,
+    32.962,
+    -105.389,
+    33.361
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.132,
+    "rawness": 0.102,
+    "grandeur": 0.247,
+    "dominance": 0.65
+  },
+  "features": {
+    "reliefM": 1111.1,
+    "slopeMPerKm": 61.8,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 28.5,
+    "dominance": 0.7,
+    "summitM": 3261.9,
+    "lengthKm": 68.3
+  }
+}

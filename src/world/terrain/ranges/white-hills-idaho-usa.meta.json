@@ -1,0 +1,34 @@
+{
+  "id": "white-hills-idaho-usa",
+  "name": "White Hills",
+  "landmark": "White Hills",
+  "region": "Idaho, USA",
+  "bbox": [
+    -114.343,
+    44.328,
+    -113.788,
+    44.726
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.292,
+    "rawness": 0.286,
+    "grandeur": 0.276,
+    "dominance": 0.527
+  },
+  "features": {
+    "reliefM": 1240.7,
+    "slopeMPerKm": 150.6,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 67.2,
+    "dominance": 0.5,
+    "summitM": 3111.9,
+    "lengthKm": 41.7
+  }
+}

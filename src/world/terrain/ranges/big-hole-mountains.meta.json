@@ -1,0 +1,34 @@
+{
+  "id": "big-hole-mountains",
+  "name": "Big Hole Mountains",
+  "landmark": "Garns Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -111.606,
+    43.464,
+    -111.06,
+    43.862
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.163,
+    "rawness": 0.136,
+    "grandeur": 0.288,
+    "dominance": 0.375
+  },
+  "features": {
+    "reliefM": 1294.5,
+    "slopeMPerKm": 74.2,
+    "peaksPer10Km": 1,
+    "roughnessM": 37.3,
+    "dominance": 0.4,
+    "summitM": 2881.9,
+    "lengthKm": 60.8
+  }
+}

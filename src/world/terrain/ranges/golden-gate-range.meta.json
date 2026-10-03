@@ -1,0 +1,34 @@
+{
+  "id": "golden-gate-range",
+  "name": "Golden Gate Range",
+  "landmark": "Golden Gate Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.648,
+    37.729,
+    -115.147,
+    38.127
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.12,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.229,
+    "rawness": 0.214,
+    "grandeur": 0.2,
+    "dominance": 0.636
+  },
+  "features": {
+    "reliefM": 898.2,
+    "slopeMPerKm": 119.9,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 45.9,
+    "dominance": 0.6,
+    "summitM": 2719.6,
+    "lengthKm": 41.7
+  }
+}

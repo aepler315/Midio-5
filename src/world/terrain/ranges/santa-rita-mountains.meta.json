@@ -1,0 +1,34 @@
+{
+  "id": "santa-rita-mountains",
+  "name": "Santa Rita Mountains",
+  "landmark": "Mount Wrightson",
+  "region": "Arizona, USA",
+  "bbox": [
+    -111.081,
+    31.497,
+    -110.616,
+    31.895
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.1,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.234,
+    "rawness": 0.192,
+    "grandeur": 0.326,
+    "dominance": 0.685
+  },
+  "features": {
+    "reliefM": 1465.8,
+    "slopeMPerKm": 137.5,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 52.9,
+    "dominance": 0.7,
+    "summitM": 2871.3,
+    "lengthKm": 43.3
+  }
+}

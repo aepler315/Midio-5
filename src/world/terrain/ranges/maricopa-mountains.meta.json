@@ -1,0 +1,34 @@
+{
+  "id": "maricopa-mountains",
+  "name": "Maricopa Mountains",
+  "landmark": "Margies Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -112.842,
+    32.96,
+    -112.37,
+    33.358
+  ],
+  "source": "subrange",
+  "archetype": "restless",
+  "mood": "unease",
+  "quality": {
+    "floorShare": 0.14,
+    "artifact": 0.13
+  },
+  "scores": {
+    "energy": 0.265,
+    "rawness": 0.281,
+    "grandeur": 0.131,
+    "dominance": 0.488
+  },
+  "features": {
+    "reliefM": 589.2,
+    "slopeMPerKm": 103,
+    "peaksPer10Km": 3,
+    "roughnessM": 44.8,
+    "dominance": 0.5,
+    "summitM": 840,
+    "lengthKm": 60.8
+  }
+}

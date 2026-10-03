@@ -1,0 +1,34 @@
+{
+  "id": "bitterroot-range",
+  "name": "Bitterroot Range",
+  "landmark": "Bitterroot Range",
+  "region": "Idaho, USA",
+  "bbox": [
+    -115.696,
+    46.536,
+    -115.119,
+    46.934
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.35
+  },
+  "scores": {
+    "energy": 0.293,
+    "rawness": 0.316,
+    "grandeur": 0.152,
+    "dominance": 0.349
+  },
+  "features": {
+    "reliefM": 683.1,
+    "slopeMPerKm": 147.7,
+    "peaksPer10Km": 2.9,
+    "roughnessM": 66.5,
+    "dominance": 0.3,
+    "summitM": 2161.6,
+    "lengthKm": 41.7
+  }
+}

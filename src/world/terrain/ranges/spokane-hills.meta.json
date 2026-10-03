@@ -1,0 +1,34 @@
+{
+  "id": "spokane-hills",
+  "name": "Spokane Hills",
+  "landmark": "Casey Peak",
+  "region": "Montana, USA",
+  "bbox": [
+    -112.106,
+    46.23,
+    -111.533,
+    46.628
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.256,
+    "rawness": 0.224,
+    "grandeur": 0.305,
+    "dominance": 0.392
+  },
+  "features": {
+    "reliefM": 1373,
+    "slopeMPerKm": 129.9,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 51.4,
+    "dominance": 0.4,
+    "summitM": 2831.9,
+    "lengthKm": 41.7
+  }
+}

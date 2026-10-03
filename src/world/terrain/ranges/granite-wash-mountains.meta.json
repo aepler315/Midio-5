@@ -1,0 +1,34 @@
+{
+  "id": "granite-wash-mountains",
+  "name": "Granite Wash Mountains",
+  "landmark": "Granite Wash Mountains",
+  "region": "Arizona, USA",
+  "bbox": [
+    -113.947,
+    33.626,
+    -113.471,
+    34.024
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.26,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.233,
+    "rawness": 0.216,
+    "grandeur": 0.269,
+    "dominance": 0.531
+  },
+  "features": {
+    "reliefM": 1209.2,
+    "slopeMPerKm": 98.2,
+    "peaksPer10Km": 2,
+    "roughnessM": 44.4,
+    "dominance": 0.5,
+    "summitM": 1560,
+    "lengthKm": 60.1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "cookes-range",
+  "name": "Cookes Range",
+  "landmark": "Cookes Peak",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -107.966,
+    32.338,
+    -107.497,
+    32.736
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.215,
+    "rawness": 0.195,
+    "grandeur": 0.257,
+    "dominance": 0.533
+  },
+  "features": {
+    "reliefM": 1157.5,
+    "slopeMPerKm": 102.2,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 44.5,
+    "dominance": 0.5,
+    "summitM": 2541.7,
+    "lengthKm": 41.7
+  }
+}

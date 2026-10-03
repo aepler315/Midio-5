@@ -71,9 +71,14 @@ export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome
   if (worldKind !== 'alpine') return null;
   const far = range && range.name ? range : BUNDLED_RANGE;
   const cast = far === BUNDLED_RANGE ? { far } : { horizon: ridges?.horizon, massif: ridges?.massif, far, mid: ridges?.mid, near: ridges?.near };
-  const credit = Object.values(cast).some((x) => x?.source === 'discovered')
-    ? 'Elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: Wikidata'
-    : 'Elevation: AWS Terrain Tiles';
+  const sources = new Set(Object.values(cast).filter(Boolean).map((x) => x.source));
+  let credit = 'Elevation: AWS Terrain Tiles';
+  if (sources.has('discovered') || sources.has('subrange')) {
+    const names = sources.has('subrange') && sources.has('discovered')
+      ? 'GeoNames and Wikidata'
+      : sources.has('subrange') ? 'GeoNames' : 'Wikidata';
+    credit = `Elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: ${names}`;
+  }
   const credits = biome?.title ? `${credit} · biomes: RESOLVE Ecoregions 2017 (CC BY 4.0)` : credit;
   return {
     biome: biome?.title ? { title: biome.title, ecoregion: biome.ecoregion || '' } : null,

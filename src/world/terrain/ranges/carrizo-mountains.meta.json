@@ -1,0 +1,34 @@
+{
+  "id": "carrizo-mountains",
+  "name": "Carrizo Mountains",
+  "landmark": "Pastora Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -109.411,
+    36.591,
+    -108.918,
+    36.989
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.22,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.181,
+    "rawness": 0.143,
+    "grandeur": 0.272,
+    "dominance": 0.629
+  },
+  "features": {
+    "reliefM": 1221.8,
+    "slopeMPerKm": 87.7,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 33.8,
+    "dominance": 0.6,
+    "summitM": 2864.6,
+    "lengthKm": 41.7
+  }
+}

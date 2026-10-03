@@ -1,0 +1,34 @@
+{
+  "id": "crater-range",
+  "name": "Crater Range",
+  "landmark": "Childs Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -113.181,
+    32.233,
+    -112.712,
+    32.631
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.31,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.117,
+    "rawness": 0.117,
+    "grandeur": 0.099,
+    "dominance": 0.824
+  },
+  "features": {
+    "reliefM": 444.6,
+    "slopeMPerKm": 64.6,
+    "peaksPer10Km": 1,
+    "roughnessM": 28.5,
+    "dominance": 0.8,
+    "summitM": 970.9,
+    "lengthKm": 41.7
+  }
+}

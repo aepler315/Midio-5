@@ -1,0 +1,34 @@
+{
+  "id": "highland-range",
+  "name": "Highland Range",
+  "landmark": "Highland Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.274,
+    35.407,
+    -114.788,
+    35.805
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.195,
+    "rawness": 0.156,
+    "grandeur": 0.306,
+    "dominance": 0.607
+  },
+  "features": {
+    "reliefM": 1377,
+    "slopeMPerKm": 79.7,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 33,
+    "dominance": 0.6,
+    "summitM": 2135.5,
+    "lengthKm": 71
+  }
+}

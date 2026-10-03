@@ -1,0 +1,34 @@
+{
+  "id": "timothy-ridge",
+  "name": "Timothy Ridge",
+  "landmark": "Rock Mountain",
+  "region": "Washington, USA",
+  "bbox": [
+    -120.216,
+    48.491,
+    -119.618,
+    48.889
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.05,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.305,
+    "rawness": 0.265,
+    "grandeur": 0.402,
+    "dominance": 0.262
+  },
+  "features": {
+    "reliefM": 1810,
+    "slopeMPerKm": 147.8,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 62.2,
+    "dominance": 0.3,
+    "summitM": 2509.8,
+    "lengthKm": 67.5
+  }
+}

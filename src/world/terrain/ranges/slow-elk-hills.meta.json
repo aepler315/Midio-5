@@ -1,0 +1,34 @@
+{
+  "id": "slow-elk-hills",
+  "name": "Slow Elk Hills",
+  "landmark": "Indian Peaks",
+  "region": "Utah, USA",
+  "bbox": [
+    -112.981,
+    39.805,
+    -112.465,
+    40.203
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.201,
+    "rawness": 0.175,
+    "grandeur": 0.239,
+    "dominance": 0.509
+  },
+  "features": {
+    "reliefM": 1073.9,
+    "slopeMPerKm": 93.1,
+    "peaksPer10Km": 1.6,
+    "roughnessM": 36.5,
+    "dominance": 0.5,
+    "summitM": 2818.5,
+    "lengthKm": 43.7
+  }
+}

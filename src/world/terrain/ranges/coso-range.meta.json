@@ -1,0 +1,34 @@
+{
+  "id": "coso-range",
+  "name": "Coso Range",
+  "landmark": "Coso Range",
+  "region": "California, USA",
+  "bbox": [
+    -117.935,
+    35.943,
+    -117.445,
+    36.341
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.231,
+    "rawness": 0.198,
+    "grandeur": 0.305,
+    "dominance": 0.343
+  },
+  "features": {
+    "reliefM": 1371.8,
+    "slopeMPerKm": 85.9,
+    "peaksPer10Km": 2,
+    "roughnessM": 36,
+    "dominance": 0.3,
+    "summitM": 2481.8,
+    "lengthKm": 61.2
+  }
+}

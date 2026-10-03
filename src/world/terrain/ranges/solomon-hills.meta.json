@@ -1,0 +1,34 @@
+{
+  "id": "solomon-hills",
+  "name": "Solomon Hills",
+  "landmark": "Tepusquet Peak",
+  "region": "California, USA",
+  "bbox": [
+    -120.427,
+    34.711,
+    -119.945,
+    35.109
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.03,
+    "artifact": 0.12
+  },
+  "scores": {
+    "energy": 0.261,
+    "rawness": 0.3,
+    "grandeur": 0.186,
+    "dominance": 0.526
+  },
+  "features": {
+    "reliefM": 839.1,
+    "slopeMPerKm": 135.8,
+    "peaksPer10Km": 2.3,
+    "roughnessM": 77.2,
+    "dominance": 0.5,
+    "summitM": 1581.5,
+    "lengthKm": 42.9
+  }
+}

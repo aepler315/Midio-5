@@ -1,0 +1,34 @@
+{
+  "id": "snowcrest-range",
+  "name": "Snowcrest Range",
+  "landmark": "Hogback Mountain",
+  "region": "Montana, USA",
+  "bbox": [
+    -112.403,
+    44.695,
+    -111.845,
+    45.093
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.04,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.299,
+    "rawness": 0.299,
+    "grandeur": 0.209,
+    "dominance": 0.534
+  },
+  "features": {
+    "reliefM": 942.7,
+    "slopeMPerKm": 133.8,
+    "peaksPer10Km": 2.9,
+    "roughnessM": 55.1,
+    "dominance": 0.5,
+    "summitM": 3221.1,
+    "lengthKm": 61.2
+  }
+}

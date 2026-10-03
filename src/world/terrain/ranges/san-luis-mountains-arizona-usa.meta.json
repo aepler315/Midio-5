@@ -1,0 +1,34 @@
+{
+  "id": "san-luis-mountains-arizona-usa",
+  "name": "San Luis Mountains",
+  "landmark": "Fraguita Peak",
+  "region": "Arizona, USA",
+  "bbox": [
+    -111.564,
+    31.308,
+    -111.101,
+    31.706
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.203,
+    "rawness": 0.19,
+    "grandeur": 0.196,
+    "dominance": 0.429
+  },
+  "features": {
+    "reliefM": 881.9,
+    "slopeMPerKm": 102.2,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 41.5,
+    "dominance": 0.4,
+    "summitM": 1949.7,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "black-canyon-range",
+  "name": "Black Canyon Range",
+  "landmark": "Black Canyon Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -114.878,
+    37.642,
+    -114.378,
+    38.04
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.212,
+    "rawness": 0.184,
+    "grandeur": 0.25,
+    "dominance": 0.511
+  },
+  "features": {
+    "reliefM": 1126.2,
+    "slopeMPerKm": 100,
+    "peaksPer10Km": 1.7,
+    "roughnessM": 38.5,
+    "dominance": 0.5,
+    "summitM": 2853.3,
+    "lengthKm": 41.7
+  }
+}

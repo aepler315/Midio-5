@@ -1,0 +1,34 @@
+{
+  "id": "chalk-mountains",
+  "name": "Chalk Mountains",
+  "landmark": "Showers Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -123.957,
+    40.38,
+    -123.437,
+    40.778
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.02,
+    "artifact": 0.17
+  },
+  "scores": {
+    "energy": 0.234,
+    "rawness": 0.201,
+    "grandeur": 0.326,
+    "dominance": 0.197
+  },
+  "features": {
+    "reliefM": 1468.7,
+    "slopeMPerKm": 94,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 41.3,
+    "dominance": 0.2,
+    "summitM": 1788.6,
+    "lengthKm": 64.7
+  }
+}

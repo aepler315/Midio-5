@@ -1,5 +1,6 @@
-// Build the range basket from data/terrain/ranges.json (hand-curated) and
-// data/terrain/discovered.json (found by tools/discover-ranges.mjs).
+// Build the range basket from data/terrain/ranges.json (hand-curated),
+// data/terrain/discovered.json (tools/discover-ranges.mjs) and
+// data/terrain/subranges.json (tools/discover-subranges.mjs).
 //
 //   node tools/build-ranges.mjs            # every range
 //   node tools/build-ranges.mjs fuji rainier
@@ -10,9 +11,10 @@
 // picks the camera side), score it (RangeCharacter.js), and write it to
 // src/world/terrain/ranges/<id>.js. Then regenerate
 // src/world/terrain/ranges/index.js: metadata and scores for EVERY range,
-// small enough to load up front, with each range's profile behind its own
+// small enough to load up front, with each profile behind its own
 // dynamic import so only the chosen one is ever downloaded. That split is
-// what lets the basket hold hundreds of ranges.
+// what lets the basket hold hundreds of ranges. A subrange with build:false
+// was catalogued (the name and the relief probe) but is too flat to fetch.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -25,8 +27,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(readFileSync(path.join(root, 'data/terrain/ranges.json'), 'utf8'));
 const discoveredPath = path.join(root, 'data/terrain/discovered.json');
 const discovered = existsSync(discoveredPath) ? JSON.parse(readFileSync(discoveredPath, 'utf8')).ranges : [];
-// A hand-curated entry wins over a discovered one with the same id.
-const allRanges = [...manifest.ranges, ...discovered.filter((d) => !manifest.ranges.some((r) => r.id === d.id))];
+const subrangesPath = path.join(root, 'data/terrain/subranges.json');
+const subranges = existsSync(subrangesPath) ? JSON.parse(readFileSync(subrangesPath, 'utf8')).ranges : [];
+// Hand-curated wins an id, then the North America sample, then a subrange.
+const allRanges = [];
+const seenIds = new Set();
+for (const range of [...manifest.ranges, ...discovered, ...subranges]) {
+  if (seenIds.has(range.id)) continue;
+  seenIds.add(range.id);
+  allRanges.push(range);
+}
 const outDir = path.join(root, 'src/world/terrain/ranges');
 const gridDir = path.join(root, '.terrain-cache/grids');
 mkdirSync(outDir, { recursive: true });
@@ -37,6 +47,21 @@ const only = new Set(args.filter((a) => !a.startsWith('--')));
 const missingOnly = args.includes('--missing');
 const rejected = [];
 const round = (v, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
+
+function noteSkyline(id, why) {
+  if (!existsSync(subrangesPath)) return;
+  const data = JSON.parse(readFileSync(subrangesPath, 'utf8'));
+  const row = data.ranges.find((r) => r.id === id);
+  if (!row || row.catalog !== 'subrange') return;
+  if (why) {
+    row.skyline = 'rejected';
+    row.reject = why;
+  } else {
+    delete row.skyline;
+    delete row.reject;
+  }
+  writeFileSync(subrangesPath, JSON.stringify(data, null, 1) + '\n');
+}
 
 // The skyline builder assumes a north-south crest. A range on any other
 // bearing (the Cordillera Blanca runs ~30 deg off north; the Alps and the
@@ -90,6 +115,7 @@ function alignToRange(grid, range) {
 
 for (const range of allRanges) {
   if (only.size && !only.has(range.id)) continue;
+  if (range.build === false) continue;
   if (missingOnly && existsSync(path.join(outDir, `${range.id}.meta.json`))) continue;
   // A rejected build leaves nothing behind: an old good build of the same
   // id is removed too, so the index can never serve a range that no longer
@@ -97,6 +123,7 @@ for (const range of allRanges) {
   const reject = (why) => {
     rejected.push(`${range.id}: ${why}`);
     for (const ext of ['.js', '.meta.json']) rmSync(path.join(outDir, `${range.id}${ext}`), { force: true });
+    if (range.catalog === 'subrange') noteSkyline(range.id, why);
   };
   // One range failing (a tile that will not download, a grid the builder
   // chokes on) must not stop a run over a hundred others.
@@ -153,44 +180,52 @@ async function buildRange(range, reject) {
     + `export default ${JSON.stringify(profile)};\n`);
   const entry = {
     id: range.id, name: range.name, landmark: range.landmark || null, region: range.region, bbox: range.bbox,
-    source: range.summit ? 'discovered' : 'curated',
+    source: range.catalog || (range.summit ? 'discovered' : 'curated'),
     archetype: character.archetype, mood: character.mood,
     quality: { floorShare: round(quality.floorShare, 2), artifact: round(quality.artifact, 2) },
     scores: Object.fromEntries(Object.entries(character.scores).map(([k, v]) => [k, round(v)])),
     features: Object.fromEntries(Object.entries(character.features).map(([k, v]) => [k, round(v, 1)])),
   };
   writeFileSync(path.join(outDir, `${range.id}.meta.json`), JSON.stringify(entry, null, 2) + '\n');
+  if (range.catalog === 'subrange') noteSkyline(range.id, null);
   console.log(`${range.id.padEnd(18)} ${entry.archetype.padEnd(9)} ${JSON.stringify(entry.scores)}`);
 }
 
-// A range dropped from both lists (or renamed) leaves no build behind.
-for (const f of readdirSync(outDir)) {
-  const id = f.replace(/\.meta\.json$|\.js$/, '');
-  if (f !== 'index.js' && !allRanges.some((r) => r.id === id)) rmSync(path.join(outDir, f), { force: true });
-}
+const noFinalize = args.includes('--no-finalize');
 
-// The index covers every built range, not just the ones rebuilt this run.
-const metas = readdirSync(outDir).filter((f) => f.endsWith('.meta.json')).sort()
-  .map((f) => JSON.parse(readFileSync(path.join(outDir, f), 'utf8')))
-  .filter((m) => allRanges.some((r) => r.id === m.id) && existsSync(path.join(outDir, `${m.id}.js`)));
-// The index carries only what matching and the caption need; bbox, raw
-// features and quality stay in each range's .meta.json. With a hundred
-// ranges the full metadata would add ~50KB to every page load.
-const indexEntries = metas.map(({ id, name, landmark, region, source, archetype, mood, scores, features }) => ({
-  id, name, landmark, region, source, archetype, mood, scores,
-  // For the caption's stats: how much real skyline was sampled.
-  lengthKm: features?.lengthKm ?? null,
-  // Which ridge the range can stand on: high, mid or low relief
-  // (RangeMatcher.RIDGE_BANDS).
-  reliefM: features?.reliefM ?? null,
-}));
-const loaders = metas.map((m) => `  ${JSON.stringify(m.id)}: () => import('./${m.id}.js'),`).join('\n');
-writeFileSync(path.join(outDir, 'index.js'),
-  `// Generated by tools/build-ranges.mjs from data/terrain/ranges.json. Do not edit.\n`
-  + `// Every range's scores up front; each profile behind its own import.\n`
-  + `export const RANGES = ${JSON.stringify(indexEntries, null, 1)};\n\n`
-  + `export const LOADERS = {\n${loaders}\n};\n`);
-console.log(`index: ${metas.length} ranges`);
+// A range dropped from both lists (or renamed) leaves no build behind.
+// --no-finalize lets several builds run at once; one later run without the
+// flag writes the index.
+if (!noFinalize) {
+  const live = new Set(allRanges.filter((r) => r.build !== false).map((r) => r.id));
+  for (const f of readdirSync(outDir)) {
+    const id = f.replace(/\.meta\.json$|\.js$/, '');
+    if (f !== 'index.js' && f !== 'shapes.js' && !live.has(id)) rmSync(path.join(outDir, f), { force: true });
+  }
+
+  // The index covers every built range, not just the ones rebuilt this run.
+  const metas = readdirSync(outDir).filter((f) => f.endsWith('.meta.json')).sort()
+    .map((f) => JSON.parse(readFileSync(path.join(outDir, f), 'utf8')))
+    .filter((m) => allRanges.some((r) => r.id === m.id) && existsSync(path.join(outDir, `${m.id}.js`)));
+  // The index carries only what matching and the caption need; bbox, raw
+  // features and quality stay in each range's .meta.json. With a hundred
+  // ranges the full metadata would add ~50KB to every page load.
+  const indexEntries = metas.map(({ id, name, landmark, region, source, archetype, mood, scores, features }) => ({
+    id, name, landmark, region, source, archetype, mood, scores,
+    // For the caption's stats: how much real skyline was sampled.
+    lengthKm: features?.lengthKm ?? null,
+    // Which ridge the range can stand on: high, mid or low relief
+    // (RangeMatcher.RIDGE_BANDS).
+    reliefM: features?.reliefM ?? null,
+  }));
+  const loaders = metas.map((m) => `  ${JSON.stringify(m.id)}: () => import('./${m.id}.js'),`).join('\n');
+  writeFileSync(path.join(outDir, 'index.js'),
+    `// Generated by tools/build-ranges.mjs from data/terrain/ranges.json. Do not edit.\n`
+    + `// Every range's scores up front; each profile behind its own import.\n`
+    + `export const RANGES = ${JSON.stringify(indexEntries, null, 1)};\n\n`
+    + `export const LOADERS = {\n${loaders}\n};\n`);
+  console.log(`index: ${metas.length} ranges`);
+  // Refresh the small foreground-selection table whenever scans change.
+  await import('./build-range-shapes.mjs');
+}
 if (rejected.length) console.log(`rejected (not in the index):\n  ${rejected.join('\n  ')}`);
-// Refresh the small foreground-selection table whenever scans change.
-await import('./build-range-shapes.mjs');

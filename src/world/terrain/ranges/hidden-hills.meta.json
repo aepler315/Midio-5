@@ -1,0 +1,34 @@
+{
+  "id": "hidden-hills",
+  "name": "Hidden Hills",
+  "landmark": "Poverty Mountain",
+  "region": "Arizona, USA",
+  "bbox": [
+    -113.745,
+    36.204,
+    -113.254,
+    36.602
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.09,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.095,
+    "rawness": 0.104,
+    "grandeur": 0.104,
+    "dominance": 0.386
+  },
+  "features": {
+    "reliefM": 466.2,
+    "slopeMPerKm": 45.1,
+    "peaksPer10Km": 0.8,
+    "roughnessM": 28,
+    "dominance": 0.4,
+    "summitM": 2067.5,
+    "lengthKm": 64.7
+  }
+}

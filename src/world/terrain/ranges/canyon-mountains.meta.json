@@ -1,0 +1,34 @@
+{
+  "id": "canyon-mountains",
+  "name": "Canyon Mountains",
+  "landmark": "Fool Creek Peak",
+  "region": "Utah, USA",
+  "bbox": [
+    -112.463,
+    39.194,
+    -111.951,
+    39.592
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.255,
+    "rawness": 0.233,
+    "grandeur": 0.257,
+    "dominance": 0.564
+  },
+  "features": {
+    "reliefM": 1154.9,
+    "slopeMPerKm": 142.4,
+    "peaksPer10Km": 1.9,
+    "roughnessM": 56,
+    "dominance": 0.6,
+    "summitM": 2955,
+    "lengthKm": 41.7
+  }
+}

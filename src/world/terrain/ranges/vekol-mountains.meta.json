@@ -1,0 +1,34 @@
+{
+  "id": "vekol-mountains",
+  "name": "Vekol Mountains",
+  "landmark": "Table Top",
+  "region": "Arizona, USA",
+  "bbox": [
+    -112.36,
+    32.56,
+    -111.89,
+    32.958
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.152,
+    "rawness": 0.16,
+    "grandeur": 0.1,
+    "dominance": 0.465
+  },
+  "features": {
+    "reliefM": 451.2,
+    "slopeMPerKm": 74.3,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 34.4,
+    "dominance": 0.5,
+    "summitM": 1011.8,
+    "lengthKm": 41.7
+  }
+}

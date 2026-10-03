@@ -1,0 +1,34 @@
+{
+  "id": "wenatchee-mountains",
+  "name": "Wenatchee Mountains",
+  "landmark": "Wenatchee Mountains",
+  "region": "Washington, USA",
+  "bbox": [
+    -121.125,
+    47.226,
+    -120.541,
+    47.624
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.1
+  },
+  "scores": {
+    "energy": 0.27,
+    "rawness": 0.264,
+    "grandeur": 0.331,
+    "dominance": 0.598
+  },
+  "features": {
+    "reliefM": 1489.9,
+    "slopeMPerKm": 137.3,
+    "peaksPer10Km": 2,
+    "roughnessM": 70.6,
+    "dominance": 0.6,
+    "summitM": 2841.1,
+    "lengthKm": 60.8
+  }
+}

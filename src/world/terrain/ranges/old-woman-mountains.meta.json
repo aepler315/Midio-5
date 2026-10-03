@@ -1,0 +1,34 @@
+{
+  "id": "old-woman-mountains",
+  "name": "Old Woman Mountains",
+  "landmark": "Carbonate Peak",
+  "region": "California, USA",
+  "bbox": [
+    -115.431,
+    34.36,
+    -114.951,
+    34.758
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.16,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.242,
+    "rawness": 0.239,
+    "grandeur": 0.168,
+    "dominance": 0.613
+  },
+  "features": {
+    "reliefM": 757.2,
+    "slopeMPerKm": 107,
+    "peaksPer10Km": 2.4,
+    "roughnessM": 42,
+    "dominance": 0.6,
+    "summitM": 1610.1,
+    "lengthKm": 41.7
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "little-valley-hills",
+  "name": "Little Valley Hills",
+  "landmark": "Little Valley Hills",
+  "region": "Idaho, USA",
+  "bbox": [
+    -111.821,
+    42.859,
+    -111.28,
+    43.257
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.176,
+    "rawness": 0.16,
+    "grandeur": 0.215,
+    "dominance": 0.676
+  },
+  "features": {
+    "reliefM": 966.6,
+    "slopeMPerKm": 98.8,
+    "peaksPer10Km": 1.2,
+    "roughnessM": 42.6,
+    "dominance": 0.7,
+    "summitM": 2980.7,
+    "lengthKm": 41.7
+  }
+}

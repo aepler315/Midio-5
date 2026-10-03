@@ -1,0 +1,34 @@
+{
+  "id": "sand-hills-idaho-usa",
+  "name": "Sand Hills",
+  "landmark": "Taylor Mountain",
+  "region": "Idaho, USA",
+  "bbox": [
+    -112.192,
+    43.107,
+    -111.649,
+    43.505
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.08,
+    "artifact": 0.18
+  },
+  "scores": {
+    "energy": 0.101,
+    "rawness": 0.105,
+    "grandeur": 0.125,
+    "dominance": 0.459
+  },
+  "features": {
+    "reliefM": 562.2,
+    "slopeMPerKm": 52.3,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 30.4,
+    "dominance": 0.5,
+    "summitM": 2293.9,
+    "lengthKm": 41.7
+  }
+}

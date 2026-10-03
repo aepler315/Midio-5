@@ -1,0 +1,34 @@
+{
+  "id": "hannan-range",
+  "name": "Hannan Range",
+  "landmark": "Hannan Range",
+  "region": "Nevada, USA",
+  "bbox": [
+    -119.226,
+    40.354,
+    -118.706,
+    40.752
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.12,
+    "artifact": 0.03
+  },
+  "scores": {
+    "energy": 0.236,
+    "rawness": 0.225,
+    "grandeur": 0.197,
+    "dominance": 0.538
+  },
+  "features": {
+    "reliefM": 888.5,
+    "slopeMPerKm": 113.1,
+    "peaksPer10Km": 2.1,
+    "roughnessM": 44.6,
+    "dominance": 0.5,
+    "summitM": 2372.6,
+    "lengthKm": 42.5
+  }
+}

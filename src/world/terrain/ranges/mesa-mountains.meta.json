@@ -1,0 +1,34 @@
+{
+  "id": "mesa-mountains",
+  "name": "Mesa Mountains",
+  "landmark": "Bridge Timber Mountain",
+  "region": "Colorado, USA",
+  "bbox": [
+    -108.242,
+    36.955,
+    -107.747,
+    37.353
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.26,
+    "artifact": 0.09
+  },
+  "scores": {
+    "energy": 0.185,
+    "rawness": 0.167,
+    "grandeur": 0.294,
+    "dominance": 0.607
+  },
+  "features": {
+    "reliefM": 1321.3,
+    "slopeMPerKm": 81.2,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 44.4,
+    "dominance": 0.6,
+    "summitM": 3308,
+    "lengthKm": 71.4
+  }
+}

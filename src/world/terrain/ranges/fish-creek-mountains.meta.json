@@ -1,0 +1,34 @@
+{
+  "id": "fish-creek-mountains",
+  "name": "Fish Creek Mountains",
+  "landmark": "Carrizo Mountain",
+  "region": "California, USA",
+  "bbox": [
+    -116.25,
+    32.626,
+    -115.78,
+    33.024
+  ],
+  "source": "subrange",
+  "archetype": "defiant",
+  "mood": "defiance",
+  "quality": {
+    "floorShare": 0.12,
+    "artifact": 0.04
+  },
+  "scores": {
+    "energy": 0.186,
+    "rawness": 0.165,
+    "grandeur": 0.241,
+    "dominance": 0.7
+  },
+  "features": {
+    "reliefM": 1085.1,
+    "slopeMPerKm": 83.8,
+    "peaksPer10Km": 1.4,
+    "roughnessM": 37,
+    "dominance": 0.7,
+    "summitM": 1406.7,
+    "lengthKm": 41.7
+  }
+}

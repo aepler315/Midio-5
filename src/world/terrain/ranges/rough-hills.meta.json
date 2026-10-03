@@ -1,0 +1,34 @@
+{
+  "id": "rough-hills",
+  "name": "Rough Hills",
+  "landmark": "Rough Hills",
+  "region": "Nevada, USA",
+  "bbox": [
+    -115.848,
+    41.494,
+    -115.319,
+    41.892
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.16,
+    "artifact": 0.02
+  },
+  "scores": {
+    "energy": 0.246,
+    "rawness": 0.224,
+    "grandeur": 0.248,
+    "dominance": 0.457
+  },
+  "features": {
+    "reliefM": 1116.3,
+    "slopeMPerKm": 109.6,
+    "peaksPer10Km": 2.2,
+    "roughnessM": 42.8,
+    "dominance": 0.5,
+    "summitM": 3281.8,
+    "lengthKm": 41.7
+  }
+}

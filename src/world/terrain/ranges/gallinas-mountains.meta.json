@@ -1,0 +1,34 @@
+{
+  "id": "gallinas-mountains",
+  "name": "Gallinas Mountains",
+  "landmark": "Indian Mesa",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -107.751,
+    34.092,
+    -107.272,
+    34.49
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.08
+  },
+  "scores": {
+    "energy": 0.153,
+    "rawness": 0.161,
+    "grandeur": 0.131,
+    "dominance": 0.341
+  },
+  "features": {
+    "reliefM": 587.8,
+    "slopeMPerKm": 81.6,
+    "peaksPer10Km": 1.3,
+    "roughnessM": 40.3,
+    "dominance": 0.3,
+    "summitM": 2650.4,
+    "lengthKm": 62.8
+  }
+}

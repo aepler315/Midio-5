@@ -1,0 +1,34 @@
+{
+  "id": "o-wi-yu-kuts-mountains",
+  "name": "O-wi-yu-kuts Mountains",
+  "landmark": "Diamond Peak",
+  "region": "Colorado, USA",
+  "bbox": [
+    -109.14,
+    40.751,
+    -108.617,
+    41.149
+  ],
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "quality": {
+    "floorShare": 0.06,
+    "artifact": 0.05
+  },
+  "scores": {
+    "energy": 0.151,
+    "rawness": 0.106,
+    "grandeur": 0.261,
+    "dominance": 0.322
+  },
+  "features": {
+    "reliefM": 1173.9,
+    "slopeMPerKm": 88.6,
+    "peaksPer10Km": 0.7,
+    "roughnessM": 30.8,
+    "dominance": 0.3,
+    "summitM": 2909.3,
+    "lengthKm": 41.7
+  }
+}

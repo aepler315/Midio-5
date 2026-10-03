@@ -1,0 +1,34 @@
+{
+  "id": "silver-city-range",
+  "name": "Silver City Range",
+  "landmark": "Silver City Range",
+  "region": "New Mexico, USA",
+  "bbox": [
+    -108.565,
+    32.602,
+    -108.095,
+    33
+  ],
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "quality": {
+    "floorShare": 0.17,
+    "artifact": 0.06
+  },
+  "scores": {
+    "energy": 0.151,
+    "rawness": 0.119,
+    "grandeur": 0.248,
+    "dominance": 0.567
+  },
+  "features": {
+    "reliefM": 1114.7,
+    "slopeMPerKm": 71,
+    "peaksPer10Km": 1,
+    "roughnessM": 29.3,
+    "dominance": 0.6,
+    "summitM": 2744.1,
+    "lengthKm": 41.7
+  }
+}
