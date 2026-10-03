@@ -15,6 +15,7 @@ import { assignSongScenes } from './SceneCatalog.js';
 import SCENE_CATALOG from './sceneCatalogData.js';
 import { chooseSongBiomes, chooseBiomeRidges } from './BiomeSet.js';
 import { profilesFromJSON } from './TerrainProfile.js';
+import { REAL_BIOME_NAMES } from '../RealBiomes.js';
 import { chooseHorizonRange, MASSIF_SALT } from './HorizonRidge.js';
 
 export { RANGES };
@@ -90,10 +91,13 @@ export async function prepareSongRange(profile, seed) {
  * for the spectrum massif behind it: another of those skylines, never the
  * horizon's. `sceneByBiome` maps each biome to its Range v2 SceneChoice
  * ({ view, fallbackReason }) from the curated catalog, drawn once per song.
+ * `biome` (the player's pick, ui/SceneChoice.js) keeps the whole song in
+ * that one biome instead of drawing the song's own; an unknown name is
+ * ignored.
  */
-export async function prepareSongTerrain(profile, seed, recent = readRecentRanges()) {
+export async function prepareSongTerrain(profile, seed, recent = readRecentRanges(), { biome: pinned = null } = {}) {
   try {
-    const biomes = chooseSongBiomes(profile, seed);
+    const biomes = pinned && REAL_BIOME_NAMES.includes(pinned) ? [pinned] : chooseSongBiomes(profile, seed);
     if (!biomes.length) return null;
     const byBiome = new Map();
     const load = async (biome) => {

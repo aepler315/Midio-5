@@ -115,6 +115,13 @@ export class RangePresentation {
     this._arrivalStartSec = null;
   }
 
+  /** Force one catalog view for every biome from the next setSong on (the
+   *  player's range pick, or ?rangeView), or null to let each song choose. */
+  setForcedView(viewId = null) {
+    this.forcedViewId = viewId || null;
+    this.forced = this.forcedViewId ? forcedSceneChoice(this.catalog, this.forcedViewId) : null;
+  }
+
   /** True while the scene is fading in over legacy scenery that is still
    *  drawn underneath it. */
   get arriving() { return this.active && this.arrival < 1; }
