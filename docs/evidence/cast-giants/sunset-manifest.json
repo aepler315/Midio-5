@@ -1,8 +1,8 @@
 {
   "phase": "sunset",
-  "timestamp": "2026-10-03T08:27:06.061Z",
+  "timestamp": "2026-10-03T09:04:00.276Z",
   "baseline": "96908d0",
-  "commit": "26e80b468628df4bd5453d86c215367e5b0bcb7f",
+  "commit": "69c7a96e3a773b3bb9f629d0712255e57a755a4a",
   "browser": "141.0.7390.37",
   "fixtureSha256": "122fe0ddd4e0dea7fa3646b91abb3f8b5324a6cfe0c95f376153f524a14a08df",
   "viewport": [
@@ -51,7 +51,7 @@
           "stats": {
             "depthPasses": 5,
             "partitions": 15,
-            "lastPartitionMs": 0.900000000372529,
+            "lastPartitionMs": 1,
             "mirrorPasses": 5
           },
           "sideB": false
@@ -170,11 +170,11 @@
           }
         },
         "timings": {
-          "lastCopyMs": 380.79999999981374,
-          "lastPartitionMs": 0.900000000372529,
+          "lastCopyMs": 380.69999999995343,
+          "lastPartitionMs": 1,
           "frameId": 5,
-          "frameRenderMs": 22.90000000037253,
-          "frameCopyMs": 13727.900000000373
+          "frameRenderMs": 26.900000000023283,
+          "frameCopyMs": 14061.59999999986
         },
         "catalogVersion": 19
       },
@@ -277,9 +277,9 @@
         "layout": {
           "centers": [
             [
-              270.82154264341256,
+              430.82154264341256,
               2055.39990234375,
-              -1603.7574518069318
+              -1683.7574518069318
             ],
             [
               -5040,
@@ -337,15 +337,15 @@
           0
         ],
         "spans": [
-          214.0596106798526,
+          187.13722547324187,
           5384.857324218749,
           8615.77171875
         ],
         "center": [
           [
-            270.82154264341256,
+            430.82154264341256,
             2055.39990234375,
-            -1603.7574518069318
+            -1683.7574518069318
           ],
           [
             -5040,
@@ -398,7 +398,7 @@
           "stats": {
             "depthPasses": 9,
             "partitions": 27,
-            "lastPartitionMs": 1,
+            "lastPartitionMs": 1.2000000000698492,
             "mirrorPasses": 9
           },
           "sideB": false
@@ -517,11 +517,11 @@
           }
         },
         "timings": {
-          "lastCopyMs": 365.70000000018626,
-          "lastPartitionMs": 1,
+          "lastCopyMs": 353.79999999993015,
+          "lastPartitionMs": 1.2000000000698492,
           "frameId": 9,
-          "frameRenderMs": 16.90000000037253,
-          "frameCopyMs": 14001.299999999814
+          "frameRenderMs": 17,
+          "frameCopyMs": 13889.79999999993
         },
         "catalogVersion": 19
       },
@@ -624,9 +624,9 @@
         "layout": {
           "centers": [
             [
-              270.82154264341256,
+              430.82154264341256,
               2055.39990234375,
-              -1603.7574518069318
+              -1683.7574518069318
             ],
             [
               -5040,
@@ -684,15 +684,15 @@
           0
         ],
         "spans": [
-          214.0596106798526,
+          187.13722547324187,
           5384.857324218749,
           8615.77171875
         ],
         "center": [
           [
-            270.82154264341256,
+            430.82154264341256,
             2055.39990234375,
-            -1603.7574518069318
+            -1683.7574518069318
           ],
           [
             -5040,
@@ -745,7 +745,7 @@
           "stats": {
             "depthPasses": 13,
             "partitions": 39,
-            "lastPartitionMs": 0.7000000001862645,
+            "lastPartitionMs": 0.7999999999301508,
             "mirrorPasses": 13
           },
           "sideB": false
@@ -864,11 +864,11 @@
           }
         },
         "timings": {
-          "lastCopyMs": 392.70000000018626,
-          "lastPartitionMs": 0.7000000001862645,
+          "lastCopyMs": 369.70000000006985,
+          "lastPartitionMs": 0.7999999999301508,
           "frameId": 13,
-          "frameRenderMs": 17.100000000558794,
-          "frameCopyMs": 13832.5
+          "frameRenderMs": 18.5,
+          "frameCopyMs": 14032.90000000014
         },
         "catalogVersion": 19
       },
@@ -971,9 +971,9 @@
         "layout": {
           "centers": [
             [
-              270.82154264341256,
+              430.82154264341256,
               2055.39990234375,
-              -1603.7574518069318
+              -1683.7574518069318
             ],
             [
               -5040,
@@ -1031,15 +1031,15 @@
           0.3
         ],
         "spans": [
-          214.0596106798526,
+          187.13722547324187,
           5384.857324218749,
           8615.77171875
         ],
         "center": [
           [
-            270.82154264341256,
+            430.82154264341256,
             2055.39990234375,
-            -1603.7574518069318
+            -1683.7574518069318
           ],
           [
             -5040,
@@ -1092,7 +1092,7 @@
           "stats": {
             "depthPasses": 5,
             "partitions": 15,
-            "lastPartitionMs": 0.8999999994412065
+            "lastPartitionMs": 0.7999999999301508
           },
           "sideB": false
         },
@@ -1205,11 +1205,11 @@
           }
         },
         "timings": {
-          "lastCopyMs": 85.70000000018626,
-          "lastPartitionMs": 0.8999999994412065,
+          "lastCopyMs": 85.30000000004657,
+          "lastPartitionMs": 0.7999999999301508,
           "frameId": 5,
-          "frameRenderMs": 3.299999998882413,
-          "frameCopyMs": 2705.300000000745
+          "frameRenderMs": 3.699999999953434,
+          "frameCopyMs": 2851.20000000007
         },
         "catalogVersion": 19
       },
@@ -1433,7 +1433,7 @@
           "stats": {
             "depthPasses": 9,
             "partitions": 27,
-            "lastPartitionMs": 0.8000000007450581
+            "lastPartitionMs": 0.7999999999301508
           },
           "sideB": false
         },
@@ -1546,11 +1546,11 @@
           }
         },
         "timings": {
-          "lastCopyMs": 83.70000000018626,
-          "lastPartitionMs": 0.900000000372529,
+          "lastCopyMs": 90.10000000009313,
+          "lastPartitionMs": 0.7999999999301508,
           "frameId": 9,
-          "frameRenderMs": 3.599999999627471,
-          "frameCopyMs": 2756.0000000009313
+          "frameRenderMs": 3.3999999999068677,
+          "frameCopyMs": 2707.8000000000466
         },
         "catalogVersion": 19
       },
@@ -1774,7 +1774,7 @@
           "stats": {
             "depthPasses": 13,
             "partitions": 39,
-            "lastPartitionMs": 1.199999999254942
+            "lastPartitionMs": 0.8000000000465661
           },
           "sideB": false
         },
@@ -1887,11 +1887,11 @@
           }
         },
         "timings": {
-          "lastCopyMs": 98.40000000037253,
-          "lastPartitionMs": 1.199999999254942,
+          "lastCopyMs": 81.80000000004657,
+          "lastPartitionMs": 0.8000000000465661,
           "frameId": 13,
-          "frameRenderMs": 3.299999998882413,
-          "frameCopyMs": 2787
+          "frameRenderMs": 2.799999999930151,
+          "frameCopyMs": 2827.5000000001164
         },
         "catalogVersion": 19
       },
