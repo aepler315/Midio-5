@@ -114,15 +114,6 @@ export function stormAt(mgr, timeMs) {
  * ground inside the same curtains, rainCurtain), lightning glows inside the
  * cloud rather than as a bolt laid over the peaks, and as the storm breaks
  * the deck tears into sunlit remnants. The lake's backdrop captures this sky. */
-const decks = new WeakMap();
-function deckLayer(canvas) {
-  const make = typeof OffscreenCanvas === 'function' ? (w, h) => new OffscreenCanvas(w, h)
-    : typeof document !== 'undefined' ? (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h }) : null;
-  if (!make) return null;
-  let layer = decks.get(canvas);
-  if (!layer || layer.width !== canvas.width || layer.height !== canvas.height) decks.set(canvas, layer = make(canvas.width, canvas.height));
-  return layer;
-}
 export function drawStormSky(ctx, canvas, storm, { tSec = 0, seed = 0, pan = null, light, reducedMotion = false } = {}) {
   const amount = unit(storm?.amount), breaking = unit(storm?.break01), flash = unit(storm?.flash);
   if (amount < .001 && breaking < .001) return;
@@ -138,9 +129,6 @@ export function drawStormSky(ctx, canvas, storm, { tSec = 0, seed = 0, pan = nul
   ctx.fillStyle = dark; ctx.fillRect(0, 0, w, h);
   // The deck: heavy banks low over the peaks. As the storm breaks they thin
   // to scattered remnants with sunlit rims, the sky washed clean between.
-  const layer = deckLayer(canvas);
-  const deck = layer ? layer.getContext('2d') : ctx;
-  if (layer) deck.clearRect(0, 0, w, h);
   const banks = rangeCloudBanks({ width: w, height: h, tSec: motion * .6, seed: (seed % 9973) + 17, panPx: (pan?.x || 0) * w / 2, panYPx: -(pan?.y || 0) * h / 2, count: 14 });
   banks.forEach((b, i) => {
     const remnant = breaking * smooth(.35, .75, hash01(i + seed % 101)) * .9;
@@ -149,20 +137,16 @@ export function drawStormSky(ctx, canvas, storm, { tSec = 0, seed = 0, pan = nul
   });
   const sun = breaking * (1 - amount);
   const mixRgb = (a, b) => a.map((v, i) => Math.round(v + (b[i] - v) * sun));
-  drawRangeClouds(deck, banks, { dark: mixRgb([26, 31, 39], [104, 114, 128]), lit: mixRgb([70, 76, 86], [240, 228, 206]), light,
+  drawRangeClouds(ctx, banks, { dark: mixRgb([26, 31, 39], [104, 114, 128]), lit: mixRgb([70, 76, 86], [240, 228, 206]), light,
     directGain: .35 + sun * 1.2 });
-  if (flash > .001 && layer) {
-    // Lightning inside the cloud: only the deck itself lights up.
-    const fx = ((storm.flashU ?? .5) + panX) * w, fy = h * .15;
-    deck.save();
-    deck.globalCompositeOperation = 'source-atop';
-    const glow = deck.createRadialGradient(fx, fy, 0, fx, fy, w * .32);
-    glow.addColorStop(0, `rgba(214,226,255,${flash})`); glow.addColorStop(.5, `rgba(170,188,235,${flash * .5})`);
-    glow.addColorStop(1, 'rgba(170,188,235,0)');
-    deck.fillStyle = glow; deck.fillRect(0, 0, w, h);
-    deck.restore();
+  if (flash > .001) {
+    // Lightning inside the cloud: the banks near the strike are painted
+    // again in its light, so only the deck itself glows (no screen flash).
+    const fx = ((storm.flashU ?? .5) + panX) * w, fy = h * .15, reach = w * .32;
+    const lit = banks.map(b => ({ ...b, alpha: b.alpha * flash * Math.max(0, 1 - Math.hypot(b.x - fx, (b.y - fy) * 2) / reach) }))
+      .filter(b => b.alpha > .01);
+    drawRangeClouds(ctx, lit, { dark: [150, 168, 215], lit: [222, 232, 255], light: { x: fx, y: fy }, directGain: 1.2 });
   }
-  if (layer) ctx.drawImage(layer, 0, 0);
   // Rain curtains hanging from the deck's base, slanted by the wind; the
   // terrain passes continue them in front of the far land.
   if (amount > .001) {

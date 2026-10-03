@@ -802,6 +802,8 @@ export class RangeScene {
     u.uLightColor.value.add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * 1.6));
     u.uAmbientScale.value *= 1 - storm.amount * .15;
     // Lightning lights the land from inside the deck, where the sky draws it.
+    // The rain veil projects through the main camera on every view, mirror or not.
+    u.uViewProj.value.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     const skyPan = this.skyPan || { x: 0, y: 0 };
     u.uRainShift.value = (skyPan.x || 0) / 2;
     if (storm.flash > 0) {

@@ -2719,7 +2719,9 @@ export class BiomeManager {
         allowPoint: this._rangeSky?.allowPoint || null,
       }));
     }
-    if (this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
+    // Only over the GPU scene, whose land darkens under the deck with it;
+    // the legacy fallback keeps its own daylight palette.
+    if (this._rangeV2Active && this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
       this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), {
         tSec: this.tSec, seed: this.songSeed || 0, pan: this.rangePresentation?.skyPan,
         light: this._scenicLight, reducedMotion: this.reducedMotion,
