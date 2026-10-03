@@ -55,6 +55,9 @@ import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { sharedResidency } from './render/GraphicsResidency.js';
 import { RangePresentation, resolveRangeMode } from './world/alpine/RangePresentation.js';
+import { AUTO as SCENE_AUTO, pickableViews, resolveSceneChoice, searchWithSceneChoice, writeSceneChoice } from './ui/SceneChoice.js';
+import SCENE_CATALOG from './world/terrain/sceneCatalogData.js';
+import { REAL_BIOMES, rangesByBiome } from './world/RealBiomes.js';
 import { residencyBudgetFor } from './render/GraphicsResidency.js';
 import {
   DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
@@ -450,8 +453,18 @@ paramBus.rendererMode = rendererMode;
 // opts out, and any v2 failure falls back to legacy per frame on its own.
 // ?rangeView=<id> forces one catalog view for diagnostics. One presentation (and one GPU context) per page.
 const rangeMode = resolveRangeMode();
+// The player's range and biome (title screen, ?range=, ?biome=, or the
+// diagnostic ?rangeView=). Auto leaves both to the song.
+const PICKABLE_BIOMES = (() => {
+  const groups = rangesByBiome();
+  return REAL_BIOMES.filter((b) => groups.get(b.name)?.length > 0);
+})();
+let sceneChoice = resolveSceneChoice({
+  search: typeof location !== 'undefined' ? location.search : '',
+  catalog: SCENE_CATALOG, biomeNames: PICKABLE_BIOMES.map((b) => b.name),
+});
 const rangePresentation = rangeMode.mode === 'v2'
-  ? new RangePresentation({ mode: 'v2', forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
+  ? new RangePresentation({ mode: 'v2', forcedViewId: sceneChoice.viewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
   : null;
 
 // The title screen is alive from the very first frame: a living backdrop
@@ -1378,6 +1391,72 @@ if (titleWorldEl && ALL_WORLDS) {
   titleWorldEl.addEventListener('change', () => writeTitleWorld(titleWorldEl.value));
 }
 
+// Title-screen range and biome picker (SceneChoice.js). A range sets the
+// biome to its own and locks it; changing either remembers it and writes it
+// into the address bar, so the page is a link to the scenery.
+const sceneRangeEl = document.getElementById('sceneRange');
+const sceneBiomeEl = document.getElementById('sceneBiome');
+if (sceneRangeEl && sceneBiomeEl) {
+  const biomeTitle = new Map(PICKABLE_BIOMES.map((b) => [b.name, b.title]));
+  const views = pickableViews(SCENE_CATALOG);
+  for (const b of PICKABLE_BIOMES) {
+    const inBiome = views.filter((v) => v.biome === b.name);
+    if (inBiome.length) {
+      const group = document.createElement('optgroup');
+      group.label = b.title;
+      for (const v of inBiome) {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.title;
+        opt.title = v.place;
+        group.appendChild(opt);
+      }
+      sceneRangeEl.appendChild(group);
+    }
+    const opt = document.createElement('option');
+    opt.value = b.name;
+    opt.textContent = b.title;
+    sceneBiomeEl.appendChild(opt);
+  }
+  // A link may force a candidate view the menu does not list.
+  if (sceneChoice.viewId && !views.some((v) => v.id === sceneChoice.viewId)) {
+    const v = SCENE_CATALOG.views.find((x) => x.id === sceneChoice.viewId);
+    const opt = document.createElement('option');
+    opt.value = sceneChoice.viewId;
+    opt.textContent = `${v?.title || sceneChoice.viewId} (candidate)`;
+    sceneRangeEl.appendChild(opt);
+  }
+  const show = () => {
+    sceneRangeEl.value = sceneChoice.viewId || SCENE_AUTO;
+    sceneBiomeEl.value = sceneChoice.biome || SCENE_AUTO;
+    sceneBiomeEl.disabled = !!sceneChoice.viewId;
+    sceneBiomeEl.title = sceneChoice.viewId
+      ? `Set by the range: ${biomeTitle.get(sceneChoice.biome) || sceneChoice.biome}. Pick Auto range to choose a biome.`
+      : sceneBiomeEl.dataset.title;
+  };
+  sceneBiomeEl.dataset.title = sceneBiomeEl.title;
+  const commit = ({ viewId = null, biome = null }) => {
+    const view = viewId ? SCENE_CATALOG.views.find((v) => v.id === viewId) : null;
+    sceneChoice = view ? { viewId: view.id, biome: view.biome, source: 'picked' } : { viewId: null, biome, source: biome ? 'picked' : null };
+    writeSceneChoice(sceneChoice);
+    try {
+      const url = new URL(location.href);
+      url.search = searchWithSceneChoice(url.search, { ...sceneChoice, candidate: !!view && view.status !== 'approved' });
+      history.replaceState(history.state, '', url);
+    } catch { /* no history API: still remembered */ }
+    show();
+  };
+  sceneRangeEl.addEventListener('change', () => {
+    const v = sceneRangeEl.value;
+    commit(v === SCENE_AUTO ? { viewId: null, biome: null } : { viewId: v });
+  });
+  sceneBiomeEl.addEventListener('change', () => {
+    const b = sceneBiomeEl.value;
+    commit({ viewId: null, biome: b === SCENE_AUTO ? null : b });
+  });
+  show();
+}
+
 function offerWorldsThenStart(data, extra = {}) {
   try {
     clearCustomWorld();
@@ -1410,7 +1489,9 @@ function offerWorldsThenStart(data, extra = {}) {
     // ready long before a card is clicked. Kept on the song's data so it
     // survives the rebuilds a song goes through (seek, replay, export).
     const pendingForRange = pendingWorldStart;
-    pendingForRange.terrainReady = prepareSongTerrain(profile, seed).then((terrain) => {
+    // The player's range/biome pick as it stands now; replays keep it.
+    pendingForRange.data.sceneChoice = { ...sceneChoice };
+    pendingForRange.terrainReady = prepareSongTerrain(profile, seed, undefined, { biome: sceneChoice.biome }).then((terrain) => {
       pendingForRange.data.terrain = terrain;
       return terrain;
     });
@@ -1422,7 +1503,10 @@ function offerWorldsThenStart(data, extra = {}) {
       const mine = pendingWorldStart;
       const exporting = !!(extra.exportMode || readBulkExportFromUrl());
       const ready = mine.terrainReady.then((t) => (exporting && t?.whenAll ? t.whenAll.then(() => t) : t));
-      const wait = exporting ? ready : Promise.race([ready, new Promise((r) => setTimeout(r, BIOME_WAIT_MS))]);
+      // A pinned biome waits for its terrain: starting on the fallback would
+      // play the song somewhere the player did not pick.
+      const pinned = !!mine.data.sceneChoice?.biome;
+      const wait = exporting || pinned ? ready : Promise.race([ready, new Promise((r) => setTimeout(r, BIOME_WAIT_MS))]);
       wait.then(() => {
         if (pendingWorldStart !== mine) return;
         playSelectedWorld(ONE_WORLD_ID);
@@ -1443,7 +1527,8 @@ function offerWorldsThenStart(data, extra = {}) {
         if (titleChoice.mode === TITLE_AUTO) chooseRecommendedWorld();
         else playSelectedWorld(titleChoice.id);
       };
-      Promise.race([mine.terrainReady, new Promise((r) => setTimeout(r, RANGE_WAIT_MS))]).then(go);
+      (mine.data.sceneChoice?.biome ? mine.terrainReady
+        : Promise.race([mine.terrainReady, new Promise((r) => setTimeout(r, RANGE_WAIT_MS))])).then(go);
       return;
     }
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
@@ -1946,6 +2031,7 @@ function startTimeline(timelineData, extra = {}) {
   // it. Created here, per song, which is after the world is known.
   renderer = createPresentingRenderer({ canvas, mode: rendererMode, presentation: effectivePresentation(), residency: sharedResidency() });
   if (rangePresentation) {
+    rangePresentation.setForcedView((timelineData.sceneChoice || sceneChoice).viewId);
     rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen, exportMode });
     renderer.rangePresentation = rangePresentation;
   }

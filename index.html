@@ -92,6 +92,24 @@
           </select>
         </div>
 
+        <!-- Pin the scenery (ui/SceneChoice.js). Auto lets each song choose,
+             as before. A range brings its own biome. Remembered, and kept in
+             the address bar so the page links to it. Filled in by main.js. -->
+        <div class="resRow sceneChoiceRow">
+          <span class="sceneChoicePair">
+          <label for="sceneRange">Range</label>
+          <select id="sceneRange" title="The mountain view your songs play in. Auto lets each song choose. Applies from the next song. Remembered.">
+            <option value="auto" selected>Auto</option>
+          </select>
+          </span>
+          <span class="sceneChoicePair">
+          <label for="sceneBiome">Biome</label>
+          <select id="sceneBiome" title="Keep the whole song in one biome. Auto lets each song choose and travel. A range picks its own biome. Applies from the next song. Remembered.">
+            <option value="auto" selected>Auto</option>
+          </select>
+          </span>
+        </div>
+
         <!-- The way in for browsers with no file chooser. Hidden until it is
              needed: either the probe finds no chooser, or the player opens
              it deliberately. See src/ui/FileChooserProbe.js. -->
