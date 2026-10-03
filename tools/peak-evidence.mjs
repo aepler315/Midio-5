@@ -18,7 +18,7 @@ try {
   execFileSync(process.execPath, ['tools/gen-test-wav.mjs', '/tmp/midio-peak-fixture.wav', '120', '40']);
   browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH, headless: true, args: ['--ignore-gpu-blocklist', '--in-process-gpu'] });
   const results = [], errors = [];
-  for (const view of ['teton-jackson-lake', 'tombstone-north-klondike']) {
+  for (const view of (process.env.EVIDENCE_VIEWS || 'teton-jackson-lake,tombstone-north-klondike').split(',')) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, serviceWorkers: 'block' });
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', msg => { if (/shader|VALIDATE|compile|GL_INVALID_OPERATION|feedback loop/i.test(msg.text()) && ['error', 'warning'].includes(msg.type())) errors.push(msg.text()); });
@@ -49,7 +49,7 @@ try {
       window.__SMW.renderExportFrame(1000);
       await window.__SMW.rangeSettle({ timeoutMs: 180000 });
     });
-    for (const actor of (/squall|clearing|shed/.test(variant) ? ['midio'] : ['midio', 'broshi', 'midasus'])) {
+    for (const actor of (/squall|clearing|shed/.test(variant) ? ['midio'] : (process.env.EVIDENCE_ACTORS || 'midio,broshi,midasus').split(','))) {
       const result = await page.evaluate(async ({ actor, phase, variant }) => {
         let app = window.__SMW;
         app.beginBulkExport({ width: 960, height: 540 });

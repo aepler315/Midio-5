@@ -351,13 +351,15 @@ export const SCENE_FRAG = /* glsl */`
     // across wet receivers; world coordinates keep them fixed to the land.
     float opening=smoothstep(.35,.72,vnoise12(vRenderedWorld.xz/1100.0+vec2(uTime*.02,0.0)));
     lit += albedo*uLightColor*key*uStorm.z*opening*.85;
+    float giantShade = 0.0;
     if (!water && uGiantPeak[1] > 0.0) {
+      giantShade = broshiShadow(vRenderedWorld);
       vec3 delta=vRenderedWorld-uGiantCenter[1];
       float lantern=1.0-smoothstep(uGiantSpan[1]*.45,uGiantSpan[1]*.85,length(vec2(dot(delta,uGiantRight),delta.y)));
       // A broad spill from Broshi's lantern gives his shadow contrast in
       // dark dawn. In daylight the scene's key remains dominant.
       lit += albedo * max(vec3(.3,.22,.16)-hemi*.08,vec3(0.0))*lantern*uGiantPeak[1];
-      lit *= 1.0 - broshiShadow(vRenderedWorld)*.96;
+      lit *= 1.0 - giantShade*.96;
     }
     if (uDebugMask == 3) { outColor = vec4(albedo * 4.0, 1.0); return; }
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
@@ -403,6 +405,11 @@ export const SCENE_FRAG = /* glsl */`
     // Under a cloud sea the lake's mirror and glints are hidden with it.
     float clear = 1.0 - mist * uMistFill;
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96) * uNarrative.y);
+    // What reaches the eye from his shadow is dimmed too: the air and mist
+    // in front of the slope lie in it, and the opening's neutral land must
+    // not wash his outline out of the range.
+    float veil = 1.0 - (1.0 - clamp(air, 0.0, 1.0)) * (1.0 - mist);
+    color *= 1.0 - giantShade * (.5 + .3 * veil);
     // The lake mirrors the ground above it. The mirror image already holds
     // the air along its own (longer) path, so it replaces the water's colour
     // by the water's reflectance, as the sky reflection did in lit. Groove
