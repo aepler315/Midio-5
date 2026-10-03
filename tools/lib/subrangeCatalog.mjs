@@ -65,7 +65,11 @@ export function parseGeonamesFeature(line) {
 
 /** The GNIS point for the Selkirks sits in Boundary County, Idaho, on a
  *  modest flank. The Washington crest — the part this pass is for — is
- *  Gypsy Peak. Chewelah Mountains have summits in GNIS and no MTS feature. */
+ *  Gypsy Peak. Chewelah Mountains have summits in GNIS and no MTS feature.
+ *  Lost River's GNIS point sits on Mount McCaleb, a day's walk south of
+ *  Borah Peak, which is the range. The Idaho Sawtooths are not the Arizona
+ *  hills that share the name; Thompson Peak is added because that MTS point
+ *  never arrived under its own name. */
 export const CENTER_OVERRIDES = Object.freeze([
   {
     name: 'Selkirk Mountains',
@@ -74,6 +78,21 @@ export const CENTER_OVERRIDES = Object.freeze([
     lon: -117.15219,
     elevM: 2226,
     admin1: 'WA',
+    // The published GNIS point is in Boundary County, Idaho.
+    fromAdmin1: ['ID', 'WA'],
+  },
+]);
+
+/** Replace the snapped summit. `admin1` is required when the same name
+ *  exists in another state (Sawtooth Range, California). */
+export const SUMMIT_OVERRIDES = Object.freeze([
+  {
+    name: 'Lost River Range',
+    admin1: 'ID',
+    landmark: 'Borah Peak',
+    lat: 44.137389,
+    lon: -113.781101,
+    elevM: 3859,
   },
 ]);
 
@@ -89,10 +108,25 @@ export const EXTRA_SUBRANGES = Object.freeze([
     code: 'MTS',
     geonameId: 0,
   },
+  {
+    name: 'Sawtooth Range',
+    landmark: 'Thompson Peak',
+    lat: 44.141533,
+    lon: -115.009969,
+    elevM: 3277,
+    admin1: 'ID',
+    country: 'US',
+    code: 'MTS',
+    geonameId: 0,
+  },
 ]);
 
 export function applyCenterOverride(feature) {
-  const over = CENTER_OVERRIDES.find((o) => normalizeRangeName(o.name) === normalizeRangeName(feature.name));
+  const over = CENTER_OVERRIDES.find((o) => {
+    if (normalizeRangeName(o.name) !== normalizeRangeName(feature.name)) return false;
+    const from = o.fromAdmin1 || (o.admin1 ? [o.admin1] : null);
+    return !from || from.includes(feature.admin1);
+  });
   if (!over) return { ...feature, landmark: feature.landmark || null };
   return {
     ...feature,
@@ -101,6 +135,24 @@ export function applyCenterOverride(feature) {
     elevM: over.elevM,
     admin1: over.admin1 || feature.admin1,
     landmark: over.landmark,
+  };
+}
+
+/** A named high point that the nearby-summit search misses or mislabels.
+ *  The feature's own coordinate is replaced, and `summitLocked` tells the
+ *  search not to walk off onto a lesser neighbour. */
+export function applySummitOverride(feature) {
+  const over = SUMMIT_OVERRIDES.find((o) => normalizeRangeName(o.name) === normalizeRangeName(feature.name)
+    && (!o.admin1 || o.admin1 === feature.admin1));
+  if (!over) return feature;
+  return {
+    ...feature,
+    lat: over.lat,
+    lon: over.lon,
+    elevM: over.elevM,
+    admin1: over.admin1 || feature.admin1,
+    landmark: over.landmark,
+    summitLocked: true,
   };
 }
 
@@ -141,37 +193,62 @@ export function acceptSubranges(candidates, {
 
 /** When several names snap to one summit, the name that already sits on it
  *  keeps it. The others go back to their own point — Lead King Hills is not
- *  Gypsy Peak just because Gypsy is the highest thing within a day's walk. */
+ *  Gypsy Peak just because Gypsy is the highest thing within a day's walk.
+ *  If that own point is the same viewpoint (the two GeoNames rows are the
+ *  same hill), the later name is `absorbed` and is not a second skyline. */
 export function claimSummits(entries) {
   const keyOf = (s) => (s && Number.isFinite(s.lat) ? `${s.lat.toFixed(3)},${s.lon.toFixed(3)}` : null);
   const ranked = entries
     .map((e, i) => ({ i, moved: e.origin && e.summit ? distanceKm(e.origin, e.summit) : 0 }))
     .sort((a, b) => (entries[a.i].kind === 'ridge') - (entries[b.i].kind === 'ridge')
       || a.moved - b.moved || a.i - b.i);
-  const used = new Set();
+  const held = new Map();
   const out = new Array(entries.length);
   for (const { i } of ranked) {
     const e = entries[i];
     let summit = e.summit;
     const key = keyOf(summit);
-    if (key && used.has(key) && e.origin) {
+    if (key && held.has(key) && e.origin) {
       summit = {
         name: e.name, lat: e.origin.lat, lon: e.origin.lon,
         elevM: e.origin.elevM, geonameId: e.origin.geonameId || null,
       };
     }
     const claimed = keyOf(summit);
-    if (claimed) used.add(claimed);
-    out[i] = { ...e, summit, lat: summit?.lat ?? e.lat, lon: summit?.lon ?? e.lon };
+    if (claimed && held.has(claimed)) {
+      out[i] = { ...e, summit, lat: summit?.lat ?? e.lat, lon: summit?.lon ?? e.lon, absorbedBy: held.get(claimed) };
+      continue;
+    }
+    if (claimed) held.set(claimed, e.name);
+    out[i] = { ...e, summit, lat: summit?.lat ?? e.lat, lon: summit?.lon ?? e.lon, absorbedBy: null };
   }
   return out;
 }
 
+/** Two catalogued viewpoints closer than `km` are one skyline. The higher
+ *  summit keeps `build`; the other is absorbed and left in the file. */
+export function separateViewpoints(entries, km = 1) {
+  const order = entries
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => e.build !== false && e.summit && Number.isFinite(e.summit.lat))
+    .sort((a, b) => (b.e.summit.elevM || 0) - (a.e.summit.elevM || 0) || a.i - b.i);
+  const kept = [];
+  for (const { e } of order) {
+    const hit = kept.find((k) => distanceKm(k.summit, e.summit) < km);
+    if (!hit) { kept.push(e); continue; }
+    e.build = false;
+    e.absorbedBy = hit.id || hit.name;
+  }
+  return entries;
+}
+
 /** Build a subrange when the probe shows enough relief to be a skyline.
- *  Northeast Washington keeps gentler crests; a flat catalog entry stays in
- *  the file (the name was pulled) but is not fetched at 30 m. */
+ *  A flat catalog entry stays in the file (the name was pulled) but is not
+ *  fetched at 30 m. Northeast Washington uses the same floor as the rest
+ *  of the west: a 180 m hill is not a range. */
 export function shouldBuild(entry) {
   const relief = entry.probeReliefM;
   if (!Number.isFinite(relief)) return false;
-  return entry.priority === 'northeast-washington' ? relief >= 180 : relief >= 350;
+  if (entry.absorbedBy) return false;
+  return relief >= 350;
 }

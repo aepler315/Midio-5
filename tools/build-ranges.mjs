@@ -48,6 +48,21 @@ const missingOnly = args.includes('--missing');
 const rejected = [];
 const round = (v, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 
+function noteSkyline(id, why) {
+  if (!existsSync(subrangesPath)) return;
+  const data = JSON.parse(readFileSync(subrangesPath, 'utf8'));
+  const row = data.ranges.find((r) => r.id === id);
+  if (!row || row.catalog !== 'subrange') return;
+  if (why) {
+    row.skyline = 'rejected';
+    row.reject = why;
+  } else {
+    delete row.skyline;
+    delete row.reject;
+  }
+  writeFileSync(subrangesPath, JSON.stringify(data, null, 1) + '\n');
+}
+
 // The skyline builder assumes a north-south crest. A range on any other
 // bearing (the Cordillera Blanca runs ~30 deg off north; the Alps and the
 // Himalaya run east-west) is rotated so its own axis runs up the grid. The
@@ -108,6 +123,7 @@ for (const range of allRanges) {
   const reject = (why) => {
     rejected.push(`${range.id}: ${why}`);
     for (const ext of ['.js', '.meta.json']) rmSync(path.join(outDir, `${range.id}${ext}`), { force: true });
+    if (range.catalog === 'subrange') noteSkyline(range.id, why);
   };
   // One range failing (a tile that will not download, a grid the builder
   // chokes on) must not stop a run over a hundred others.
@@ -171,6 +187,7 @@ async function buildRange(range, reject) {
     features: Object.fromEntries(Object.entries(character.features).map(([k, v]) => [k, round(v, 1)])),
   };
   writeFileSync(path.join(outDir, `${range.id}.meta.json`), JSON.stringify(entry, null, 2) + '\n');
+  if (range.catalog === 'subrange') noteSkyline(range.id, null);
   console.log(`${range.id.padEnd(18)} ${entry.archetype.padEnd(9)} ${JSON.stringify(entry.scores)}`);
 }
 
@@ -180,9 +197,10 @@ const noFinalize = args.includes('--no-finalize');
 // --no-finalize lets several builds run at once; one later run without the
 // flag writes the index.
 if (!noFinalize) {
+  const live = new Set(allRanges.filter((r) => r.build !== false).map((r) => r.id));
   for (const f of readdirSync(outDir)) {
     const id = f.replace(/\.meta\.json$|\.js$/, '');
-    if (f !== 'index.js' && f !== 'shapes.js' && !allRanges.some((r) => r.id === id)) rmSync(path.join(outDir, f), { force: true });
+    if (f !== 'index.js' && f !== 'shapes.js' && !live.has(id)) rmSync(path.join(outDir, f), { force: true });
   }
 
   // The index covers every built range, not just the ones rebuilt this run.

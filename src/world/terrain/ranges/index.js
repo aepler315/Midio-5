@@ -9454,23 +9454,6 @@ export const RANGES = [
   "reliefM": 2600.1
  },
  {
-  "id": "lance-hills",
-  "name": "Lance Hills",
-  "landmark": "Magnison Butte",
-  "region": "Washington, USA",
-  "source": "subrange",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.087,
-   "rawness": 0.098,
-   "grandeur": 0.049,
-   "dominance": 0.403
-  },
-  "lengthKm": 41.7,
-  "reliefM": 218.3
- },
- {
   "id": "langford-mountains",
   "name": "Langford Mountains",
   "landmark": "Hornbrook Mountain",
@@ -10221,19 +10204,19 @@ export const RANGES = [
  {
   "id": "lost-river-range",
   "name": "Lost River Range",
-  "landmark": "Mount McCaleb",
+  "landmark": "Borah Peak",
   "region": "Idaho, USA",
   "source": "subrange",
   "archetype": "majestic",
   "mood": "heroism",
   "scores": {
-   "energy": 0.403,
-   "rawness": 0.373,
-   "grandeur": 0.388,
-   "dominance": 0.274
+   "energy": 0.466,
+   "rawness": 0.447,
+   "grandeur": 0.423,
+   "dominance": 0.249
   },
-  "lengthKm": 43.3,
-  "reliefM": 1746.5
+  "lengthKm": 62,
+  "reliefM": 1902.3
  },
  {
   "id": "louderback-mountains",
@@ -11339,23 +11322,6 @@ export const RANGES = [
   },
   "lengthKm": 41.7,
   "reliefM": 233.1
- },
- {
-  "id": "moose-mountains",
-  "name": "Moose Mountains",
-  "landmark": "Pot Mountain",
-  "region": "Idaho, USA",
-  "source": "subrange",
-  "archetype": "serene",
-  "mood": "calm",
-  "scores": {
-   "energy": 0.293,
-   "rawness": 0.317,
-   "grandeur": 0.152,
-   "dominance": 0.351
-  },
-  "lengthKm": 41.7,
-  "reliefM": 685.4
  },
  {
   "id": "mopah-range",
@@ -13143,23 +13109,6 @@ export const RANGES = [
   "reliefM": 1465.7
  },
  {
-  "id": "phillips-hills",
-  "name": "Phillips Hills",
-  "landmark": "Godfrey Peak",
-  "region": "New Mexico, USA",
-  "source": "subrange",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.277,
-   "rawness": 0.236,
-   "grandeur": 0.392,
-   "dominance": 0.496
-  },
-  "lengthKm": 42.1,
-  "reliefM": 1765.2
- },
- {
   "id": "picabo-hills",
   "name": "Picabo Hills",
   "landmark": "Bell Mountain",
@@ -13668,23 +13617,6 @@ export const RANGES = [
   },
   "lengthKm": 42.1,
   "reliefM": 863.9
- },
- {
-  "id": "pot-hills",
-  "name": "Pot Hills",
-  "landmark": "Lone Butte",
-  "region": "Washington, USA",
-  "source": "subrange",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.173,
-   "rawness": 0.159,
-   "grandeur": 0.248,
-   "dominance": 0.604
-  },
-  "lengthKm": 41.7,
-  "reliefM": 1116.6
  },
  {
   "id": "potrero-hills",
@@ -15642,23 +15574,6 @@ export const RANGES = [
   "reliefM": 1064.4
  },
  {
-  "id": "sand-springs-range",
-  "name": "Sand Springs Range",
-  "landmark": "Sand Springs Range",
-  "region": "Nevada, USA",
-  "source": "subrange",
-  "archetype": "brooding",
-  "mood": "melancholy",
-  "scores": {
-   "energy": 0.22,
-   "rawness": 0.198,
-   "grandeur": 0.254,
-   "dominance": 0.503
-  },
-  "lengthKm": 42.1,
-  "reliefM": 1144.9
- },
- {
   "id": "sandia-mountains",
   "name": "Sandia Mountains",
   "landmark": "North Sandia Peak",
@@ -16116,6 +16031,23 @@ export const RANGES = [
   },
   "lengthKm": 41.7,
   "reliefM": 755.4
+ },
+ {
+  "id": "sawtooth-range-idaho-usa",
+  "name": "Sawtooth Range",
+  "landmark": "Thompson Peak",
+  "region": "Idaho, USA",
+  "source": "subrange",
+  "archetype": "serene",
+  "mood": "calm",
+  "scores": {
+   "energy": 0.27,
+   "rawness": 0.271,
+   "grandeur": 0.191,
+   "dominance": 0.328
+  },
+  "lengthKm": 41.7,
+  "reliefM": 858.9
  },
  {
   "id": "sawtooth-range-montana-usa",
@@ -21504,7 +21436,6 @@ export const LOADERS = {
   "lake-range": () => import('./lake-range.js'),
   "lakeside-mountains": () => import('./lakeside-mountains.js'),
   "lakeview-mountains": () => import('./lakeview-mountains.js'),
-  "lance-hills": () => import('./lance-hills.js'),
   "langford-mountains": () => import('./langford-mountains.js'),
   "laramie-mountains": () => import('./laramie-mountains.js'),
   "larkspur-hills": () => import('./larkspur-hills.js'),
@@ -21615,7 +21546,6 @@ export const LOADERS = {
   "montezuma-range": () => import('./montezuma-range.js'),
   "monument-valley": () => import('./monument-valley.js'),
   "moore-spring-hills": () => import('./moore-spring-hills.js'),
-  "moose-mountains": () => import('./moose-mountains.js'),
   "mopah-range": () => import('./mopah-range.js'),
   "moquith-mountains": () => import('./moquith-mountains.js'),
   "mormon-mountains": () => import('./mormon-mountains.js'),
@@ -21721,7 +21651,6 @@ export const LOADERS = {
   "peloncillo-mountains": () => import('./peloncillo-mountains.js'),
   "peninsular-ranges": () => import('./peninsular-ranges.js'),
   "peralta-hills": () => import('./peralta-hills.js'),
-  "phillips-hills": () => import('./phillips-hills.js'),
   "picabo-hills": () => import('./picabo-hills.js'),
   "picacho-mountains": () => import('./picacho-mountains.js'),
   "picket-range": () => import('./picket-range.js'),
@@ -21752,7 +21681,6 @@ export const LOADERS = {
   "poison-hills": () => import('./poison-hills.js'),
   "poorman-range": () => import('./poorman-range.js'),
   "portneuf-range": () => import('./portneuf-range.js'),
-  "pot-hills": () => import('./pot-hills.js'),
   "potrero-hills": () => import('./potrero-hills.js'),
   "poverty-hills": () => import('./poverty-hills.js'),
   "pretty-bird-hills": () => import('./pretty-bird-hills.js'),
@@ -21868,7 +21796,6 @@ export const LOADERS = {
   "sand-hills-nevada-usa": () => import('./sand-hills-nevada-usa.js'),
   "sand-hills-wyoming-usa-2": () => import('./sand-hills-wyoming-usa-2.js'),
   "sand-range": () => import('./sand-range.js'),
-  "sand-springs-range": () => import('./sand-springs-range.js'),
   "sandia-mountains": () => import('./sandia-mountains.js'),
   "sangre-de-christo-mountains-new-mexico": () => import('./sangre-de-christo-mountains-new-mexico.js'),
   "sangre-de-cristo-mountains": () => import('./sangre-de-cristo-mountains.js'),
@@ -21896,6 +21823,7 @@ export const LOADERS = {
   "sawtooth-mountains": () => import('./sawtooth-mountains.js'),
   "sawtooth-range-california-usa": () => import('./sawtooth-range-california-usa.js'),
   "sawtooth-range-colorado-usa": () => import('./sawtooth-range-colorado-usa.js'),
+  "sawtooth-range-idaho-usa": () => import('./sawtooth-range-idaho-usa.js'),
   "sawtooth-range-montana-usa": () => import('./sawtooth-range-montana-usa.js'),
   "sawtooth": () => import('./sawtooth.js'),
   "scalawag-ridge": () => import('./scalawag-ridge.js'),

@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { distanceKm } from '../tools/lib/rangeDiscovery.mjs';
 import {
-  acceptSubranges, applyCenterOverride, claimSummits, inNortheastWashington, isNamedRange, parseGeonamesFeature, shouldBuild,
+  acceptSubranges, applyCenterOverride, applySummitOverride, claimSummits, inNortheastWashington, isNamedRange,
+  parseGeonamesFeature, separateViewpoints, shouldBuild,
 } from '../tools/lib/subrangeCatalog.mjs';
 
 const row = (fields) => {
@@ -107,10 +110,74 @@ test('a summit already claimed stays with the name that sits on it', () => {
   assert.equal(spur.summit.name, 'Taylor Ridge');
 });
 
-test('northeast Washington builds gentler relief than the rest of the west', () => {
-  assert.equal(shouldBuild({ priority: 'northeast-washington', probeReliefM: 200 }), true);
-  assert.equal(shouldBuild({ priority: 'northeast-washington', probeReliefM: 100 }), false);
+test('a flat hill is not built, including in northeast Washington', () => {
+  assert.equal(shouldBuild({ priority: 'northeast-washington', probeReliefM: 193 }), false);
+  assert.equal(shouldBuild({ priority: 'northeast-washington', probeReliefM: 350 }), true);
   assert.equal(shouldBuild({ priority: 'west', probeReliefM: 340 }), false);
   assert.equal(shouldBuild({ priority: 'west', probeReliefM: 400 }), true);
   assert.equal(shouldBuild({ priority: 'west', probeReliefM: NaN }), false);
+  assert.equal(shouldBuild({ probeReliefM: 900, absorbedBy: 'Bitterroot Range' }), false);
+});
+
+test('Lost River moves onto Borah Peak; a California Sawtooth does not', () => {
+  const lost = applySummitOverride({ name: 'Lost River Range', lat: 43.99, lon: -113.6, elevM: 3483, admin1: 'ID' });
+  assert.equal(lost.landmark, 'Borah Peak');
+  assert.equal(lost.summitLocked, true);
+  assert.ok(lost.lat > 44.1 && lost.elevM > 3800);
+  const california = applySummitOverride({ name: 'Sawtooth Range', lat: 33, lon: -116, admin1: 'CA' });
+  assert.equal(california.summitLocked, undefined);
+});
+
+test('two names on one viewpoint do not both keep it', () => {
+  const hill = { name: 'Pot Mountain', lat: 46.73547, lon: -115.40819, elevM: 2149, geonameId: 2 };
+  const [bitter, moose] = claimSummits([
+    {
+      name: 'Bitterroot Range', kind: 'range',
+      origin: { lat: 46.73547, lon: -115.40764, elevM: 2172, geonameId: 1 },
+      summit: { name: 'Bitterroot Range', lat: 46.73547, lon: -115.40764, elevM: 2172, geonameId: 1 },
+    },
+    {
+      name: 'Moose Mountains', kind: 'range',
+      origin: hill,
+      summit: hill,
+    },
+  ]);
+  assert.equal(bitter.absorbedBy, null);
+  assert.equal(moose.absorbedBy, 'Bitterroot Range');
+});
+
+test('a lower summit within a kilometre is not a second skyline', () => {
+  const entries = [
+    { id: 'bitterroot-range', build: true, summit: { lat: 46.735, lon: -115.408, elevM: 2172 } },
+    { id: 'moose-mountains', build: true, summit: { lat: 46.736, lon: -115.409, elevM: 2149 } },
+    { id: 'kettle-river-range', build: true, summit: { lat: 48.702, lon: -118.465, elevM: 2171 } },
+  ];
+  separateViewpoints(entries);
+  assert.equal(entries[1].build, false);
+  assert.equal(entries[1].absorbedBy, 'bitterroot-range');
+  assert.equal(entries[2].build, true);
+});
+
+test('the catalog keeps one viewpoint, the relief floor, and the right Idaho crests', () => {
+  const { ranges } = JSON.parse(readFileSync(new URL('../data/terrain/subranges.json', import.meta.url), 'utf8'));
+  const built = ranges.filter((r) => r.build);
+  for (const r of ranges) {
+    if (r.skyline === 'rejected') continue;
+    assert.equal(r.build, shouldBuild(r), r.id);
+  }
+  for (let i = 0; i < built.length; i++) {
+    for (let j = i + 1; j < built.length; j++) {
+      const d = distanceKm(built[i].summit, built[j].summit);
+      assert.ok(d >= 1, `${built[i].id} and ${built[j].id} are ${d.toFixed(2)} km apart`);
+    }
+  }
+  const lost = ranges.find((r) => r.id === 'lost-river-range');
+  assert.equal(lost.landmark, 'Borah Peak');
+  assert.ok(lost.summit.elevM > 3800);
+  const sawtooth = ranges.find((r) => r.id === 'sawtooth-range-idaho-usa');
+  assert.equal(sawtooth?.landmark, 'Thompson Peak');
+  assert.equal(sawtooth.build, true);
+  assert.equal(ranges.find((r) => r.id === 'lance-hills').build, false);
+  assert.equal(ranges.find((r) => r.id === 'pot-hills').build, false);
+  assert.equal(ranges.find((r) => r.id === 'moose-mountains').build, false);
 });

@@ -1,9 +1,11 @@
 // The Range's biomes: real ones, each standing on its own real ranges.
 //
 // Every range in the basket was sampled against the RESOLVE Ecoregions 2017
-// map (tools/classify-range-biomes.mjs -> terrain/rangeBiomes.js), which puts
-// each of its 846 ecoregions in one of 14 biomes. Nine of those biomes turn
-// up under the basket's ranges. Three of them cover landscapes that do not
+// map (tools/classify-range-biomes.mjs -> terrain/rangeBiomes.js). The
+// ecoregion under the summit decides the biome. The ring around the crest
+// is kept (`surrounding`), so a sky island is not renamed for the desert it
+// rises from, and the caption can name both. The RESOLVE biomes that turn
+// up under the basket's ranges are listed below. Three of them cover landscapes that do not
 // look alike -- a temperate conifer forest is both the wet coast of British
 // Columbia and the dry lodgepole of Wyoming -- so those are split along
 // ecoregion lines into the places a viewer would tell apart. That rule, and
@@ -17,6 +19,7 @@
 //                                      Arizona Mountains forests PINE_OAK
 //                                      the rest                  CONIFER
 //   Tropical & Subtropical Coniferous  --                        PINE_OAK
+//   Tropical & Subtropical Moist       --                        BROADLEAF
 //   Temperate Broadleaf & Mixed        --                        BROADLEAF
 //   Mediterranean Forests & Scrub      --                        CHAPARRAL
 //   Temperate Grasslands               --                        STEPPE
@@ -43,6 +46,7 @@ export function biomeForEcoregion({ biome = '', ecoregion = '' } = {}) {
       if (/Arizona Mountains/i.test(ecoregion)) return 'PINE_OAK';
       return 'CONIFER';
     case 'Tropical & Subtropical Coniferous Forests': return 'PINE_OAK';
+    case 'Tropical & Subtropical Moist Broadleaf Forests': return 'BROADLEAF';
     case 'Temperate Broadleaf & Mixed Forests': return 'BROADLEAF';
     case 'Mediterranean Forests, Woodlands & Scrub': return 'CHAPARRAL';
     case 'Temperate Grasslands, Savannas & Shrublands': return 'STEPPE';
@@ -63,6 +67,20 @@ export function biomeOfRange(id) {
 /** The ecoregion a range stands in ("Northern Rockies conifer forests"). */
 export function ecoregionOfRange(id) {
   return RANGE_BIOMES.ranges?.[id]?.ecoregion || null;
+}
+
+/** Other ecoregions in the ring around the crest, highest share first. */
+export function surroundingOfRange(id) {
+  const list = RANGE_BIOMES.ranges?.[id]?.surrounding;
+  return Array.isArray(list) ? list : [];
+}
+
+/** Crest ecoregion, and the first different one around it, for the caption. */
+export function ecoregionCaption(id) {
+  const eco = ecoregionOfRange(id);
+  if (!eco) return '';
+  const around = surroundingOfRange(id).find((s) => s.ecoregion && s.ecoregion !== eco);
+  return around ? `${eco}, above ${around.ecoregion}` : eco;
 }
 
 export const REAL_BIOMES = [
