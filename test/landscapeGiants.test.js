@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { giantMaskBytes, giantMaskData, giantAmounts, mirrorGiantSpan } from '../src/world/alpine/LandscapeGiants.js';
+import { giantMaskBytes, giantMaskData, giantAmounts, mirrorGiantSpan, aheadOfEye } from '../src/world/alpine/LandscapeGiants.js';
 import { rangeQuality } from '../src/world/alpine/RangeQuality.js';
 import { rangeActorsAt } from '../src/world/alpine/RangeActors.js';
 test('each giant follows only its own peak and dissolves; the mirror quality cutoff drops all giants', () => {
@@ -76,4 +76,10 @@ test("Midio's giant keeps his open eye", () => {
     if (red(x, y) === 0 && red(x, y - 12) === 255 && red(x, y + 12) === 255) hole++;
   }
   assert.ok(hole > 10, `eye socket pixels: ${hole}`);
+});
+
+test("a listener's zoom never dollies past Midio's mirrored sheet", () => {
+  const sheet = [0, 2000, 4000], forward = [0, 0, 1];
+  assert.equal(aheadOfEye(sheet, [0, 2400, 0], forward, 600), sheet, 'unzoomed: untouched');
+  assert.deepEqual(aheadOfEye(sheet, [50, 2300, 3700], forward, 600), [0, 2000, 4300]);
 });

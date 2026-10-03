@@ -108,7 +108,7 @@ export function giantLayout(data, view, heightRange, waterLevelM) {
   // The far shore of the main lake, near the middle of the frame: the
   // reflection hangs from there toward the viewer, in front of the
   // reflected range. A percentile keeps stray far water from winning.
-  if (wet.length >= 8) {
+  if (wet.length) {
     const farY = wet.map(w => w[1]).sort((a,b) => a-b)[Math.floor(wet.length*.85)];
     let wetBest = Infinity;
     for (const [x,y,p] of wet) { const score=x*x+(y-farY)**2*4; if (score<wetBest) { water=p; wetBest=score; } }
@@ -128,6 +128,14 @@ export function giantLayout(data, view, heightRange, waterLevelM) {
   const reflection = water ? [water[0]+forward[0]*150,waterLevelM,water[2]+forward[2]*150] : cloud;
   return { centers: [reflection, mountain, cloud], skyCenters: [skyCenter, mountain, skyCenter], spans: [Math.max(relief*3,span*1.5), span, span*1.6], skySpan, right, forward,
     hasLake: !!water && Number.isFinite(waterLevelM) };
+}
+/** Midio's sheet stays at least `minM` ahead of the live eye along the
+ * view's forward axis, so a listener's zoom can never dolly past it. */
+export function aheadOfEye(center, eye, forward, minM) {
+  const depth = (center[0]-eye[0])*forward[0] + (center[2]-eye[2])*forward[2];
+  if (depth >= minM) return center;
+  const push = minM - depth;
+  return [center[0]+forward[0]*push, center[1], center[2]+forward[2]*push];
 }
 /** Midio's mirrored sheet, sized to what the lake can show this frame. The
  * reflected ray through the frame's lower edge meets the sheet at this

@@ -1,4 +1,4 @@
-import { giantLayout, giantAmounts, mirrorGiantSpan } from './LandscapeGiants.js';
+import { giantLayout, giantAmounts, mirrorGiantSpan, aheadOfEye } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
 // here, renders transparent terrain partitions that RangePresentation copies
@@ -71,6 +71,9 @@ function waterLevel(data) {
   hs.sort((a, b) => a - b);
   return hs[hs.length >> 1];
 }
+
+/** Midio's mirrored sheet keeps this far ahead of a zoomed-in eye. */
+const MIDIO_MIN_AHEAD_M = 600;
 
 export class RangeScene {
   /** `THREE` is the local bundle; `residency` the shared ledger. */
@@ -820,11 +823,13 @@ export class RangeScene {
       u.uGiantPeak.value = amounts;
       layout.centers.forEach((center, i) => u.uGiantCenter.value[i].set(...center));
       layout.skyCenters.forEach((center, i) => u.uSkyGiantCenter.value[i].set(...center));
-      if (layout.hasLake) u.uGiantCenter.value[0].y = p.waterLevelM;
       u.uGiantSpan.value = layout.spans;
       if (layout.hasLake) {
+        const eye = this.camera.position.toArray();
+        const center = aheadOfEye(layout.centers[0], eye, layout.forward, MIDIO_MIN_AHEAD_M);
+        u.uGiantCenter.value[0].set(center[0], p.waterLevelM, center[2]);
         const bottom = new THREE.Vector3(0, -.92, .5).unproject(this.camera).sub(this.camera.position);
-        u.uGiantSpan.value = [mirrorGiantSpan(this.camera.position.toArray(), bottom.toArray(), layout.centers[0],
+        u.uGiantSpan.value = [mirrorGiantSpan(eye, bottom.toArray(), center,
           p.waterLevelM, MIRROR_LIFT, layout.spans[0]), ...layout.spans.slice(1)];
       }
       u.uMirrorAspect.value = layout.hasLake ? 1 / MIRROR_LIFT : 1;
