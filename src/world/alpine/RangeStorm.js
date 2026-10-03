@@ -44,6 +44,7 @@ export const STORM_GLSL = /* glsl */`
   }
   // Sunlit swathes between cloud shadows as the storm breaks, 0..1.
   float stormOpening(vec3 world) {
+    if (uStorm.z <= 0.0) return 0.0; // only while the storm breaks
     return smoothstep(0.35, 0.72, stormNoise(world.xz / 1100.0 + vec2(uTime * 0.02, 0.0)));
   }
   // Rain-washed air, lit from inside by lightning.

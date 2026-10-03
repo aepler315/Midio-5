@@ -102,3 +102,10 @@ test('an arriving scene brings its storm sky in at its own alpha', () => {
   assert.deepEqual(arrivingStorm(storm, .25), { amount: .25, flash: .2, flashU: .3, break01: .125, wet01: 1 });
   assert.equal(arrivingStorm(null, .5), null);
 });
+
+test('no sun-shaft passes run under the full squall deck', async () => {
+  const { shaftSource } = await import('../src/world/alpine/SunShaftGL.js');
+  const light = { celestial: { body: 'sun', visibility: 1, intensity: 1, xFrac: .5, yFrac: .2 } };
+  assert.equal(shaftSource({ light, storm: { amount: 1, break01: 0 } }), null);
+  assert.ok(shaftSource({ light, storm: { amount: 0, break01: 1 } }).stormGain > 1);
+});
