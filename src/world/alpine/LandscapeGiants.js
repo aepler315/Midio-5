@@ -4,6 +4,7 @@
 import { MIDIO_BODY, MIDIO_EYE_CY, MIDIO_EYE_SOCKET_R, BROSHI_BODY, BROSHI_HEAD, BROSHI_TAIL, MIDASUS_MESH } from '../../render/meshes.js';
 import { cameraPoseAt, projectPoint } from '../terrain/SceneTravel.js';
 import { terrainHeightAt } from './TerrainMesh.js';
+import { MIRROR_LEVEL_TOLERANCE_M } from './WaterMirror.js';
 const MASK_SIZE = 128;
 export const giantMaskBytes = () => MASK_SIZE * MASK_SIZE * 4;
 const clamp = x => Math.max(0, Math.min(1, x));
@@ -62,12 +63,16 @@ export function giantUniforms(THREE) {
     uShadowEye: { value: new THREE.Vector3() }, uMidioCloud: { value: 0 }, uGiantTime: { value: 0 },
     uMirrorAspect: { value: 1 }, uSkyGiantSpan: { value: 5000 } };
 }
+const SIGHT_STEPS = 32;
+/** Lake samples given a line-of-sight test, which bounds the synchronous
+ *  cost of preparing a view (MAX_SIGHT_TESTS * SIGHT_STEPS height reads). */
+const MAX_SIGHT_TESTS = 96;
 // Whether ground (with a tree's clearance) hides `p` from `eye`.
 // The clearance tapers to nothing at the sample itself.
 function seenFrom(data, eye, p) {
   const len = Math.hypot(p[0]-eye[0], p[2]-eye[2]);
-  for (let i = 1; i < 64; i++) {
-    const t = i / 64, x = eye[0] + (p[0]-eye[0])*t, z = eye[2] + (p[2]-eye[2])*t;
+  for (let i = 1; i < SIGHT_STEPS; i++) {
+    const t = i / SIGHT_STEPS, x = eye[0] + (p[0]-eye[0])*t, z = eye[2] + (p[2]-eye[2])*t;
     const clearance = 25 * Math.min(1, (1-t) * len / 600);
     if (terrainHeightAt(data, x, z) + clearance > eye[1] + (p[1]-eye[1])*t + .5) return false;
   }
@@ -79,7 +84,7 @@ export function giantLayout(data, view, heightRange, waterLevelM) {
   const pose = cameraPoseAt(view, .5), d = pose.targetM.map((v,i) => v - pose.eyeM[i]);
   const l = Math.hypot(d[0], d[2]) || 1, forward = [d[0]/l,0,d[2]/l], right = [-forward[2],0,forward[0]];
   let mountain = null, water = null, best = Infinity;
-  const wet = [];
+  const shore = [];
   for (const tile of data.tiles.values()) {
     if (!tile.visible) continue;
     const n = tile.samples, step = Math.max(1, Math.floor(n/16));
@@ -90,13 +95,16 @@ export function giantLayout(data, view, heightRange, waterLevelM) {
       const q=projectPoint(pose,16/9,p);
       if (!q || q.depth < 300 || Math.abs(q.x) > .8 || Math.abs(q.y) > .95) continue;
       if (tile.flowBytes?.[i] === 255 && Number.isFinite(waterLevelM)) {
-        if (Math.abs(q.x) < .45 && seenFrom(data, pose.eyeM, p)) wet.push([q.x, q.y, p]);
+        // Only the lake the mirror reflects (the terrain shader's gate).
+        if (Math.abs(q.x) < .45 && Math.abs(h - waterLevelM) < MIRROR_LEVEL_TOLERANCE_M) shore.push([q.x, q.y, p]);
       } else if (q.depth >= 1800 && Math.abs(q.y) <= .8) {
         const score=(q.x+.12)**2+(q.y-.02)**2;
         if (score<best) { mountain=p; best=score; }
       }
     }
   }
+  const every = Math.max(1, Math.ceil(shore.length / MAX_SIGHT_TESTS));
+  const wet = shore.filter((w, i) => i % every === 0 && seenFrom(data, pose.eyeM, w[2]));
   // The far shore of the main lake, near the middle of the frame: the
   // reflection hangs from there toward the viewer, in front of the
   // reflected range. A percentile keeps stray far water from winning.
