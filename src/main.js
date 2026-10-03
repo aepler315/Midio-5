@@ -1503,7 +1503,10 @@ function offerWorldsThenStart(data, extra = {}) {
       const mine = pendingWorldStart;
       const exporting = !!(extra.exportMode || readBulkExportFromUrl());
       const ready = mine.terrainReady.then((t) => (exporting && t?.whenAll ? t.whenAll.then(() => t) : t));
-      const wait = exporting ? ready : Promise.race([ready, new Promise((r) => setTimeout(r, BIOME_WAIT_MS))]);
+      // A pinned biome waits for its terrain: starting on the fallback would
+      // play the song somewhere the player did not pick.
+      const pinned = !!mine.data.sceneChoice?.biome;
+      const wait = exporting || pinned ? ready : Promise.race([ready, new Promise((r) => setTimeout(r, BIOME_WAIT_MS))]);
       wait.then(() => {
         if (pendingWorldStart !== mine) return;
         playSelectedWorld(ONE_WORLD_ID);
@@ -1524,7 +1527,8 @@ function offerWorldsThenStart(data, extra = {}) {
         if (titleChoice.mode === TITLE_AUTO) chooseRecommendedWorld();
         else playSelectedWorld(titleChoice.id);
       };
-      Promise.race([mine.terrainReady, new Promise((r) => setTimeout(r, RANGE_WAIT_MS))]).then(go);
+      (mine.data.sceneChoice?.biome ? mine.terrainReady
+        : Promise.race([mine.terrainReady, new Promise((r) => setTimeout(r, RANGE_WAIT_MS))])).then(go);
       return;
     }
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
