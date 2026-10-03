@@ -50,6 +50,10 @@ test('the summit keeps a sky island, and the basin stays in the caption', () => 
   assert.equal(ecoregionCaption('kettle-river-range'), 'Northern Rockies conifer forests');
   assert.equal(biomeOfRange('sawtooth-range-idaho-usa'), 'CONIFER');
   assert.equal(ecoregionOfRange('sawtooth-range-idaho-usa'), 'South Central Rockies forests');
+  assert.equal(biomeOfRange('cabinet-mountains'), 'CONIFER');
+  assert.equal(ecoregionOfRange('cabinet-mountains'), 'Northern Rockies conifer forests');
+  assert.equal(biomeOfRange('the-seven-devils'), 'CONIFER');
+  assert.equal(ecoregionOfRange('the-seven-devils'), 'Blue Mountains forests');
   assert.equal(biomeOfRange('olympic-mountains'), 'RAINFOREST');
   assert.match(ecoregionCaption('olympic-mountains'), /coastal/i);
 });

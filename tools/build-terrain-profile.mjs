@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { demFromLatLon, crestGuideTraced } from '../src/world/terrain/LatLonDem.js';
 import { rangeLayerProfiles, compositeLayerProfiles, profilesToJSON } from '../src/world/terrain/TerrainProfile.js';
-import { scanCorridor, smoothBaseline, pointAlong } from '../src/world/terrain/SkylineScan.js';
+import { scanCorridor, smoothBaseline, pointAlong, stanceForCrest } from '../src/world/terrain/SkylineScan.js';
 import { guidesFromGeoJSON } from '../src/world/terrain/GuideGeoJSON.js';
 
 const args = process.argv.slice(2);
@@ -37,14 +37,30 @@ const guide = crestGuideTraced(dem, 500);
 // way: the automated Teton build viewed from the west had its skyline sit
 // 400-1,300m below the crest for most of the range. Unless the grid names a
 // side, scan from both and keep the one whose skyline IS the crest most.
-function crestAgreement(side) {
-  const probe = scanCorridor(dem, guide, { ...baseScanOpts, side });
+// A valley camera that still loses the crest to the canyon wall in front of
+// it climbs, or steps back, and the scan is taken again from there.
+function viewAgreement(probe) {
   let agree = 0;
+  let n = 0;
   for (let i = 0; i < probe.skylineElevM.length; i++) {
     const sky = probe.skylineElevM[i], crest = probe.crestElevM[i];
-    if (Number.isFinite(sky) && Number.isFinite(crest) && Math.abs(sky - crest) <= 150) agree++;
+    if (!Number.isFinite(sky) || !Number.isFinite(crest)) continue;
+    n++;
+    if (Math.abs(sky - crest) <= 150) agree++;
   }
-  return agree / Math.max(1, probe.skylineElevM.length);
+  return agree / Math.max(1, n);
+}
+function viewFrom(side) {
+  let opts = { ...baseScanOpts, side };
+  let probe = scanCorridor(dem, guide, opts);
+  for (let step = 0; step < 3; step++) {
+    const stance = stanceForCrest(probe, opts);
+    if (stance.cameraElevM === opts.cameraElevM && stance.distanceM === opts.distanceM) break;
+    console.error(`camera side ${side}: ${opts.cameraElevM}m at ${opts.distanceM}m -> ${stance.cameraElevM}m at ${stance.distanceM}m`);
+    opts = { ...opts, cameraElevM: stance.cameraElevM, distanceM: stance.distanceM };
+    probe = scanCorridor(dem, guide, opts);
+  }
+  return { opts, agree: viewAgreement(probe) };
 }
 const baseScanOpts = {
   distanceM: src.distanceM || 45000,
@@ -60,8 +76,16 @@ const baseScanOpts = {
   // read this; the Tetons are authored.
   corridorMinM: src.corridorMinM || 4000,
 };
-const side = src.side ?? (crestAgreement(1) > crestAgreement(-1) ? 1 : -1);
-const scanOpts = { ...baseScanOpts, side };
+const sides = src.side == null ? [1, -1] : [src.side];
+let scanOpts = null;
+let bestAgree = -1;
+for (const side of sides) {
+  const view = viewFrom(side);
+  if (view.agree > bestAgree) {
+    bestAgree = view.agree;
+    scanOpts = view.opts;
+  }
+}
 const scan = scanCorridor(dem, guide, scanOpts);
 let differ = 0;
 let skyMax = -Infinity;

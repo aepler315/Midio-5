@@ -24,6 +24,106 @@ export function apparentAngle(terrainElevM, cameraElevM, distM, curvature = fals
   return Math.atan2(rise, dist);
 }
 
+/**
+ * A valley camera lets the first ridge in front of it out-angle the crest:
+ * the wall is close, so it draws taller than a summit twice its height
+ * farther along the range. Given one scan, return a stance where the
+ * highest crest out-angles every near ridge that currently beats it.
+ * Climbing is preferred. Stepping back is the fallback when a climb high
+ * enough to clear the wall would stand the camera on the crest itself.
+ * A wall that is simply taller than the crest cannot be out-looked; the
+ * stance stays put and the quality gate can reject the view.
+ *
+ * Only a ridge in the near half of the corridor counts as in the way.
+ * The crest's own shoulder, in the far half, is allowed to be the skyline.
+ */
+export function stanceForCrest(scan, {
+  distanceM,
+  cameraElevM,
+  curvature = false,
+  headroomM = 500,
+  maxStepM = 20000,
+} = {}) {
+  const same = { cameraElevM, distanceM };
+  if (!scan?.crestElevM?.length || !(distanceM > 0) || !Number.isFinite(cameraElevM)) return same;
+  let crestElev = -Infinity;
+  for (const e of scan.crestElevM) if (Number.isFinite(e) && e > crestElev) crestElev = e;
+  if (!(crestElev > cameraElevM + headroomM)) return same;
+  const crest = { dist: distanceM, elev: crestElev };
+  const nearOf = distanceM * 0.5;
+  const crestAng = apparentAngle(crest.elev, cameraElevM, crest.dist, curvature);
+  const lead = 0.002;
+  const foes = [];
+  const seen = new Set();
+  for (let i = 0; i < (scan.skylineDistM?.length || 0); i++) {
+    const dist = scan.skylineDistM[i];
+    const elev = scan.skylineElevM[i];
+    if (!(dist < nearOf) || !Number.isFinite(elev)) continue;
+    // Anything that still crowds the crest, not only what already beats it.
+    // A ridge a tenth of a degree shorter still draws as a second summit.
+    if (apparentAngle(elev, cameraElevM, dist, curvature) + lead < crestAng) continue;
+    const key = `${Math.round(dist / 200)}:${Math.round(elev)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    foes.push({ dist, elev });
+  }
+  if (!foes.length) return same;
+  const ceiling = crestElev - headroomM;
+
+  const clearedBy = (elev, step) => crestWins(
+    { elev: crest.elev, dist: crest.dist + step },
+    foes.map((f) => ({ elev: f.elev, dist: f.dist + step })),
+    elev,
+    curvature,
+  );
+
+  let climb = null;
+  if (ceiling > cameraElevM + 30 && clearedBy(ceiling, 0)) {
+    let lo = cameraElevM;
+    let hi = ceiling;
+    for (let k = 0; k < 18; k++) {
+      const mid = (lo + hi) / 2;
+      if (clearedBy(mid, 0)) hi = mid;
+      else lo = mid;
+    }
+    climb = Math.ceil(hi);
+  }
+
+  let step = null;
+  if (clearedBy(cameraElevM, maxStepM)) {
+    let lo = 0;
+    let hi = maxStepM;
+    for (let k = 0; k < 18; k++) {
+      const mid = (lo + hi) / 2;
+      if (clearedBy(cameraElevM, mid)) hi = mid;
+      else lo = mid;
+    }
+    if (hi > 500) step = Math.ceil(hi / 100) * 100;
+  }
+
+  if (climb == null && step == null) return same;
+  if (climb != null && step == null) return { cameraElevM: climb, distanceM };
+  if (climb == null && step != null) return { cameraElevM, distanceM: distanceM + step };
+  const up = apparentAngle(crest.elev, climb, distanceM, curvature);
+  const back = apparentAngle(crest.elev, cameraElevM, distanceM + step, curvature);
+  // Step back only when it keeps the crest visibly taller than a climb does.
+  return back > up * 1.15
+    ? { cameraElevM, distanceM: distanceM + step }
+    : { cameraElevM: climb, distanceM };
+}
+
+function crestWins(crest, foes, cameraElevM, curvature) {
+  const a = apparentAngle(crest.elev, cameraElevM, crest.dist, curvature);
+  // Lead by a tenth of a degree. A tie flips back to the wall once the ray
+  // is sampled again, and a tie still draws the wall as tall as the crest.
+  const lead = 0.002;
+  if (!(a > lead)) return false;
+  for (const f of foes) {
+    if (apparentAngle(f.elev, cameraElevM, f.dist, curvature) + lead >= a) return false;
+  }
+  return true;
+}
+
 function sub(a, b) {
   return { x: a.x - b.x, y: a.y - b.y };
 }

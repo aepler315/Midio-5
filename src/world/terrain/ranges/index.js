@@ -2535,6 +2535,23 @@ export const RANGES = [
   "reliefM": 665.7
  },
  {
+  "id": "cabinet-mountains",
+  "name": "Cabinet Mountains",
+  "landmark": "Snowshoe Peak",
+  "region": "Montana, USA",
+  "source": "subrange",
+  "archetype": "majestic",
+  "mood": "heroism",
+  "scores": {
+   "energy": 0.341,
+   "rawness": 0.315,
+   "grandeur": 0.426,
+   "dominance": 0.271
+  },
+  "lengthKm": 69,
+  "reliefM": 1919.1
+ },
+ {
   "id": "cactus-range",
   "name": "Cactus Range",
   "landmark": "Antelope Peak",
@@ -18447,6 +18464,23 @@ export const RANGES = [
   "reliefM": 476
  },
  {
+  "id": "the-seven-devils",
+  "name": "The Seven Devils",
+  "landmark": "He Devil",
+  "region": "Idaho, USA",
+  "source": "subrange",
+  "archetype": "brooding",
+  "mood": "melancholy",
+  "scores": {
+   "energy": 0.288,
+   "rawness": 0.231,
+   "grandeur": 0.44,
+   "dominance": 0.302
+  },
+  "lengthKm": 66.7,
+  "reliefM": 1979
+ },
+ {
   "id": "the-summit-range",
   "name": "The Summit Range",
   "landmark": "Huckleberry Mountain",
@@ -21029,6 +21063,7 @@ export const LOADERS = {
   "butte-mountains": () => import('./butte-mountains.js'),
   "caballo-mountains": () => import('./caballo-mountains.js'),
   "cabeza-prieta-mountains": () => import('./cabeza-prieta-mountains.js'),
+  "cabinet-mountains": () => import('./cabinet-mountains.js'),
   "cactus-range": () => import('./cactus-range.js'),
   "cady-mountains": () => import('./cady-mountains.js'),
   "calapooya-mountains": () => import('./calapooya-mountains.js'),
@@ -21965,6 +22000,7 @@ export const LOADERS = {
   "terrill-mountains": () => import('./terrill-mountains.js'),
   "tetons": () => import('./tetons.js'),
   "the-sand-hills": () => import('./the-sand-hills.js'),
+  "the-seven-devils": () => import('./the-seven-devils.js'),
   "the-summit-range": () => import('./the-summit-range.js'),
   "the-west-hills": () => import('./the-west-hills.js'),
   "thomas-range": () => import('./thomas-range.js'),

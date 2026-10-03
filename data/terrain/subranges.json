@@ -4980,9 +4980,7 @@
    "priority": "west",
    "kind": "range",
    "catalog": "subrange",
-   "build": true,
-   "skyline": "rejected",
-   "reject": "a needle or wall the ground does not back up (artifact 0.68)"
+   "build": true
   },
   {
    "id": "cactus-range",
@@ -30685,9 +30683,7 @@
    "priority": "west",
    "kind": "range",
    "catalog": "subrange",
-   "build": true,
-   "skyline": "rejected",
-   "reject": "a needle or wall the ground does not back up (artifact 0.5)"
+   "build": true
   },
   {
    "id": "the-west-hills",

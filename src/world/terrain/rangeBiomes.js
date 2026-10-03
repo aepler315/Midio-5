@@ -1569,6 +1569,12 @@ export default {
    "share": 1,
    "surrounding": []
   },
+  "cabinet-mountains": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Northern Rockies conifer forests",
+   "share": 1,
+   "surrounding": []
+  },
   "cactus-range": {
    "biome": "Deserts & Xeric Shrublands",
    "ecoregion": "Great Basin shrub steppe",
@@ -10859,6 +10865,18 @@ export default {
      "biome": "Deserts & Xeric Shrublands",
      "ecoregion": "Wyoming Basin shrub steppe",
      "share": 0.82
+    }
+   ]
+  },
+  "the-seven-devils": {
+   "biome": "Temperate Conifer Forests",
+   "ecoregion": "Blue Mountains forests",
+   "share": 1,
+   "surrounding": [
+    {
+     "biome": "Temperate Conifer Forests",
+     "ecoregion": "South Central Rockies forests",
+     "share": 0.1
     }
    ]
   },

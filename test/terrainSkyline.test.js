@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  apparentAngle, scanCorridor, smoothBaseline, pointAlong,
+  apparentAngle, scanCorridor, smoothBaseline, pointAlong, stanceForCrest,
 } from '../src/world/terrain/SkylineScan.js';
 import {
   buildProfile, profileUnits, sampleProfile, profileChunks, profileFromDem, rangeLayerProfiles,
@@ -37,6 +37,35 @@ function scanFront(extra = {}) {
     ...extra,
   });
 }
+
+test('the camera climbs out of the valley when a nearer ridge steals the crest', () => {
+  const valley = scanFront();
+  const stance = stanceForCrest(valley, { distanceM: 80000, cameraElevM: 1800, curvature: false });
+  assert.ok(stance.cameraElevM > 2200, `camera stayed at ${stance.cameraElevM}`);
+  assert.ok(stance.cameraElevM < 3600, `camera climbed onto the crest at ${stance.cameraElevM}`);
+  const climbed = scanFront({ cameraElevM: stance.cameraElevM, distanceM: stance.distanceM });
+  assert.equal(climbed.skylineElevM[2], 4000);
+  assert.ok(climbed.skylineDistM[2] > 70000);
+});
+
+test('a camera that already sees the crest stays put', () => {
+  const scan = scanFront({ isolateBandM: 8000 });
+  const stance = stanceForCrest(scan, { distanceM: 80000, cameraElevM: 1800, curvature: false });
+  assert.equal(stance.cameraElevM, 1800);
+  assert.equal(stance.distanceM, 80000);
+});
+
+test('a wall taller than the crest is not climbed onto, and the camera does not walk off the map', () => {
+  const scan = {
+    crestElevM: [3000],
+    skylineElevM: [5000],
+    skylineDistM: [10000],
+    peaks: [[{ dist: 10000, elev: 5000 }, { dist: 40000, elev: 3000 }]],
+  };
+  const stance = stanceForCrest(scan, { distanceM: 40000, cameraElevM: 1000, curvature: false });
+  assert.equal(stance.cameraElevM, 1000);
+  assert.equal(stance.distanceM, 40000);
+});
 
 test('the skyline is the highest angle, not the highest elevation', () => {
   const scan = scanFront();
