@@ -68,10 +68,16 @@ export function dayNight(nowMs, cycle) {
   else if (p < sunSpan) night = smoothstep(sunSpan - BAND, sunSpan, p);
   else if (p < 1 - BAND) night = 1;
   else night = 1 - smoothstep(1 - BAND, 1.0, p);
+  // The Range brackets its night with twilight, never a bright daytime sky.
+  if (cycle?.body === 'night') night = .75 + .25 * night;
 
   // Dawn/dusk washes bracket the sun's own rise and set.
-  const dawnAlpha = cycle?.body === 'moon' ? 0 : clamp01(1 - Math.abs(p - 0.03) / 0.12) * 0.16;
-  const duskAlpha = cycle?.body === 'moon' ? 0 : clamp01(1 - Math.abs(p - (sunSpan - 0.03)) / 0.12) * 0.18;
+  // The night clock crosses phase 1 -> 0 at dawn: build its wash before
+  // that wrap too, so sunrise never introduces a one-frame colour jump.
+  const dawnDistance = Math.abs(p - 0.03);
+  const dawnAlpha = clamp01(1 - (cycle?.body === 'night'
+    ? Math.min(dawnDistance, 1 - dawnDistance) : dawnDistance) / 0.12) * 0.16;
+  const duskAlpha = clamp01(1 - Math.abs(p - (sunSpan - 0.03)) / 0.12) * 0.18;
 
   // Azimuth: how far each body is along its OWN arc, 0 at its rise and 1 at
   // its set. This is the same progress term the altitude above is built from
@@ -210,21 +216,30 @@ export function songSkyClock(durationMs) {
   });
 }
 
-/** One moonrise-to-moonset arc across the Range's song. Stay entirely in
- * the night half of the shared celestial phase so the moon, reflections,
- * shadows and ambient fill all read the same clock. Short songs get the
- * same complete arc; an unknown duration repeats a 150-second lunar cycle.
- * Known songs hold at moonset until a replay explicitly restarts time. */
-export function songMoonClock(durationMs) {
+/** Sunset -> moonlight -> sunrise for the Range. Twilight occupies the
+ * first and last 15% of a known song; the moon owns the middle 70%.
+ * Only a low slice of the sun's arc appears at either end. Hold sunrise
+ * after the ending; without a known ending, repeat the moon's 150s arc. */
+export function songNightClock(durationMs) {
   const known = Number.isFinite(durationMs) && durationMs > 0;
   const d = known ? durationMs : TARGET_CYCLE_MS;
+  const edge = .15, sunEdge = .025;
   return Object.freeze({
-    body: 'moon', durationMs: d,
+    body: 'night', durationMs: d,
     phaseAt(ms) {
       const t = Math.max(0, Number.isFinite(ms) ? ms : 0);
       const u = known ? clamp01(t / d) : (t % d) / d;
+      if (known && u < edge) {
+        const start = SUN_SET_PHASE - sunEdge;
+        return start + (0.5 - start) * (u / edge);
+      }
+      if (known && u > 1 - edge) {
+        const phase = MOON_SET_PHASE + (1 + sunEdge - MOON_SET_PHASE) * ((u - (1 - edge)) / edge);
+        return phase % 1;
+      }
+      const moonU = known ? clamp01((u - edge) / (1 - 2 * edge)) : u;
       // Linger at the horizons instead of popping up into the overhead sky.
-      const arc = u - SONG_SUN_LINGER * Math.sin(2 * Math.PI * u) / (2 * Math.PI);
+      const arc = moonU - SONG_SUN_LINGER * Math.sin(2 * Math.PI * moonU) / (2 * Math.PI);
       return 0.5 + (MOON_SET_PHASE - 0.5) * arc;
     },
   });

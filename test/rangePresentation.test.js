@@ -56,21 +56,30 @@ function fakePresentation({ ready = true } = {}) {
 
 const groundView = { stage: { width: 1408, height: 848 }, apply() {} };
 
-test('the Range paints a moonlit song through both v2 and legacy presentation', () => {
+test('the Range paints sunset, moonlight and sunrise through v2 and legacy presentation', () => {
   for (const ready of [true, false]) {
     const { m, calls } = manager();
     m.rangePresentation = fakePresentation({ ready });
     try {
-      for (const tSec of [4, 15, 30, 45, 56, 15]) {
+      for (const tSec of [0, 15, 30, 45, 60, 15]) {
         m.tSec = tSec;
         calls.length = 0;
         m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
-        assert.equal(m.celestialState.activeBody, 'moon', `${ready}: ${tSec}s`);
-        assert.equal(m._night01, 1);
-        assert.equal(m._twilight, null);
-        assert.ok(calls.includes('_drawMoon'));
-        assert.ok(!calls.includes('_drawCelestial'));
-        assert.equal(m._scenicLight.colorHex, '#c8d8ff');
+        const twilight = tSec === 0 || tSec === 60;
+        assert.equal(m.celestialState.activeBody, twilight ? 'sun' : 'moon', `${ready}: ${tSec}s`);
+        if (twilight) {
+          assert.ok(m._night01 >= .75);
+          assert.ok(m._twilight.amount01 > .7);
+          assert.equal(m._twilight.rising, tSec === 60);
+          assert.ok(calls.includes('_drawCelestial'));
+          assert.ok(!calls.includes('_drawMoon'));
+        } else {
+          assert.equal(m._night01, 1);
+          assert.equal(m._twilight.amount01, 0);
+          assert.ok(calls.includes('_drawMoon'));
+          assert.ok(!calls.includes('_drawCelestial'));
+          assert.equal(m._scenicLight.colorHex, '#c8d8ff');
+        }
       }
     } finally { m.dispose(); }
   }

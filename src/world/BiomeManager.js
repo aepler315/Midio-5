@@ -63,7 +63,7 @@ import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO, scatterBiomeLayers } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
-import { cycleMs as dayNightCycleMs, songSkyClock, songMoonClock, twilightAt, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
+import { cycleMs as dayNightCycleMs, songSkyClock, songNightClock, twilightAt, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
 import { celestialApproach, approachScale } from './CelestialApproach.js';
@@ -480,10 +480,10 @@ export class BiomeManager {
     this.customBiome = customBiome || null;
     this.world = getWorld(worldId || DEFAULT_WORLD_ID);
     this.worldId = this.world.id;
-    // The Range's "day" is a single moonrise and moonset across the song.
+    // The Range's song runs from sunset through moonlight to sunrise.
     // Every sky, lighting and reflection consumer shares this same clock.
     this._dayNightCycleMs = this.world.kind === 'alpine'
-      ? songMoonClock(this.durationMs)
+      ? songNightClock(this.durationMs)
       : songSkyClock(this.durationMs) || dayNightCycleMs(this.durationMs);
     // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
     // Absent, every layer stays procedural. L5 is never taken from here.
@@ -2554,8 +2554,7 @@ export class BiomeManager {
     // reflection glint, so everything tracks the same body.
     const dn = dayNight(this.tSec * 1000, this._dayNightCycleMs);
     // Sunrise and sunset colour, for the Range's sky and air (rangeSkyState).
-    this._twilight = this._dayNightCycleMs?.body === 'moon' ? null
-      : twilightAt(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
+    this._twilight = twilightAt(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
     const sunUp = dn.sunAlt > 0.001;
     const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
     // Cast shadow (Stage 5 of the mountain overhaul): a near range can only
@@ -3733,6 +3732,8 @@ export class BiomeManager {
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
+    // Water and vault ceilings retain local light effects, not astronomy.
+    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     if (this.rangeNarrative && this.world?.kind === 'alpine') {
       const sky = rangeSkyState(this, A, B, t, night, this.rangeNarrative);
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -3754,10 +3755,10 @@ export class BiomeManager {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
       }
+      // The narrative owns the background palette, not the star catalogue.
+      if (astronomical) this._drawStarfield(ctx, canvas, A, B, t, night, starOptions);
       return;
     }
-    // Water and vault ceilings retain local light effects, not astronomy.
-    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
@@ -3905,7 +3906,9 @@ export class BiomeManager {
     const nightBoost = 0.55 + 1.55 * night;
     const biomeBoost = 0.95 * twinkleBlend;
     const spaceFloor = dials.spaceWash ? 0.22 : 0;
-    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * this.openingGain;
+    // The Range's night sky is present from the first frame, including silence.
+    const opening = this.world?.kind === 'alpine' ? 1 : this.openingGain;
+    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * opening;
     if (alpha < 0.04) return;
 
     const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;

@@ -158,11 +158,11 @@ export function stormAt(mgr, timeMs) {
   if (override && typeof override === 'object') return { ...state, ...override, flash: mgr.reducedFlash ? 0 : unit(override.flash ?? state.flash) };
   return state;
 }
-/** Behind the terrain passes: the squall's sky. An overcast deck swallows
- * the sun, rain curtains hang from its base (the land shaders veil the far
+/** Behind the terrain passes: the squall's sky. A low cloud deck leaves
+ * the upper night sky open; rain curtains hang from its base (the land shaders veil the far
  * ground inside the same curtains, rainCurtain), lightning glows inside the
  * cloud rather than as a bolt laid over the peaks, and as the storm breaks
- * the deck tears into sunlit remnants. The lake's backdrop captures this sky. */
+ * the deck tears into lit remnants. The lake's backdrop captures this sky. */
 /** The storm's sky scaled to an arriving scene's alpha (0..1). */
 export function arrivingStorm(storm, arrival = 1) {
   const a = unit(arrival);
@@ -175,10 +175,11 @@ export function drawStormSky(ctx, canvas, storm, { tSec = 0, seed = 0, pan = nul
   const motion = reducedMotion ? 0 : tSec;
   const panX = (pan?.x || 0) / 2;
   ctx.save();
-  // Overcast: slate from the zenith down to the rain-dimmed horizon, dense
-  // enough to hide the sun. The land's air (RangeScene STORM_AIR) meets it.
+  // Keep the zenith transparent so even a full squall retains the stars.
+  // Slate gathers lower down to meet the land's air (RangeScene STORM_AIR).
   const dark = ctx.createLinearGradient(0, 0, 0, h * .62);
-  dark.addColorStop(0, `rgba(30,36,45,${amount * .96})`);
+  dark.addColorStop(0, 'rgba(30,36,45,0)');
+  dark.addColorStop(.2, `rgba(30,36,45,${amount * .12})`);
   dark.addColorStop(1, `rgba(78,88,98,${amount * .9})`);
   ctx.fillStyle = dark; ctx.fillRect(0, 0, w, h);
   // The deck: heavy banks low over the peaks. As the storm breaks they thin
@@ -187,7 +188,7 @@ export function drawStormSky(ctx, canvas, storm, { tSec = 0, seed = 0, pan = nul
   banks.forEach((b, i) => {
     const remnant = breaking * smooth(.35, .75, hash01(i + seed % 101)) * .9;
     b.alpha = Math.min(1, Math.max(amount, remnant) * (.75 + .25 * hash01(i + 7)));
-    b.w *= 1.9; b.h *= 1.6; b.y = h * (.03 + .22 * hash01(i + 3)) - (pan?.y || 0) * h / 2;
+    b.w *= 1.9; b.h *= 1.6; b.y = h * (.2 + .14 * hash01(i + 3)) - (pan?.y || 0) * h / 2;
   });
   const sun = breaking * (1 - amount);
   const mixRgb = (a, b) => a.map((v, i) => Math.round(v + (b[i] - v) * sun));
