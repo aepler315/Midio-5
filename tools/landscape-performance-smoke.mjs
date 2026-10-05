@@ -138,7 +138,7 @@ async function matrix() {
       for (const [label, options] of [['dense', {}], ['reduced-motion', { reducedMotion: true }], ['reduced-flash', { reducedFlash: true }]]) {
         await opened.page.evaluate(() => { window.__resetLandscapeRandom(); window.__SMW.beginBulkExport(window.__SMW.exportSize); });
         const value = await row(opened.page, label, 42000, options);
-        if (label === 'reduced-flash') assert.ok((value.music.source ?? value.music).amplitudeM > 0, 'reduced flash retains the heard mountain motion');
+        if (label === 'reduced-flash') assert.ok(value.music.amplitudeM > 0, 'reduced flash retains visible mountain motion');
         rows.push(value);
       }
       // Descending from the dense 42 s checks must rebuild the forward-only
@@ -272,7 +272,7 @@ async function midiAndTravel() {
   }, bytes);
   assert.ok(midi.notes > 0 && midi.midiNotes === midi.notes);
   for (const r of midi.rows) {
-    assert.ok(r.active); assert.ok(r.sample.activity01 > 0 && (r.music.source ?? r.music).amplitudeM > 0);
+    assert.ok(r.active); assert.ok(r.sample.activity01 > 0 && r.music.amplitudeM > 0);
     await fs.writeFile(path.join(out, `midi-${r.time}.png`), Buffer.from(r.png, 'base64')); delete r.png;
   }
   report.midi = midi;

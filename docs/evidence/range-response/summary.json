@@ -1,0 +1,671 @@
+{
+  "passed": true,
+  "baselineRef": "dfb0a3ced552da04ad2ccf5052bdb5b7ce6e7ea6",
+  "implementationCommit": "14a7c510ce3b38b526a3820977d86fe4bffc41f7",
+  "sourceHashes": {
+    "before": "f00ce06dd1cd0604cfa433047a196b2d85ff4a6393b1c02acaa2aaaf00a2abf2",
+    "after": "7516d5520316478c528e932b30b6e677f7b93f47f7906af15ef3ac9154851e81"
+  },
+  "audioHash": "d54dff2feae68bbf10623c9d51a5d76e66c8800f5f9d00ba4480ed893dc614e2",
+  "browser": "151.0.7922.173",
+  "width": 640,
+  "height": 360,
+  "fps": 12,
+  "limitations": "Synthetic audio; software WebGL; isolated RangeFrame comparison; not a listening acceptance test or device performance measurement.",
+  "constructionSeed": 315,
+  "songSeed": 2917029651,
+  "view": "teton-jackson-lake",
+  "biome": "CONIFER",
+  "opening": {
+    "before": {
+      "timeMs": 6000,
+      "sectionSwell": 0,
+      "boundM": 0
+    },
+    "after": {
+      "timeMs": 6000,
+      "sectionSwell": 0,
+      "boundM": 8.076233908860683
+    }
+  },
+  "frames": {
+    "before": [
+      {
+        "timeMs": 44000,
+        "pngHash": "3ed06d73fb2060e61121a0d378e3448f53a2c3a7cb460a0325ee1d39e7a275e3",
+        "boundM": 31.5,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44083.333333333336,
+        "pngHash": "d0848f0e6d26c04573fdaff87cdc8ed46834fcda1a55fc645f3841b19399263b",
+        "boundM": 31.5,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44166.666666666664,
+        "pngHash": "1c64059998afa84a92edd314073fd25974fe4aed7062c5c34003cc52390b073e",
+        "boundM": 31.5,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44250,
+        "pngHash": "d3f37c9b1159c886a05106249af8af165954eacb4c43164b7f8807b67769cb3b",
+        "boundM": 31.49904911471191,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44333.333333333336,
+        "pngHash": "b06445cd4af22596e3430ffc282743237068e17f18f0f85a6cc3c558c34189d6",
+        "boundM": 31.485509298330793,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44416.666666666664,
+        "pngHash": "7145425850a9d1cf5592f3eff8bab75a30af58c7aaa7ce4c921930cd7d875508",
+        "boundM": 31.45616875566118,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44500,
+        "pngHash": "1dbe6287d1ec6298ab7d3c60f2b263f26748d28e28e5116fe26bd74ef64bd283",
+        "boundM": 31.411327555290196,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44583.333333333336,
+        "pngHash": "2ca17e1d12147c8ac4055135e33348328dde3c8a6741f69961fa2c628cdc15ce",
+        "boundM": 31.351285765804924,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44666.666666666664,
+        "pngHash": "bd7bf669349357e63b4270acf06f7da212e06ec5b51bdf8a28cb152418bba5e4",
+        "boundM": 31.276343455792485,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44750,
+        "pngHash": "0c96e467a9477a72feb86aa21c0050eafb863fb4e0eb0dfdc954b3edeb982aed",
+        "boundM": 31.186800693839977,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44833.333333333336,
+        "pngHash": "91df6d1137c2dcb9b23d7a3e3a2df23854807e0a3cdd0340278ea528743520ed",
+        "boundM": 31.082957548534505,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44916.666666666664,
+        "pngHash": "f714af142471e966f6df3f4cb8d4b1c08d1720940e21da9518c3d6c8f60e1839",
+        "boundM": 30.96511408846318,
+        "kickM": 0,
+        "melodicM": 0,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "d996088bcc0a596a100886af525e5508dfcfd5435a28eeb9a78a5b665ecd13c4",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      }
+    ],
+    "after": [
+      {
+        "timeMs": 44000,
+        "pngHash": "decde1318e3167d0cfdf5cf3e33957efa183bfa25da33c777f550070d043c2b7",
+        "boundM": 40.30633113885627,
+        "kickM": 2.8242658594052097,
+        "melodicM": 0.0075509046207133425,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44083.333333333336,
+        "pngHash": "348de876a44eb4a7ca0d4a7059317b7ff1ac77b83705ab153ee40c9c4e08d25f",
+        "boundM": 40.30215783164971,
+        "kickM": 2.7737378138819375,
+        "melodicM": 0.006274427522787241,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44166.666666666664,
+        "pngHash": "9eeba1dae7da855524cb623fa704687ef7059d644c10ee1f221b746b7f234923",
+        "boundM": 40.70736033481734,
+        "kickM": 3.189465607349894,
+        "melodicM": 0.0067374049953502855,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44250,
+        "pngHash": "53af873fab7f0ab9f192aa2427cf033fbff9bc7d8e0080204797db5ac8893fbb",
+        "boundM": 40.64730350449006,
+        "kickM": 3.0804702556295784,
+        "melodicM": 0.06450147400705722,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44333.333333333336,
+        "pngHash": "22e403a77f567645b3c51b405b0977e701ce0ff8c37e2817095f538b1eaf92a2",
+        "boundM": 40.32935037740699,
+        "kickM": 2.6427003214776006,
+        "melodicM": 0.17491056991873527,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44416.666666666664,
+        "pngHash": "534cdc4aaa7ccd8c25f95d41323aecf54f275f256dd57fd88ac4f9a6171c5c95",
+        "boundM": 42.39662489931901,
+        "kickM": 4.498159527294835,
+        "melodicM": 0.4193352879816381,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44500,
+        "pngHash": "17fae5631b1a2e4e6660ef5a4cddc0f851d53a7a43b57c3a3f3732768ddaee1f",
+        "boundM": 41.391784751012196,
+        "kickM": 3.520396607121277,
+        "melodicM": 0.43186058527393806,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44583.333333333336,
+        "pngHash": "bb9098e811d0620827f1d9b64be6cf4ccb0fea20ba0b52bde89d86e711605fe7",
+        "boundM": 40.45829648099531,
+        "kickM": 2.7096955689367275,
+        "melodicM": 0.38192087408034453,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44666.666666666664,
+        "pngHash": "c63fb0fc5fc02d45ea69374f67d7c8363c88c0ecee5c5340c663d8a3c295bb18",
+        "boundM": 41.042598504744795,
+        "kickM": 3.427204036481286,
+        "melodicM": 0.3356449615324783,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44750,
+        "pngHash": "0477718ade4d0c83c5a6d277a57181317cb321b7b4c67bb4ccf713233751a213",
+        "boundM": 40.184391340298866,
+        "kickM": 2.6691882890976655,
+        "melodicM": 0.30698561035696875,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44833.333333333336,
+        "pngHash": "f2136786198129c0a5e5f380cd46b5f01fd704cb2330e798db811de0cac643e3",
+        "boundM": 40.05717276808779,
+        "kickM": 2.6253226621735246,
+        "melodicM": 0.29404676377551786,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      },
+      {
+        "timeMs": 44916.666666666664,
+        "pngHash": "41896b8fc9b8405df98a700b86d6152dd3c3d6e8a01f14ba1299851cd69e9b58",
+        "boundM": 42.706213572631,
+        "kickM": 5.124814752897842,
+        "melodicM": 0.5567767489498031,
+        "quality": 1,
+        "identity": {
+          "loadedDigest": "08b5ea147fc8b5b94cf5e143f10a60998a115800a7bb90517bd5e1cb0a480839",
+          "loadedFiles": 312,
+          "rangeAssets": [
+            "src/assets/range/v2/materials/dry-conifer.json",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.bin.gz",
+            "src/assets/range/v2/terrain/teton-jackson-lake.terrain.json",
+            "src/assets/range/v2/textures/cc0-ground022.webp",
+            "src/assets/range/v2/textures/cc0-ground068.webp",
+            "src/assets/range/v2/textures/cc0-rock020.webp",
+            "src/assets/range/v2/textures/cc0-rock051.webp",
+            "src/assets/range/v2/textures/cc0-rock063.webp",
+            "src/assets/range/v2/textures/proc-canopy.webp",
+            "src/assets/range/v2/textures/proc-cliff.webp",
+            "src/assets/range/v2/textures/proc-snow.webp",
+            "src/vendor/range/three-range.module.js"
+          ]
+        }
+      }
+    ]
+  },
+  "latePitchTransition": {
+    "timeMs": 300000,
+    "oldMaxStepPx": 2.4778221662966895,
+    "fixedMaxStepPx": 0.0682343865604278
+  },
+  "verification": {
+    "testsPassed": 3911,
+    "testsFailed": 0,
+    "lint": "pass"
+  }
+}

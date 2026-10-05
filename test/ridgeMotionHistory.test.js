@@ -352,7 +352,7 @@ test('actual physical melodic geometry releases across silence while raw source 
   const conductor = new Conductor(); conductor.load({ timeline, durationMs: 12000, bpm: 120, barGrid: [] });
   const sim = new Simulation(conductor, new ParamBus(), { energyCurves: c, songSeed: 45, ridgeMusicSession: h });
   sim.biomes.pumpStripPrewarm = () => {};
-  const at = t => { sim.startAt(t); return buildRangeFrame({ sim, pose: sim.lerpState(1) }).music.source; };
+  const at = t => { sim.startAt(t); return buildRangeFrame({ sim, pose: sim.lerpState(1) }).music; };
   try {
     const a = at(999.9), b = at(1000);
     assert.ok(a.melodicM > 1);

@@ -149,8 +149,7 @@ export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, ki
   return state;
 }
 
-/** The land moves only at the song's big moments (Ashton, 2026-10-02:
- *  constant heaving with every kick and phrase read as accidental). At a
+/** The land's largest movements belong to the song's big moments. At a
  *  section change the range swells over `riseMs`, holds, and settles over
  *  `settleMs`; a lift into a louder section swells fully, any other change
  *  by `changeFloor`, a repeat of the same part not at all. Metres are
@@ -198,12 +197,8 @@ function swellOf(sections, timeMs, fromMs, toMs) {
   return best;
 }
 
-/** The land's geometry for a frame: the rhythmic, melodic and gesture
- *  channels are kept as `source` (for evidence and the water) but move
- *  nothing; only the moment's slow swell and lift do, at a fixed target
- *  size, so the land is still between moments. The swell runs one way for
- *  the whole song (from `seed`, not the section), so neither a section
- *  change nor a re-analysis can turn it mid-swell. */
+/** The swell runs one way for the whole song (from `seed`, not the
+ * section), so neither a section change nor re-analysis turns it mid-swell. */
 export function landWaveDir(seed = 0) {
   const angle = Math.atan2(-.6, .8) + (hashSeed(`${seed}:land`) / 4294967296 - .5) * .9;
   return [Math.cos(angle), Math.sin(angle)];
@@ -211,11 +206,25 @@ export function landWaveDir(seed = 0) {
 
 export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, seed = 0 } = {}) {
   const m = reducedMotion ? 0 : unit(moment01);
+  // The source already has causal pressure, overlapping kick tails and
+  // confidence-weighted melodic release. Keep that phrasing visible between
+  // section turns instead of discarding it. The slow, fixed-direction carrier
+  // avoids the former restless heave; accents recede as the big swell rises.
+  // At maximum source values this adds < 42 m between moments, < 9 m at a
+  // full swell, staying below the existing 106.7 m calibration reference.
+  const response = reducedMotion ? 0 : 1 - .8 * m;
   const out = { ...music, source: music, landMoment01: m, waveDir: landWaveDir(seed),
-    amplitudeM: LAND_SWELL.waveM * m,
-    kickM: 0, gestureM: 0, melodicM: 0, structuralM: LAND_SWELL.liftM * m,
+    amplitudeM: LAND_SWELL.waveM * m + music.amplitudeM * .35 * response,
+    kickM: music.kickM * .6 * response,
+    gestureM: music.gestureM * .35 * response,
+    melodicM: music.melodicM * .65 * response,
+    structuralM: LAND_SWELL.liftM * m,
+    // Multiplying absolute time by live pitch spins the field on a note
+    // change late in the song. Pitch may shape its wavelength and strength,
+    // but this deterministic carrier always advances at one slow rate.
+    melodyPhaseRad: 2 * Math.PI * .025 * tSec,
     phaseRad: 2 * Math.PI * LAND_SWELL.waveHz * tSec, calibrationActivity01: 1 };
-  out.totalBoundM = out.amplitudeM + out.structuralM;
+  out.totalBoundM = out.amplitudeM + out.kickM + out.gestureM + out.melodicM + out.structuralM;
   return out;
 }
 

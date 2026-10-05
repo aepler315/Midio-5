@@ -221,6 +221,9 @@ Ashton saw the sun come up "in an instant" and the clouds move as if by accident
 
 ## The land moves only at big moments (2026-10-02)
 
+**Superseded on 2026-10-05:** `landMotion` now retains restrained musical
+response between these section swells. See "Restore musical response" below.
+
 Ashton found the land moving with the song accidental. It heaved all the time: a swell rolling across the ridges at 0.045 Hz sized by groove and sustain, a lift on every kick, a melodic tilt, a summit gesture, and a section lift that dropped and regrew at every boundary. Together they came to 8-20 px. The default chosen for him ("Big moments only") keeps all of those channels on the frame as `music.source` (the water still ripples to the kick, and evidence still reads them) but lets none of them move the ground.
 
 - `landMoment01` (RangeFrame.js) is a pure function of the section list. At each section change the land swells over 3 s, holds for 2 s and settles over 9 s. A lift into a louder part (`boundaryLift01`) swells fully, any other change by 0.35, and a repeat of the same part not at all. The song's start never swells. When the whole-song analysis replaces the opening one during play, boundaries already heard keep coming from the old section list (`chapterState.landSections`), so a swell under way carries on and none starts in the past.
@@ -317,3 +320,45 @@ Device measurement: `tools/range-device-probe.js` and `docs/range-v2-device-runs
 - `node tools/review-range-views.mjs --views nc-ross-lake-north --source published --stations 21 --modes neutral,silhouette`
 - `node tools/range-scene-smoke.mjs --url http://127.0.0.1:8092 --source-root "$PWD" --expect-sha <sha> --suite pilot|export|motion|complete --output .smoke/range-v2`
 - `node tools/gen-pilot-wav.mjs <out.wav> 60` (calm/energetic/calm motion-pilot song)
+
+## Restore musical response (2026-10-05)
+
+The big-moments-only adapter discarded the smoothed musical channels before
+they reached terrain and forest geometry. A song could have a live kick and
+melody in `music.source` while the rendered land stayed still. `landMotion`
+now passes through 35% of pressure, 60% of kick lift, 35% of summit gesture,
+and 65% of melodic displacement. These accents recede to 20% of their normal
+strength as a full section swell arrives. The fixed slow swell direction,
+section envelope, confidence gates, heard-time history, and shoreline receiver
+mask stay in place. Silence settles to stillness; reduced motion disables all
+deformation. Tonal evidence rules and the camera are unchanged.
+
+The combined maximum is below the existing 106.7 m pre-calibration reference:
+ordinary music contributes at most 41.845 m, and a full swell plus music at
+most 98.369 m. View calibration and geological caps still apply. These are
+bounds, not claims that every view moves by the same number of pixels.
+
+Melody uses a fixed 0.025 Hz carrier. The old source formula multiplied absolute
+song time by live pitch, so a smooth pitch change five minutes into a song
+could whirl the terrain through eight cycles in under a second. Pitch still
+affects melodic strength and wavelength, but no longer changes elapsed phase.
+The regression test samples actual history-driven geometry at 60 Hz across
+that late-song pitch transition.
+
+Checks now inspect the final `frame.music`, rather than accepting motion only
+in the discarded `frame.music.source`. Relevant checks:
+
+```
+node --test test/landMoments.test.js test/ridgeMotionHistory.test.js test/rangeFrame.test.js test/rangeExpression.test.js
+npm test
+npm run lint
+PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium node tools/range-response-evidence.mjs
+```
+
+The evidence tool runs the real compositor twice with the same generated
+audio, seeded construction, Teton view, CONIFER blend, dimensions and heard
+times. Only `RangeFrame.js` is substituted from the specified baseline ref.
+It saves opening stills, twelve frames per version, source/audio hashes,
+renderer identity and the final musical channels in `.smoke/range-response`.
+This is synthetic, software-rendered evidence; acceptance on real recordings
+and device performance require separate listening and hardware review.
