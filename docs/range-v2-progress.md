@@ -202,6 +202,9 @@ Brainstorm section 6, the "presence ladder" Ashton chose: light is the floor, co
 
 ## One day per song (2026-10-01)
 
+**Superseded for the Range on 2026-10-05:** its song now stays at night,
+with one moonrise and moonset. See "A moonlit day" below.
+
 Ashton asked for songs to open just before sunrise in near-total darkness, with a dramatic sunrise, and to end on a dramatic sunset.
 
 - **Clock.** `songSkyClock` (DayNight.js) replaces the repeating day/night cycle for any song of 30 s or more. It runs 7% of the song (9-22 s) in the dark before dawn, the sun's arc for the body of the song (lingering near the horizon: its pace runs at 1 - 0.6 cos 2 pi u of the mean), sunset 6% (8-18 s) before the end, then afterglow into dark with no moon. Every `cycle` consumer takes the clock in place of a length, so the legacy painters follow the same day.
@@ -362,3 +365,24 @@ It saves opening stills, twelve frames per version, source/audio hashes,
 renderer identity and the final musical channels in `.smoke/range-response`.
 This is synthetic, software-rendered evidence; acceptance on real recordings
 and device performance require separate listening and hardware review.
+
+## A moonlit day (2026-10-05)
+
+The Range's "day" is now a lunar arc: the moon rises from the right horizon,
+crosses overhead at the song's midpoint, and sets on the left as the song
+ends. Its travel slows near each horizon. Night sky, cool moonlight, stars,
+aurora and moonlit reflections persist throughout; sunrise/sunset washes
+are disabled. The existing moon phase and musical sky response remain.
+
+`songMoonClock` maps heard time into the moon's half of the shared celestial
+cycle. `BiomeManager` selects it for alpine worlds, so legacy and v2 painters,
+the terrain's light direction, water, atmospheric fill and shadows all share
+the same moon. Known durations, including short songs, get one complete arc
+and hold dark after moonset. Unknown durations repeat a 150-second lunar
+cycle. Seeking and replay reconstruct the same sky directly from song time.
+
+Tests cover the full arc, absence of sun and dawn/dusk washes, short/unknown
+durations, light anchoring and both renderer paths. Capture three production
+frames with `PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium node tools/moon-cycle-evidence.mjs`
+while the app is served on port 8092. The tool records the resolved lighting
+and actual compositor frames in `.smoke/moon-cycle`.
