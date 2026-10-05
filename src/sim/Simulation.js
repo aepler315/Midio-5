@@ -36,6 +36,7 @@ import { FloodDirector } from './FloodDirector.js';
 import { CueDirector } from './CueDirector.js';
 import { CueKind } from '../core/ConductorTrack.js';
 import { compileLandscapeSources } from '../world/alpine/RangeNarrative.js';
+import { restoreContinuous, reconstructContinuous, RECONSTRUCT_STEP_MS } from './ContinuousState.js';
 import { resolveLandscapePresentation } from '../world/LandscapePresentation.js';
 
 const WORLD_SPEED_PX_S = 220;
@@ -184,36 +185,46 @@ export class Simulation {
   }
 
   _applyCues(nowMs) {
-    for (const cue of this.cues.fired) {
-      const strength = typeof cue.value === 'number' ? cue.value : 1;
-      switch (cue.kind) {
-        case CueKind.DROP:
-          this.hype.cueDrop(nowMs, strength);
-          break;
-        case CueKind.KEY_CHANGE:
-          this.keyDirector.forceChange(nowMs);
-          break;
-        case CueKind.CALM:
-          this.calm.cueCalm(nowMs, strength);
-          break;
-        case CueKind.METEORS:
-          this.biomes.cueMeteors(nowMs, strength);
-          break;
-        case CueKind.LIGHTNING:
-          this.biomes.cueLightning(nowMs);
-          break;
-        case CueKind.WEATHER:
-          this.weather.cueKind(nowMs, cue.value);
-          break;
-        case CueKind.SHAKE:
-          this.camera.shake(3 + 9 * strength);
-          break;
-        case CueKind.GROUND_PULSE:
-          this.groundField.impulse(this.worldX, strength, nowMs);
-          break;
-        default:
-          break;
-      }
+    for (const cue of this.cues.fired) this._applyCue(cue, nowMs);
+  }
+
+  /** Apply one live cue. Drop, calm, key-change and weather cues change
+   *  continuous director state; the rest are visual one-shots, which a
+   *  reconstruction (ContinuousState.js) passes `oneShots: false` to skip. */
+  _applyCue(cue, nowMs, { oneShots = true } = {}) {
+    const strength = typeof cue.value === 'number' ? cue.value : 1;
+    switch (cue.kind) {
+      case CueKind.DROP:
+        this.hype.cueDrop(nowMs, strength);
+        return;
+      case CueKind.KEY_CHANGE:
+        this.keyDirector.forceChange(nowMs);
+        return;
+      case CueKind.CALM:
+        this.calm.cueCalm(nowMs, strength);
+        return;
+      case CueKind.WEATHER:
+        this.weather.cueKind(nowMs, cue.value);
+        return;
+      default:
+        break;
+    }
+    if (!oneShots) return;
+    switch (cue.kind) {
+      case CueKind.METEORS:
+        this.biomes.cueMeteors(nowMs, strength);
+        break;
+      case CueKind.LIGHTNING:
+        this.biomes.cueLightning(nowMs);
+        break;
+      case CueKind.SHAKE:
+        this.camera.shake(3 + 9 * strength);
+        break;
+      case CueKind.GROUND_PULSE:
+        this.groundField.impulse(this.worldX, strength, nowMs);
+        break;
+      default:
+        break;
     }
   }
 
@@ -261,7 +272,17 @@ export class Simulation {
    * transient effects come from construction; immutable song data is kept.
    * Spatial travel starts at a new origin, rather than extrapolating today's
    * scroll speed backward over the song. */
-  startAt(nowMs) {
+  /*
+   * Continuous musical state (ContinuousState.js) is not reset here:
+   *   continuous  a state captured from the performance being replaced at
+   *               this same moment (the whole-song analysis adopted mid-song)
+   *               is carried across exactly;
+   *   otherwise   (seek, replay) the directors are run from the song's start
+   *               on the fixed `stepMs`, as playback ran them, so the scene
+   *               shows the state that moment had when the song was played
+   *               through. One-shots on the way are not emitted.
+   */
+  startAt(nowMs, { continuous = null, stepMs = RECONSTRUCT_STEP_MS } = {}) {
 
     this.conductor.seekTo(Math.max(0, nowMs - this.visualLeadMs), { primeAhead: true });
     // Cues and the musical directors run on heard time (see step), so the
@@ -271,10 +292,9 @@ export class Simulation {
     this.disasters.seekTo(nowMs);
 
     this.biomes._lastSectionIdx = null;
+    if (continuous) restoreContinuous(this, continuous);
+    else this.reconstructedSteps = reconstructContinuous(this, nowMs, { stepMs });
     if (nowMs >= MAX_HOLD_MS) { this.opening.holding = false; this.opening.gain = 1; }
-
-    const energy = this.energyCurves?.globalEnergyNorm(heardMs) ?? 0.3;
-    this.hype.fast = energy; this.hype.slow = energy;
     this.step(0, nowMs);
     this.prev = this._snapshot();
     this.curr = this._snapshot();
@@ -350,6 +370,22 @@ export class Simulation {
    *     early (F05). With zero latency the two are equal.
    * Readers still on source time are marked below with why.
    */
+  /** The continuous musical directors, in playback order, on heard time.
+   *  Shared by step() and by seek reconstruction (ContinuousState.js), so a
+   *  rebuilt scene is computed by exactly the code that played it. */
+  _advanceMusic(heardMs, dtSec) {
+    this.calm.update(heardMs, dtSec, this.energyCurves);
+    this.hype.update(heardMs, dtSec, this.energyCurves);
+    this.vibe.epicBias = epicBiasForKind(this.biomes.currentKind, this.biomes.lyricIntensityEased, this.biomes.kindConfidenceEased);
+    this.vibe.update(heardMs, dtSec, this.energyCurves);
+    // The kick a key change snaps to is looked up in song time around the
+    // heard moment, so the wave lands on a kick the player hears.
+    this.keyDirector.update(heardMs, dtSec, { tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor });
+    this.coda.update(heardMs);
+    this.weather.update(heardMs, dtSec, { valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
+      energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel });
+  }
+
   step(dtMs, nowMs) {
     this.prev = this.curr;
     this.timeMs = nowMs;
@@ -368,18 +404,9 @@ export class Simulation {
     this.cues.clearFrameFlags();
     this.cues.update(heardMs);
     this._applyCues(heardMs);
-    this.calm.update(heardMs, dtSec, this.energyCurves);
-    this.hype.update(heardMs, dtSec, this.energyCurves);
-    this.vibe.epicBias = epicBiasForKind(this.biomes.currentKind, this.biomes.lyricIntensityEased, this.biomes.kindConfidenceEased);
-    this.vibe.update(heardMs, dtSec, this.energyCurves);
-    // The kick a key change snaps to is looked up in song time around the
-    // heard moment, so the wave lands on a kick the player hears.
-    this.keyDirector.update(heardMs, dtSec, { tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor });
+    this._advanceMusic(heardMs, dtSec);
     if (this.keyDirector.justKeyChange) this.biomes.mandala.reseed(this.keyDirector.lastKeyChange.to);
-    this.coda.update(heardMs);
     this.groundField.flatten = this.coda.unravel;
-    this.weather.update(heardMs, dtSec, { valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
-      energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel });
     // Source time: disasters, quake and fire are the sim's own hazard timers
     // (cooldowns, durations, seeded schedules), not samples of the music.
     this.disasters.update(nowMs, this.worldX, { quake: this.quake, fire: this.fire, weather: this.weather,
