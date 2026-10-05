@@ -1,0 +1,62 @@
+{
+  "format": "midio-split-manifest/1",
+  "groups": {
+    "tune": [
+      "tune-bass-helix7",
+      "tune-drone-helix6",
+      "tune-drums-midi",
+      "tune-helix1-audio",
+      "tune-loose-midi",
+      "tune-orchestra-helix9",
+      "tune-piano-midi",
+      "tune-wall-guitars"
+    ],
+    "holdout": [
+      "hold-bass-helix2",
+      "hold-drone-helix3",
+      "hold-loose-midi",
+      "hold-operator-song",
+      "hold-orchestra-helix10",
+      "hold-perc-helix4",
+      "hold-piano-audio",
+      "hold-wall-guitars"
+    ]
+  },
+  "recordings": {
+    "9c47be00ee33d6d7c6f5724ebcaf13935a48da904300fdcf1fd5a32097eb8382": {
+      "group": "tune-drone-helix6",
+      "split": "tune"
+    },
+    "b7da992345804fd3d14a4cca943f51339082cad0414e71a4fea7187ce8c2e3f6": {
+      "group": "tune-bass-helix7",
+      "split": "tune"
+    },
+    "2515d1e5fe65bc7933344b09339018e90c31dd8d8fc40e3f46a927891cab033f": {
+      "group": "tune-orchestra-helix9",
+      "split": "tune"
+    },
+    "cadd2666c5571e12fafdb21697b26aef6f196a5a9c28e708129870167679991d": {
+      "group": "tune-helix1-audio",
+      "split": "tune"
+    },
+    "793e6ffda56e28691998b90a55bdaf0f2bccb8950cd8a7ee9ef7421c4ebbafdb": {
+      "group": "hold-drone-helix3",
+      "split": "holdout"
+    },
+    "ab5cb08483abe63edd2a2ce4d843ad8f3073fcbb4a738a94f6b7529df3e1b437": {
+      "group": "hold-bass-helix2",
+      "split": "holdout"
+    },
+    "2cdc23614d64e206cc89916183e3e9555cc483a73a4e4a8e27a21a18929be810": {
+      "group": "hold-perc-helix4",
+      "split": "holdout"
+    },
+    "8cdc67b63e526d8d039a4b5992651e68b1cd020f25e0da1e8ab9b99e583b75c6": {
+      "group": "hold-orchestra-helix10",
+      "split": "holdout"
+    }
+  },
+  "frozen": true,
+  "errors": [],
+  "revision": "e0618960c6a113be95a1fa2aadbce9dd93b69b06dce5dd2daaf292ab3a5b0a6b"
+}

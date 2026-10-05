@@ -111,6 +111,11 @@ export function activityEnvelope(samples, sampleRate, rate = 86, signal = null) 
  */
 export async function audioToTimeline(audioBuffer, {
   onProgress = null, userStems = null, groove = null, signal = null, cooperative = false,
+  // Evaluation only (tools/listening/export-production.mjs): also return the
+  // time-resolved features this pass already computes and otherwise
+  // summarizes, unquantized. Playback never sets it; the result is otherwise
+  // identical.
+  diagnostics = false,
 } = {}) {
   throwIfAborted(signal);
   // Cooperative: the analysis runs while a song is already playing (the
@@ -332,7 +337,7 @@ export async function audioToTimeline(audioBuffer, {
 
   onProgress?.({ phase: 'done', progress: 1 });
 
-  return {
+  const result = {
     timeline, barGrid, durationMs,
     firstBarMs: tempo.firstBarMs,
     localTempo: (tempo.curve || []).map(c => ({ tMs: c.startFrame / rate * 1000, beatPeriodMs: c.tau / rate * 1000, confidence: c.confidence })),
@@ -343,5 +348,26 @@ export async function audioToTimeline(audioBuffer, {
       bpm: tempo.bpm, beatPeriodMs: tempo.beatPeriodMs, confidence: tempo.confidence, freeTime: tempo.freeTime,
       energyCurves, analysis, structure,
     }),
+  };
+  if (diagnostics) result.diagnostics = featureDiagnostics(pitchFeatures);
+  return result;
+}
+
+/** The pitch pass's per-frame brightness (log-frequency centroid, 0..1) and
+ *  spectral peak energy, at its own frame rate: the same values meanBrightness
+ *  and the chroma histogram summarize. Copies, so the caller cannot alter
+ *  what the analysis used. */
+export function featureDiagnostics(features) {
+  const frames = features?.frames || [];
+  const energy = new Float32Array(frames.length);
+  for (let f = 0; f < frames.length; f++) {
+    let e = 0;
+    for (const v of frames[f]) e += v;
+    energy[f] = e;
+  }
+  return {
+    featureRateHz: features?.rate ?? null,
+    brightness: Float32Array.from(features?.brightness || []),
+    peakEnergy: energy,
   };
 }
