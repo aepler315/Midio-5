@@ -109,3 +109,58 @@ test('no sun-shaft passes run under the full squall deck', async () => {
   assert.equal(shaftSource({ light, storm: { amount: 1, break01: 0 } }), null);
   assert.ok(shaftSource({ light, storm: { amount: 0, break01: 1 } }).stormGain > 1);
 });
+
+// --- Evidence admission (F07) -------------------------------------------------
+//
+// A curve of zeros or of invalid values is missing evidence, not a quiet
+// song. Before the guard, every candidate averaged to 0, the tie went to the
+// section nearest the middle, and a full squall with wet ground was invented.
+const allSnares = Array.from({ length: 200 }, (_, i) => ({ tMs: i * 600, pitch: 38, channel: 9, vel: 1 }));
+function assertNoStorm(score, durationMs, label) {
+  assert.equal(score.section, null, `${label}: no section`);
+  for (let t = 0; t <= durationMs + 60000; t += 500) {
+    for (const reducedFlash of [false, true]) {
+      const s = score.at(t, { reducedFlash });
+      assert.equal(s.amount, 0, `${label}: amount at ${t}`);
+      assert.equal(s.flash, 0, `${label}: flash at ${t}`);
+      assert.equal(s.wet01, 0, `${label}: wet at ${t}`);
+      assert.equal(s.break01, 0, `${label}: break at ${t}`);
+    }
+  }
+}
+test('no measured energy means no storm, whatever the sections and snares say', () => {
+  const cases = {
+    'all zero': { globalEnergyNorm: () => 0, globalEnergy: () => 0 },
+    'all NaN': { globalEnergyNorm: () => NaN, globalEnergy: () => NaN },
+    'mixed invalid and zero': { globalEnergyNorm: t => (t % 1000 ? 0 : NaN), globalEnergy: t => (t % 1000 ? 0 : Infinity) },
+    'normalised but raw silent': { globalEnergyNorm: () => .5, globalEnergy: () => 0 },
+    'missing reader': {},
+    'no curves at all': null,
+  };
+  for (const [label, energyCurves] of Object.entries(cases)) {
+    assertNoStorm(compileStorm({ energyCurves, sections, timeline: allSnares, durationMs: 120000 }), 120000, label);
+  }
+});
+test('a song too short to clear the arrival guard gets no arbitrary storm', () => {
+  const loud = { globalEnergyNorm: () => .9, globalEnergy: () => .9 };
+  assertNoStorm(compileStorm({ energyCurves: loud, timeline: allSnares, durationMs: 7000 }), 7000, 'short unsegmented');
+  assertNoStorm(compileStorm({ energyCurves: loud, sections: [{ startMs: 0, endMs: 7000 }], timeline: allSnares, durationMs: 7000 }), 7000, 'short segmented');
+});
+test('energy only before the arrival is not evidence for a later squall', () => {
+  const early = { globalEnergyNorm: t => (t < 6000 ? .9 : 0), globalEnergy: t => (t < 6000 ? .9 : 0) };
+  assertNoStorm(compileStorm({ energyCurves: early, sections, timeline: allSnares, durationMs: 120000 }), 120000, 'early only');
+});
+test('one real positive peak is still enough, and stays inside the song', () => {
+  const peak = { globalEnergyNorm: t => (t >= 70000 && t < 90000 ? .8 : 0), globalEnergy: t => (t >= 70000 && t < 90000 ? .8 : 0) };
+  const score = compileStorm({ energyCurves: peak, sections, timeline: allSnares, durationMs: 120000 });
+  assert.deepEqual(score.section, { startMs: 60000, endMs: 120000 });
+  assert.ok(score.section.startMs >= 0 && score.section.endMs <= 120000);
+  assert.equal(score.at(80000).amount, 1);
+  assert.ok(score.at(80400).flash > 0, 'snares flash inside the storm');
+  assert.equal(score.at(80400, { reducedFlash: true }).flash, 0, 'reduced flashes suppress lightning');
+});
+test('a quiet but valid song keeps its storm (intensity policy is not changed here)', () => {
+  const quiet = { globalEnergyNorm: t => (t >= 40000 && t < 60000 ? .12 : .04), globalEnergy: t => (t >= 40000 && t < 60000 ? .03 : .01) };
+  const score = compileStorm({ energyCurves: quiet, sections, timeline, durationMs: 120000 });
+  assert.deepEqual(score.section, { startMs: 40000, endMs: 60000 });
+});
