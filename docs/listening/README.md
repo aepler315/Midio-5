@@ -2,7 +2,7 @@
 
 Version 0.1 proposal · September 30, 2026
 
-This is a reusable way for a human listener to describe a recording, submit the description with its audio, and turn the differences between human perception and Midio's analysis into a growing evaluation corpus. The listening protocol can be used immediately. The repository importer, analysis exporter, comparison report, and calibration loop described here are proposed work, not implemented commands.
+This is a reusable way for a human listener to describe a recording, submit the description with its audio, and turn the differences between human perception and Midio's analysis into a growing evaluation corpus. The listening protocol can be used immediately. The annotation parser and case validator, the production-analysis exporter and the alignment report now exist as local commands (see [Local commands](#local-commands)); a semantic emotion predictor and any calibration loop do not.
 
 The central idea is **a timeline of simultaneous emotional layers**. A bright arrangement can express joy in the foreground while carrying a strong melancholy undertone. Melancholy can then grow and take over while the sound stays bright. We record those facts separately.
 
@@ -149,11 +149,30 @@ Begin with a varied pilot of roughly 12–20 recordings to refine the vocabulary
 
 Keep alternate versions and excerpts of the same recording in one evaluation group. Annotate before seeing predictions, retain disagreement between listeners, and reserve evaluation groups before tuning. Start a personal calibration from one listener if that is what we want; broader listener agreement requires additional independent annotations.
 
+## Local commands
+
+All of these run locally on files you supply. Nothing is uploaded, and no model is downloaded or trained.
+
+```sh
+# 1. Analyse the whole recording with Midio's own browser analyzer (Task 12).
+node tools/listening/export-production.mjs --audio song.flac --out .listening/song
+# 2. Check the annotation and bind it to those exact bytes; write the report.
+node tools/listening/align.mjs --annotation song.yaml --audio song.flac \
+  --run .listening/song/run.json --out .listening/song
+```
+
+`align.mjs` without `--run` only parses and validates. Add `--manifest case.json` with `caseId`, `annotationRevision`, `recordingGroup`, `split` (`development`, `validation` or `test`) and `splitRevision`, and `--purpose scored`, to check admission to a scored set. `alignment.md` shows your own words beside the measured evidence for each span. Measured values and Midio's heuristics are shown, not scored against your ratings: there is no calibrated mapping, and emotion targets are reported as unsupported until a predictor exists.
+
+The parser uses the [`yaml`](https://eemeli.org/yaml/) package (development dependency, pinned to an exact version in `package.json` and `package-lock.json`; never loaded by playback). It reads YAML 1.2 with the core schema and refuses duplicate keys, explicit tags, anchors/aliases and multiple documents. Nothing in an annotation is executed.
+
 ## Files in this directory
 
 - [template.song.yaml](./template.song.yaml) — blank human listening form.
 - [bright-melancholy.example.song.yaml](./bright-melancholy.example.song.yaml) — illustrative description of the requested emotional arc.
 - [listening.schema.json](./listening.schema.json) — proposed structural contract for the YAML's JSON representation.
 - [pipeline-design.md](./pipeline-design.md) — current repository findings, integration boundaries, storage, validation, and evaluation rules.
+- `src/eval/listening/` — `parseAnnotation.js`, `validateCase.js`, `alignRun.js` (this protocol), `ProductionRun.js`, `ReviewBook.js` (machine runs and the corpus review book).
+- `tools/listening/` — `export-production.mjs`, `align.mjs`, `review-book.mjs`.
+- `test/fixtures/listening/` — illustrative fixtures only; they validate bookkeeping and are refused by scored admission.
 
 The template is intentionally a draft with blanks. Passing its structural schema does not make it a benchmark-ready example. Recording binding, time validation, review, and dataset partitioning are additional requirements described in the design.
