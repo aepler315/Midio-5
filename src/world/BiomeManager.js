@@ -20,7 +20,7 @@ import { VisualMusicHistory } from './VisualMusicHistory.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
-import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
+import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds, cloudColours } from './alpine/RangeSkyComposition.js';
 import { rangeSkyState } from './alpine/RangeFrame.js';
 import { withNarrativeAlpha, drawNarrativeMarks } from '../render/NarrativeDraw.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
@@ -2771,18 +2771,20 @@ export class BiomeManager {
       );
     });
     // Range v2: sparse, low-contrast cloud banks drifting on one wind and
-    // turning with the camera, lit on the side facing the celestial, clear
-    // of the SpaceRidge.
+    // turning with the camera. Their shade is the sky behind them, a little
+    // greyer and lighter (brighter skies, whiter cloud), lit on the side
+    // facing the celestial. They do not read the aurora's live outline; a
+    // static fade keeps the few that reach up toward it thin.
     if (this._rangeV2Active && this._pass('range-clouds')) {
       const halo = hexToRgb(this._scenicLight.colorHex);
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
+      const mid = hexToRgb(this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)));
       const pan = this.rangePresentation?.skyPan;
       const panPx = (pan?.x || 0) * canvas.width / 2, panYPx = -(pan?.y || 0) * canvas.height / 2;
       withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, panPx, panYPx }), {
-        dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
-        lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
+        ...cloudColours(top, mid, halo),
         light: this._scenicLight, directGain: this._scenicLight.intensity,
-        allowPoint: this._rangeSky?.allowPoint || null,
+        fadeTop: [canvas.height * 0.08, canvas.height * 0.16],
       }));
     }
     // Only over the GPU scene, whose land darkens under the deck with it;
