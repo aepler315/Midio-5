@@ -45,10 +45,12 @@ test('cloud radiance renders through a separate depth-tested atmosphere pass', a
   assert.equal(scene.renderSkyGiants({...frame,qualityLevel:4},'view'),null);
   p.giantLayout.hasLake=true;
   p.mirrorLevelM=2000;
-  assert.equal(scene.renderSkyGiants({...frame,actors:{presence:1,midio:{peak:1}}},'view'),null,'lake Midio has no above-water cloud source');
+  // A mirror that exists: Midio is a reflection, never also a cloud.
+  scene._ensureMirror=()=>({target:{texture:'mirror'}});
+  assert.equal(scene.renderSkyGiants({...frame,frameId:1,actors:{presence:1,midio:{peak:1}}},'view'),null,'lake Midio has no above-water cloud source');
   p.mirrorLevelM=null;
   rendered.length=0;
-  assert.equal(scene.renderSkyGiants({...frame,actors:{presence:1,midio:{peak:1}}},'view'),scene.canvas,'unavailable lake mirror falls back to clouds');
+  assert.equal(scene.renderSkyGiants({...frame,frameId:2,actors:{presence:1,midio:{peak:1}}},'view'),scene.canvas,'unavailable lake mirror falls back to clouds');
   assert.deepEqual(rendered,['depth','midio-cloud','copy']);
   p.depthScenes={};
   const columns={mid:[.2,.6],near:[.4,.8]};
@@ -82,4 +84,78 @@ test("a listener's zoom never dollies past Midio's mirrored sheet", () => {
   const sheet = [0, 2000, 4000], forward = [0, 0, 1];
   assert.equal(aheadOfEye(sheet, [0, 2400, 0], forward, 600), sheet, 'unzoomed: untouched');
   assert.deepEqual(aheadOfEye(sheet, [50, 2300, 3700], forward, 600), [0, 2000, 4300]);
+});
+
+// F08: lake metadata alone is not a mirror. The reservation can be denied
+// (it is optional light), and then the giant must fall back to the sky.
+async function giantScene({ mirrorAllowed }) {
+  const { RangeScene } = await import('../src/world/alpine/RangeScene.js');
+  const scene = Object.create(RangeScene.prototype), rendered = [], reserves = [];
+  const p = { giantLayout: { hasLake: true }, mirrorLevelM: 2000, depthScene: { id: 'depth' },
+    actors: { clouds: { midio: { scene: { id: 'midio-cloud' } }, midasus: { scene: { id: 'midasus-cloud' } } } },
+    uniforms: { uMidioCloud: { value: 1 } } };
+  Object.assign(scene, {
+    prepared: new Map([['view', p]]), target: { texture: 'target' }, sideTargets: { B: { texture: 'side-b' } }, canvas: {},
+    size: { width: 640, height: 360 }, depthCache: { A: { frame: 0 }, B: { frame: 0 } }, mirrors: { A: null, B: null },
+    _copy: { mesh: { material: { uniforms: { uColor: { value: null } } } }, scene: { id: 'copy' }, camera: {} },
+    _setCamera() {}, _setCanvasSize() {},
+    // The real routing decision, without the rest of the per-frame uniforms.
+    _setUniforms(prepared, frame, side, viewId) {
+      prepared.uniforms.uMidioCloud.value = this._giantMirrored(prepared, frame, side, viewId) ? 0 : 1;
+    },
+    _ensureMirror(side) {
+      reserves.push(side);
+      if (!mirrorAllowed()) return null;
+      this.mirrors[side] = { target: { texture: `mirror-${side}` } };
+      return this.mirrors[side];
+    },
+    releaseMirror(side) { this.mirrors[side] = null; },
+    renderer: { setRenderTarget() {}, setClearColor() {}, clear() {}, render(s) { rendered.push(s.id); } },
+  });
+  return { scene, p, rendered, reserves };
+}
+const midioFrame = (frameId, extra = {}) => ({ frameId, qualityLevel: 0, actors: { presence: 1, midio: { peak: 1 } }, ...extra });
+
+test('a lake whose mirror reservation is denied sends held Midio to the sky, once', async () => {
+  let allowed = false;
+  const { scene, p, rendered } = await giantScene({ mirrorAllowed: () => allowed });
+  assert.equal(scene.renderSkyGiants(midioFrame(1), 'view'), scene.canvas, 'denied mirror falls back to the cloud');
+  assert.deepEqual(rendered.filter((id) => id === 'midio-cloud'), ['midio-cloud'], 'exactly one giant');
+  assert.equal(p.uniforms.uMidioCloud.value, 1, 'the lake shader is told there is no reflected giant');
+  // The water pass for the same frame agrees: no mirror, no reflection.
+  assert.equal(scene._resolveMirror(p, midioFrame(1), 'A', 'view').mirror, null);
+  // Restored reservation on a later frame: the reflection takes him back.
+  allowed = true;
+  rendered.length = 0;
+  assert.equal(scene.renderSkyGiants(midioFrame(2), 'view'), null);
+  assert.deepEqual(rendered, []);
+  assert.equal(scene._giantMirrored(p, midioFrame(2), 'A', 'view'), true);
+});
+
+test('the route is decided per side and per frame, and a lost target is not reused', async () => {
+  const deniedSides = new Set(['B']);
+  const { scene, rendered } = await giantScene({ mirrorAllowed: () => !deniedSides.has(scene._lastSide) });
+  const ensure = scene._ensureMirror.bind(scene);
+  scene._ensureMirror = (side) => { scene._lastSide = side; return ensure(side); };
+  assert.equal(scene.renderSkyGiants(midioFrame(1), 'view', { side: 'A' }), null, 'side A reflects');
+  assert.equal(scene.renderSkyGiants(midioFrame(1), 'view', { side: 'B' }), scene.canvas, 'side B, denied, uses the cloud');
+  assert.deepEqual(rendered.filter((id) => id === 'midio-cloud'), ['midio-cloud']);
+  // Side A's target is lost (evicted or context lost) mid-song.
+  scene.mirrors.A = null;
+  deniedSides.add('A');
+  rendered.length = 0;
+  assert.equal(scene.renderSkyGiants(midioFrame(1), 'view', { side: 'A' }), scene.canvas, 'a released target is never treated as ready');
+  assert.deepEqual(rendered.filter((id) => id === 'midio-cloud'), ['midio-cloud']);
+});
+
+test('no lake, or a quality that sheds giants, keeps the existing routes', async () => {
+  const { scene, p, rendered, reserves } = await giantScene({ mirrorAllowed: () => true });
+  p.giantLayout.hasLake = false;
+  assert.equal(scene.renderSkyGiants(midioFrame(1), 'view'), scene.canvas);
+  assert.deepEqual(rendered.filter((id) => id === 'midio-cloud'), ['midio-cloud']);
+  p.giantLayout.hasLake = true;
+  rendered.length = 0;
+  assert.equal(scene.renderSkyGiants(midioFrame(2, { qualityLevel: 4 }), 'view'), null, 'quality 4 sheds giants on purpose');
+  assert.deepEqual(rendered, []);
+  assert.ok(reserves.length >= 0);
 });
