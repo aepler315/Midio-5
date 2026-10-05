@@ -127,6 +127,8 @@ That path steps every frame and muxes H.264 with ffmpeg. See [docs/video-export.
 | `P` | Toggle the FPS display |
 | `T` | Toggle track details when available |
 | `F3` | Toggle section labels on the mountain seekbar |
+| `F4` | Hold the scanned ridges still, to check a range's geographic profile |
+| `Esc` | Close the section detail opened from the seekbar |
 
 On a car head unit, the first tap after a long idle gap is spent entirely on
 waking the display and restoring fullscreen, never on a control; a screen
@@ -321,6 +323,25 @@ CI runs the generated-fixture smoke check and uploads its diagnostics.
 The other `tools/smoke-*.mjs` scripts are legacy or specialized diagnostics;
 some still target removed MIDI/demo/SoundFont UI and are not the maintained
 upload regression suite.
+
+### Range v2 renderer check
+
+The default renderer has its own check, run in CI against the staged site.
+It renders on the export clock, so it works on software WebGL, slowly (about
+seven minutes in a cloud sandbox). It fails if the served files are not the
+checked-out ones, if v2 falls back to legacy, if a frame is blank, or on any
+page or shader error:
+
+```sh
+npm run stage:site
+SITE_ROOT=_site PORT=8090 node tools/serve.js &
+node tools/range-scene-smoke.mjs --url http://127.0.0.1:8090 --source-root . \
+  --expect-sha "$(git rev-parse HEAD)" --suite pilot --view teton-jackson-lake \
+  --output .smoke/range-pilot
+```
+
+Software-GL timings are not device measurements; see
+[Range v2 device runs](docs/range-v2-device-runs.md) for those.
 
 ## Additional references
 
