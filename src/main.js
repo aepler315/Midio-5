@@ -1413,6 +1413,7 @@ if (sceneRangeEl && sceneBiomeEl) {
     const opt = document.createElement('option');
     opt.value = sceneChoice.viewId;
     opt.textContent = v ? viewLabel(v, biomeTitle.get(v.biome)) : sceneChoice.viewId;
+    opt.dataset.reviewOnly = '1';
     sceneRangeEl.appendChild(opt);
   }
   for (const b of PICKABLE_BIOMES) {
@@ -1443,6 +1444,9 @@ if (sceneRangeEl && sceneBiomeEl) {
   };
   sceneRangeEl.addEventListener('change', () => {
     const v = sceneRangeEl.value;
+    // Leaving a review link's pilot copy drops it from the menu again; it
+    // could not be remembered or linked under the ordinary ?range spelling.
+    for (const o of [...sceneRangeEl.options]) if (o.dataset.reviewOnly && o.value !== v) o.remove();
     commit(v === SCENE_AUTO ? { viewId: null, biome: null } : { viewId: v });
   });
   sceneBiomeEl.addEventListener('change', () => {
