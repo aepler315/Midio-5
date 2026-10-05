@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { stageSite } from '../tools/stage-site.mjs';
 
 async function fixture() {
@@ -62,7 +63,8 @@ test('stageSite follows symlinked ancestors when checking destructive overlap', 
 test('staging verifies the Range v2 runtime bundle and shipped terrain assets', async () => {
   const { verifyRangeRuntime } = await import('../tools/stage-site.mjs');
   const fsp = fs, p = path;
-  const root = p.resolve(p.dirname(new URL(import.meta.url).pathname), '..');
+  // fileURLToPath: URL.pathname is not a filesystem path on Windows.
+  const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
   const out = await fsp.mkdtemp(p.join(os.tmpdir(), 'midio-stage-range-'));
   await fsp.cp(p.join(root, 'src'), p.join(out, 'src'), { recursive: true });
   const ok = await verifyRangeRuntime(root, out);

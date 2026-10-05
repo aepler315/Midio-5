@@ -85,3 +85,23 @@ Fewer fog samples keep the frame's overall haze within 3% of full quality (`test
 ## Coherent terrain continuation — 2026-10-01
 
 No current-source desktop or physical Android run was available for `codex/coherent-terrain-performance-20261001`. Hardware acceptance is **pending**; prior device results do not validate this branch. CPU geometry measurements and unit tests are not frame-time evidence. Use the procedure and gates above on the three forced candidates and ordinary approved views; see [the continuation record](evidence/terrain-continuation/README.md).
+
+## October 4 continuation — synthetic CI-class run, not device evidence
+
+One single-view run of the pilot suite, recorded so later runs can be compared by revision. It is **not** a device measurement and does not move any acceptance gate above: there is no physical GPU, no travel between views, no mobile budget and no live playback (frames are drawn on the export clock).
+
+| Field | Value |
+| --- | --- |
+| Source revision | `36cef71c778c9f80a2c96171afedc8e8a55e3daf` (branch `test/range-ci-portable`), clean |
+| Served from | staged `_site` (`npm run stage:site`), served files hashed against the checkout |
+| Browser / GPU | Chromium 153.0.8010.12 headless shell, SwiftShader (software WebGL2) |
+| Stage / DPR | 1280×720, DPR 1 |
+| View / seed / fixture | `teton-jackson-lake` (approved); the suite's generated 96 s synthetic WAV |
+| Quality | level 0 throughout |
+| Execution | fixed-step export clock (`renderExportFrame`), not live |
+| Frames (ms of song → draw ms) | 0 → 10; 250 → **18,807** (first v2 composition: GPU preparation on software GL); 6,000 → 19; 30,000 → 18; 60,000 → 21; 90,000 → 6 |
+| Composition | every v2 frame non-blank: 117–716 colours on a 160×90 probe, 100% lit |
+| Errors | 0 page or shader errors |
+| Wall time | about 6.5 minutes for the suite |
+
+What this does not say: frame pacing at 60 fps, travel cost, startup on real hardware (the 18.8 s first draw is SwiftShader compiling and uploading, and needs profiling on a GPU before anything is concluded from it), or anything about phones. The audit's own desktop result was not available to this branch; add it here as a separate synthetic row with its revision when it is. Full device acceptance remains **pending**.
