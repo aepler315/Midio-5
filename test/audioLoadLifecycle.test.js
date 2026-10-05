@@ -254,3 +254,84 @@ test('actual background analysis captures the provisional history before adoptio
   fullCurves.bands.forEach(b => b.fill(0)); openingCurves.bands.forEach(b => b.fill(0));
   assert.ok(Math.abs(retained.sample(5250).bands[0] - .55) < .001, 'both histories are immutable after live data replacement');
 });
+
+// A failed whole-song pass leaves the song playable on its opening, records
+// the failure on the coverage metadata export reads, and can be retried for
+// the same selection only (AnalysisReadiness.js, requestFullSongExport).
+function openingHarness() {
+  const h = harness();
+  const buffer = recording(); buffer.duration = 120;
+  h.context.audioEngine.decodeFile = async () => buffer;
+  h.context.sliceAudioBuffer = () => ({ ...buffer, duration: 15 });
+  h.context.setTimeout = (fn) => fn();
+  h.context.getBundle = async () => null;
+  h.context.packBundle = () => ({}); h.context.putBundle = async () => {};
+  const attempts = [];
+  h.context.audioToTimeline = async (b) => {
+    if (b.duration === 15) return { durationMs: 15000, timeline: [], barGrid: [] };
+    let resolve, reject;
+    const p = new Promise((res, rej) => { resolve = res; reject = rej; });
+    attempts.push({ resolve, reject });
+    return p;
+  };
+  let offered = null;
+  h.context.offerWorldsThenStart = (data) => { offered = data; };
+  return { ...h, attempts, offered: () => offered };
+}
+
+test('a failed whole-song pass is recorded on the opening, with its reason', async () => {
+  const h = openingHarness();
+  await h.load();
+  const pending = h.context.fullAnalysisPending;
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0].reject(new Error('worker crashed'));
+  assert.equal(await pending, null);
+  const data = h.offered();
+  assert.equal(data.opening.failed, true);
+  assert.equal(data.opening.failure, 'worker crashed');
+  assert.equal(h.context.fullAnalysisPending, null);
+  assert.equal(h.context.lastSongLoad.data, data);
+});
+
+test('retrying the whole-song pass analyses the same recording and adopts it', async () => {
+  const h = openingHarness();
+  await h.load();
+  const first = h.context.fullAnalysisPending;
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0].reject(new Error('worker crashed'));
+  await first;
+  const retry = h.context.lastSongLoad.retryWholeSong();
+  assert.equal(h.offered().opening.failed, false, 'no longer reported failed while retrying');
+  assert.ok(h.context.fullAnalysisPending, 'export sees the retry as pending');
+  for (let i = 0; i < 10 && h.attempts.length < 2; i++) await new Promise((r) => setImmediate(r));
+  h.attempts[1].resolve({ durationMs: 120000, timeline: [], barGrid: [] });
+  assert.equal(await retry, h.offered());
+  assert.equal(h.offered().opening, undefined);
+  assert.equal(h.offered().durationMs, 120000);
+});
+
+test('a retry for a replaced selection does nothing', async () => {
+  const h = openingHarness();
+  await h.load();
+  const first = h.context.fullAnalysisPending;
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0].reject(new Error('worker crashed'));
+  await first;
+  const stale = h.context.lastSongLoad;
+  h.context.sourceSelection.begin({ kind: 'sample', name: 'Proof' });
+  assert.equal(await stale.retryWholeSong(), null);
+  assert.equal(h.attempts.length, 1);
+  assert.equal(stale.data.opening.failed, true);
+});
+
+test('an aborted whole-song pass is not reported as a failure', async () => {
+  const h = openingHarness();
+  await h.load();
+  const pending = h.context.fullAnalysisPending;
+  const data = h.offered();
+  h.context.sourceSelection.cancel();
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0]?.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+  await pending;
+  assert.equal(data.opening.failed, undefined);
+});
