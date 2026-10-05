@@ -3,9 +3,9 @@
   "browser": "151.0.7922.173",
   "limitation": "Synthetic audio and software WebGL; not hardware performance.",
   "sourceHashes": {
-    "src/world/BiomeManager.js": "7d5cc0da36066844367fcf8e979f05484daf5777dda26a79ccd1c627a9195dea",
+    "src/world/BiomeManager.js": "d74b1976e94c473299415d1f2a02d2badd97a731b46536e31ef8499e8d7a9606",
     "src/world/alpine/RangeStorm.js": "b2344f41e1f4e62d71744068dff771771aab9568a8abb61d741c0405a637435d",
-    "src/world/DayNight.js": "d9e9172e7385c0d97bfe07a8d786ee4e558a6fcb1a94b1db08ca92fe05212b20"
+    "src/world/DayNight.js": "3834a549d4df9812c64cc335a4dca689eeb26962d588f082faecb839dc9791da"
   },
   "stormSky": {
     "upperSkyTransmission": 0.9414231361146684,
@@ -20,57 +20,67 @@
   "seed": 2917029651,
   "frames": [
     {
-      "label": "rising",
-      "timeMs": 12000,
+      "label": "sunset",
+      "timeMs": 1000,
       "lighting": {
         "celestial": {
           "sun": {
-            "xFrac": 0.07999999999999996,
+            "xFrac": 0.10665777439024383,
+            "yFrac": 0.3523466871753856,
+            "radiusFrac": 0.017718612839434718,
+            "scale": 1.0124921622534124,
+            "altitude01": 0.09953475476639138,
+            "visibility": 1,
+            "directGain": 1.6,
+            "colorHex": "#ff8b5a"
+          },
+          "moon": {
+            "xFrac": 0.92,
             "yFrac": 0.3781,
-            "radiusFrac": 0.020541265936032255,
-            "scale": 1.1737866249161288,
+            "radiusFrac": 0.017718612839434718,
+            "scale": 1.0124921622534124,
             "altitude01": 0,
             "visibility": 0,
             "directGain": 0,
-            "colorHex": "#ff713b"
-          },
-          "moon": {
-            "xFrac": 0.8281053768426727,
-            "yFrac": 0.28837174603742943,
-            "radiusFrac": 0.020541265936032255,
-            "scale": 1.1737866249161288,
-            "altitude01": 0.33649905170985595,
-            "visibility": 1,
-            "directGain": 0.25,
             "colorHex": "#c8d8ff"
           },
-          "activeBody": "moon",
-          "night01": 1,
+          "activeBody": "sun",
+          "night01": 0.9814930584219349,
           "dawn01": 0,
-          "dusk01": 0,
-          "darkness01": 0,
-          "ambientMultiplier": 0.35
+          "dusk01": 0.15499333079268293,
+          "darkness01": 0.9814930584219349,
+          "ambientMultiplier": 0.07776594962802509
         },
         "light": {
-          "x": 1165.9723705944832,
-          "y": 244.53924063974017,
-          "colorHex": "#c8d8ff",
-          "intensity": 0.2473990833641438,
-          "dirX": -0.6078671387838589,
-          "dirY": 0.7940387532020868,
-          "celestialYFrac": 0.28837174603742943
+          "x": 150.1741463414633,
+          "y": 298.789990724727,
+          "colorHex": "#ff8b5a",
+          "intensity": 0.8226694083902223,
+          "dirX": 0.7100595747625795,
+          "dirY": 0.7041416052811995,
+          "celestialYFrac": 0.3523466871753856
         },
-        "twilight": null
+        "twilight": {
+          "amount01": 1,
+          "rising": false,
+          "xFrac": 0.10665777439024371,
+          "colors": {
+            "horizon": "#ff4a1c",
+            "mid": "#b83e78",
+            "top": "#271f5c",
+            "glow": "#ff7a2a"
+          }
+        }
       },
       "renderer": {
         "active": true,
         "viewId": "teton-jackson-lake",
         "reason": null
       },
-      "pngHash": "194bd9e85a0016350667d5e4279e865cc4c51b2be717b0acea44e5ab995afca9"
+      "pngHash": "0db205ba28b759c292d3c62cc639142020e0830013f8fbefadeeebe96f81fa71"
     },
     {
-      "label": "overhead",
+      "label": "moonlight",
       "timeMs": 30000,
       "lighting": {
         "celestial": {
@@ -85,11 +95,11 @@
             "colorHex": "#ff713b"
           },
           "moon": {
-            "xFrac": 0.5001015321512985,
-            "yFrac": 0.10026349681033266,
+            "xFrac": 0.49999177609769885,
+            "yFrac": 0.10026362915288621,
             "radiusFrac": 0.021875000000000002,
             "scale": 1.5876569354106325,
-            "altitude01": 0.9999995413071704,
+            "altitude01": 0.9999990638924335,
             "visibility": 1,
             "directGain": 0.25,
             "colorHex": "#c8d8ff"
@@ -102,72 +112,92 @@
           "ambientMultiplier": 0.35
         },
         "light": {
-          "x": 704.1429572690283,
-          "y": 85.02344529516209,
+          "x": 703.98842074556,
+          "y": 85.0235575216475,
           "colorHex": "#c8d8ff",
           "intensity": 0.25,
-          "dirX": -0.00018736783671452896,
-          "dirY": 0.9999999824466467,
-          "celestialYFrac": 0.10026349681033266
+          "dirX": 0.000015176424584024807,
+          "dirY": 0.9999999998848381,
+          "celestialYFrac": 0.10026362915288621
         },
-        "twilight": null
+        "twilight": {
+          "amount01": 0,
+          "rising": true,
+          "xFrac": 0.5002649284628814,
+          "colors": {
+            "horizon": "#ff7a3a",
+            "mid": "#d4627c",
+            "top": "#34386e",
+            "glow": "#ffb24a"
+          }
+        }
       },
       "renderer": {
         "active": true,
         "viewId": "teton-jackson-lake",
         "reason": null
       },
-      "pngHash": "82b32c006baf73eac1d8d6180d2bc1d260cb1ee570ad8b8b585cf957217ff86f"
+      "pngHash": "bc264175ff005f8ec07e38eee52d5170a0aea2e48e74b674f0ee12bf858c2613"
     },
     {
-      "label": "setting",
-      "timeMs": 48000,
+      "label": "sunrise",
+      "timeMs": 59500,
       "lighting": {
         "celestial": {
           "sun": {
-            "xFrac": 0.07999999999999996,
-            "yFrac": 0.3781,
+            "xFrac": 0.8811375762193753,
+            "yFrac": 0.33522989517831825,
             "radiusFrac": 0.021875000000000002,
-            "scale": 2.452336448598319,
+            "scale": 3.4,
+            "altitude01": 0.1448339243829563,
+            "visibility": 1,
+            "directGain": 1.6,
+            "colorHex": "#ffa377"
+          },
+          "moon": {
+            "xFrac": 0.92,
+            "yFrac": 0.3781,
+            "radiusFrac": 0.021875,
+            "scale": 3.4,
             "altitude01": 0,
             "visibility": 0,
             "directGain": 0,
-            "colorHex": "#ff713b"
-          },
-          "moon": {
-            "xFrac": 0.17140092533714707,
-            "yFrac": 0.2811411524115982,
-            "radiusFrac": 0.021875000000000002,
-            "scale": 2.452336448598319,
-            "altitude01": 0.33558095776079766,
-            "visibility": 1,
-            "directGain": 0.25,
             "colorHex": "#c8d8ff"
           },
-          "activeBody": "moon",
-          "night01": 1,
-          "dawn01": 0,
+          "activeBody": "sun",
+          "night01": 0.75,
+          "dawn01": 0.14590828252041652,
           "dusk01": 0,
-          "darkness01": 0,
-          "ambientMultiplier": 0.35
+          "darkness01": 0.75,
+          "ambientMultiplier": 0.20499999999999993
         },
         "light": {
-          "x": 245.0082442620829,
-          "y": 241.7990950409633,
-          "colorHex": "#c8d8ff",
-          "intensity": 0.15100346501876083,
-          "dirX": 0.6049476197058014,
-          "dirY": 0.796265268244374,
-          "celestialYFrac": 0.2811411524115982
+          "x": 1240.6417073168805,
+          "y": 284.27495111121385,
+          "colorHex": "#ffa377",
+          "intensity": 0,
+          "dirX": -0.6894939363597605,
+          "dirY": 0.7242914549565821,
+          "celestialYFrac": 0.33522989517831825
         },
-        "twilight": null
+        "twilight": {
+          "amount01": 0.9466113914318267,
+          "rising": true,
+          "xFrac": 0.8811375762193753,
+          "colors": {
+            "horizon": "#ff7a3a",
+            "mid": "#d4627c",
+            "top": "#34386e",
+            "glow": "#ffb24a"
+          }
+        }
       },
       "renderer": {
         "active": true,
         "viewId": "teton-jackson-lake",
         "reason": null
       },
-      "pngHash": "76d9077cf59dd2850cfeb673de6c893ca40e83b852b039bdf95b4a59b36942a2"
+      "pngHash": "54f1c2aafdc60a144d3db49aef599ca528a1d3d15c4ac6cef41717520b7a7bbb"
     }
   ]
 }

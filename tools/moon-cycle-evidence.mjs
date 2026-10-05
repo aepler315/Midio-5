@@ -1,4 +1,4 @@
-// Capture the Range's moonrise, overhead moon and moonset using real audio
+// Capture the Range's sunset, moonlight and sunrise using real audio
 // analysis and the production compositor. Run with the app served on 8092:
 // PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium node tools/moon-cycle-evidence.mjs
 import assert from 'node:assert/strict';
@@ -54,7 +54,7 @@ try {
   const opened = await openSong(seeded, { url: process.argv[2] || 'http://127.0.0.1:8092', wav,
     width: 640, height: 360, params: { rangeRenderer: 'v2', rangeView: 'teton-jackson-lake', seed: '2917029651' } });
   await captureFrame(opened.page, 250, { hook: 'conifer' });
-  for (const [label, timeMs] of [['rising', 12000], ['overhead', 30000], ['setting', 48000]]) {
+  for (const [label, timeMs] of [['sunset', 1000], ['moonlight', 30000], ['sunrise', 59500]]) {
     const frame = await captureFrame(opened.page, timeMs, { hook: 'conifer' });
     const lighting = await opened.page.evaluate(() => {
       const mgr = window.__SMW.sim.biomes;
@@ -62,16 +62,25 @@ try {
     });
     assert.equal(frame.range.active, true, frame.range.reason);
     assert.equal(frame.range.viewId, 'teton-jackson-lake');
-    assert.equal(lighting.celestial.activeBody, 'moon');
-    assert.equal(lighting.celestial.night01, 1);
-    assert.equal(lighting.celestial.sun.directGain, 0);
-    assert.equal(lighting.twilight, null);
-    assert.equal(lighting.light.colorHex, '#c8d8ff');
+    assert.ok(lighting.celestial.night01 >= .75);
+    assert.ok(lighting.celestial.sun.altitude01 < .2);
+    if (label === 'moonlight') {
+      assert.equal(lighting.celestial.activeBody, 'moon');
+      assert.equal(lighting.celestial.night01, 1);
+      assert.equal(lighting.celestial.sun.directGain, 0);
+      assert.equal(lighting.twilight.amount01, 0);
+      assert.equal(lighting.light.colorHex, '#c8d8ff');
+    } else {
+      assert.equal(lighting.celestial.activeBody, 'sun');
+      assert.ok(lighting.twilight.amount01 > .7);
+      assert.equal(lighting.twilight.rising, label === 'sunrise');
+      assert.equal(lighting.light.colorHex, lighting.celestial.sun.colorHex);
+    }
     const png = Buffer.from(frame.png, 'base64');
     await fs.writeFile(path.join(out, `${label}.png`), png);
     report.frames.push({ label, timeMs, lighting, range: frame.range, identity: frame.identity,
       pngHash: createHash('sha256').update(png).digest('hex') });
-    console.log(`${label}: moon altitude ${lighting.celestial.moon.altitude01.toFixed(3)}, night=${lighting.celestial.night01}`);
+    console.log(`${label}: ${lighting.celestial.activeBody}, night=${lighting.celestial.night01.toFixed(3)}`);
   }
   assert.deepEqual(opened.errors, []);
   await opened.context.close();
