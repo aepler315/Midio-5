@@ -3558,9 +3558,10 @@ function frame(tRaf) {
   lastDrawMs = tRaf;
 
   if (pendingCapturePresetId && captureClock.captureReady) {
-    const presetId = pendingCapturePresetId;
+    const session = pendingCaptureSession || recordingSessionFor(pendingCapturePresetId);
     pendingCapturePresetId = null;
-    beginRecorder(presetId);
+    pendingCaptureSession = null;
+    beginRecorder(session);
   }
 
   const alpha = acc / STEP_MS;
@@ -4331,6 +4332,7 @@ function replaySong({ songSeed } = {}) {
   // recorder is never armed over an opening-only analysis whatever the path.
   if (pendingExportPresetId && analysisReadiness(lastTimelineData, fullAnalysisPending).state !== 'ready') {
     pendingExportPresetId = null;
+    pendingExportCandidate = null;
     showExportReadiness(analysisReadiness(lastTimelineData, fullAnalysisPending));
     return;
   }
@@ -4348,8 +4350,10 @@ function replaySong({ songSeed } = {}) {
   // managed to press a button.
   if (pendingExportPresetId) {
     const presetId = pendingExportPresetId;
+    const candidate = pendingExportCandidate;
     pendingExportPresetId = null;
-    startRecording(presetId);
+    pendingExportCandidate = null;
+    startRecording(presetId, { fullSong: true, candidate });
   }
   // Start the recorder's master-bus tap before the replacement source. That
   // keeps the first audio onset inside a full-song file instead of letting
@@ -4784,6 +4788,7 @@ const exportPresetEl = document.getElementById('exportPreset');
 const exportBtnEl = document.getElementById('exportBtn');
 const exportNoteEl = document.getElementById('exportNote');
 const exportRetryAnalysisBtnEl = document.getElementById('exportRetryAnalysisBtn');
+const exportRetryCodecBtnEl = document.getElementById('exportRetryCodecBtn');
 
 const EXPORT_PRESET_KEY = 'midio.export.preset';
 
@@ -4793,6 +4798,15 @@ let pendingExportPresetId = null;
 /** Mid-song capture waits until the live presentation lead has been paid
  * down without rewinding simulation time. */
 let pendingCapturePresetId = null;
+let pendingCaptureSession = null;
+/** What the recording in progress is OF, fixed when it starts: the file is
+ *  named from this, never from whatever song is loaded when it finishes. */
+let activeRecordingSession = null;
+/** The last recording the browser's encoder failed, for the complete screen
+ *  to explain and offer a retry in another container. */
+let lastRecordingFailure = null;
+/** The container a requested full-song export must use (a retry), or null. */
+let pendingExportCandidate = null;
 /** The last object URL handed out, revoked when the next one replaces it. */
 let lastExportUrl = null;
 
@@ -4818,28 +4832,48 @@ function ensureRecorder() {
   return songRecorder;
 }
 
-function beginRecorder(presetId) {
+/** A snapshot of what a recording is of, taken when it is asked for. */
+function recordingSessionFor(presetId, { fullSong = false, candidate = null } = {}) {
+  return Object.freeze({
+    selectionId: sourceSelection.current?.id ?? null,
+    songName: lastSongName || 'song',
+    requestedPreset: presetId,
+    startedAtHeardMs: sim?.heardTimeMs ?? 0,
+    fullSong: !!fullSong,
+    candidate: candidate || null,
+  });
+}
+
+function beginRecorder(sessionOrPreset) {
+  const session = typeof sessionOrPreset === 'string' || !sessionOrPreset
+    ? recordingSessionFor(sessionOrPreset || storedExportPresetId())
+    : sessionOrPreset;
   const recorder = ensureRecorder();
   if (!recorder) { showErrorBanner('Start a song before recording.'); return false; }
-  if (!recorder.start({ presetId, deferFirstFrame: true })) {
+  if (!recorder.start({ presetId: session.requestedPreset, deferFirstFrame: true, candidate: session.candidate })) {
     showErrorBanner(recorder.error || 'This browser cannot record video.');
     captureClock.release(audioEngine?.nowMs || 0);
     syncRecordUI();
     return false;
   }
+  activeRecordingSession = session;
+  lastRecordingFailure = null;
+  exportRetryCodecBtnEl?.classList.add('hidden');
   recordReadoutAtMs = 0;
   syncRecordUI();
   return true;
 }
 
-function startRecording(presetId = storedExportPresetId()) {
+function startRecording(presetId = storedExportPresetId(), options = {}) {
   const recorder = ensureRecorder();
   if (!recorder?.candidate) {
     showErrorBanner('This browser cannot record video.');
     return false;
   }
-  if (captureClock.captureReady) return beginRecorder(presetId);
+  const session = recordingSessionFor(presetId, options);
+  if (captureClock.captureReady) return beginRecorder(session);
   pendingCapturePresetId = presetId;
+  pendingCaptureSession = session;
   captureClock.arm(audioEngine?.nowMs || 0);
   syncRecordUI();
   return true;
@@ -4851,20 +4885,30 @@ function finishRecording() {
   const recorder = songRecorder;
   if (pendingCapturePresetId) {
     pendingCapturePresetId = null;
+    pendingCaptureSession = null;
     captureClock.release(audioEngine?.nowMs || 0);
     syncRecordUI();
     return;
   }
-  if (!recorder?.recording) return;
+  // A recording the encoder ended on its own still has a result to collect.
+  if (!recorder?.recording && !recorder?.hasUnclaimedResult) return;
+  const session = activeRecordingSession || recordingSessionFor(storedExportPresetId());
+  activeRecordingSession = null;
   captureClock.release(audioEngine?.nowMs || 0);
-  recorder.stop().then((result) => {
+  const pending = recorder.stop();
+  if (!pending) { syncRecordUI(); return; }
+  pending.then((result) => {
     syncRecordUI();
+    if (result?.failure) {
+      reportRecordingFailure(result, session);
+      return;
+    }
     if (!result) {
       setExportNote('Nothing was captured — the recording was too short to save.', 'isWarning');
       return;
     }
     const fileName = exportFileName({
-      songName: lastSongName || 'song',
+      songName: session.songName,
       presetId: result.preset?.id,
       ext: result.candidate?.ext || 'mp4',
     });
@@ -4879,6 +4923,58 @@ function finishRecording() {
     syncRecordUI();
   });
   syncRecordUI();
+}
+
+/**
+ * The browser's encoder failed mid-recording. Nothing is saved -- a file the
+ * encoder gave up on is not a recording of the song -- and the encoder's own
+ * words reach the player, kept apart from "too short". When the browser
+ * records another container, a retry in it is offered: a fresh, explicit
+ * attempt that names its format, never a silent swap.
+ */
+function reportRecordingFailure(result, session) {
+  const { name, message, mimeType } = result.failure;
+  const fallback = songRecorder?.fallbackCandidate(result.candidate || mimeType) || null;
+  lastRecordingFailure = { session, failure: result.failure, fallback };
+  const text = `Recording failed: ${message} (${name}, ${mimeType || 'unknown format'}). Nothing was saved.`;
+  console.error('[export] encoder failed', result.failure);
+  showErrorBanner(text);
+  showRecordingFailure();
+}
+
+/** The failure line and retry button, if the failed recording was of the
+ *  song still loaded. */
+function showRecordingFailure() {
+  const f = lastRecordingFailure;
+  const current = !!f && f.session.selectionId === (sourceSelection.current?.id ?? null);
+  if (!current) {
+    exportRetryCodecBtnEl?.classList.add('hidden');
+    return false;
+  }
+  const { name, message, mimeType } = f.failure;
+  const retry = f.fallback
+    ? ` You can record it again as ${f.fallback.ext.toUpperCase()} (${f.fallback.video || 'browser-chosen'} video).`
+    : '';
+  setExportNote(`Recording failed: ${message} (${name}, ${mimeType || 'unknown format'}). Nothing was saved.${retry}`, 'isWarning');
+  if (exportRetryCodecBtnEl) {
+    exportRetryCodecBtnEl.textContent = f.fallback ? `Record full song as ${f.fallback.ext.toUpperCase()}` : '';
+    exportRetryCodecBtnEl.classList.toggle('hidden', !f.fallback);
+  }
+  return true;
+}
+
+/** Record the whole song again, from frame zero, in the fallback container.
+ *  A separate file, never spliced onto the failed one; it goes through the
+ *  same whole-song readiness as any full-song export. */
+function retryRecordingInFallback() {
+  const f = lastRecordingFailure;
+  exportRetryCodecBtnEl?.classList.add('hidden');
+  if (!f?.fallback || f.session.selectionId !== (sourceSelection.current?.id ?? null) || !lastTimelineData) {
+    setExportNote('That recording has been replaced. Load it again to export it.', 'isWarning');
+    return;
+  }
+  lastRecordingFailure = null;
+  requestFullSongExport(f.session.requestedPreset, { candidate: f.fallback });
 }
 
 function downloadBlob(blob, fileName) {
@@ -4983,6 +5079,9 @@ function syncExportUI() {
   } else {
     exportRetryAnalysisBtnEl?.classList.add('hidden');
   }
+  // An encoder failure in this song's last recording is the most recent
+  // thing the player needs to know about exporting it.
+  showRecordingFailure();
 }
 
 recordBtnEl?.addEventListener('click', () => {
@@ -5003,6 +5102,7 @@ exportBtnEl?.addEventListener('click', () => {
   requestFullSongExport(presetId);
 });
 exportRetryAnalysisBtnEl?.addEventListener('click', () => retryWholeSongAnalysis());
+exportRetryCodecBtnEl?.addEventListener('click', () => retryRecordingInFallback());
 
 /** True while `data` is still the song on screen and, when it came from a
  *  load, that load is still the player's choice. */
@@ -5035,7 +5135,7 @@ function showExportReadiness(readiness) {
  * that produced it) is re-checked after the wait, so a recording replaced
  * meanwhile is never exported.
  */
-async function requestFullSongExport(presetId) {
+async function requestFullSongExport(presetId, { candidate = null } = {}) {
   const data = lastTimelineData;
   const load = lastSongLoad?.data === data ? lastSongLoad : null;
   let readiness = analysisReadiness(data, fullAnalysisPending);
@@ -5053,7 +5153,10 @@ async function requestFullSongExport(presetId) {
   }
   exportRetryAnalysisBtnEl?.classList.add('hidden');
   pendingExportPresetId = presetId;
-  setExportNote('Recording… the song is replaying in real time. It saves itself when it finishes.');
+  pendingExportCandidate = candidate;
+  setExportNote(candidate
+    ? `Recording as ${candidate.ext.toUpperCase()}… the song is replaying in real time. It saves itself when it finishes.`
+    : 'Recording… the song is replaying in real time. It saves itself when it finishes.');
   // Same seed, so the file is the show that was just watched and not a
   // different roll of the same song.
   replaySong({ songSeed: lastSongSeed });
