@@ -309,6 +309,37 @@ export class RangeScene {
   }
 
   /**
+   * Does this side really have a lake mirror for `frame`? Usable lake
+   * metadata, a quality that keeps the mirror, and a target that won its
+   * residency reservation (it is optional light: anything may deny or evict
+   * it). Resolved once per frame, view and side, and shared by everything
+   * that depends on it -- the water (_prepareMirror) and the route Midio's
+   * giant takes (uMidioCloud, renderSkyGiants) -- so the two can never
+   * disagree. Before this was shared, a lake with a denied reservation sent
+   * the giant to a reflection that was never drawn, and he vanished (F08).
+   * @returns {{wanted: boolean, mirror: object|null}}
+   */
+  _resolveMirror(p, frame, side = 'A', viewId = null) {
+    const state = (this._mirrorState ??= { A: null, B: null });
+    const held = state[side];
+    if (held && held.p === p && held.frameId === frame?.frameId && held.viewId === viewId
+      && (!held.mirror || this.mirrors?.[side] === held.mirror)) return held;
+    const level = p?.mirrorLevelM;
+    const wanted = !this.contextLost && Number.isFinite(level) && rangeQuality(frame?.qualityLevel).waterMirror
+      && (frame?.narrative?.materials ?? 1) > .01;
+    const mirror = wanted ? this._ensureMirror(side) || null : null;
+    if (!wanted) this.releaseMirror(side);
+    state[side] = { p, frameId: frame?.frameId, viewId, wanted, mirror };
+    return state[side];
+  }
+
+  /** True when Midio's giant is drawn as a reflection in this side's lake
+   *  rather than as a cloud: a lake layout AND a mirror that exists. */
+  _giantMirrored(p, frame, side = 'A', viewId = null) {
+    return !!p?.giantLayout?.hasLake && !!this._resolveMirror(p, frame, side, viewId).mirror;
+  }
+
+  /**
    * Draw this side's lake mirror for `frame` (once per frame and view) and
    * point the water at it; without water near the view's level, at a
    * quality that sheds it, or without room, the water keeps its sky
@@ -319,10 +350,8 @@ export class RangeScene {
     u.uViewportPx.value.set(this.size.width, this.size.height);
     const ripple = (m) => (frame.reducedMotion ? 0.001 : 0.0012 + 0.0025 * (m?.groove ?? 0) + 0.004 * (m?.kick01 ?? 0));
     const level = p.mirrorLevelM;
-    const wanted = Number.isFinite(level) && rangeQuality(frame.qualityLevel).waterMirror
-      && (frame.narrative?.materials ?? 1) > .01;
-    const m = wanted ? this._ensureMirror(side) : null;
-    if (!m) { u.uMirrorAmount.value = 0; u.uBackdropAmount.value = 0; if (!wanted) this.releaseMirror(side); return; }
+    const { mirror: m } = this._resolveMirror(p, frame, side, viewId);
+    if (!m) { u.uMirrorAmount.value = 0; u.uBackdropAmount.value = 0; return; }
     if (m.frame !== frame.frameId || m.view !== viewId) {
       const r = this.renderer;
       const THREE = this.THREE;
@@ -764,7 +793,7 @@ export class RangeScene {
 
   /** Per-frame uniforms: light from where the celestial is drawn, sky and
    *  air colours from the frame, the shared deformation. */
-  _setUniforms(p, frame) {
+  _setUniforms(p, frame, side = 'A', viewId = null) {
     const THREE = this.THREE;
     const u = p.uniforms;
     const n = frame.narrative;
@@ -866,7 +895,9 @@ export class RangeScene {
       // Broshi's lantern is carried just behind the viewer, so his shadow
       // lands on the range in his own proportions (a Brocken spectre).
       u.uShadowEye.value.copy(this.camera.position);
-      u.uMidioCloud.value = layout.hasLake && Number.isFinite(p.mirrorLevelM) ? 0 : 1;
+      // In the lake only when this side's mirror really exists this frame;
+      // otherwise the held intensity goes to the sky as a cloud.
+      u.uMidioCloud.value = this._giantMirrored(p, frame, side, viewId) ? 0 : 1;
       u.uGiantTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     }
     // Valley mist: anchored at the view's water level, thicker in calm.
@@ -991,12 +1022,12 @@ export class RangeScene {
   renderSkyGiants(frame, viewId, { side = 'A', bandColumns = null } = {}) {
     const p = this.prepared.get(viewId);
     const amounts = giantAmounts(frame);
-    const mirrored = p?.giantLayout.hasLake && Number.isFinite(p.mirrorLevelM);
-    if (!p || this.contextLost || !rangeQuality(frame.qualityLevel).landscapeGiants
-      || !(amounts[2] > .001 || amounts[0] > .001 && !mirrored)) return null;
+    if (!p || this.contextLost || !rangeQuality(frame.qualityLevel).landscapeGiants) return null;
+    const mirrored = this._giantMirrored(p, frame, side, viewId);
+    if (!(amounts[2] > .001 || amounts[0] > .001 && !mirrored)) return null;
     const target = side === 'B' ? this.sideTargets.B : this.target;
     if (!target) return null;
-    this._setCamera(p.view, frame, p); this._setUniforms(p, frame);
+    this._setCamera(p.view, frame, p); this._setUniforms(p, frame, side, viewId);
     const r = this.renderer;
     if (bandColumns && p.depthScenes) this._travelDepth(p, target, 'far', bandColumns);
     else {
@@ -1027,7 +1058,7 @@ export class RangeScene {
     // The camera is shared: set this side's pose for every pass, even when
     // its depth pre-pass (kept per side) is reused.
     this._setCamera(p.view, frame, p);
-    this._setUniforms(p, frame);
+    this._setUniforms(p, frame, side, viewId);
     this._prepareMirror(p, frame, side, viewId);
     // The backdrop holds the far partition itself: far water reflecting it
     // would feed back into the next copy, so it keeps the ground mirror only.
