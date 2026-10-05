@@ -74,7 +74,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           browser: true
-      - name: Exercise pointer and keyboard world selection
+      - name: Exercise pointer and keyboard world selection and typed input
         run: |
           mkdir -p .smoke
           HOST=127.0.0.1 node tools/serve.js > .smoke/chooser-server.log 2>&1 &
@@ -82,6 +82,7 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           npm run test:chooser -- http://127.0.0.1:8080
           npm run test:chooser-keyboard -- http://127.0.0.1:8080
+          npm run test:input-shortcuts -- http://127.0.0.1:8080
       - name: Upload chooser diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

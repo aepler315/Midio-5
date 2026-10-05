@@ -20,6 +20,7 @@
     "test:landscape": "node tools/range-landscape-smoke.mjs",
     "test:chooser": "node tools/smoke-world-chooser.mjs",
     "test:chooser-keyboard": "node tools/chooser-keyboard-smoke.mjs",
+    "test:input-shortcuts": "node tools/input-shortcuts-smoke.mjs",
     "test:retro": "node tools/retro-smoke.mjs",
     "test:peaks": "node tools/peak-evidence.mjs",
     "test:export": "node tools/export-smoke.mjs",
