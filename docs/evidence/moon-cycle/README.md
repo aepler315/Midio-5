@@ -12,9 +12,8 @@ musical behavior.
 
 [Resolved lighting and source hashes](summary.json) confirm night=1, no
 direct sunlight, the moon as the active light, and no twilight washes at all
-three times. The moon uses the existing approached celestial path, which can
-carry the disc above the visible frame when overhead. Reflections, terrain
-and atmosphere retain its shared light anchor.
+three times. The storm deck obscures the overhead disc in this passage.
+Reflections, terrain and atmosphere retain the moon's shared light anchor.
 
 Validation: 3,915 tests passed, zero failed; lint and diff checks passed.
 Independent code review found no actionable issues. All three browser frames
