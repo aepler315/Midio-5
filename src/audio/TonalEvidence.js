@@ -51,6 +51,17 @@ export function isAuthoredPitch(e) {
     && (!e.pitchProvenance || e.pitchProvenance === 'authored');
 }
 
+/** A pitch good enough to say where in the register the writing sits:
+ *  every authored pitch, plus a recording's pitch the tracker actually
+ *  measured (with some confidence). Inferred band-centre pitches and the
+ *  synthetic chord placeholders say nothing about register. This is a
+ *  register rule only; key and mode claims use isAuthoredPitch. */
+export function isMeasuredPitch(e) {
+  if (isAuthoredPitch(e)) return true;
+  return Number.isFinite(e?.pitch) && e.role !== Role.RHYTHM && e.channel !== 9
+    && e.pitchProvenance === 'tracked' && Number(e.pitchConfidence) > 0;
+}
+
 export function tonalEvidence(data) {
   const pitched = (data.timeline || []).filter(isAuthoredPitch);
   if (pitched.length >= 4) {
