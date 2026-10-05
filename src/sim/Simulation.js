@@ -264,13 +264,16 @@ export class Simulation {
   startAt(nowMs) {
 
     this.conductor.seekTo(Math.max(0, nowMs - this.visualLeadMs), { primeAhead: true });
-    this.cues.seekTo(nowMs);
+    // Cues and the musical directors run on heard time (see step), so the
+    // cursor and the seeded envelope start at the moment being heard.
+    const heardMs = this._heardTimeAt(nowMs);
+    this.cues.seekTo(heardMs);
     this.disasters.seekTo(nowMs);
 
     this.biomes._lastSectionIdx = null;
     if (nowMs >= MAX_HOLD_MS) { this.opening.holding = false; this.opening.gain = 1; }
 
-    const energy = this.energyCurves?.globalEnergyNorm(nowMs) ?? 0.3;
+    const energy = this.energyCurves?.globalEnergyNorm(heardMs) ?? 0.3;
     this.hype.fast = energy; this.hype.slow = energy;
     this.step(0, nowMs);
     this.prev = this._snapshot();
@@ -328,35 +331,62 @@ export class Simulation {
     this.biomes?.setVisualStyle?.(this.visualStyle);
   }
 
+  /** The song time being heard when the source clock reads `nowMs`. Also
+   *  refreshes visualLagMs from the output-latency reading. */
+  _heardTimeAt(nowMs) {
+    this.visualLagMs = this._outputLatencyFn ? Math.min(MAX_LATENCY_MS, Math.max(0, this._outputLatencyFn() || 0)) : 0;
+    // Before the first sound reaches the speaker, the moment being heard is
+    // the start of the song, not a negative time.
+    return Math.max(0, visualNow(nowMs, this.visualLagMs));
+  }
+
+  /**
+   * Two clocks, on purpose.
+   *   nowMs (source time) is where the audio graph is: Conductor dispatch
+   *     schedules sound ahead of the speaker, and so stays on it.
+   *   heardTimeMs = nowMs - output latency is what the player is hearing.
+   *     Every reader that turns music into something SEEN samples it, so a
+   *     Bluetooth or high-latency output does not make the picture react
+   *     early (F05). With zero latency the two are equal.
+   * Readers still on source time are marked below with why.
+   */
   step(dtMs, nowMs) {
     this.prev = this.curr;
     this.timeMs = nowMs;
     const dtSec = dtMs / 1000;
     if (!this.perf) this.perf = new PerfGovernor();
-    this.visualLagMs = this._outputLatencyFn ? Math.min(MAX_LATENCY_MS, Math.max(0, this._outputLatencyFn() || 0)) : 0;
-    this.heardTimeMs = visualNow(nowMs, this.visualLagMs);
+    this.heardTimeMs = this._heardTimeAt(nowMs);
+    const heardMs = this.heardTimeMs;
     this.biomes.visualLagMs = this.visualLagMs;
-    this.biomes.rangeNarrative = this.rangeNarrativeAt(this.heardTimeMs);
-    this.syncSongBeat(this.heardTimeMs);
+    this.biomes.rangeNarrative = this.rangeNarrativeAt(heardMs);
+    this.syncSongBeat(heardMs);
+    // Source time: audio scheduling. Conductor listeners that light things
+    // up apply their own visual lag (BiomeManager reads visualLagMs).
     this.conductor.dispatchUpTo(nowMs);
+    // Authored cues are visual one-shots (a drop ring, lightning, a shake):
+    // they fire when the cued moment is heard, not when it is scheduled.
     this.cues.clearFrameFlags();
-    this.cues.update(nowMs);
-    this._applyCues(nowMs);
-    this.calm.update(nowMs, dtSec, this.energyCurves);
-    this.hype.update(nowMs, dtSec, this.energyCurves);
+    this.cues.update(heardMs);
+    this._applyCues(heardMs);
+    this.calm.update(heardMs, dtSec, this.energyCurves);
+    this.hype.update(heardMs, dtSec, this.energyCurves);
     this.vibe.epicBias = epicBiasForKind(this.biomes.currentKind, this.biomes.lyricIntensityEased, this.biomes.kindConfidenceEased);
-    this.vibe.update(nowMs, dtSec, this.energyCurves);
-    this.keyDirector.update(nowMs, dtSec, { tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor });
+    this.vibe.update(heardMs, dtSec, this.energyCurves);
+    // The kick a key change snaps to is looked up in song time around the
+    // heard moment, so the wave lands on a kick the player hears.
+    this.keyDirector.update(heardMs, dtSec, { tonic: this.vibe.tonic, tonicConfidence: this.vibe.tonicConfidence, conductor: this.conductor });
     if (this.keyDirector.justKeyChange) this.biomes.mandala.reseed(this.keyDirector.lastKeyChange.to);
-    this.coda.update(nowMs);
+    this.coda.update(heardMs);
     this.groundField.flatten = this.coda.unravel;
-    this.weather.update(nowMs, dtSec, { valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
+    this.weather.update(heardMs, dtSec, { valence: this.vibe.valence, epic: this.vibe.epic, calm: this.calm.level,
       energySlow: this.hype.slow, surge: this.hype.surge, unravel: this.coda.unravel });
+    // Source time: disasters, quake and fire are the sim's own hazard timers
+    // (cooldowns, durations, seeded schedules), not samples of the music.
     this.disasters.update(nowMs, this.worldX, { quake: this.quake, fire: this.fire, weather: this.weather,
       windAngle: this.biomes.atmosphere?.prevailingAngle() || 0 });
     this.quake.update(nowMs, dtSec, this.camera);
     this.fire.update(nowMs, dtSec);
-    if (this.disasters.justStruck && this.disasters.struckKind === 'fire') this.weather.cueKind(nowMs, 'embers');
+    if (this.disasters.justStruck && this.disasters.struckKind === 'fire') this.weather.cueKind(heardMs, 'embers');
     if (this.disasters.justStruck && this.disasters.struckKind === 'quake') {
       this._pendingQuakeTsunamiAtMs = nowMs + 20000 + hashSeed(`${this.songSeed}:seaQuakeTsunami:${nowMs}`) % 20000;
     }
@@ -369,11 +399,13 @@ export class Simulation {
     this.syncMonitor.consumeCorrection();
     if (this.biomes.sectionJustChanged) this.parallelUniverse.shift(`${this.songSeed}:${this.biomes._lastSectionIdx}`);
     this.parallelUniverse.update(dtSec);
+    // Collision clock on source time, glow sampled at heard time (tested in
+    // audibleTransport.test.js).
     this.groundField.update(nowMs, dtSec, this.worldX, this.energyCurves, this.calm.level, this.heardTimeMs);
     this.stageAnchor.groundY = this.groundField.heightAt(this.worldX);
     this.midio.groundY = this.midio.renderY = this.stageAnchor.groundY;
     this.worldX += WORLD_SPEED_PX_S * this.paramBus.live.scrollSpeed * dtSec;
-    this.opening.update(nowMs, dtSec, this.energyCurves);
+    this.opening.update(heardMs, dtSec, this.energyCurves);
     Object.assign(this.biomes, {
       openingGain: 1, focusMul: 1, stillnessMul: 1,
       hypeBoost: 1 + .6 * this.hype.surge, heatShimmer: this.hype.fast,
@@ -392,13 +424,18 @@ export class Simulation {
     this.snowCover = Math.max(this.weather.groundCover, this.biomes.currentParticleKind?.() === 'snow' ? .8 : 0, this.biomes.floodFooting01());
     this.biomes.snowCover = this.snowCover;
     this.biomes.adoptPerf(this.perf);
+    // BiomeManager converts to heard time itself (visualLagMs, set above).
     this.biomes.update(nowMs, dtSec, this.energyCurves, this.calm.level, this.worldX);
     this.biomes.pumpStripPrewarm();
+    // Source time: tsunami/flood timers are hazard state armed above.
     this.flood.update(nowMs, dtSec, { rainAccum01: this.weather.rainAccum01 });
     this.filmFinish.update(nowMs, dtSec, this.calm.level, this.biomes.budget, this.hype);
+    // Source time, deliberately for now: FractureEngine's cracks are born
+    // from Conductor listeners at dispatch (source) time and aged against
+    // this clock. Moving it alone would mix the two; it moves with them.
     this.fracture.update(nowMs, dtSec, this.energyCurves, this.camera);
     if (this.fracture.justEnteredFinale) this.filmFinish.hit('finale');
-    this.orogeny.update(nowMs);
+    this.orogeny.update(heardMs); // the song's arc, as heard
     this.biomes.orogenyGrowth = this.orogeny.growth;
     const period = Math.max(1, this.beatAnchor.periodMs);
     const tau = ((this.heardTimeMs - this.beatAnchor.anchorMs) % period + period) % period;
