@@ -8,6 +8,7 @@ import { buildDemoSong } from './core/DemoSong.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import {
   OPENING_SECONDS, adoptFullAnalysis, asOpening, buildAudioOverview, sliceAudioBuffer, useOpeningAnalysis,
+  canCommitOpeningIdentity,
 } from './audio/OpeningAnalysis.js';
 import {
   AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength,
@@ -1476,6 +1477,47 @@ if (sceneRangeEl && sceneBiomeEl) {
   show();
 }
 
+/**
+ * The look a song is offered with becomes its accepted identity only when
+ * the analysis behind it may define one (canCommitOpeningIdentity). An
+ * uninformative opening plays on it provisionally and is never cached as
+ * the song; acceptDeferredIdentity settles it from the whole song.
+ */
+function offerIdentity(data, look) {
+  if (canCommitOpeningIdentity(data.opening)) {
+    data.songIdentity = look;
+    delete data.provisionalIdentity;
+  } else {
+    data.provisionalIdentity = look;
+  }
+}
+
+/**
+ * The whole-song analysis has landed on a song whose opening could not
+ * define its identity. Accept one now: the cached identity when the cache
+ * already knew this recording, otherwise one built from the whole song. The
+ * performance in progress keeps the look it started with -- its world,
+ * geography and custom biome are not repainted mid-song -- and every later
+ * play, and the analysis cache, use the accepted identity.
+ */
+function acceptDeferredIdentity(data, cachedIdentity = null, name = 'Audio') {
+  if (!data || data.songIdentity) return data?.songIdentity || null;
+  if (cachedIdentity?.songProfile?.version === PROFILE_VERSION && Number.isFinite(cachedIdentity.seed)) {
+    data.songIdentity = { ...cachedIdentity, seed: cachedIdentity.seed >>> 0 };
+  } else {
+    data.songIdentity = {
+      seed: resolveSongSeed({ timeline: data.timeline, durationMs: data.durationMs }, null),
+      songProfile: buildSongProfile({
+        energyCurves: data.energyCurves, durationMs: data.durationMs, bpm: data.bpm, beatPeriodMs: data.beatPeriodMs,
+        confidence: data.confidence, freeTime: data.freeTime, analysis: data.analysis, structure: data.structure,
+        timeline: data.timeline, barGrid: data.barGrid,
+      }),
+      customBiome: generateCustomBiomeFromMidi(data, name),
+    };
+  }
+  return data.songIdentity;
+}
+
 function offerWorldsThenStart(data, extra = {}) {
   try {
     clearCustomWorld();
@@ -1501,7 +1543,7 @@ function offerWorldsThenStart(data, extra = {}) {
       : resolveSongSeed({ timeline: data.timeline, durationMs: data.durationMs }, null);
     const pinnedSeed = readPinnedSeed();
     const seed = pinnedSeed != null && Number.isFinite(pinnedSeed) ? pinnedSeed >>> 0 : autoSeed;
-    if (!identity) data.songIdentity = { seed: autoSeed, songProfile: profile, customBiome: data.customBiome || null };
+    if (!identity) offerIdentity(data, { seed: autoSeed, songProfile: profile, customBiome: data.customBiome || null });
     pendingWorldStart = { data, extra, features, seed, profile };
     // The song's real mountain range (RangeLibrary): matched and loaded in
     // the background while the picker is up. One small module, normally
@@ -2681,7 +2723,8 @@ async function loadAudioFiles(files, { selection = null } = {}) {
     analysis.catch(() => {});
     // Fingerprint the song and look it up in the analysis cache. A hit is the
     // whole-song analysis, ready-made.
-    const lookUp = async () => {
+    let lookedUp = null;
+    const lookUp = () => (lookedUp ??= (async () => {
       try {
         fingerprint = await fingerprintBufferOffThread(audioBuffer);
         cacheKey = analysisCacheKey(fingerprint, { stems: isStemDrop ? decoded : [], groove: analysisGroove });
@@ -2697,7 +2740,7 @@ async function loadAudioFiles(files, { selection = null } = {}) {
         console.warn('[analysis] fingerprint/cache lookup failed', err);
         return null;
       }
-    };
+    })());
     // The whole song, in the background, once the picker has had a moment to
     // paint. The cache lookup runs behind the picker too: the opening is
     // analysed the same way every time, so the song looks the same cached or
@@ -2738,6 +2781,14 @@ async function loadAudioFiles(files, { selection = null } = {}) {
         }
       } else {
         data = asOpening(await analysis, audioBuffer.duration * 1000);
+        // An opening that cannot define the song's look (silence, an
+        // atypical intro) asks the cache first: a recording played before
+        // starts with the identity it was accepted with, not a provisional
+        // one. The lookup is shared with the whole-song pass below.
+        if (!canCommitOpeningIdentity(data.opening)) {
+          const known = await lookUp();
+          if (known?.songIdentity?.songProfile) data.songIdentity = known.songIdentity;
+        }
         fullAnalysis = analyseWholeSong();
       }
     } finally {
@@ -2759,7 +2810,11 @@ async function loadAudioFiles(files, { selection = null } = {}) {
         upgradeRidgeMusicSession(opened, full,
           running && sim && lastTimelineData === opened && !bulkExportArmed ? sim.heardTimeMs : null,
           `load-${myGen}:final`);
+        const cachedIdentity = full?.songIdentity || null;
         adoptFullAnalysis(opened, full);
+        // A provisional look (uninformative opening) is settled from the
+        // whole song now, before the analysis is cached with it.
+        acceptDeferredIdentity(opened, cachedIdentity, selectedFiles[0].name || 'Audio');
         if (fullAnalysisPending === wholeSong) fullAnalysisPending = null;
         adoptFullAnalysisLive(opened);
         return opened;
