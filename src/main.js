@@ -14,6 +14,7 @@ import {
   accumulateEncodedAudioBytes, audioAbortError, throwIfAborted, validateAudioFiles,
   validateDecodedAudioBuffer, validateDecodedByteLength,
 } from './audio/loadLimits.js';
+import { SourceSelection } from './audio/SourceSelection.js';
 import { Simulation } from './sim/Simulation.js';
 import { resolveRendererMode } from './render/WebGLRenderer.js';
 import { hitTestComposerStrip } from './render/Renderer.js';
@@ -403,6 +404,19 @@ if (calibrateBtnEl) {
 let muteTimelineSynth = false;
 let loadShow = null; // percussion loading show, created in bootAudio
 let loadGen = 0;     // a newer load cancels a stale audition gate's start
+// The recording the player chose most recently (SourceSelection.js). Every
+// public way of choosing a song claims one synchronously, in the gesture;
+// asynchronous work publishes only while its selection is still current.
+const sourceSelection = new SourceSelection();
+
+/** A player chose a song: abort the previous choice and start a new load
+ *  generation. Only public actions call this -- code that finishes work for
+ *  a selection passes that selection on instead of claiming a newer one. */
+function claimSelection(opts) {
+  const selection = sourceSelection.begin(opts);
+  loadGen++;
+  return selection;
+}
 
 // Retained so "Replay seed" can restart the same song without a page reload
 // (sim is fully seeded + autoplay-driven). `lastAudioBuffer` is only set on
@@ -1213,7 +1227,8 @@ function closeWorldChooser() {
 /** Back to the title/drop screen so a different song can be chosen. */
 function backToTitle() {
   // Any in-flight analysis belongs to the discarded song. Its progress or
-  // failure must not redraw this title screen later.
+  // failure must not redraw this title screen later, and its work stops.
+  sourceSelection.cancel();
   loadGen++;
   stopTimeline();
   completePanelEl.classList.add('hidden');
@@ -2494,26 +2509,30 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
 /** One audio file plays as itself; SEVERAL dropped together are treated as
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
-async function loadAudioFiles(files) {
+async function loadAudioFiles(files, { selection = null } = {}) {
   let selectedFiles;
   try {
     selectedFiles = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
   } catch (err) {
-    showErrorBanner(err?.message || 'The selected audio cannot be loaded.');
+    if (!selection || sourceSelection.isCurrent(selection)) {
+      showErrorBanner(err?.message || 'The selected audio cannot be loaded.');
+    }
     return;
   }
-  // Abort the previous decode/analysis before claiming the new generation.
-  // Web Audio cannot interrupt a native decode already in progress, but every
-  // boundary below observes this signal so stale work cannot commit or start
-  // another expensive phase after a replacement selection.
-  loadAudioFiles._abortController?.abort();
-  const abortController = new AbortController();
-  loadAudioFiles._abortController = abortController;
-  const { signal } = abortController;
-  // Claim the load before the first await. Otherwise an older picker/drop
-  // stalled in bootAudio() can wake up later and overwrite the newer choice.
-  const myGen = ++loadGen;
-  const isStale = () => signal.aborted || myGen !== loadGen;
+  // The selection is claimed by the player's action (handleFiles, a library
+  // row, a URL, the sample), never here: work finishing for an older choice
+  // must not be able to make itself the newest one. A direct call with no
+  // selection is itself the action, so it claims one before the first await.
+  if (!selection) {
+    selection = claimSelection({ kind: 'file', name: selectedFiles[0]?.name || '' });
+  }
+  if (!sourceSelection.isCurrent(selection)) return;
+  // A replacement selection aborts this signal. Web Audio cannot interrupt a
+  // native decode already in progress, but every boundary below observes it,
+  // so stale work cannot commit or start another expensive phase.
+  const { signal } = selection;
+  const myGen = loadGen;
+  const isStale = () => !sourceSelection.isCurrent(selection) || myGen !== loadGen;
   stopTimeline();
   stopTitleBackdrop();
   loadShow?.stop();
@@ -2580,16 +2599,6 @@ async function loadAudioFiles(files) {
     progressEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
     return;
-  }
-
-  // A play, and the one fact a folder scan can never know: how long the
-  // track actually is. Decoding is the only place that learns it, so this
-  // is where it goes back to the library. Fire-and-forget -- a storage
-  // failure must not delay the song by a frame.
-  if (playingFromLibrary) {
-    const track = playingFromLibrary;
-    playingFromLibrary = null;
-    musicLibrary.notePlayed(track, audioBuffer.duration).catch(() => {});
   }
 
   // A dropped audio file has real work ahead of it (band separation, onset/
@@ -2790,6 +2799,16 @@ async function loadAudioFiles(files) {
     lastSongName = selectedFiles[0].name || 'song';
     lastAudioBuffer = audioBuffer;
     fontRecommender?.clear(); // the recording is its own sound source
+    // A play, and the one fact a folder scan can never know: how long the
+    // track actually is. Decoding is the only place that learns it, so it
+    // goes back to the library here, as the song is handed to the player --
+    // for the track this selection was made from, and only while it is still
+    // the player's choice (isStale was checked above, with no await since).
+    // A failed, cancelled or replaced library play reports nothing.
+    // Fire-and-forget: a storage failure must not delay the song by a frame.
+    if (selection.kind === 'library' && selection.libraryTrack) {
+      musicLibrary.notePlayed(selection.libraryTrack, audioBuffer.duration).catch(() => {});
+    }
     offerWorldsThenStart(data, { playBuffer: audioBuffer, lyricsReady });
   } catch (err) {
     if (isStale() || err?.name === 'AbortError') return;
@@ -2810,7 +2829,10 @@ function handleFile(file) {
 /** One file plays as itself. Several files dropped together are stems of one
  *  song (their filenames cast the characters). The built-in sample is a
  *  second door into the same chooser. */
-function handleFiles(files) {
+function handleFiles(files, { selection = null } = {}) {
+  // A library row or a URL hands over the selection it claimed when the
+  // player acted; anything else (a pick, a drop) is a new choice right now.
+  if (selection && !sourceSelection.isCurrent(selection)) return;
   // Whatever this is, it is the source the player chose most recently, so
   // an in-flight URL fetch must not be allowed to land afterwards and take
   // the playback back. The URL path releases its own operation before
@@ -2824,11 +2846,12 @@ function handleFiles(files) {
     return;
   }
   if (!list.length) return;
+  if (!selection) selection = claimSelection({ kind: 'file', name: list[0]?.name || '' });
   closeWorldChooser();
   stopWorldPreview();
   pendingWorldStart = null;
   showProgress('Reading file…');
-  loadAudioFiles(list);
+  loadAudioFiles(list, { selection });
 }
 
 fileInputEl?.addEventListener('change', (e) => {
@@ -3053,12 +3076,16 @@ function cancelUrlLoad() {
   setUrlLoadBusy(false);
 }
 
-/** Starts a fresh URL operation, superseding any still in flight. */
-function beginUrlLoadOperation() {
+/** Starts a fresh URL operation, superseding any still in flight. The fetch
+ *  is also abandoned as soon as `selection` stops being the player's newest
+ *  choice, whichever source replaced it. */
+function beginUrlLoadOperation(selection) {
   urlLoadAbort?.abort();
-  urlLoadAbort = new AbortController();
+  const controller = new AbortController();
+  urlLoadAbort = controller;
+  selection?.signal.addEventListener('abort', () => controller.abort(), { once: true });
   setUrlLoadBusy(true);
-  return urlLoadAbort.signal;
+  return controller.signal;
 }
 
 function endUrlLoadOperation(signal) {
@@ -3070,7 +3097,8 @@ function endUrlLoadOperation(signal) {
 
 /** Opens whatever the address turns out to be: a song, or a folder to browse. */
 async function openUrlTarget(raw) {
-  const signal = beginUrlLoadOperation();
+  const selection = claimSelection({ kind: 'url', name: String(raw || '') });
+  const signal = beginUrlLoadOperation(selection);
   setUrlLoadStatus('Opening\u2026');
   try {
     const result = await openAudioUrl(raw, { pageUrl: location.href, signal });
@@ -3087,7 +3115,7 @@ async function openUrlTarget(raw) {
     clearUrlLoadListing();
     setUrlLoadStatus('');
     endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
-    handleFiles([result.file]);
+    handleFiles([result.file], { selection });
   } catch (err) {
     if (signal.aborted) return;
     setUrlLoadStatus(
@@ -3114,7 +3142,8 @@ async function loadUrlAudio(url, name = '') {
   // the old request finished, cleared it, and started playing a song the
   // player had already moved on from. openUrlTarget() has always claimed
   // the operation up front for the same reason.
-  const signal = beginUrlLoadOperation();
+  const selection = claimSelection({ kind: 'url', name: name || String(url || '') });
+  const signal = beginUrlLoadOperation(selection);
   const verdict = classifyUrl(url, location.href);
   if (!verdict.ok) {
     setUrlLoadStatus(verdict.message, true);
@@ -3127,7 +3156,7 @@ async function loadUrlAudio(url, name = '') {
     if (signal.aborted) return;
     setUrlLoadStatus('');
     endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
-    handleFiles([file]);
+    handleFiles([file], { selection });
   } catch (err) {
     if (signal.aborted) return;
     setUrlLoadStatus(
@@ -3197,13 +3226,18 @@ worldSelectEl?.addEventListener('cancel', (e) => {
 
 /** Authored sample (Proof) so a visitor can see the worlds without a file. */
 async function startDemoSample() {
-  cancelUrlLoad(); // the sample is a choice too, and outranks an older fetch
+  // The sample is a choice too: it outranks an older fetch, an upload still
+  // decoding or analysing, and a library permission prompt still open.
+  const selection = claimSelection({ kind: 'sample', name: 'Proof' });
+  cancelUrlLoad();
   try {
     await bootAudio();
   } catch (err) {
+    if (!sourceSelection.isCurrent(selection)) return;
     showErrorBanner(err?.message || 'Audio is blocked. Click the page, then try again.');
     return;
   }
+  if (!sourceSelection.isCurrent(selection)) return;
   muteTimelineSynth = false;
   lastAudioBuffer = null;
   lastSongName = 'Proof';
@@ -4400,9 +4434,6 @@ const libraryFolderInputEl = document.getElementById('libraryFolderInput');
 const libraryFolderHintEl = document.querySelector('.libraryFolderHint');
 
 const musicLibrary = new MusicLibrary();
-/** Set when a load came from the library, so the decode can report the
- *  track's real duration back. Cleared as soon as it is consumed. */
-let playingFromLibrary = null;
 let autoTagAbort = null;
 
 const libraryPanel = libraryPanelEl
@@ -4533,27 +4564,34 @@ function closeLibrary({ cancelScan = true } = {}) {
  *  from here on. */
 async function playLibraryTrack(track) {
   if (!track) return;
+  // Claimed in the click, before the permission prompt and the file read:
+  // a song dropped or picked while either is pending is the newer choice,
+  // and this one must then neither play nor report anything.
+  const selection = claimSelection({ kind: 'library', name: displayTitle(track), libraryTrack: track });
   unlockAudio();
   // A remembered library with no live handle: one click gets it back rather
   // than making the player hunt for the folder button.
   if (!musicLibrary.playable && musicLibrary.root?.handle) {
-    if (!await musicLibrary.grantAccess()) {
+    const granted = await musicLibrary.grantAccess();
+    if (!sourceSelection.isCurrent(selection)) return;
+    if (!granted) {
       showErrorBanner('Allow access to your music folder to play from the library.');
       return;
     }
   }
   const file = await musicLibrary.openFile(track);
+  if (!sourceSelection.isCurrent(selection)) return;
   if (!file) {
     showErrorBanner(musicLibrary.playable
       ? `“${displayTitle(track)}” isn’t where the library remembers it. Rescan the folder to catch up.`
       : 'Pick your music folder again to play from the library.');
     return;
   }
-  playingFromLibrary = track;
   // The scan keeps running: playing the first track you recognise is the
   // reason the rows stream in at all.
   closeLibrary({ cancelScan: false });
-  handleFiles([file]);
+  // The track rides on the selection, so only this load can be credited.
+  handleFiles([file], { selection });
 }
 
 async function chooseMusicFolder() {

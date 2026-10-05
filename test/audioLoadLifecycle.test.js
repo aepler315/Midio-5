@@ -12,11 +12,13 @@ import {
   AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength, decodedAudioByteLength,
   accumulateEncodedAudioBytes, audioAbortError, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
 } from '../src/audio/loadLimits.js';
+import { SourceSelection } from '../src/audio/SourceSelection.js';
 
 // Execute the real upload orchestrator with browser/audio boundaries replaced.
 // Analysis/cache identity remain real; no browser is needed to test ownership.
 const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-const loadSource = main.slice(main.indexOf('async function loadAudioFiles('), main.indexOf('\nfunction handleFile('));
+const loadSource = main.slice(main.indexOf('function claimSelection('), main.indexOf('\n// Retained so "Replay seed"'))
+  + main.slice(main.indexOf('async function loadAudioFiles('), main.indexOf('\nfunction handleFile('));
 const element = () => ({ classList: { add() {}, remove() {} }, textContent: '' });
 function recording(hz = 440) {
   const samples = Float32Array.from({ length: 16000 }, (_, i) => Math.sin(i * hz * Math.PI / 4000) * (0.4 + 0.1 * Math.sin(i / 100)));
@@ -51,8 +53,9 @@ function harness() {
     muteTimelineSynth: false, lastSongName: '', lastAudioBuffer: null,
     fontRecommender: null, DEV_MODE: false, offerWorldsThenStart() {},
     // A load started from the music library reports the decoded duration
-    // back to it -- the one fact a folder scan cannot know.
-    playingFromLibrary: null,
+    // back to it -- the one fact a folder scan cannot know. The track rides
+    // on the selection that the library click claimed.
+    sourceSelection: new SourceSelection(),
     musicLibrary: { played: [], async notePlayed(track, seconds) { this.played.push([track, seconds]); } },
   });
   vm.runInContext(loadSource, context);
@@ -75,12 +78,11 @@ test('accepting an upload stops the old performance before audio initialization 
 test('a library play reports its decoded duration back, exactly once', async () => {
   const { context, load } = harness();
   const track = { key: 'root\u0000a.wav', path: 'a.wav' };
-  context.playingFromLibrary = track;
-  await load();
+  const selection = context.claimSelection({ kind: 'library', name: 'a', libraryTrack: track });
+  await context.loadAudioFiles([{ name: 'a.wav', arrayBuffer: async () => new ArrayBuffer(1024) }], { selection });
   assert.deepEqual(context.musicLibrary.played, [[track, 2]]);
-  // The claim is consumed, so a later drop that did not come from the
-  // library cannot be credited to the last track played from it.
-  assert.equal(context.playingFromLibrary, null);
+  // The track belongs to that selection, so a later drop that did not come
+  // from the library cannot be credited to the last track played from it.
   await load();
   assert.equal(context.musicLibrary.played.length, 1);
 });

@@ -23,8 +23,10 @@ Open [localhost:8080](http://localhost:8080). The server binds to
 `127.0.0.1` by default. Set `HOST=0.0.0.0` only when you intentionally need
 LAN access, or set `PORT` to change the port.
 
-1. Drop an audio file anywhere on the page, choose **Browse files**, or
-   pick a music folder once and play from your library (see below).
+1. Drop an audio file anywhere on the page, choose **Browse files**, pick a
+   music folder once and play from your library (see below), open a song by
+   address with **Load from a URL**, or choose **Play a sample** to hear the
+   built-in song *Proof* without a file.
    The picker accepts MP3, WAV, FLAC, OGG, M4A, AAC, and other audio formats
    your browser can decode.
 2. Wait while the recording is pulled apart: frequency bands, onsets,
@@ -43,9 +45,15 @@ musical parts. They should share a common start time. This is not a playlist.
 Dropping a new recording during playback replaces the current song after
 the new recording has been prepared. **Stop** returns to the upload screen.
 
-The current page has one entry path: audio uploads. MIDI uploads, paired
-MIDI/audio playback, the built-in demo, and song-search controls are no
-longer part of the page. MIDI and synthesis modules and the local
+Whichever way you choose a song, the most recent choice wins. A library
+track still waiting on folder permission, a URL still downloading, or an
+upload still being analysed is abandoned as soon as you pick something
+else, and it can neither take the playback back nor be recorded in the
+library as played ([src/audio/SourceSelection.js](src/audio/SourceSelection.js)).
+
+The page plays recordings (file, folder library or URL) and the authored
+sample. MIDI uploads, paired MIDI/audio playback and song-search controls
+are no longer part of the page. MIDI and synthesis modules and the local
 Soulseek/free-music bridge remain in the repository for internal or legacy
 use; Docker and a Soulseek account are not required to play uploaded audio.
 
