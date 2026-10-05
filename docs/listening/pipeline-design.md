@@ -4,6 +4,8 @@ Version 0.1 proposal · September 30, 2026
 
 ## Intended outcome and status
 
+> **Status update, October 2026.** The importer (`parseAnnotation.js`, `validateCase.js`), the full-recording production export (`ProductionRun.js`, `tools/listening/export-production.mjs`) and the alignment report (`alignRun.js`, `tools/listening/align.mjs`) are implemented as local tools with tests under `test/`. They follow the contracts below unchanged; `listening.schema.json` is unchanged. Still not implemented: a semantic predictor, calibration, and any playback integration. No real recording has yet been paired with a real human annotation; the first 12–20 such cases are workflow development, not validation. The original text below is kept as written on September 30.
+
 The user wants to submit an audio recording and a description written after human listening, using a stable and useful vocabulary. The system should compare the two and accumulate enough explicit examples to recognize descriptions such as “bright and happy with a severe melancholy undertone getting severe and taking over.”
 
 The proposed unit of knowledge is a versioned recording–annotation–analysis case. This design, the human guide, schema, and sample files are prepared for review. No importer, analyzer modification, emotion model, or automatic learning job has been implemented. No real song was supplied for comparison. The example is deliberately illustrative.
