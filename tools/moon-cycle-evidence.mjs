@@ -23,6 +23,34 @@ const seeded = { async newContext(options) {
 } };
 const report = { browser: browser.version(), limitation: 'Synthetic audio and software WebGL; not hardware performance.', frames: [] };
 try {
+  // Measure the final storm compositor's transmission, not just whether the
+  // star painter ran underneath it. A full-screen overcast hid every star.
+  const probe = await browser.newPage();
+  await probe.goto(process.argv[2] || 'http://127.0.0.1:8092');
+  report.stormSky = await probe.evaluate(async () => {
+    const { drawStormSky } = await import('/src/world/alpine/RangeStorm.js');
+    const canvas = document.createElement('canvas');
+    canvas.width = 640; canvas.height = 360;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const paint = color => {
+      ctx.fillStyle = color; ctx.fillRect(0, 0, 640, 360);
+      drawStormSky(ctx, canvas, { amount: 1, break01: 0, flash: 0 }, { tSec: 30, seed: 315 });
+      return ctx.getImageData(0, 0, 640, 360).data;
+    };
+    const dark = paint('#000000'), bright = paint('#ffffff');
+    const transmission = (y0, y1) => {
+      let sum = 0;
+      for (let y = y0; y < y1; y++) for (let x = 0; x < 640; x++) {
+        const i = (y * 640 + x) * 4;
+        sum += (bright[i] - dark[i]) / 255;
+      }
+      return sum / ((y1 - y0) * 640);
+    };
+    return { upperSkyTransmission: transmission(0, 43), horizonTransmission: transmission(180, 216) };
+  });
+  await probe.close();
+  assert.ok(report.stormSky.upperSkyTransmission > 0.6, JSON.stringify(report.stormSky));
+  assert.ok(report.stormSky.horizonTransmission < 0.5, 'rain still veils the distant land');
   const opened = await openSong(seeded, { url: process.argv[2] || 'http://127.0.0.1:8092', wav,
     width: 640, height: 360, params: { rangeRenderer: 'v2', rangeView: 'teton-jackson-lake', seed: '2917029651' } });
   await captureFrame(opened.page, 250, { hook: 'conifer' });

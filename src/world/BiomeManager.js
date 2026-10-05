@@ -3733,6 +3733,8 @@ export class BiomeManager {
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
+    // Water and vault ceilings retain local light effects, not astronomy.
+    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     if (this.rangeNarrative && this.world?.kind === 'alpine') {
       const sky = rangeSkyState(this, A, B, t, night, this.rangeNarrative);
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -3754,10 +3756,10 @@ export class BiomeManager {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
       }
+      // The narrative owns the background palette, not the star catalogue.
+      if (astronomical) this._drawStarfield(ctx, canvas, A, B, t, night, starOptions);
       return;
     }
-    // Water and vault ceilings retain local light effects, not astronomy.
-    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
@@ -3905,7 +3907,9 @@ export class BiomeManager {
     const nightBoost = 0.55 + 1.55 * night;
     const biomeBoost = 0.95 * twinkleBlend;
     const spaceFloor = dials.spaceWash ? 0.22 : 0;
-    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * this.openingGain;
+    // The Range's night sky is present from the first frame, including silence.
+    const opening = this.world?.kind === 'alpine' ? 1 : this.openingGain;
+    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * opening;
     if (alpha < 0.04) return;
 
     const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;
