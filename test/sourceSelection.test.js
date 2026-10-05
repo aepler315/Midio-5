@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { mainFunctions } from './helpers/mainSource.js';
 import { SourceSelection, SOURCE_KINDS } from '../src/audio/SourceSelection.js';
 import * as opening from '../src/audio/OpeningAnalysis.js';
 import { fingerprintBuffer } from '../src/audio/SongFingerprint.js';
@@ -58,26 +58,6 @@ test('cancel leaves no current selection', () => {
 // browser, network, storage and audio boundaries replaced by controllable
 // deferred promises. The assertions are about what the player sees: which
 // selection reaches the chooser, which errors appear, what the library is told.
-
-const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-
-/** Source of one top-level function from main.js, by brace matching. */
-function fnSource(name) {
-  const re = new RegExp(`\\n(async )?function ${name}\\(`);
-  const m = re.exec(main);
-  assert.ok(m, `main.js defines ${name}`);
-  let i = m.index + m[0].length;
-  let paren = 1;
-  while (paren) { const c = main[i++]; if (c === '(') paren++; else if (c === ')') paren--; }
-  while (main[i] !== '{') i++;
-  let depth = 0;
-  const start = m.index + 1;
-  for (; i < main.length; i++) {
-    if (main[i] === '{') depth++;
-    else if (main[i] === '}' && --depth === 0) return main.slice(start, i + 1);
-  }
-  throw new Error(`unterminated ${name}`);
-}
 
 const ORCHESTRATORS = [
   'claimSelection', 'loadAudioFiles', 'handleFiles', 'playLibraryTrack', 'startDemoSample',
@@ -161,7 +141,7 @@ function harness() {
   // Bytes carry the file's length through the fake decoder.
   context.validateAudioFiles = (files, limits) => validateAudioFiles(files, limits);
   const realRead = fileNamed;
-  vm.runInContext(ORCHESTRATORS.map(fnSource).join('\n\n'), context);
+  vm.runInContext(mainFunctions(ORCHESTRATORS), context);
   // What backToTitle() does to ownership.
   const backToTitle = () => { context.sourceSelection.cancel(); context.loadGen++; };
   const holdRead = (name) => { const d = deferred(); reads.set(name, d); return d; };
