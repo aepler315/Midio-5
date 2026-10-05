@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AUTO, BIOME_CHOICE_KEY, RANGE_CHOICE_KEY, pickableViews, resolveSceneChoice, searchWithSceneChoice, writeSceneChoice,
+  AUTO, BIOME_CHOICE_KEY, RANGE_CHOICE_KEY, pickableViews, resolveSceneChoice, searchWithSceneChoice, viewLabel, writeSceneChoice,
 } from '../src/ui/SceneChoice.js';
 import SCENE_CATALOG from '../src/world/terrain/sceneCatalogData.js';
 import { REAL_BIOME_NAMES } from '../src/world/RealBiomes.js';
@@ -39,11 +39,17 @@ test('unknown names fall back to Auto', () => {
   assert.equal(resolveSceneChoice({ ...base, search: '?biome=MOON', storage: null }).biome, null);
 });
 
-test('candidates only through the diagnostic ?rangeView spelling', () => {
-  assert.equal(resolveSceneChoice({ ...base, search: '?range=pend-oreille-valley', storage: null }).viewId, null);
+test('every catalog view is pickable, candidates included and labelled', () => {
+  const views = pickableViews(SCENE_CATALOG);
+  assert.equal(views.length, SCENE_CATALOG.views.length);
+  assert.equal(resolveSceneChoice({ ...base, search: '?range=pend-oreille-valley', storage: null }).viewId,
+    'pend-oreille-valley');
   assert.equal(resolveSceneChoice({ ...base, search: '?rangeView=pend-oreille-valley', storage: null }).viewId,
     'pend-oreille-valley');
-  assert.ok(pickableViews(SCENE_CATALOG).every((v) => v.status === 'approved'));
+  const labels = views.map((v) => viewLabel(v));
+  assert.equal(new Set(labels).size, labels.length, 'two views share a menu label');
+  assert.match(viewLabel(SCENE_CATALOG.views.find((v) => v.id === 'teton-jackson-lake-coherent')), /unreviewed, alternate/);
+  assert.equal(viewLabel(SCENE_CATALOG.views.find((v) => v.id === 'teton-jackson-lake'), 'Conifer'), 'Teton Range · Conifer');
 });
 
 test('remembered choice applies when the link names none; a link wins over it', () => {
@@ -71,7 +77,6 @@ test('the address bar carries the choice and keeps other parameters', () => {
     '?worlds=all&range=denali-wonder-lake');
   assert.equal(searchWithSceneChoice('?range=a', { biome: 'TAIGA' }), '?biome=TAIGA');
   assert.equal(searchWithSceneChoice('?range=a&biome=B', {}), '');
-  assert.equal(searchWithSceneChoice('', { viewId: 'pend-oreille-valley', candidate: true }), '?rangeView=pend-oreille-valley');
 });
 
 test('a pinned biome keeps the whole song in it', async () => {

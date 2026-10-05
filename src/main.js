@@ -55,7 +55,7 @@ import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { sharedResidency } from './render/GraphicsResidency.js';
 import { RangePresentation, resolveRangeMode } from './world/alpine/RangePresentation.js';
-import { AUTO as SCENE_AUTO, pickableViews, resolveSceneChoice, searchWithSceneChoice, writeSceneChoice } from './ui/SceneChoice.js';
+import { AUTO as SCENE_AUTO, pickableViews, resolveSceneChoice, searchWithSceneChoice, viewLabel, writeSceneChoice } from './ui/SceneChoice.js';
 import SCENE_CATALOG from './world/terrain/sceneCatalogData.js';
 import { REAL_BIOMES, rangesByBiome } from './world/RealBiomes.js';
 import { residencyBudgetFor } from './render/GraphicsResidency.js';
@@ -1398,33 +1398,20 @@ const sceneRangeEl = document.getElementById('sceneRange');
 const sceneBiomeEl = document.getElementById('sceneBiome');
 if (sceneRangeEl && sceneBiomeEl) {
   const biomeTitle = new Map(PICKABLE_BIOMES.map((b) => [b.name, b.title]));
-  const views = pickableViews(SCENE_CATALOG);
+  // One flat list, every view the app can render. (Biome groups made every
+  // other row an unselectable group label.)
+  for (const v of pickableViews(SCENE_CATALOG)) {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = viewLabel(v, biomeTitle.get(v.biome));
+    opt.title = v.place;
+    sceneRangeEl.appendChild(opt);
+  }
   for (const b of PICKABLE_BIOMES) {
-    const inBiome = views.filter((v) => v.biome === b.name);
-    if (inBiome.length) {
-      const group = document.createElement('optgroup');
-      group.label = b.title;
-      for (const v of inBiome) {
-        const opt = document.createElement('option');
-        opt.value = v.id;
-        opt.textContent = v.title;
-        opt.title = v.place;
-        group.appendChild(opt);
-      }
-      sceneRangeEl.appendChild(group);
-    }
     const opt = document.createElement('option');
     opt.value = b.name;
     opt.textContent = b.title;
     sceneBiomeEl.appendChild(opt);
-  }
-  // A link may force a candidate view the menu does not list.
-  if (sceneChoice.viewId && !views.some((v) => v.id === sceneChoice.viewId)) {
-    const v = SCENE_CATALOG.views.find((x) => x.id === sceneChoice.viewId);
-    const opt = document.createElement('option');
-    opt.value = sceneChoice.viewId;
-    opt.textContent = `${v?.title || sceneChoice.viewId} (candidate)`;
-    sceneRangeEl.appendChild(opt);
   }
   const show = () => {
     sceneRangeEl.value = sceneChoice.viewId || SCENE_AUTO;
@@ -1441,7 +1428,7 @@ if (sceneRangeEl && sceneBiomeEl) {
     writeSceneChoice(sceneChoice);
     try {
       const url = new URL(location.href);
-      url.search = searchWithSceneChoice(url.search, { ...sceneChoice, candidate: !!view && view.status !== 'approved' });
+      url.search = searchWithSceneChoice(url.search, sceneChoice);
       history.replaceState(history.state, '', url);
     } catch { /* no history API: still remembered */ }
     show();
@@ -4011,6 +3998,9 @@ window.addEventListener('keydown', (e) => {
   // the gameplay handler's inert-key guard can suppress them.
   if ((e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')
     && e.target?.closest?.('button, input, select, textarea, a')) return;
+  // A focused menu owns every key: arrows move through it and letters jump
+  // to an entry, so none of them may become a shortcut or be swallowed.
+  if (e.target?.closest?.('select')) return;
   if (running) wakeHud();
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();

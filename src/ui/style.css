@@ -3104,16 +3104,27 @@ html, body {
 .displayRow select { min-width: 6em; }
 .sceneChoicePair { display: inline-flex; align-items: center; gap: var(--space-2); }
 .sceneChoiceRow select {
-  max-width: min(14em, 34vw);
-  background: var(--bg-surface-2);
+  max-width: min(14em, 38vw);
+  /* Solid colours, not the translucent surface tokens: the opened list is
+     drawn by the browser on its own (often white) background, and options
+     inherit the select's light text, which left them white on white. */
+  color-scheme: dark;
+  background-color: #161b2a;
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   padding: 4px var(--space-3);
   font-size: 0.8rem;
-  opacity: 0.85;
 }
-.sceneChoiceRow select:disabled { opacity: 0.45; }
+.sceneChoiceRow option {
+  background-color: #161b2a;
+  color: #f2f0f8;
+}
+.sceneChoiceRow option:checked {
+  background-color: #34406a;
+  color: #ffffff;
+}
+.sceneChoiceRow select:disabled { opacity: 0.5; }
 
 #displaySettingsDialog { color: inherit; background: #111a25; border: 1px solid #647080; border-radius: 12px; max-width: min(90vw, 680px); }
 #displaySettingsDialog::backdrop { background: #0009; }
