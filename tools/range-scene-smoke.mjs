@@ -92,7 +92,15 @@ function watchLoaded(page) {
   page.on('response', (res) => {
     const file = new URL(res.url()).pathname.replace(/^\/+/, '');
     if (!file.startsWith('src/') || !res.ok()) return;
-    entry.pending.push(res.body().then((b) => entry.files.set(file, sha256(b)), () => entry.files.set(file, 'unread')));
+    // Playwright cannot always hand back the body of a response a worker
+    // made (the pitch worker's imports, for instance), and when it cannot
+    // the file is not unknown: it is what the server serves at that URL, so
+    // read it from there. Only a file that cannot be read either way is
+    // reported as unread, and an unread file still fails the check.
+    const url = res.url();
+    entry.pending.push(res.body()
+      .catch(() => fetch(url).then((r) => (r.ok ? r.arrayBuffer().then((a) => Buffer.from(a)) : Promise.reject(new Error(String(r.status))))))
+      .then((b) => entry.files.set(file, sha256(b)), () => entry.files.set(file, 'unread')));
   });
 }
 async function loadedIdentity(page) {
