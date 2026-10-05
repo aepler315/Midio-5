@@ -63,7 +63,7 @@ import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO, scatterBiomeLayers } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
-import { cycleMs as dayNightCycleMs, songSkyClock, twilightAt, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
+import { cycleMs as dayNightCycleMs, songSkyClock, songMoonClock, twilightAt, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
 import { celestialApproach, approachScale } from './CelestialApproach.js';
@@ -471,11 +471,6 @@ export class BiomeManager {
     this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
-    // The sky's clock: one day across the song (dark before dawn, sunset at
-    // the end), or the repeating cycle for a song too short to hold one.
-    // Every `cycle` consumer (dayNight, cyclePhase01, celestial state)
-    // takes either.
-    this._dayNightCycleMs = songSkyClock(this.durationMs) || dayNightCycleMs(this.durationMs);
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.groundY = groundY;
@@ -485,6 +480,11 @@ export class BiomeManager {
     this.customBiome = customBiome || null;
     this.world = getWorld(worldId || DEFAULT_WORLD_ID);
     this.worldId = this.world.id;
+    // The Range's "day" is a single moonrise and moonset across the song.
+    // Every sky, lighting and reflection consumer shares this same clock.
+    this._dayNightCycleMs = this.world.kind === 'alpine'
+      ? songMoonClock(this.durationMs)
+      : songSkyClock(this.durationMs) || dayNightCycleMs(this.durationMs);
     // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
     // Absent, every layer stays procedural. L5 is never taken from here.
     this.terrainProfiles = terrainProfiles;
@@ -2554,7 +2554,8 @@ export class BiomeManager {
     // reflection glint, so everything tracks the same body.
     const dn = dayNight(this.tSec * 1000, this._dayNightCycleMs);
     // Sunrise and sunset colour, for the Range's sky and air (rangeSkyState).
-    this._twilight = twilightAt(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
+    this._twilight = this._dayNightCycleMs?.body === 'moon' ? null
+      : twilightAt(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
     const sunUp = dn.sunAlt > 0.001;
     const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
     // Cast shadow (Stage 5 of the mountain overhaul): a near range can only

@@ -56,6 +56,26 @@ function fakePresentation({ ready = true } = {}) {
 
 const groundView = { stage: { width: 1408, height: 848 }, apply() {} };
 
+test('the Range paints a moonlit song through both v2 and legacy presentation', () => {
+  for (const ready of [true, false]) {
+    const { m, calls } = manager();
+    m.rangePresentation = fakePresentation({ ready });
+    try {
+      for (const tSec of [4, 15, 30, 45, 56, 15]) {
+        m.tSec = tSec;
+        calls.length = 0;
+        m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
+        assert.equal(m.celestialState.activeBody, 'moon', `${ready}: ${tSec}s`);
+        assert.equal(m._night01, 1);
+        assert.equal(m._twilight, null);
+        assert.ok(calls.includes('_drawMoon'));
+        assert.ok(!calls.includes('_drawCelestial'));
+        assert.equal(m._scenicLight.colorHex, '#c8d8ff');
+      }
+    } finally { m.dispose(); }
+  }
+});
+
 test('v2 draws its partitions at the retained pass boundaries, legacy scenery not at all', () => {
   const { m, calls } = manager();
   const pres = fakePresentation();

@@ -70,8 +70,8 @@ export function dayNight(nowMs, cycle) {
   else night = 1 - smoothstep(1 - BAND, 1.0, p);
 
   // Dawn/dusk washes bracket the sun's own rise and set.
-  const dawnAlpha = clamp01(1 - Math.abs(p - 0.03) / 0.12) * 0.16;
-  const duskAlpha = clamp01(1 - Math.abs(p - (sunSpan - 0.03)) / 0.12) * 0.18;
+  const dawnAlpha = cycle?.body === 'moon' ? 0 : clamp01(1 - Math.abs(p - 0.03) / 0.12) * 0.16;
+  const duskAlpha = cycle?.body === 'moon' ? 0 : clamp01(1 - Math.abs(p - (sunSpan - 0.03)) / 0.12) * 0.18;
 
   // Azimuth: how far each body is along its OWN arc, 0 at its rise and 1 at
   // its set. This is the same progress term the altitude above is built from
@@ -206,6 +206,26 @@ export function songSkyClock(durationMs) {
         return SUN_SET_PHASE * (u - SONG_SUN_LINGER * Math.sin(2 * Math.PI * u) / (2 * Math.PI));
       }
       return SUN_SET_PHASE + (END_PHASE - SUN_SET_PHASE) * ((t - sunsetMs) / (d - sunsetMs));
+    },
+  });
+}
+
+/** One moonrise-to-moonset arc across the Range's song. Stay entirely in
+ * the night half of the shared celestial phase so the moon, reflections,
+ * shadows and ambient fill all read the same clock. Short songs get the
+ * same complete arc; an unknown duration repeats a 150-second lunar cycle.
+ * Known songs hold at moonset until a replay explicitly restarts time. */
+export function songMoonClock(durationMs) {
+  const known = Number.isFinite(durationMs) && durationMs > 0;
+  const d = known ? durationMs : TARGET_CYCLE_MS;
+  return Object.freeze({
+    body: 'moon', durationMs: d,
+    phaseAt(ms) {
+      const t = Math.max(0, Number.isFinite(ms) ? ms : 0);
+      const u = known ? clamp01(t / d) : (t % d) / d;
+      // Linger at the horizons instead of popping up into the overhead sky.
+      const arc = u - SONG_SUN_LINGER * Math.sin(2 * Math.PI * u) / (2 * Math.PI);
+      return 0.5 + (MOON_SET_PHASE - 0.5) * arc;
     },
   });
 }
