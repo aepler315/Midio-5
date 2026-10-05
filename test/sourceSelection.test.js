@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { mainFunctions } from './helpers/mainSource.js';
+import { buildSongProfile, PROFILE_VERSION } from '../src/audio/SongProfile.js';
+import { resolveSongSeed } from '../src/utils/seed.js';
 import { SourceSelection, SOURCE_KINDS } from '../src/audio/SourceSelection.js';
 import * as opening from '../src/audio/OpeningAnalysis.js';
 import { fingerprintBuffer } from '../src/audio/SongFingerprint.js';
@@ -62,6 +64,7 @@ test('cancel leaves no current selection', () => {
 const ORCHESTRATORS = [
   'claimSelection', 'loadAudioFiles', 'handleFiles', 'playLibraryTrack', 'startDemoSample',
   'cancelUrlLoad', 'beginUrlLoadOperation', 'endUrlLoadOperation', 'openUrlTarget', 'loadUrlAudio',
+  'offerIdentity', 'acceptDeferredIdentity',
 ];
 
 function deferred() {
@@ -92,6 +95,7 @@ function harness() {
     accumulateEncodedAudioBytes, audioAbortError, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
     AbortController, console, setTimeout, clearTimeout,
     SourceSelection, sourceSelection: new SourceSelection(), loadGen: 0,
+    buildSongProfile, PROFILE_VERSION, resolveSongSeed,
     running: false, sim: null, lastTimelineData: null, bulkExportArmed: false,
     fingerprintBufferOffThread: async (buffer) => fingerprintBuffer(buffer),
     readBulkExportFromUrl: () => null, rangeListening: false, fullAnalysisPending: null, adoptFullAnalysisLive() {},
