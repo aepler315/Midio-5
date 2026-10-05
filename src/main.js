@@ -18,6 +18,8 @@ import {
 import { SourceSelection } from './audio/SourceSelection.js';
 import { analysisReadiness, READINESS_MESSAGES } from './audio/AnalysisReadiness.js';
 import { Simulation } from './sim/Simulation.js';
+import { captureContinuous } from './sim/ContinuousState.js';
+import { stormScoreFor, STORM_HANDOFF_MS } from './world/alpine/RangeStorm.js';
 import { resolveRendererMode } from './render/WebGLRenderer.js';
 import { hitTestComposerStrip } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
@@ -1930,9 +1932,9 @@ function startTimeline(timelineData, extra = {}) {
   const {
     songSeed: seedOverride = undefined, playBuffer, live = false,
     startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode: captureModeFlag = false,
-    exportMode: exportModeFlag = false, exportSize = null, keepAudio = false,
+    exportMode: exportModeFlag = false, exportSize = null, keepAudio = false, continuousState = null,
   } = extra;
-  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0, keepUserCamera: false };
+  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0, keepUserCamera: false, continuousState: null };
   const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
   const exportMode = !!(exportModeFlag || fromUrl);
   const exportQualityLevel = extra.exportQualityLevel ?? perfGovernor?.level ?? perfStartLevel;
@@ -2145,7 +2147,10 @@ function startTimeline(timelineData, extra = {}) {
   // start from boundaries after this point only (RangeFrame.landMoment01).
   // On the heard clock, as the first rebuilt frame samples it (Simulation.step).
   if (keepAudio) sim.biomes?.commitLandRejoin?.(visualNow(startedAt + presentationLeadMs, choreographyOutputLatencyMs()));
-  if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs);
+  // Continuous musical state (ContinuousState.js): carried across exactly
+  // when the whole-song analysis replaces the opening mid-song, otherwise
+  // rebuilt from the song's start on the playback step.
+  if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs, { continuous: continuousState, stepMs: STEP_MS });
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.
   simTime = startedAt + presentationLeadMs;
@@ -3893,8 +3898,15 @@ function adoptFullAnalysisLive(data) {
   if (!running || !sim || !audioEngine || lastTimelineData !== data) return;
   if (bulkExportArmed) return;
   const wasPaused = paused;
+  // What is on screen now, carried into the rebuilt performance so nothing
+  // continuous jumps at the boundary: the musical directors' state, and the
+  // storm's envelope, which then eases to the whole song's own storm.
+  const continuousState = captureContinuous(sim);
+  const previousStorm = stormScoreFor(sim.biomes);
+  const handoffAtMs = sim.heardTimeMs ?? audioEngine.nowMs;
   startTimeline(data, {
     ...lastStartExtra,
+    continuousState,
     songSeed: sim.songSeed,
     startAtMs: Math.max(1, audioEngine.nowMs),
     keepAudio: true,
@@ -3904,6 +3916,7 @@ function adoptFullAnalysisLive(data) {
     chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs, landSections: sim.biomes.sections },
   });
   if (!running || !sim) return;
+  if (previousStorm && sim.biomes) sim.biomes.stormHandoff = { score: previousStorm, atMs: handoffAtMs, durationMs: STORM_HANDOFF_MS };
   if (wasPaused) { paused = true; updatePauseButtonUI(); }
   renderer.draw(sim, 1);
 }

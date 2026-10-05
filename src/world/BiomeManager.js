@@ -1650,6 +1650,18 @@ export class BiomeManager {
     return out.filter((i) => i > 0 && i < lastIdx);
   }
 
+  /** Lyric structure (SectionFusion): the active section's kind, and its
+   *  lyric intensity, kind confidence and budget multiplier eased toward the
+   *  section's own. VibeDirector's epic bias reads these, so seek
+   *  reconstruction (ContinuousState.js) steps this same method. */
+  easeLyricForm(activeSection, dtSec) {
+    const k = 1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC);
+    this.currentKind = activeSection?.kind || null;
+    this.lyricIntensityEased += k * ((activeSection?.lyricIntensity ?? 0.4) - this.lyricIntensityEased);
+    this.kindConfidenceEased += k * ((activeSection?.kindConfidence ?? 0) - this.kindConfidenceEased);
+    this._kindBudgetMulEased += k * ((KIND_BUDGET_MUL[this.currentKind] ?? 1) - this._kindBudgetMulEased);
+  }
+
   _sectionAt(nowMs) {
     return sectionIndexAt(this.sections, nowMs);
   }
@@ -2288,18 +2300,12 @@ export class BiomeManager {
     // Lyric structure (SectionFusion): the active section's kind and its
     // eased lyric intensity, both neutral defaults (null / 0.4) when no
     // lyric data was ever fused in.
-    this.currentKind = activeSection?.kind || null;
     this.currentSectionText = activeSection?.lyricText || null;
     if (this.currentSectionText !== this._symbolForText) {
       this._symbolForText = this.currentSectionText;
       this.currentSectionSymbol = this.currentSectionText ? dominantSymbol(this.currentSectionText) : null;
     }
-    const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
-    this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
-    const targetKindConfidence = activeSection?.kindConfidence ?? 0;
-    this.kindConfidenceEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindConfidence - this.kindConfidenceEased);
-    const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
-    this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
+    this.easeLyricForm(activeSection, dtSec);
 
     // Lyric-driven constellation glyphs: advance the synced-lyrics cursor
     // and scan each newly-reached line through LyricLexicon. A match queues

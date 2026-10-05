@@ -119,8 +119,9 @@ export function compileStorm({ energyCurves, sections = [], timeline = [], durat
   } });
 }
 const cache = new WeakMap();
-export function stormAt(mgr, timeMs) {
-  if (!mgr || mgr.terrainPreview) return EMPTY;
+/** The compiled storm a BiomeManager's song has (cached per manager). */
+export function stormScoreFor(mgr) {
+  if (!mgr) return null;
   const timeline = mgr.conductor?.timeline || EMPTY_TIMELINE;
   let hit = cache.get(mgr);
   if (!hit || hit.curves !== mgr.energyCurves || hit.sections !== mgr.sections || hit.timeline !== timeline || hit.durationMs !== mgr.durationMs) {
@@ -128,7 +129,31 @@ export function stormAt(mgr, timeMs) {
       score: compileStorm({ energyCurves: mgr.energyCurves, sections: mgr.sections, timeline, durationMs: mgr.durationMs }) };
     cache.set(mgr, hit);
   }
-  const state = hit.score.at(timeMs, { reducedFlash: !!mgr.reducedFlash });
+  return hit.score;
+}
+/** When the whole-song analysis replaces the opening mid-song, the storm it
+ *  schedules can sit somewhere else. The envelope on screen (cloud amount,
+ *  break, wetness) is kept at the boundary and eases into the new one over
+ *  the storm's own arrival time (the 8 s `ease` its entrance already uses),
+ *  never jumping. Lightning is a one-shot: strokes come from the new score
+ *  only, so a stroke the old score placed is not replayed into the new one. */
+export const STORM_HANDOFF_MS = 8000;
+function handedOff(mgr, state, timeMs, opts) {
+  const h = mgr.stormHandoff;
+  if (!h?.score || !Number.isFinite(h.atMs)) return state;
+  const span = h.durationMs > 0 ? h.durationMs : STORM_HANDOFF_MS;
+  const t = Number.isFinite(timeMs) ? timeMs : 0;
+  if (t >= h.atMs + span) return state;
+  const w = t <= h.atMs ? 0 : ease((t - h.atMs) / span);
+  const from = h.score.at(t, opts);
+  const mix = (a, b) => a + (b - a) * w;
+  return { ...state, amount: mix(from.amount, state.amount),
+    break01: mix(from.break01, state.break01), wet01: mix(from.wet01, state.wet01) };
+}
+export function stormAt(mgr, timeMs) {
+  if (!mgr || mgr.terrainPreview) return EMPTY;
+  const opts = { reducedFlash: !!mgr.reducedFlash };
+  const state = handedOff(mgr, stormScoreFor(mgr).at(timeMs, opts), timeMs, opts);
   const override = mgr.stormOverride;
   if (override && typeof override === 'object') return { ...state, ...override, flash: mgr.reducedFlash ? 0 : unit(override.flash ?? state.flash) };
   return state;
