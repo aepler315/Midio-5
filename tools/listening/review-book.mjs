@@ -45,27 +45,46 @@ async function readRuns(dir) {
 
 const fmt = (v, d = 2) => (v == null ? '—' : typeof v === 'number' ? v.toFixed(d) : String(v));
 
-/** A plain SVG of measured energy against the live heuristics. Exploratory. */
-export function runChart(run, { width = 960, height = 260 } = {}) {
+/** Mean of `values` over consecutive `binMs` windows (display only). */
+function binned(tMs, values, binMs) {
+  const out = { tMs: [], values: [] };
+  let i = 0;
+  while (i < tMs.length) {
+    const start = tMs[i];
+    let sum = 0, n = 0;
+    while (i < tMs.length && tMs[i] < start + binMs) { if (values[i] != null) { sum += values[i]; n++; } i++; }
+    out.tMs.push(start + binMs / 2);
+    out.values.push(n ? sum / n : null);
+  }
+  return out;
+}
+
+/** A plain SVG of measured energy against the live heuristics. Exploratory:
+ *  energy is drawn as 1 s means so beat-level ripple does not hide the
+ *  heuristics, which are drawn as sampled (what playback showed). */
+export function runChart(run, { width = 960, height = 300 } = {}) {
   const dur = run.recording.decoded.durationMs;
+  const top = 46, bottom = height - 24;
   const x = (t) => (t / dur) * (width - 60) + 50;
-  const y = (v, lo = 0, hi = 1) => height - 30 - ((v - lo) / (hi - lo)) * (height - 50);
+  const y = (v, lo = 0, hi = 1) => bottom - ((v - lo) / (hi - lo)) * (bottom - top);
   const line = (ts, vs, lo, hi) => ts.map((t, i) => (vs[i] == null ? null : `${x(t).toFixed(1)},${y(vs[i], lo, hi).toFixed(1)}`)).filter(Boolean).join(' ');
   const h = run.heuristics, e = run.evidence.energy;
+  const energy = binned(e.tMs, e.globalNorm, 1000);
   const series = [
-    ['energy (measured)', line(e.tMs, e.globalNorm, 0, 1), '#888'],
-    ['calm', line(h.tMs, h.channels['calm.level'], 0, 1), '#3a7bd5'],
-    ['epic', line(h.tMs, h.channels['vibe.epic'], 0, 1), '#d5533a'],
-    ['valence (−1..1)', line(h.tMs, h.channels['vibe.valence'], -1, 1), '#3aa35b'],
-    ['tonic confidence', line(h.tMs, h.channels['vibe.tonicConfidence'], 0, 1), '#9b59b6'],
+    ['energy, 1 s mean (measured)', line(energy.tMs, energy.values, 0, 1), '#999', 2],
+    ['calm', line(h.tMs, h.channels['calm.level'], 0, 1), '#3a7bd5', 1],
+    ['epic', line(h.tMs, h.channels['vibe.epic'], 0, 1), '#d5533a', 1.2],
+    ['valence (−1..1)', line(h.tMs, h.channels['vibe.valence'], -1, 1), '#3aa35b', 1.2],
+    ['tonic confidence', line(h.tMs, h.channels['vibe.tonicConfidence'], 0, 1), '#9b59b6', 1],
   ];
   const minutes = [];
-  for (let m = 0; m * 60000 <= dur; m++) minutes.push(`<text x="${x(m * 60000).toFixed(1)}" y="${height - 12}" font-size="10">${m}:00</text>`);
+  for (let m = 0; m * 60000 <= dur; m++) minutes.push(`<text x="${x(m * 60000).toFixed(1)}" y="${height - 8}" font-size="10" text-anchor="middle">${m}:00</text>`);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" font-family="sans-serif">
 <rect width="100%" height="100%" fill="#fff"/>
 <text x="50" y="14" font-size="12">${run.caseId ?? run.recording.fileName} · ${run.recording.sha256.slice(0, 12)} · ${run.source.commit.slice(0, 7)} · exploratory, not an emotion measurement</text>
-${series.map(([, pts, c]) => `<polyline fill="none" stroke="${c}" stroke-width="1.2" points="${pts}"/>`).join('\n')}
-${series.map(([name, , c], i) => `<text x="${60 + i * 150}" y="30" font-size="11" fill="${c}">${name}</text>`).join('\n')}
+${series.map(([name, , c], i) => `<rect x="${50 + i * 175}" y="24" width="10" height="10" fill="${c}"/><text x="${64 + i * 175}" y="33" font-size="11">${name}</text>`).join('\n')}
+<rect x="50" y="${top}" width="${width - 60}" height="${bottom - top}" fill="none" stroke="#ddd"/>
+${series.map(([, pts, c, w]) => `<polyline fill="none" stroke="${c}" stroke-width="${w}" points="${pts}"/>`).join('\n')}
 ${minutes.join('\n')}
 </svg>
 `;

@@ -1,0 +1,342 @@
+{
+  "format": "midio-recording-bindings/1",
+  "tracks": [
+    {
+      "id": "tune-piano-midi",
+      "split": "tune",
+      "family": "sparse-piano",
+      "representation": "midi",
+      "recordingGroup": "tune-piano-midi",
+      "source": {
+        "kind": "generator"
+      },
+      "status": "synthetic",
+      "reason": "generated MIDI, not a recording",
+      "recording": null,
+      "runs": []
+    },
+    {
+      "id": "tune-drone-helix6",
+      "split": "tune",
+      "family": "ambient",
+      "representation": "audio",
+      "recordingGroup": "tune-drone-helix6",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "9c47be00ee33d6d7c6f5724ebcaf13935a48da904300fdcf1fd5a32097eb8382",
+        "byteLength": 6711427,
+        "fileName": "SoundHelix-Song-6.mp3",
+        "decodedDurationMs": 279640.81632653065,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "1939aaff4163e56017658727334d8372074832f072a8775561b0f5748265b423",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 279626.30385487527,
+          "createdAt": "2026-10-05T05:52:51.245Z"
+        }
+      ]
+    },
+    {
+      "id": "tune-bass-helix7",
+      "split": "tune",
+      "family": "warm-bass",
+      "representation": "audio",
+      "recordingGroup": "tune-bass-helix7",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "b7da992345804fd3d14a4cca943f51339082cad0414e71a4fea7187ce8c2e3f6",
+        "byteLength": 10095020,
+        "fileName": "SoundHelix-Song-7.mp3",
+        "decodedDurationMs": 420623.67346938775,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "d57dd7198c4ad1b5d69dfe1650b290a320f3d99b0d5812d13186e794aaea1956",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 420606.25850340136,
+          "createdAt": "2026-10-05T05:53:42.992Z"
+        }
+      ]
+    },
+    {
+      "id": "tune-drums-midi",
+      "split": "tune",
+      "family": "fast-percussion",
+      "representation": "midi",
+      "recordingGroup": "tune-drums-midi",
+      "source": {
+        "kind": "generator"
+      },
+      "status": "synthetic",
+      "reason": "generated MIDI, not a recording",
+      "recording": null,
+      "runs": []
+    },
+    {
+      "id": "tune-wall-guitars",
+      "split": "tune",
+      "family": "dense-guitars",
+      "representation": "audio",
+      "recordingGroup": "tune-wall-guitars",
+      "source": {
+        "kind": "features"
+      },
+      "status": "unavailable",
+      "reason": "feature snapshot only; the corpus references no recording",
+      "recording": null,
+      "runs": []
+    },
+    {
+      "id": "tune-orchestra-helix9",
+      "split": "tune",
+      "family": "orchestral",
+      "representation": "audio",
+      "recordingGroup": "tune-orchestra-helix9",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "2515d1e5fe65bc7933344b09339018e90c31dd8d8fc40e3f46a927891cab033f",
+        "byteLength": 9344585,
+        "fileName": "SoundHelix-Song-9.mp3",
+        "decodedDurationMs": 389355.10204081633,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "0d7acb4036f3c1b005e2de0f85ea58bbb252c08a7e7fd738996b583c9330468e",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 389340.589569161,
+          "createdAt": "2026-10-05T05:54:34.530Z"
+        }
+      ]
+    },
+    {
+      "id": "tune-loose-midi",
+      "split": "tune",
+      "family": "loose-rhythm",
+      "representation": "midi",
+      "recordingGroup": "tune-loose-midi",
+      "source": {
+        "kind": "generator"
+      },
+      "status": "synthetic",
+      "reason": "generated MIDI, not a recording",
+      "recording": null,
+      "runs": []
+    },
+    {
+      "id": "tune-helix1-audio",
+      "split": "tune",
+      "family": "warm-bass",
+      "representation": "audio",
+      "recordingGroup": "tune-helix1-audio",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "cadd2666c5571e12fafdb21697b26aef6f196a5a9c28e708129870167679991d",
+        "byteLength": 8945229,
+        "fileName": "SoundHelix-Song-1.mp3",
+        "decodedDurationMs": 372715.10204081633,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "cf64428741382f75d99626d0891b9194ef6c27a2010c0cdad5150ecd2a79eff2",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 372703.492063492,
+          "createdAt": "2026-10-05T05:49:45.016Z"
+        }
+      ]
+    },
+    {
+      "id": "hold-piano-audio",
+      "split": "holdout",
+      "family": "sparse-piano",
+      "representation": "audio",
+      "recordingGroup": "hold-piano-audio",
+      "source": {
+        "kind": "features"
+      },
+      "status": "unavailable",
+      "reason": "feature snapshot only; the corpus references no recording",
+      "recording": null,
+      "runs": []
+    },
+    {
+      "id": "hold-drone-helix3",
+      "split": "holdout",
+      "family": "ambient",
+      "representation": "audio",
+      "recordingGroup": "hold-drone-helix3",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "793e6ffda56e28691998b90a55bdaf0f2bccb8950cd8a7ee9ef7421c4ebbafdb",
+        "byteLength": 8258104,
+        "fileName": "SoundHelix-Song-3.mp3",
+        "decodedDurationMs": 344084.89795918367,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "4b88223cbc9714156e1b6833ff382ec7d01fb74daf41e62a1496190fdab2a982",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 344073.2879818594,
+          "createdAt": "2026-10-05T05:51:29.645Z"
+        }
+      ]
+    },
+    {
+      "id": "hold-bass-helix2",
+      "split": "holdout",
+      "family": "warm-bass",
+      "representation": "audio",
+      "recordingGroup": "hold-bass-helix2",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "ab5cb08483abe63edd2a2ce4d843ad8f3073fcbb4a738a94f6b7529df3e1b437",
+        "byteLength": 10222911,
+        "fileName": "SoundHelix-Song-2.mp3",
+        "decodedDurationMs": 425952.6530612245,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "f0aa05c98b1bf7c0da745d7bc0d57f0e62e4cf983a584a72da0e51bc5354b65d",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 425935.2380952381,
+          "createdAt": "2026-10-05T05:50:40.859Z"
+        }
+      ]
+    },
+    {
+      "id": "hold-perc-helix4",
+      "split": "holdout",
+      "family": "fast-percussion",
+      "representation": "audio",
+      "recordingGroup": "hold-perc-helix4",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "2cdc23614d64e206cc89916183e3e9555cc483a73a4e4a8e27a21a18929be810",
+        "byteLength": 7260626,
+        "fileName": "SoundHelix-Song-4.mp3",
+        "decodedDurationMs": 302524.0816326531,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "b01d57df08c296675b90658c80143190796da08c6da131690194571d47e7fa17",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 302509.56916099775,
+          "createdAt": "2026-10-05T05:52:11.603Z"
+        }
+      ]
+    },
+    {
+      "id": "hold-wall-guitars",
+      "split": "holdout",
+      "family": "dense-guitars",
+      "representation": "audio",
+      "recordingGroup": "hold-wall-guitars",
+      "source": {
+        "kind": "features"
+      },
+      "status": "unavailable",
+      "reason": "feature snapshot only; the corpus references no recording",
+      "recording": null,
+      "runs": []
+    },
+    {
+      "id": "hold-orchestra-helix10",
+      "split": "holdout",
+      "family": "orchestral",
+      "representation": "audio",
+      "recordingGroup": "hold-orchestra-helix10",
+      "source": {
+        "kind": "url",
+        "href": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3"
+      },
+      "status": "bound",
+      "reason": null,
+      "recording": {
+        "sha256": "8cdc67b63e526d8d039a4b5992651e68b1cd020f25e0da1e8ab9b99e583b75c6",
+        "byteLength": 12657318,
+        "fileName": "SoundHelix-Song-10.mp3",
+        "decodedDurationMs": 527386.1224489795,
+        "sampleRate": 44100
+      },
+      "runs": [
+        {
+          "runId": "4323f4030572ee7f874f0d3190922fb51668d02969b2d266f79fad89a516905a",
+          "commit": "d4690925f429f8f8ddc44c108992b23e2fd7c8c5",
+          "analyzedToMs": 527371.6099773243,
+          "createdAt": "2026-10-05T05:55:54.109Z"
+        }
+      ]
+    },
+    {
+      "id": "hold-loose-midi",
+      "split": "holdout",
+      "family": "loose-rhythm",
+      "representation": "midi",
+      "recordingGroup": "hold-loose-midi",
+      "source": {
+        "kind": "generator"
+      },
+      "status": "synthetic",
+      "reason": "generated MIDI, not a recording",
+      "recording": null,
+      "runs": []
+    },
+    {
+      "id": "hold-operator-song",
+      "split": "holdout",
+      "family": "operator",
+      "representation": "audio",
+      "recordingGroup": "hold-operator-song",
+      "source": {
+        "kind": "local"
+      },
+      "status": "unbound",
+      "reason": "operator-supplied slot; no recording analysed yet",
+      "recording": null,
+      "runs": []
+    }
+  ],
+  "errors": []
+}
