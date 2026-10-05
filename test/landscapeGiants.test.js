@@ -134,7 +134,7 @@ test('a lake whose mirror reservation is denied sends held Midio to the sky, onc
 
 test('the route is decided per side and per frame, and a lost target is not reused', async () => {
   const deniedSides = new Set(['B']);
-  const { scene, p, rendered } = await giantScene({ mirrorAllowed: () => !deniedSides.has(scene._lastSide) });
+  const { scene, rendered } = await giantScene({ mirrorAllowed: () => !deniedSides.has(scene._lastSide) });
   const ensure = scene._ensureMirror.bind(scene);
   scene._ensureMirror = (side) => { scene._lastSide = side; return ensure(side); };
   assert.equal(scene.renderSkyGiants(midioFrame(1), 'view', { side: 'A' }), null, 'side A reflects');
