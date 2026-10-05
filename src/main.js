@@ -2506,6 +2506,24 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
   }
 }
 
+/**
+ * Lyrics that land after the song's world has started (F06): hand them to
+ * the running performance, which fuses them in from the moment being heard
+ * (BiomeManager.adoptLyricEvidence). Only the performance of the selection
+ * that asked for them adopts them; the audio is never restarted. A world not
+ * started yet needs nothing -- startTimeline reads them off the song's data,
+ * as does every later seek and replay. A bulk export renders frames by time
+ * and must not change halfway, so it is left alone.
+ */
+function adoptLateLyrics(data, selection, evidence) {
+  if (!evidence?.lyricSections?.length && !evidence?.syncedLyrics?.length) return false;
+  if (selection && !sourceSelection.isCurrent(selection)) return false;
+  if (!sim || lastTimelineData !== data || bulkExportArmed) return false;
+  const adopted = !!sim.biomes?.adoptLyricEvidence?.(evidence, sim.heardTimeMs);
+  if (adopted) console.info('[lyrics] adopted late lyrics into the running performance');
+  return adopted;
+}
+
 /** One audio file plays as itself; SEVERAL dropped together are treated as
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
@@ -2760,8 +2778,15 @@ async function loadAudioFiles(files, { selection = null } = {}) {
     // are fetched per play and the preference can change between plays.
     const lyricsReady = lyricsPromise.then(({ identity: lyricIdentity, lyricSections, syncedLyrics }) => {
       data.lyricIdentity = lyricIdentity;
-      data.lyricSections = lyricSections;
-      data.syncedLyrics = syncedLyrics;
+      // Lyric grounding switched off while the lookup was in flight: the
+      // player's newer choice wins over the answer to the older one.
+      if (!lyricsDisabled) {
+        data.lyricSections = lyricSections;
+        data.syncedLyrics = syncedLyrics;
+        // Already playing? Join the running performance at the heard moment
+        // rather than waiting for a replay (adoptLateLyrics).
+        adoptLateLyrics(data, selection, { lyricSections, syncedLyrics });
+      }
       // Cached once the whole song is in (the key may only be known then,
       // too): an opening would be restored next time as if it were the song.
       Promise.resolve(wholeSong).then(() => {
