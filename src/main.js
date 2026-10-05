@@ -26,6 +26,7 @@ import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { FileChooserSupport } from './ui/FileChooserProbe.js';
+import { ownsNativeKeyboard } from './ui/KeyboardOwnership.js';
 import { prepareSongTerrain } from './world/terrain/RangeLibrary.js';
 import {
   ASK as ASK_WORLD, AUTO as TITLE_AUTO, readTitleWorld, resolveTitleWorldChoice, writeTitleWorld,
@@ -3999,7 +4000,11 @@ const INERT_KEYS = new Set([
 ]);
 
 window.addEventListener('keydown', (e) => {
-  if (e.defaultPrevented) return;
+  // A focused text field, an IME composition, an already-handled event and
+  // a Ctrl/Meta/Alt chord all belong to the browser. Decide that before any
+  // branch below can toggle a setting, open an overlay, tap the beat or
+  // preventDefault a letter out of a URL (KeyboardOwnership.js).
+  if (ownsNativeKeyboard(e)) return;
   // A modal chooser owns keyboard input. R stays available for accessibility;
   // all other keys retain native dialog/button behavior, including Escape.
   if (worldSelectEl?.open) {
@@ -4088,10 +4093,8 @@ window.addEventListener('keydown', (e) => {
   if (INERT_KEYS.has(e.key)) { e.preventDefault(); return; }
 
   // Almost any other key resyncs the player's beat anchor (BeatAnchor.js) --
-  // ignore held-key auto-repeat, modifier chords, and typing into a field.
-  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-  const activeTag = document.activeElement?.tagName;
-  if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+  // ignore held-key auto-repeat. Chords and typing were excluded above.
+  if (e.repeat) return;
   beatTap();
 });
 
