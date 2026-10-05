@@ -50,30 +50,53 @@ export const STORM_GLSL = /* glsl */`
   // Rain-washed air, lit from inside by lightning.
   vec3 rainColor() { return uAirColor * 1.1 + uLightColor * 0.04; }
 `;
+const NO_STORM = Object.freeze({ section: null, at: () => EMPTY });
+const SAMPLE_MS = 250;
+const ARRIVAL_MS = 8000;
+
+/** Did the analysis measure any energy at all? Read on the raw signal,
+ *  before unit() turns NaN into 0 and normalisation stretches silence:
+ *  a curve of zeros or of invalid values is missing evidence, not a quiet
+ *  song, and must not be given a storm (F07). */
+function hasEnergyEvidence(energyCurves, durationMs) {
+  const raw = energyCurves?.globalEnergy?.bind(energyCurves) || energyCurves?.globalEnergyNorm?.bind(energyCurves);
+  if (!raw) return false;
+  for (let t = 0; t < durationMs; t += SAMPLE_MS) {
+    const v = raw(t);
+    if (Number.isFinite(v) && v > 0) return true;
+  }
+  return false;
+}
+
 export function compileStorm({ energyCurves, sections = [], timeline = [], durationMs = 0 } = {}) {
-  if (!(durationMs > 0)) return { section: null, at: () => EMPTY };
+  if (!(durationMs > 0)) return NO_STORM;
   const read = energyCurves?.globalEnergyNorm?.bind(energyCurves) || energyCurves?.globalEnergy?.bind(energyCurves);
-  if (!read) return { section: null, at: () => EMPTY };
+  if (!read) return NO_STORM;
+  if (!hasEnergyEvidence(energyCurves, durationMs)) return NO_STORM;
   const average = (a, b) => {
     if (!read) return 0;
     let sum = 0, n = 0;
-    for (let t = a; t < b; t += 250) { sum += unit(read(t)); n++; }
+    for (let t = a; t < b; t += SAMPLE_MS) { sum += unit(read(t)); n++; }
     return sum / Math.max(1, n);
   };
   // Clip away arrival time; do not discard a sustained climax merely
   // because its structural section also contains the song's opening.
-  let candidates = sections.filter(s => s.provenance !== 'decorative' && Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs && s.endMs > 8000)
-    .map(s => ({ startMs: Math.max(8000, s.startMs), endMs: Math.min(durationMs, s.endMs) })).filter(s => s.endMs > s.startMs);
+  let candidates = sections.filter(s => s.provenance !== 'decorative' && Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs && s.endMs > ARRIVAL_MS)
+    .map(s => ({ startMs: Math.max(ARRIVAL_MS, s.startMs), endMs: Math.min(durationMs, s.endMs) })).filter(s => s.endMs > s.startMs);
   // Unsegmented songs still get their strongest sustained passage. The
   // averaging window prevents a short opening/ending transient from winning.
   if (!candidates.length) {
     const span = Math.min(20000, durationMs * .24);
-    for (let t = 8000; t + span <= durationMs; t += 1000) candidates.push({ startMs: t, endMs: t + span });
+    for (let t = ARRIVAL_MS; t + span <= durationMs; t += 1000) candidates.push({ startMs: t, endMs: t + span });
   }
   const scored = candidates.map(section => ({ section, energy: average(section.startMs, section.endMs) }));
   scored.sort((a, b) => b.energy - a.energy || Math.abs((a.section.startMs+a.section.endMs)/2-durationMs*.5)
     - Math.abs((b.section.startMs+b.section.endMs)/2-durationMs*.5));
-  const section = scored[0]?.section || { startMs: durationMs * .4, endMs: durationMs * .65 };
+  // No admissible window (a song too short to clear the arrival time), or
+  // windows with nothing measured in them: no storm, rather than one placed
+  // at an arbitrary fraction of the song.
+  if (!scored.length || !(scored[0].energy > 0)) return NO_STORM;
+  const section = scored[0].section;
   const snares = [];
   for (const event of [...timeline].sort((a, b) => a.tMs - b.tMs)) {
     if (!(event.role === 'RHYTHM' || event.channel === 9) || ![38, 40].includes(event.pitch) || !Number.isFinite(event.tMs) || event.tMs < section.startMs || event.tMs >= section.endMs) continue;
