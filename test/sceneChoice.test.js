@@ -41,12 +41,17 @@ test('unknown names fall back to Auto', () => {
 
 test('every catalog view is pickable, candidates included and labelled', () => {
   const views = pickableViews(SCENE_CATALOG);
-  assert.equal(views.length, SCENE_CATALOG.views.length);
+  assert.equal(views.length, SCENE_CATALOG.views.filter((v) => !v.id.endsWith('-coherent')).length);
+  assert.ok(views.some((v) => v.status !== 'approved'), 'unreviewed views are listed');
+  assert.ok(!views.some((v) => v.id.endsWith('-coherent')), 'pilot copies stay out of the menu');
+  assert.equal(resolveSceneChoice({ ...base, search: '?range=teton-jackson-lake-coherent', storage: null }).viewId, null);
+  assert.equal(resolveSceneChoice({ ...base, search: '?rangeView=teton-jackson-lake-coherent', storage: null }).viewId,
+    'teton-jackson-lake-coherent');
   assert.equal(resolveSceneChoice({ ...base, search: '?range=pend-oreille-valley', storage: null }).viewId,
     'pend-oreille-valley');
   assert.equal(resolveSceneChoice({ ...base, search: '?rangeView=pend-oreille-valley', storage: null }).viewId,
     'pend-oreille-valley');
-  const labels = views.map((v) => viewLabel(v));
+  const labels = pickableViews(SCENE_CATALOG, { pilots: true }).map((v) => viewLabel(v));
   assert.equal(new Set(labels).size, labels.length, 'two views share a menu label');
   assert.match(viewLabel(SCENE_CATALOG.views.find((v) => v.id === 'teton-jackson-lake-coherent')), /unreviewed, alternate/);
   assert.equal(viewLabel(SCENE_CATALOG.views.find((v) => v.id === 'teton-jackson-lake'), 'Conifer'), 'Teton Range · Conifer');

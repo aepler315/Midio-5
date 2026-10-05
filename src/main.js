@@ -1407,6 +1407,15 @@ if (sceneRangeEl && sceneBiomeEl) {
     opt.title = v.place;
     sceneRangeEl.appendChild(opt);
   }
+  // A review link may name a pilot copy the menu leaves out.
+  if (sceneChoice.viewId && ![...sceneRangeEl.options].some((o) => o.value === sceneChoice.viewId)) {
+    const v = SCENE_CATALOG.views.find((x) => x.id === sceneChoice.viewId);
+    const opt = document.createElement('option');
+    opt.value = sceneChoice.viewId;
+    opt.textContent = v ? viewLabel(v, biomeTitle.get(v.biome)) : sceneChoice.viewId;
+    opt.dataset.reviewOnly = '1';
+    sceneRangeEl.appendChild(opt);
+  }
   for (const b of PICKABLE_BIOMES) {
     const opt = document.createElement('option');
     opt.value = b.name;
@@ -1435,6 +1444,9 @@ if (sceneRangeEl && sceneBiomeEl) {
   };
   sceneRangeEl.addEventListener('change', () => {
     const v = sceneRangeEl.value;
+    // Leaving a review link's pilot copy drops it from the menu again; it
+    // could not be remembered or linked under the ordinary ?range spelling.
+    for (const o of [...sceneRangeEl.options]) if (o.dataset.reviewOnly && o.value !== v) o.remove();
     commit(v === SCENE_AUTO ? { viewId: null, biome: null } : { viewId: v });
   });
   sceneBiomeEl.addEventListener('change', () => {
