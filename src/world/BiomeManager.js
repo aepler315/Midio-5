@@ -1418,6 +1418,10 @@ export class BiomeManager {
       this.sections = sectionsWithChapters(this.sections, this.chapterPlan);
       this._refreshChapterVariants();
     }
+    // Kept so lyrics that arrive after the world has started can be fused
+    // onto the same schedule they would have met on time (adoptLyricEvidence).
+    this._unfusedSections = this.sections;
+    this._fusionInputs = { barGrid, durationMs, conductorSchedule };
     this.sections = fuseSections(this.sections, lyricSections, barGrid, durationMs);
 
     // The conductor track has the last word (ConductorTrack.js). Everything
@@ -1435,7 +1439,63 @@ export class BiomeManager {
     if (!this._chapterInputs || !previous?.length) return;
     this.chapterPlan = planChapters({ ...this._chapterInputs, sections: this.sections, previous, committedThroughMs });
     this.sections = sectionsWithChapters(this.sections, this.chapterPlan);
+    if (this._unfusedSections) this._unfusedSections = sectionsWithChapters(this._unfusedSections, this.chapterPlan);
     this._refreshChapterVariants();
+  }
+
+  /**
+   * Lyrics that arrive after the performance started (a slow lookup) join
+   * it at the moment being heard, without a restart (F06).
+   *
+   * The schedule is fused exactly as it would have been on time, then only
+   * the present and future take the result: every section already finished
+   * stays as it was, the current one keeps its start (no boundary is
+   * inserted into the past) and takes the lyric labels found at this
+   * moment, and later sections come from the fused schedule. The section
+   * index is unchanged, so no transition fires on adoption. The synced-line
+   * cursor jumps to `heardTimeMs` without scanning the lines it passes, so
+   * no constellation glyph is hinted for a line already sung. Geography
+   * (chapters, the accepted world) is not touched: chapter fields ride on
+   * the same unfused sections either way.
+   *
+   * @param {{lyricSections?: object[]|null, syncedLyrics?: object[]|null}} evidence
+   * @param {number} heardTimeMs
+   * @returns {boolean} whether anything was adopted
+   */
+  adoptLyricEvidence({ lyricSections = null, syncedLyrics = null } = {}, heardTimeMs = 0) {
+    const sections = Array.isArray(lyricSections) && lyricSections.length ? lyricSections : null;
+    const lines = Array.isArray(syncedLyrics) && syncedLyrics.length ? syncedLyrics : null;
+    if (!sections && !lines) return false;
+    const heard = Number.isFinite(heardTimeMs) ? Math.max(0, heardTimeMs) : 0;
+
+    if (sections && this._unfusedSections?.length && this._fusionInputs) {
+      const { barGrid, durationMs, conductorSchedule } = this._fusionInputs;
+      const fused = applyConductorSchedule(
+        fuseSections(this._unfusedSections, sections, barGrid, durationMs),
+        conductorSchedule, barGrid, durationMs,
+      );
+      const old = this.sections;
+      const i = sectionIndexAt(old, heard);
+      const current = old[i];
+      const fusedNow = fused[sectionIndexAt(fused, heard)];
+      const future = fused.filter((s) => s.startMs > heard && s.startMs >= (current?.startMs ?? 0));
+      const endMs = future.length ? future[0].startMs : (current?.endMs ?? fusedNow?.endMs);
+      this.sections = [
+        ...old.slice(0, i),
+        { ...(fusedNow || current), startMs: current.startMs, endMs },
+        ...future,
+      ];
+      this._lyricSections = sections;
+    }
+
+    if (lines) {
+      this._syncedLyrics = lines;
+      let cursor = 0;
+      while (cursor < lines.length && lines[cursor].tMs <= heard) cursor++;
+      this._lyricLineCursor = cursor;
+      this.songSymbol = dominantSymbol(lines.map((l) => l.text));
+    }
+    return true;
   }
 
   _refreshChapterVariants() {
@@ -1588,6 +1648,18 @@ export class BiomeManager {
       gaps.push([mid, hi]);
     }
     return out.filter((i) => i > 0 && i < lastIdx);
+  }
+
+  /** Lyric structure (SectionFusion): the active section's kind, and its
+   *  lyric intensity, kind confidence and budget multiplier eased toward the
+   *  section's own. VibeDirector's epic bias reads these, so seek
+   *  reconstruction (ContinuousState.js) steps this same method. */
+  easeLyricForm(activeSection, dtSec) {
+    const k = 1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC);
+    this.currentKind = activeSection?.kind || null;
+    this.lyricIntensityEased += k * ((activeSection?.lyricIntensity ?? 0.4) - this.lyricIntensityEased);
+    this.kindConfidenceEased += k * ((activeSection?.kindConfidence ?? 0) - this.kindConfidenceEased);
+    this._kindBudgetMulEased += k * ((KIND_BUDGET_MUL[this.currentKind] ?? 1) - this._kindBudgetMulEased);
   }
 
   _sectionAt(nowMs) {
@@ -2228,18 +2300,12 @@ export class BiomeManager {
     // Lyric structure (SectionFusion): the active section's kind and its
     // eased lyric intensity, both neutral defaults (null / 0.4) when no
     // lyric data was ever fused in.
-    this.currentKind = activeSection?.kind || null;
     this.currentSectionText = activeSection?.lyricText || null;
     if (this.currentSectionText !== this._symbolForText) {
       this._symbolForText = this.currentSectionText;
       this.currentSectionSymbol = this.currentSectionText ? dominantSymbol(this.currentSectionText) : null;
     }
-    const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
-    this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
-    const targetKindConfidence = activeSection?.kindConfidence ?? 0;
-    this.kindConfidenceEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindConfidence - this.kindConfidenceEased);
-    const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
-    this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
+    this.easeLyricForm(activeSection, dtSec);
 
     // Lyric-driven constellation glyphs: advance the synced-lyrics cursor
     // and scan each newly-reached line through LyricLexicon. A match queues

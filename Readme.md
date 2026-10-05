@@ -97,6 +97,21 @@ wherever you are, and **Save a video** on the complete screen replays the
 song and records it end to end. Picture and sound come out in one file, in
 sync, with no mirroring or projection in between.
 
+A full-song video is always made from the analysis of the whole recording.
+A long song starts playing on its opening while the rest is analysed in the
+background; **Save a video** waits for that to finish. If the whole-song
+analysis failed, the song keeps playing on its opening, and the complete
+screen says so and offers **Analyse the whole song again** instead of
+recording a file that only the opening drives.
+
+If the browser's video encoder fails partway (some Windows Chrome builds
+advertise H.264 MP4 and then fail to encode it), nothing is saved: the
+encoder's own message is shown, and when the browser can record WebM the
+complete screen offers **Record full song as WebM**, a fresh recording from
+the start rather than a patched-up file. A recording is always named after
+the song it recorded, even if another song is loaded before it finishes
+saving.
+
 Presets cover 480p, 720p and 1080p, plus **Car display** (800×480) for a
 double-DIN head unit, letterboxed rather than stretched. Chrome and Edge
 produce H.264 MP4, which plays anywhere; Firefox produces WebM and some

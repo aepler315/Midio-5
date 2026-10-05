@@ -47,6 +47,7 @@ jobs:
           npm run test:export -- http://127.0.0.1:8080
           npm run test:car -- http://127.0.0.1:8080
           npm run test:urlload -- http://127.0.0.1:8080
+          npm run test:late-evidence -- http://127.0.0.1:8080
       - name: Exercise the staged production artifact
         run: |
           npm run stage:site

@@ -13,6 +13,9 @@ import {
   accumulateEncodedAudioBytes, audioAbortError, validateAudioFiles, validateDecodedAudioBuffer, validateDecodedByteLength,
 } from '../src/audio/loadLimits.js';
 import { SourceSelection } from '../src/audio/SourceSelection.js';
+import { buildSongProfile, PROFILE_VERSION } from '../src/audio/SongProfile.js';
+import { resolveSongSeed } from '../src/utils/seed.js';
+import { mainFunctions } from './helpers/mainSource.js';
 
 // Execute the real upload orchestrator with browser/audio boundaries replaced.
 // Analysis/cache identity remain real; no browser is needed to test ownership.
@@ -59,6 +62,8 @@ function harness() {
     musicLibrary: { played: [], async notePlayed(track, seconds) { this.played.push([track, seconds]); } },
   });
   vm.runInContext(loadSource, context);
+  Object.assign(context, { buildSongProfile, PROFILE_VERSION, resolveSongSeed });
+  vm.runInContext(mainFunctions(['offerIdentity', 'acceptDeferredIdentity']), context);
   const load = async (names = ['mix.wav']) => {
     await context.loadAudioFiles(names.map((name) => ({ name, arrayBuffer: async () => encoded })));
     assert.deepEqual(errors, []);
@@ -253,4 +258,184 @@ test('actual background analysis captures the provisional history before adoptio
   assert.ok(Math.abs(retained.sample(5250).bands[0] - .55) < .001);
   fullCurves.bands.forEach(b => b.fill(0)); openingCurves.bands.forEach(b => b.fill(0));
   assert.ok(Math.abs(retained.sample(5250).bands[0] - .55) < .001, 'both histories are immutable after live data replacement');
+});
+
+// A failed whole-song pass leaves the song playable on its opening, records
+// the failure on the coverage metadata export reads, and can be retried for
+// the same selection only (AnalysisReadiness.js, requestFullSongExport).
+function openingHarness() {
+  const h = harness();
+  const buffer = recording(); buffer.duration = 120;
+  h.context.audioEngine.decodeFile = async () => buffer;
+  h.context.sliceAudioBuffer = () => ({ ...buffer, duration: 15 });
+  h.context.setTimeout = (fn) => fn();
+  h.context.getBundle = async () => null;
+  h.context.packBundle = () => ({}); h.context.putBundle = async () => {};
+  const attempts = [];
+  h.context.audioToTimeline = async (b) => {
+    if (b.duration === 15) return { durationMs: 15000, timeline: [], barGrid: [] };
+    let resolve, reject;
+    const p = new Promise((res, rej) => { resolve = res; reject = rej; });
+    attempts.push({ resolve, reject });
+    return p;
+  };
+  let offered = null;
+  h.context.offerWorldsThenStart = (data) => { offered = data; };
+  return { ...h, attempts, offered: () => offered };
+}
+
+test('a failed whole-song pass is recorded on the opening, with its reason', async () => {
+  const h = openingHarness();
+  await h.load();
+  const pending = h.context.fullAnalysisPending;
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0].reject(new Error('worker crashed'));
+  assert.equal(await pending, null);
+  const data = h.offered();
+  assert.equal(data.opening.failed, true);
+  assert.equal(data.opening.failure, 'worker crashed');
+  assert.equal(h.context.fullAnalysisPending, null);
+  assert.equal(h.context.lastSongLoad.data, data);
+});
+
+test('retrying the whole-song pass analyses the same recording and adopts it', async () => {
+  const h = openingHarness();
+  await h.load();
+  const first = h.context.fullAnalysisPending;
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0].reject(new Error('worker crashed'));
+  await first;
+  const retry = h.context.lastSongLoad.retryWholeSong();
+  assert.equal(h.offered().opening.failed, false, 'no longer reported failed while retrying');
+  assert.ok(h.context.fullAnalysisPending, 'export sees the retry as pending');
+  for (let i = 0; i < 10 && h.attempts.length < 2; i++) await new Promise((r) => setImmediate(r));
+  h.attempts[1].resolve({ durationMs: 120000, timeline: [], barGrid: [] });
+  assert.equal(await retry, h.offered());
+  assert.equal(h.offered().opening, undefined);
+  assert.equal(h.offered().durationMs, 120000);
+});
+
+test('a retry for a replaced selection does nothing', async () => {
+  const h = openingHarness();
+  await h.load();
+  const first = h.context.fullAnalysisPending;
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0].reject(new Error('worker crashed'));
+  await first;
+  const stale = h.context.lastSongLoad;
+  h.context.sourceSelection.begin({ kind: 'sample', name: 'Proof' });
+  assert.equal(await stale.retryWholeSong(), null);
+  assert.equal(h.attempts.length, 1);
+  assert.equal(stale.data.opening.failed, true);
+});
+
+test('an aborted whole-song pass is not reported as a failure', async () => {
+  const h = openingHarness();
+  await h.load();
+  const pending = h.context.fullAnalysisPending;
+  const data = h.offered();
+  h.context.sourceSelection.cancel();
+  await new Promise((r) => setImmediate(r));
+  h.attempts[0]?.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+  await pending;
+  assert.equal(data.opening.failed, undefined);
+});
+
+// --- Opening identity admission (Task 11) -------------------------------------
+//
+// A song's look -- seed, profile, custom biome -- is accepted once and kept
+// for every later play. An opening of silence or an atypical intro must not
+// be what fixes it.
+
+function identityHarness({ informative, cached = null }) {
+  const h = harness();
+  const buffer = recording(); buffer.duration = 120;
+  h.context.audioEngine.decodeFile = async () => buffer;
+  h.context.sliceAudioBuffer = () => ({ ...buffer, duration: 15 });
+  h.context.setTimeout = (fn) => fn();
+  h.context.generateCustomBiomeFromMidi = (data) => ({ from: data.opening ? 'opening' : 'whole' });
+  const stored = [];
+  h.context.getBundle = async () => (cached ? { cached: true } : null);
+  h.context.unpackBundle = () => (cached ? { durationMs: 120000, timeline: [], barGrid: [], songIdentity: cached } : null);
+  h.context.packBundle = (data) => ({ identity: data.songIdentity });
+  h.context.putBundle = async (key, bundle) => { stored.push(bundle); };
+  // The opening pass: confident or not, by construction.
+  let finish;
+  const full = new Promise((resolve) => { finish = resolve; });
+  h.context.audioToTimeline = async (b) => (b.duration === 15
+    ? { durationMs: 15000, timeline: [], barGrid: [], confidence: informative ? .9 : 0, freeTime: !informative }
+    : full);
+  let offered = null;
+  // What offerWorldsThenStart does with identity, without the world picker.
+  h.context.offerWorldsThenStart = (data) => {
+    offered = data;
+    if (!data.songIdentity) h.context.offerIdentity(data, { seed: 11, songProfile: { version: PROFILE_VERSION, from: 'opening' }, customBiome: data.customBiome });
+  };
+  h.context.lyricsDisabled = true;
+  return { ...h, stored, finish, offered: () => offered };
+}
+
+test('an informative opening is accepted as the song identity at once', async () => {
+  const h = identityHarness({ informative: true });
+  await h.load();
+  assert.equal(h.offered().songIdentity.seed, 11);
+  assert.equal(h.offered().provisionalIdentity, undefined);
+});
+
+test('leading silence plays provisionally and is never cached as the identity', async () => {
+  const h = identityHarness({ informative: false });
+  await h.load();
+  const data = h.offered();
+  assert.equal(data.songIdentity, undefined, 'no early false confidence');
+  assert.equal(data.provisionalIdentity.seed, 11, 'the performance still has a look to play on');
+  const playingBiome = data.customBiome;
+  const pending = h.context.fullAnalysisPending;
+  h.finish({ durationMs: 120000, timeline: [{ tMs: 50000, pitch: 60, vel: .8, role: 'MELODY' }], barGrid: [], confidence: .9 });
+  await pending;
+  await new Promise((r) => setImmediate(r));
+  assert.ok(data.songIdentity, 'accepted from the whole song');
+  assert.notEqual(data.songIdentity.seed, undefined);
+  assert.deepEqual(data.songIdentity.customBiome, { from: 'whole' });
+  assert.equal(data.customBiome, playingBiome, 'the performance in progress is not repainted');
+  assert.equal(h.stored.at(-1)?.identity, data.songIdentity, 'what is cached is the accepted identity');
+});
+
+test('a recording seen before starts with its cached identity even after a silent opening', async () => {
+  const cached = { seed: 4242, songProfile: { version: PROFILE_VERSION, from: 'cache' }, customBiome: { from: 'cache' } };
+  const h = identityHarness({ informative: false, cached });
+  await h.load();
+  assert.equal(h.offered().songIdentity.seed, 4242, 'identical accepted identity after a cache reload');
+  assert.equal(h.offered().provisionalIdentity, undefined);
+});
+
+test('a short song analysed whole commits its identity directly', () => {
+  const data = { durationMs: 20000 };
+  const ctx = vm.createContext({ ...opening });
+  vm.runInContext(mainFunctions(['offerIdentity']), ctx);
+  ctx.offerIdentity(data, { seed: 5 });
+  assert.equal(data.songIdentity.seed, 5);
+});
+
+test('accepting a deferred identity leaves the chosen world, scene and geography alone', () => {
+  const ctx = vm.createContext({ buildSongProfile, PROFILE_VERSION, resolveSongSeed, generateCustomBiomeFromMidi: () => ({ id: 'b' }) });
+  vm.runInContext(mainFunctions(['acceptDeferredIdentity']), ctx);
+  const terrain = { range: 'tetons' };
+  const data = { durationMs: 1000, timeline: [], sceneChoice: { biome: 'alpine' }, terrain, customBiome: { id: 'playing' }, worldId: 'range' };
+  ctx.acceptDeferredIdentity(data, null, 'x.wav');
+  assert.deepEqual(data.sceneChoice, { biome: 'alpine' });
+  assert.equal(data.terrain, terrain);
+  assert.deepEqual(data.customBiome, { id: 'playing' });
+  assert.equal(data.worldId, 'range');
+  const before = data.songIdentity;
+  ctx.acceptDeferredIdentity(data, { seed: 1, songProfile: { version: PROFILE_VERSION } });
+  assert.equal(data.songIdentity, before, 'an accepted identity is never replaced');
+});
+
+test('canCommitOpeningIdentity reads the informative signal', () => {
+  assert.equal(opening.canCommitOpeningIdentity(null), true);
+  assert.equal(opening.canCommitOpeningIdentity({ informative: true }), true);
+  assert.equal(opening.canCommitOpeningIdentity({ informative: false }), false);
+  assert.equal(opening.canCommitOpeningIdentity({}), false);
+  const atypical = opening.asOpening({ durationMs: 15000, barGrid: [], freeTime: true, confidence: .8 }, 200000);
+  assert.equal(opening.canCommitOpeningIdentity(atypical.opening), false, 'a free-time intro is not the song');
 });
