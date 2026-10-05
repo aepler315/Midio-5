@@ -636,7 +636,8 @@ export class Renderer {
   _drawDropShockwave(ctx, canvas, sim, pose) {
     const hype = sim.hype;
     if (!hype) return;
-    const u = hype.ringU(sim.timeMs);
+    // HypeDirector runs on heard time (Simulation.step), so its ring does too.
+    const u = hype.ringU(sim.heardTimeMs ?? sim.timeMs);
     if (u == null) return;
     const cx = pose.midioDrawX, cy = sim.midio.groundY - 60;
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75;
