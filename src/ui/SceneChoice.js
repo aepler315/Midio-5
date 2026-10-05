@@ -31,9 +31,14 @@ function write(key, value, storage) {
   } catch { /* no storage */ }
 }
 
+// A pilot copy of a view (id ending -coherent) is a side-by-side test of
+// an old foreground ledge, not a different place; it stays reachable by
+// ?rangeView for review but is kept out of the menu.
+const isPilotCopy = (v) => /-coherent$/.test(v.id);
+
 /** Every view a player can pick, candidates included, sorted by name. */
-export function pickableViews(catalog) {
-  return (catalog?.views || []).filter((v) => v?.id && v.biome)
+export function pickableViews(catalog, { pilots = false } = {}) {
+  return (catalog?.views || []).filter((v) => v?.id && v.biome && (pilots || !isPilotCopy(v)))
     .sort((a, b) => viewLabel(a).localeCompare(viewLabel(b)));
 }
 
@@ -62,7 +67,8 @@ export function resolveSceneChoice({ search = '', storage = defaultStorage(), ca
   const fromLink = !!(linkRange || linkBiome);
   const rawRange = fromLink ? linkRange : read(RANGE_CHOICE_KEY, storage);
   const rawBiome = fromLink ? linkBiome : read(BIOME_CHOICE_KEY, storage);
-  const views = pickableViews(catalog);
+  // The diagnostic spelling also reaches the pilot copies.
+  const views = pickableViews(catalog, { pilots: !!q.get('rangeView') && !q.get('range') });
   const view = rawRange && rawRange !== AUTO ? views.find((v) => v.id === rawRange) || null : null;
   const upper = rawBiome && rawBiome !== AUTO ? String(rawBiome).toUpperCase() : null;
   const biome = view ? view.biome : (upper && biomeNames.includes(upper) ? upper : null);

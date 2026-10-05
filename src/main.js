@@ -1407,6 +1407,14 @@ if (sceneRangeEl && sceneBiomeEl) {
     opt.title = v.place;
     sceneRangeEl.appendChild(opt);
   }
+  // A review link may name a pilot copy the menu leaves out.
+  if (sceneChoice.viewId && ![...sceneRangeEl.options].some((o) => o.value === sceneChoice.viewId)) {
+    const v = SCENE_CATALOG.views.find((x) => x.id === sceneChoice.viewId);
+    const opt = document.createElement('option');
+    opt.value = sceneChoice.viewId;
+    opt.textContent = v ? viewLabel(v, biomeTitle.get(v.biome)) : sceneChoice.viewId;
+    sceneRangeEl.appendChild(opt);
+  }
   for (const b of PICKABLE_BIOMES) {
     const opt = document.createElement('option');
     opt.value = b.name;
