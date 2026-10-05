@@ -91,6 +91,21 @@ export function asOpening(result, fullDurationMs) {
 }
 
 /**
+ * May this analysis's look become the song's accepted identity -- the seed,
+ * profile and custom biome kept for every later play and cached with the
+ * analysis? A whole-song analysis always may: nothing better is coming. An
+ * opening only when it was informative (a confident pulse, not free time):
+ * an opening of silence or an atypical intro would otherwise fix the song's
+ * look, forever, from what it sounds like before it starts. An
+ * uninformative opening still plays, on a provisional look, and the
+ * identity is accepted from the whole-song analysis when it lands.
+ */
+export function canCommitOpeningIdentity(opening) {
+  if (!opening) return true;
+  return opening.informative === true;
+}
+
+/**
  * Upgrade `data` (the object the picker and the running song hold) in place
  * to the whole-song analysis. Everything the analysis produced is replaced;
  * what was built on top of it -- the song's identity, its world, its matched
