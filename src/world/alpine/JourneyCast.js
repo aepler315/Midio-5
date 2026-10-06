@@ -1,6 +1,7 @@
 // Traveling residents of the imagined valley. Everything is sampled from
 // heard time, including foot plants; no frame accumulator survives a seek.
 import { sampleJourneyState, journeyNearShore, journeyFarShore, journeyGroundHeight } from './JourneyWorld.js';
+import { JOURNEY_ORBIT, journeyOrbitPoint, journeyOrbitBasis } from './JourneyOrbit.js';
 
 const IDS = ['midio', 'broshi', 'midasus'];
 const TAU = Math.PI * 2;
@@ -10,6 +11,10 @@ const unit = value => Math.max(0, Math.min(1, finite(value)));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = t => t * t * (3 - 2 * t);
 const phaseAt = (t, period) => ((t / period) % 1 + 1) % 1;
+const wrappedDistance = distance => {
+  const circumference = JOURNEY_ORBIT.circumferenceM;
+  return ((distance + circumference * .5) % circumference + circumference) % circumference - circumference * .5;
+};
 
 function swimArc(t, start, duration) {
   const phase = phaseAt(t, 8.4) * 8.4;
@@ -113,7 +118,8 @@ function walkingFeet(t, root, turn, state, stateAt, headingAt, activity) {
       target = first.map((value, axis) => mix(value, next[axis], smooth(swing)));
       lift = (5.5 + 3 * activity) * Math.sin(Math.PI * swing) ** 2;
     }
-    const x = target[0] - state.travelM, z = target[1];
+    const localX = target[0] - state.travelM;
+    const x = state.circular ? root[0] + wrappedDistance(localX - root[0]) : localX, z = target[1];
     const dx = x - root[0], dz = z - root[2];
     return [c * dx - s * dz - base,
       journeyGroundHeight(x, z, state) - root[1] + lift, -s * dx - c * dz];
@@ -129,7 +135,7 @@ export function sampleJourneyCast({ timeMs = 0, state = null, music = null,
   reducedMotion = !!reducedMotion;
   reducedFlash = !!reducedFlash;
   const t = reducedMotion ? 0 : timeMs / 1000;
-  state = reducedMotion ? sampleJourneyState({ seed: state?.seed, reducedMotion: true })
+  state = reducedMotion ? sampleJourneyState({ seed: state?.seed, circular: state?.circular, reducedMotion: true })
     : state || sampleJourneyState({ timeMs, music });
   const energy = unit(music?.energy01 ?? state.energy);
   const bass = unit(music?.bass01 ?? state.bass), melody = unit(music?.melody01 ?? state.melody);
@@ -219,4 +225,36 @@ export function sampleJourneyCast({ timeMs = 0, state = null, music = null,
     swimmer: { positionM: [...midio.positionM], directionXZ: speedMps > 1e-6 ? [dx / speedMps, dz / speedMps] : [1, 0],
       speedMps: reducedMotion ? 0 : speedMps, strength: wake },
   });
+}
+
+/** Present intrinsic poses on the circular rim. Articulation and dimensions
+ * remain in metres; only roots and ground contacts undergo depth compression.
+ * The lake wake deliberately keeps the intrinsic coordinates it samples. */
+export function journeyOrbitCast(pose) {
+  const project = actor => {
+    const basis = journeyOrbitBasis(actor.positionM[0]);
+    const positionM = journeyOrbitPoint(actor.positionM);
+    const converted = { ...actor, positionM, ...basis, orbitRadiusM: JOURNEY_ORBIT.radiusM };
+    if (actor.footOffsetsM?.length === 2) {
+      const c = Math.cos(finite(actor.turnRad)), s = Math.sin(finite(actor.turnRad));
+      converted.footOffsetsM = actor.footOffsetsM.map((foot, index) => {
+        const base = (index === 0 ? 9 : -13) / 34 * actor.heightM;
+        const x = base + foot[0], z = foot[2];
+        // Recover the actual intrinsic target before projection. Rotating an
+        // offset alone leaves the feet in a tangent plane above the bank.
+        const target = journeyOrbitPoint([
+          actor.positionM[0] + wrappedDistance(c * x - s * z),
+          actor.positionM[1] + foot[1], actor.positionM[2] - s * x - c * z,
+        ]);
+        const delta = target.map((value, axis) => value - positionM[axis]);
+        const dot = axis => axis.reduce((sum, value, i) => sum + value * delta[i], 0);
+        const right = dot(basis.right), up = dot(basis.up), forward = dot(basis.forward);
+        // CoveGL applies local yaw after foot offsets, so undo that yaw here.
+        return [c * right + s * forward - base, up, -s * right + c * forward];
+      });
+    }
+    if (actor.babies) converted.babies = actor.babies.map(project);
+    return converted;
+  };
+  return freeze({ ...pose, circular: true, actors: pose.actors.map(project) });
 }

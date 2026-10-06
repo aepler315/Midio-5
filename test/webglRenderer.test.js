@@ -168,6 +168,30 @@ test('Range views drop beat sway and calm drift and keep only a trace of impact 
   assert.equal(rendererModule.presentationCamera(camera, { ...range, active: false }, biomes), camera);
 });
 
+test('circular Journey leaves framing to its radial camera across legacy spring histories',()=>{
+  const presentation={enabled:true,active:true,journey:true,arrival:1,
+    captionViewFor:()=>({id:'moonlit-journey'}),scene:{isReady:()=>true}};
+  for(const zoom of [.63,1,1.25]){
+    const camera={zoom,shakeX:14,shakeY:-9,ambientX:4,ambientY:3,roll:.03};
+    const actual=rendererModule.presentationCamera(camera,presentation,{});
+    assert.equal(actual.zoom,1);
+    assert.equal(actual.shakeX,0);assert.equal(actual.shakeY,0);assert.equal(actual.roll,0);
+    assert.equal(camera.zoom,zoom,'simulation remains available for other worlds');
+  }
+});
+
+test('Journey normalizes its first ready frame and preserves unavailable-scene fallback',()=>{
+  const camera={zoom:.63,shakeX:14,shakeY:-9,roll:.03};
+  const presentation={enabled:true,active:false,journey:true,arrival:1,
+    captionViewFor:()=>({id:'moonlit-journey'}),scene:{isReady:()=>true}};
+  const first=rendererModule.presentationCamera(camera,presentation,{});
+  assert.equal(first.zoom,1,'readiness is available before beginScenic sets active');
+  presentation.active=true;
+  assert.deepEqual(rendererModule.presentationCamera(camera,presentation,{}),first);
+  presentation.active=false;presentation.scene.isReady=()=>false;
+  assert.equal(rendererModule.presentationCamera(camera,presentation,{}),camera);
+});
+
 test('glacial foreground placement moves support, cast and pool together while ordinary scenes hold', () => {
   assert.equal(typeof rendererModule.groundPresentationOffsetY, 'function');
   assert.equal(typeof rendererModule.applyFixedGroundTransform, 'function');
