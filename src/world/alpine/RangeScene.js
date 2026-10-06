@@ -972,6 +972,8 @@ export class RangeScene {
     u.uFirmamentNight.value = night;
     u.uFirmamentFlash.value = frame.reducedFlash ? .18 : 1;
     u.uFirmamentBands.value.set(frame.skyMusic?.aurora01 ?? .36, frame.skyMusic?.melody01 ?? 0, frame.skyMusic?.bass01 ?? 0);
+    u.uFirmamentMotion.value.set(frame.skyMusic?.rhythm01 ?? 0, frame.skyMusic?.bass01 ?? 0,
+      frame.skyMusic?.melody01 ?? 0, frame.reducedMotion ? 0 : 1);
     const radius = (c.radiusFrac || .0175) * this.camera.aspect * 2 * Math.tan(this.camera.fov * Math.PI / 360);
     u.uFirmamentBody.value.set(dir.x, dir.y, dir.z, radius);
     hexToLinear(THREE, c.colorHex, u.uFirmamentBodyColor.value).multiplyScalar(c.body ? .8 * (c.visibility ?? 1) : 0);
@@ -1098,7 +1100,7 @@ export class RangeScene {
     const f = p.habitatLayout.forward;
     u.uWake.value.set(midio[0], midio[2], midio[0] - f[0] * 35, midio[2] - f[2] * 35);
     const flash = frame.reducedFlash ? .35 : 1;
-    u.uWakeAmt.value = pose.waterResponse.wake * .45 * flash;
+    u.uWakeAmt.value = pose.waterResponse.wake * .8 * flash;
     if (u.uCovePressure) u.uCovePressure.value.set(broshi[0], broshi[2], pose.waterResponse.bass * flash, frame.reducedMotion ? 0 : frame.timeMs / 1000);
   }
 

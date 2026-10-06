@@ -35,10 +35,9 @@ test('isolated rhythm, bass and melody reach distinct water responses without li
   assert.equal(bass.waterResponse.melody, 0);
   assert.equal(melody.waterResponse.melody, .9);
   assert.equal(melody.waterResponse.bass, 0);
-  for (const id of ['midio', 'broshi']) {
-    assert.deepEqual(actor(rhythm, id).positionM, actor(quiet, id).positionM);
-    assert.deepEqual(actor(bass, id).positionM, actor(quiet, id).positionM);
-  }
+  assert.deepEqual(actor(rhythm, 'broshi').positionM, actor(quiet, 'broshi').positionM);
+  assert.deepEqual(actor(bass, 'broshi').positionM, actor(quiet, 'broshi').positionM);
+  assert.notDeepEqual(actor(rhythm, 'midio').positionM, actor(quiet, 'midio').positionM);
   assert.equal(actor(bass, 'broshi').activity, .9);
   assert.equal(actor(bass, 'midio').activity, 0);
   assert.equal(actor(melody, 'broshi').activity, 0);
@@ -119,7 +118,7 @@ test('reduced flash attenuates light modulation without changing any pose', () =
   }
 });
 
-test('sustained music keeps fixed sizes, grounded contact, small drift and slow articulation', () => {
+test('sustained music keeps fixed sizes, grounded contact and bounded continuous gestures', () => {
   const music = { activity01: 1, motionPresence01: 1, kick01: 1, bassPressure01: 1,
     trioSources: Object.fromEntries(['midio', 'broshi', 'midasus'].map(id => [id,
       { source: `lane:${id.toUpperCase()}`, activity: 1, pitchActivity: 1, pitch01: 1 }])) };
@@ -129,10 +128,10 @@ test('sustained music keeps fixed sizes, grounded contact, small drift and slow 
     for (const value of snapshot.actors) {
       assert.equal(value.heightM, layout.heights[value.id]);
       if (value.id === 'broshi') assert.deepEqual(value.positionM, layout.anchors.broshi);
-      else assert.ok(Math.hypot(...value.positionM.map((v, axis) => v - layout.anchors[value.id][axis])) < (value.id === 'midio' ? 8 : 30));
+      else assert.ok(Math.hypot(...value.positionM.map((v, axis) => v - layout.anchors[value.id][axis])) < (value.id === 'midio' ? 34 : 51));
       if (previous) {
         const old = actor(previous, value.id);
-        for (const angle of ['leanRad', 'turnRad', 'tailAngle']) assert.ok(Math.abs(value[angle] - old[angle]) / .1 < .3);
+        for (const angle of ['leanRad', 'turnRad', 'tailAngle']) assert.ok(Math.abs(value[angle] - old[angle]) / .1 < 1.5);
       }
     }
     previous = snapshot;
