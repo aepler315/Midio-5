@@ -5,6 +5,9 @@ import {
   journeyNearShore, journeyFarShore, journeyGroundHeight, journeySurface, journeyLakeShape, journeyLakeDistance,
 } from '../src/world/alpine/JourneyWorld.js';
 import { MOUNTAIN_DIMENSIONS } from '../src/world/alpine/JourneyMountains.js';
+import * as THREE from '../src/vendor/range/three-range.module.js';
+import { journeyGrid, journeyGridX } from '../src/world/alpine/JourneyMaterial.js';
+import { JourneyScene } from '../src/world/alpine/JourneyScene.js';
 import { cameraPoseAt, cameraRailErrors, projectPoint } from '../src/world/terrain/SceneTravel.js';
 
 const music = { energy01: .7, bass01: .4, melody01: .8, pulse01: .3,
@@ -99,9 +102,9 @@ test('the lake closes at two visible ends with dry banks beyond them across seed
 });
 
 test('the basin changes breadth, depth and cove shape smoothly instead of translating a strip', () => {
-  const a = at(0), b = at(18000), c = at(46000);
+  const a = at(0), b = at(180000), c = at(460000);
   const widths = [a,b,c].map(s => journeyLakeShape(s).halfWidthM);
-  assert.ok(Math.max(...widths) - Math.min(...widths) > 80);
+  assert.ok(Math.max(...widths) - Math.min(...widths) > 25);
   const profile = s => {
     const lake = journeyLakeShape(s);
     return [-.7,-.3,0,.3,.7].map(q => {
@@ -110,8 +113,9 @@ test('the basin changes breadth, depth and cove shape smoothly instead of transl
     });
   };
   const profiles=[a,b,c].map(profile);
-  assert.ok(Math.abs(profiles[0][1]/profiles[0][3]-profiles[1][1]/profiles[1][3])>.05,
-    'the two coves change the profile independently');
+  const ratios = profiles.map(values => values[1] / values[3]);
+  assert.ok(Math.max(...ratios) - Math.min(...ratios) > .05,
+    'the two coves change the profile independently over long travel');
   for (const timeMs of [0,9000,27000,43200000]) {
     const state=at(timeMs), next=at(timeMs+1000/60), lake=journeyLakeShape(state);
     for (const q of [-1.001,-1,-.999,-.7,0,.7,.999,1,1.001]) {
@@ -136,7 +140,8 @@ test('water boundary, bank surface and actor ground use the same shoreline', () 
       assert.deepEqual(journeySurface(x, 0, 0, state), [x, 0, near]);
       for (const v of [.05, .25, .65, 1]) {
         const point = journeySurface(x, v, 0, state);
-        assert.equal(point[2], near + 650 * v);
+        assert.ok(point[2] >= near + 650 * v);
+        if (v <= .3) assert.equal(point[2], near + 650 * v);
         assert.equal(point[1], journeyGroundHeight(x, point[2], state));
         assert.ok(point[1] > 0 && point[1] <= 45);
       }
@@ -273,4 +278,158 @@ test('exported shader formulas agree with CPU shores, ground and every surface',
       }
     }
   }
+});
+
+// Reintroducing audio-driven lake scaling would move roots and water boundaries
+// instantly, even though heard time has not advanced.
+test('basin geography is independent of live musical strength', () => {
+  for (const timeMs of [0, 30000, 43200000]) {
+    const quiet = at(timeMs, { music: null }), active = at(timeMs);
+    assert.deepEqual(journeyLakeShape(active), journeyLakeShape(quiet));
+    for (const x of [-450, -200, 0, 230, 450]) {
+      assert.equal(journeyNearShore(x, active), journeyNearShore(x, quiet));
+      assert.equal(journeyFarShore(x, active), journeyFarShore(x, quiet));
+    }
+  }
+});
+
+// Catch short-period dimension oscillations and advected fine noise that make
+// the complete basin visibly breathe while the characters try to plant feet.
+test('interior coves evolve at a geological pace rather than breathing every few seconds', () => {
+  for (const seed of [0, 73, 1021, 2917029651]) {
+    let maximumSpeed = 0;
+    for (let timeMs = 0; timeMs < 180000; timeMs += 2500) {
+      const state = at(timeMs, { seed }), next = at(timeMs + 100, { seed });
+      const lake = journeyLakeShape(state);
+      for (const q of [-.7, -.4, 0, .4, .7]) {
+        const x = lake.centerX + q * lake.halfWidthM;
+        for (const shore of [journeyNearShore, journeyFarShore]) {
+          maximumSpeed = Math.max(maximumSpeed, Math.abs(shore(x, next) - shore(x, state)) / .1);
+        }
+      }
+      assert.ok(Math.abs(journeyLakeShape(next).halfWidthM - lake.halfWidthM) < .08,
+        'breadth changes by less than 0.8 m per second');
+    }
+    assert.ok(maximumSpeed < 5, `seed ${seed} shore speed ${maximumSpeed} m/s`);
+  }
+});
+
+// An oval with one dent per side passes symmetry tests but still reads as a
+// decorative cutout. Require two resolved recesses on each independent bank.
+test('both banks contain multiple asymmetric coves separated by promontories', () => {
+  const state = at(0), lake = journeyLakeShape(state);
+  const coves = shore => {
+    const heights = Array.from({ length: 171 }, (_, i) =>
+      shore(lake.centerX + (-.85 + i * .01) * lake.halfWidthM, state)
+        * (shore === journeyNearShore ? 1 : -1));
+    const positions = [];
+    for (let i = 15; i < heights.length - 15; i++) {
+      if (heights[i] >= heights[i - 1] || heights[i] >= heights[i + 1]) continue;
+      const prominence = Math.min(Math.max(...heights.slice(i - 15, i)),
+        Math.max(...heights.slice(i + 1, i + 16))) - heights[i];
+      if (prominence > 12) positions.push(-.85 + i * .01);
+    }
+    return positions;
+  };
+  const near = coves(journeyNearShore), far = coves(journeyFarShore);
+  assert.ok(near.length >= 2, `near coves ${near}`);
+  assert.ok(far.length >= 2, `far coves ${far}`);
+  assert.ok(near.some(q => far.every(other => Math.abs(q - other) > .12)),
+    'the two banks must not mirror the same cove outline');
+});
+
+// A flat extruded apron has constant depth slope; the integrated shelf has a
+// smooth contact tangent, a low bank, and a separate inland rise.
+test('the shared ground field has a smooth shallow shelf and inland relief', () => {
+  for (const timeMs of [0, 30000, 43200000]) {
+    const state = at(timeMs);
+    for (const x of [-700, -250, 0, 310, 900]) {
+      const shore = journeyNearShore(x, state);
+      const height = d => journeyGroundHeight(x, shore + d, state);
+      assert.ok(height(.1) / .1 < .005, 'bank contact tangent is smooth');
+      assert.ok(height(35) < 7 && height(35) > 0, 'cast bank retains a shallow platform');
+      assert.ok(height(650) - height(180) > 15, 'foreground rises behind the shelf');
+      for (const d of [35, 90, 180, 350, 650]) {
+        const slope = (height(d + .1) - height(d - .1)) / .2;
+        const nextSlope = (height(d + .2) - height(d)) / .2;
+        assert.ok(Math.abs(nextSlope - slope) < .002, 'continuous bank normals');
+      }
+    }
+  }
+});
+
+// Use actual grid triangles and the staged camera. A depth-parameter endpoint
+// alone cannot prove coverage: the complete finite apron can be in front of
+// the camera, leaving visible clear color below its last row.
+test('the shared foreground mesh covers the lower frame through aspect and phrase retreats', () => {
+  const geometry = journeyGrid(THREE, 512, 24, 8400);
+  const position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const edge1 = new THREE.Vector3(), edge2 = new THREE.Vector3(), cross = new THREE.Vector3();
+  const offset = new THREE.Vector3(), q = new THREE.Vector3(), direction = new THREE.Vector3();
+  // Möller–Trumbore intersection against the shipped indexed triangles.
+  // The compact vendored runtime deliberately excludes Ray/Raycaster.
+  const intersectsGround = (camera, x, y) => {
+    direction.set(x, y, .5).unproject(camera).sub(camera.position).normalize();
+    for (let i = 0; i < geometry.index.count; i += 3) {
+      a.fromBufferAttribute(position, geometry.index.getX(i));
+      b.fromBufferAttribute(position, geometry.index.getX(i + 1));
+      c.fromBufferAttribute(position, geometry.index.getX(i + 2));
+      edge1.subVectors(b, a); edge2.subVectors(c, a); cross.crossVectors(direction, edge2);
+      const determinant = edge1.dot(cross);
+      if (Math.abs(determinant) < 1e-9) continue;
+      offset.subVectors(camera.position, a);
+      const u = offset.dot(cross) / determinant;
+      if (u < 0 || u > 1) continue;
+      q.crossVectors(offset, edge1);
+      const v = direction.dot(q) / determinant;
+      if (v < 0 || u + v > 1) continue;
+      const depth = edge2.dot(q) / determinant;
+      if (depth > camera.near && depth < camera.far) return true;
+    }
+    return false;
+  };
+  try {
+    for (const timeMs of [28000, 48000, 43200000]) {
+      const state = at(timeMs, { seed: 2917029651 }), lake = journeyLakeShape(state);
+      for (let i = 0; i < position.count; i++) {
+        const x = journeyGridX(uv.getX(i), lake, 8400);
+        position.setXYZ(i, ...journeySurface(x, uv.getY(i), 0, state));
+      }
+      for (const [width, height] of [[1920, 1080], [1024, 1024], [720, 1280]]) {
+        for (const cameraMove of [null, { dolly: -.09, yaw: .025, crane: .012, truck: 0, kind: 'pullback' }]) {
+          const frame = { timeMs, seed: 2917029651, journeyDirection: { cameraMove },
+            scenicViewport: { logicalWidth: width, logicalHeight: height, nominalWidth: width,
+              nominalHeight: height, overscanPx: 0 } };
+          const { pose, proj } = JourneyScene.prototype.movedPose(JOURNEY_VIEW, frame);
+          const camera = new THREE.PerspectiveCamera(proj.fovYDeg, proj.aspect, 1, 16000);
+          camera.position.fromArray(pose.eyeM); camera.lookAt(...pose.targetM); camera.updateMatrixWorld();
+          for (const y of [-.7, -.95]) for (const x of [-.95, -.5, 0, .5, .95]) {
+            assert.ok(intersectsGround(camera, x, y), `ground must cover lower frame at ${width}x${height}, ${timeMs}ms, ${x},${y}`);
+          }
+        }
+      }
+    }
+  } finally {
+    geometry.dispose();
+  }
+});
+
+test('foreground extension retains dense shore samples and a continuous depth mapping', () => {
+  const state = at(28000), x = 130, near = journeyNearShore(x, state);
+  for (const v of [0, 1 / 24, 2 / 24, 3 / 24, 4 / 24, .25, .3]) {
+    assert.equal(journeySurface(x, v, 0, state)[2], near + 650 * v,
+      'contact shelf rows keep their original sampling');
+  }
+  let previous = near;
+  for (let i = 1; i <= 200; i++) {
+    const point = journeySurface(x, i / 200, 0, state);
+    assert.ok(point[2] > previous && point.every(Number.isFinite));
+    assert.equal(point[1], journeyGroundHeight(x, point[2], state));
+    previous = point[2];
+  }
+  const slope = v => (journeySurface(x, v + 1e-5, 0, state)[2]
+    - journeySurface(x, v - 1e-5, 0, state)[2]) / 2e-5;
+  assert.ok(Math.abs(slope(.3 - 1e-4) - slope(.3 + 1e-4)) < .01,
+    'the nonlinear tail joins with a continuous tangent');
 });

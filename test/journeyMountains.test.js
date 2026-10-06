@@ -214,3 +214,39 @@ test('the exported CPU and GLSL relief agree across layers, music and long trave
     }
   }
 });
+
+// A single envelope can have noisy faces but no separate foreground landforms.
+// Require pre-crest shoulders with an actual intervening gully at metre scale.
+test('the front range has resolved foothill shoulders before the main watershed', () => {
+  for (const seed of [73, 1811, 1021]) {
+    const state = stateAt(28, seed);
+    let shoulderProfiles = 0;
+    for (let x = -4500; x <= 4500; x += 150) {
+      const profile = Array.from({ length: 201 }, (_, i) => height(x, i / 200, 1, state));
+      const peak = Math.max(...profile), main = profile.indexOf(peak);
+      let hasShoulder = false;
+      for (let i = 8; i < Math.min(main - 15, 76); i++) {
+        if (profile[i] <= profile[i - 1] || profile[i] <= profile[i + 1] || profile[i] < .12 * peak) continue;
+        const saddle = Math.min(...profile.slice(i + 1, main));
+        if (profile[i] - saddle > 20) hasShoulder = true;
+      }
+      if (hasShoulder) shoulderProfiles++;
+    }
+    assert.ok(shoulderProfiles >= 12, `seed ${seed} has ${shoulderProfiles} resolved foothill profiles`);
+  }
+});
+
+// A full-width secondary ridge would merely add another skirt. Drainage must
+// interrupt the shoulder field, with low mouths beside raised buttresses.
+test('front foothills are interrupted by low gully mouths instead of forming another continuous ridge', () => {
+  for (const seed of [73, 1811, 1021]) {
+    const state = stateAt(28, seed), shoulders = [];
+    for (let x = -4500; x <= 4500; x += 150) {
+      shoulders.push(Math.max(...Array.from({ length: 51 }, (_, i) => height(x, .06 + i * .004, 1, state))));
+    }
+    assert.ok(shoulders.filter(y => y < 150).length >= 5,
+      `seed ${seed} needs foreground drainage mouths`);
+    assert.ok(shoulders.filter(y => y > 230).length >= 10,
+      `seed ${seed} retains strong intersecting buttresses`);
+  }
+});

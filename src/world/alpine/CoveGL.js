@@ -209,14 +209,61 @@ function edgePrism(out, a, b, width, options = {}) {
   out.triangle(back[0], back[2], back[1], options); out.triangle(back[0], back[3], back[2], options);
 }
 
+// Emit retained lines along the front envelope of filled facets. Splitting
+// at face boundaries lets a brace cross the ridge instead of tunneling into
+// it; overlapping star triangles use the nearer of their two face surfaces.
+function facetEdge(out, a, b, width, faces, options) {
+  const cuts = [0, 1], dx = b[0] - a[0], dy = b[1] - a[1];
+  let slope = 0;
+  const projected = faces.map(([p, q, r]) => {
+    const qx = q[0] - p[0], qy = q[1] - p[1], rx = r[0] - p[0], ry = r[1] - p[1];
+    const determinant = qx * ry - qy * rx;
+    const zx = ((q[2] - p[2]) * ry - (r[2] - p[2]) * qy) / determinant;
+    const zy = (qx * (r[2] - p[2]) - rx * (q[2] - p[2])) / determinant;
+    slope = Math.max(slope, Math.hypot(zx, zy));
+    for (const [u, v] of [[p, q], [q, r], [r, p]]) {
+      const ex = v[0] - u[0], ey = v[1] - u[1], cross = dx * ey - dy * ex;
+      if (Math.abs(cross) < 1e-10) continue;
+      const px = u[0] - a[0], py = u[1] - a[1];
+      const t = (px * ey - py * ex) / cross, edgeT = (px * dy - py * dx) / cross;
+      if (t > 0 && t < 1 && edgeT >= 0 && edgeT <= 1) cuts.push(t);
+    }
+    return { p, qx, qy, rx, ry, determinant, zx, zy };
+  });
+  // Account for the line's finite width and back face as well as its center.
+  const clearance = .009 + width * (.32 + .5 * slope);
+  const at = t => {
+    const x = a[0] + dx * t, y = a[1] + dy * t;
+    let z = a[2] + (b[2] - a[2]) * t;
+    for (const f of projected) {
+      const px = x - f.p[0], py = y - f.p[1];
+      const u = (px * f.ry - py * f.rx) / f.determinant;
+      const v = (f.qx * py - f.qy * px) / f.determinant;
+      if (u >= -1e-7 && v >= -1e-7 && u + v <= 1 + 1e-7)
+        z = Math.min(z, f.p[2] + f.zx * px + f.zy * py);
+    }
+    return [x, y, z - clearance];
+  };
+  const stops = cuts.sort((x, y) => x - y).filter((t, i, values) => i === 0 || t - values[i - 1] > 1e-7);
+  for (let i = 1; i < stops.length; i++) edgePrism(out, at(stops[i - 1]), at(stops[i]), width, options);
+}
+
 function glyph(out, mesh, { height, offsetY = 0, depth = .07, solid = true, star = false, part = 0, width = .014 } = {}) {
   const points = mesh.vertices.map(p => [p.x / height, -p.y / height + offsetY, -depth]);
+  const frontFaces = [];
   if (solid && points.length > 3) {
+    // Retain the authored silhouette and braces, but raise the shard's hub
+    // into a low ridge so filled faces catch light at different angles.
+    const hub = [points[0][0], points[0][1], -depth - .12];
+    points[0] = hub;
     const triangles = star ? [[1, 2, 3], [4, 5, 6]]
       : points.slice(1).map((_, i) => [0, i + 1, (i + 1) % (points.length - 1) + 1]);
     for (const [i, j, k] of triangles) {
-      out.triangle(points[k], points[j], points[i], { tint: .82 + (j % 4) * .09, part });
-      out.triangle(...[points[i], points[j], points[k]].map(p => [p[0], p[1], depth]), { tint: .68, part });
+      const faces = star ? [[hub, points[i], points[j]], [hub, points[j], points[k]], [hub, points[k], points[i]]]
+        : [[points[i], points[j], points[k]]];
+      frontFaces.push(...faces);
+      for (const [a, b, c] of faces) out.triangle(c, b, a, { tint: .88 + (j % 4) * .08, part });
+      out.triangle(...[points[i], points[j], points[k]].map(p => [p[0], p[1], depth]), { tint: .72, part });
     }
     const rim = star ? [[1, 2], [2, 3], [3, 1], [4, 5], [5, 6], [6, 4]]
       : points.slice(1).map((_, i) => [i + 1, (i + 1) % (points.length - 1) + 1]);
@@ -226,9 +273,12 @@ function glyph(out, mesh, { height, offsetY = 0, depth = .07, solid = true, star
     }
   }
   for (const [i, j] of mesh.edges) {
-    const a = points[i].slice(), b = points[j].slice();
-    a[2] -= .009; b[2] -= .009;
-    edgePrism(out, a, b, width, { luminous: 1, tint: .8, part });
+    if (frontFaces.length) facetEdge(out, points[i], points[j], width, frontFaces, { luminous: 1, tint: .8, part });
+    else {
+      const a = points[i].slice(), b = points[j].slice();
+      a[2] -= .009; b[2] -= .009;
+      edgePrism(out, a, b, width, { luminous: 1, tint: .8, part });
+    }
   }
 }
 
@@ -237,11 +287,11 @@ function actorGeometry(THREE, id) {
   if (id === 'midio') {
     glyph(out, MIDIO_BODY, { height: 62, offsetY: -.24, depth: .075, width: .015 });
     // A small iris rests toward the lake rather than watching the camera.
-    glyph(out, midioEyeMesh(2.5, -.3), { height: 62, offsetY: -.24, depth: .089, solid: false, width: .045 });
+    glyph(out, midioEyeMesh(2.5, -.3), { height: 62, offsetY: -.24, depth: .215, solid: false, width: .045 });
   } else if (id === 'broshi') {
     glyph(out, BROSHI_BODY, { height: 34, depth: .09, width: .014 });
     glyph(out, BROSHI_HEAD, { height: 34, depth: .09, width: .014, part: 3 });
-    glyph(out, BROSHI_EYE, { height: 34, depth: .106, solid: false, width: .014, part: 3 });
+    glyph(out, BROSHI_EYE, { height: 34, depth: .23, solid: false, width: .014, part: 3 });
     glyph(out, BROSHI_TAIL, { height: 34, depth: .02, solid: false, part: 1, width: .02 });
     glyph(out, BROSHI_JAW, { height: 34, depth: .09, solid: false, part: 2, width: .017 });
   } else {

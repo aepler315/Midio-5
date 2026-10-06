@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../src/vendor/range/three-range.module.js';
+import { MIDIO_BODY, MIDASUS_MESH, BABY_STAR_MESH } from '../src/render/meshes.js';
 import { sceneUniforms } from '../src/world/alpine/TerrainMaterial.js';
 import { CoveGL, COVE_GPU_BYTES, COVE_VERT, COVE_FRAG, COVE_DEPTH_FRAG } from '../src/world/alpine/CoveGL.js';
 
@@ -149,5 +150,66 @@ test('Broshi head articulation moves solid faces, luminous edges, and both depth
     assert.equal(broshi.mesh.material.uniforms.uHead.value, .25);
     assert.ok([...broshi.mesh.geometry.attributes.aJoint.array].filter(j => j === 3).length > 30);
     assert.ok(broshi.depth.every(mesh => mesh.material.uniforms.uHead === broshi.mesh.material.uniforms.uHead));
+  } finally { cove.dispose(); }
+});
+
+test('filled glyph bodies have modeled facets rather than flat outline-only plates', () => {
+  const cove = new CoveGL(THREE, sceneUniforms(THREE, {}), layout());
+  try {
+    for (const id of ['midio', 'broshi', 'midasus']) {
+      const a = cove.actors[id].mesh.geometry.attributes;
+      const facets = [];
+      for (let i = 0; i < a.position.count; i += 3) {
+        if (a.aEdge.array[i] > 0) continue;
+        const n = Array.from(a.normal.array.slice(i * 3, i * 3 + 3));
+        if (Math.abs(n[2]) > .5 && Math.abs(n[2]) < .995) facets.push(n);
+      }
+      assert.ok(facets.length >= 3, `${id} body has angled filled facets to catch shared light`);
+      assert.ok(cove.actors[id].mesh.geometry.attributes.aEdge.array.every(value => value <= 1), 'facet improvement does not amplify outlines');
+    }
+  } finally { cove.dispose(); }
+});
+
+// Intersect the actual emitted triangles from the local front, independently
+// of glyph construction. A luminous brace must be nearer than the filled face.
+function nearestGlyphSurface(geometry, x, y, luminous) {
+  const { position, aEdge } = geometry.attributes;
+  let depth = Infinity;
+  for (let i = 0; i < position.count; i += 3) {
+    if ((aEdge.array[i] > .5) !== luminous) continue;
+    const a = Array.from(position.array.slice(i * 3, i * 3 + 3));
+    const b = Array.from(position.array.slice((i + 1) * 3, (i + 1) * 3 + 3));
+    const c = Array.from(position.array.slice((i + 2) * 3, (i + 2) * 3 + 3));
+    const denominator = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+    if (Math.abs(denominator) < 1e-10) continue;
+    const u = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / denominator;
+    const v = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / denominator;
+    const w = 1 - u - v;
+    if (Math.min(u, v, w) >= -1e-6) depth = Math.min(depth, u * a[2] + v * b[2] + w * c[2]);
+  }
+  return depth;
+}
+
+test('retained cross-braces and interlocked star outlines stay ahead of raised filled facets', () => {
+  const cove = new CoveGL(THREE, sceneUniforms(THREE, {}), layout());
+  const starEdges = [[1, 2], [2, 3], [3, 1], [4, 5], [5, 6], [6, 4]];
+  try {
+    for (const { record, mesh, height, offsetY, edges } of [
+      { record: cove.actors.midio, mesh: MIDIO_BODY, height: 62, offsetY: -.24, edges: [[2, 4], [4, 7], [7, 9]] },
+      { record: cove.actors.midasus, mesh: MIDASUS_MESH, height: 17, offsetY: 0, edges: starEdges },
+      { record: cove.actors.midasus.babies[0], mesh: BABY_STAR_MESH, height: 7.2, offsetY: 0, edges: starEdges },
+    ]) {
+      for (const [i, j] of edges) for (const t of [.2, .35, .5, .65, .8]) {
+        const a = mesh.vertices[i], b = mesh.vertices[j];
+        const x = (a.x + (b.x - a.x) * t) / height;
+        const y = -(a.y + (b.y - a.y) * t) / height + offsetY;
+        const geometry = record.mesh.geometry;
+        const fill = nearestGlyphSurface(geometry, x, y, false);
+        const edge = nearestGlyphSurface(geometry, x, y, true);
+        assert.ok(Number.isFinite(fill) && Number.isFinite(edge), 'both fill and retained line cover the probe');
+        assert.ok(edge < fill - .0001, `edge ${i}-${j} at ${t} is visible with depth testing: ${edge} < ${fill}`);
+      }
+      assert.equal(record.mesh.material.depthTest, true, 'visibility must not disable depth testing');
+    }
   } finally { cove.dispose(); }
 });

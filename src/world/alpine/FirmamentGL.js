@@ -1,4 +1,5 @@
 import { CONSTELLATION_ART } from './RangeFirmament.js';
+import { JOURNEY_WEATHER_GLSL } from './JourneyWeatherGL.js';
 export const FIRMAMENT_BYTES=36;
 export function firmamentUniforms(THREE) {
   return {
@@ -10,6 +11,7 @@ export function firmamentUniforms(THREE) {
     uFirmamentBody:{value:new THREE.Vector4(0,1,0,.015)},
     uFirmamentBodyColor:{value:new THREE.Vector3()},
     uFirmamentWeather:{value:new THREE.Vector2()},
+    uJourneyWeatherEnable:{value:0},uJourneyClearing:{value:0},
     uSkyProjectionInverse:{value:new THREE.Matrix4()},uSkyCameraWorld:{value:new THREE.Matrix4()},
   };
 }
@@ -41,6 +43,8 @@ export const FIRMAMENT_GLSL=/* glsl */`
   uniform vec4 uFirmamentBody;
   uniform vec3 uFirmamentBodyColor;
   uniform vec2 uFirmamentWeather;
+  uniform float uJourneyWeatherEnable,uJourneyClearing;
+  ${JOURNEY_WEATHER_GLSL}
   float skyHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uFirmamentSeed)*43758.5453);}
   float skySegment(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;return length(p-a-ab*clamp(dot(p-a,ab)/max(dot(ab,ab),.000001),0.0,1.0));}
   vec2 skyAngularWidth(vec2 angles){
@@ -125,6 +129,13 @@ export const FIRMAMENT_GLSL=/* glsl */`
     float cloudBand=exp(-pow((angles.y-.047)/.038,2.0));
     float cloud=cloudBand*(.14+.09*sin(angles.x*21.0+uFirmamentTime*.014))*(1.0+.5*sin(angles.x*49.0));
     color=mix(color,horizon*.8,clamp(cloud,0.0,.3));
+    if(uJourneyWeatherEnable>.5){
+      float cover=journeyCloudCover(d,uFirmamentTime,uFirmamentSeed,uFirmamentWeather.x,uJourneyClearing);
+      vec3 cloudColor=mix(horizon*.19,zenith*.28,smoothstep(.0,.8,d.y))+vec3(.006,.009,.015);
+      color=mix(color,cloudColor,cover*.94);
+      color+=vec3(.17,.20,.27)*uFirmamentWeather.y*(.18+.82*cover);
+      return color;
+    }
     return color*(1.0-.6*uFirmamentWeather.x)+vec3(.08,.10,.15)*uFirmamentWeather.y;
   }
 `;

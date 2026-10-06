@@ -116,3 +116,48 @@ test('listener zoom changes the journey camera and stays above its terrain',()=>
   assert.ok(close.eyeM[1]>0,'terrain clearance constrains the downward zoom');
   assert.ok(close.userScale<1);
 });
+
+import { sampleJourneyCast } from '../src/world/alpine/JourneyCast.js';
+
+test('complete default silhouettes stay inside landscape, square and portrait frames throughout excursions',()=>{
+  for(const [width,height] of [[1280,720],[720,720],[720,1280]]){
+    const scenicViewport={logicalWidth:width,logicalHeight:height,nominalWidth:width,nominalHeight:height,overscanPx:0};
+    const frame={timeMs:48000,seed:2917029651,scenicViewport};
+    const steady=JourneyScene.prototype.movedPose(JOURNEY_VIEW,frame);
+    const camera=new THREE.PerspectiveCamera(steady.proj.fovYDeg,steady.proj.aspect,1,16000);
+    camera.position.fromArray(steady.pose.eyeM);camera.lookAt(...steady.pose.targetM);camera.updateMatrixWorld();
+    for(const seed of [0,73,2917029651])for(const timeMs of [0,250,9000,22000,28000,30000,32000,48000,58500,120000,360000,...Array.from({length:60},(_,i)=>i*2500)])for(const activity of [0,1]){
+      const music={energy01:activity,bass01:activity,melody01:activity,pulse01:activity,
+        sources:Object.fromEntries(['midio','broshi','midasus'].map(id=>[id,{activity,pitchActivity:activity,pitch01:seed===0?0:1}]))};
+      const state=sampleJourneyState({timeMs,seed,music}),cast=sampleJourneyCast({timeMs,state,music});
+      const pose=JourneyScene.prototype.movedPose(JOURNEY_VIEW,{...frame,timeMs,seed}).pose;
+      assert.deepEqual(pose,steady.pose,'default auto framing never chases footsteps or travel');
+      for(const actor of [...cast.actors,...cast.actors.flatMap(a=>(a.babies||[]).map(b=>({...b,id:'baby'})))]){
+        const offsets=actor.id==='broshi'?[[-72,55],[-6,72],[-35,35]]
+          : actor.id==='midio'?[[-40,40],[-30,46],[-18,18]]:[[-22,22],[-22,22],[-20,20]];
+        for(const dx of offsets[0])for(const dy of offsets[1])for(const dz of offsets[2]){
+          const point=new THREE.Vector3(actor.positionM[0]+dx,actor.positionM[1]+dy,actor.positionM[2]+dz).project(camera);
+          assert.ok(Math.abs(point.x)<.97&&Math.abs(point.y)<.97,`${actor.id} full extent clipped at ${timeMs}ms seed ${seed} ${width}x${height}: ${point.x}, ${point.y}`);
+        }
+      }
+    }
+  }
+});
+
+test('landscape staging keeps the cast readable with a modest retreat and steady horizon',()=>{
+  const scenicViewport={logicalWidth:1280,logicalHeight:720,nominalWidth:1280,nominalHeight:720,overscanPx:0};
+  const frame={timeMs:28000,seed:2917029651,scenicViewport};
+  const base=JourneyScene.prototype.movedPose(JOURNEY_VIEW,frame);
+  const release=JourneyScene.prototype.movedPose(JOURNEY_VIEW,{...frame,journeyDirection:{cameraMove:{dolly:-.09,yaw:.025,crane:.012,truck:0}}});
+  assert.ok(base.pose.eyeM[2]<1050,`default eye retreats only for full bodies: ${base.pose.eyeM[2]}`);
+  assert.ok(release.pose.eyeM[2]<1300,`release remains an inhabited foreground: ${release.pose.eyeM[2]}`);
+  for(const shot of [base,release]){
+    const camera=new THREE.PerspectiveCamera(shot.proj.fovYDeg,shot.proj.aspect,1,16000);
+    camera.position.fromArray(shot.pose.eyeM);camera.lookAt(...shot.pose.targetM);camera.updateMatrixWorld();
+    const state=sampleJourneyState({timeMs:48000,seed:frame.seed});
+    const broshi=sampleJourneyCast({timeMs:48000,state}).actors.find(a=>a.id==='broshi');
+    const bottom=new THREE.Vector3(...broshi.positionM).project(camera);
+    const top=new THREE.Vector3(broshi.positionM[0],broshi.positionM[1]+broshi.heightM,broshi.positionM[2]).project(camera);
+    assert.ok((top.y-bottom.y)*360>30,'Broshi body remains readable at landscape resolution');
+  }
+});

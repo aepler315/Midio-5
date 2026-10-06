@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as THREE from '../src/vendor/range/three-range.module.js';
 import { JourneyScene } from '../src/world/alpine/JourneyScene.js';
+import * as JourneyMaterial from '../src/world/alpine/JourneyMaterial.js';
 import { JOURNEY_VIEW } from '../src/world/alpine/JourneyWorld.js';
 import { GraphicsResidency } from '../src/render/GraphicsResidency.js';
 
@@ -76,6 +77,13 @@ test('a cancelled bitmap decode cannot release a ready replacement journey', { t
   assert.equal(replacement.isReady(JOURNEY_VIEW.id), true);
   const prepared = replacement.prepared.get(JOURNEY_VIEW.id);
   const replacementImages = [...prepared.pack.images.values()];
+  assert.ok(prepared.shadowScene.children.includes(prepared.cast.depthGroup), 'the articulated cast supplies terrain shadow contact');
+  if(JourneyMaterial.journeyDressing){
+    assert.ok(prepared.dressing, 'native shoreline dressing is prepared');
+    assert.ok(prepared.meshes.includes(prepared.dressing)&&prepared.scene.children.includes(prepared.dressing));
+  }
+  let disposedGeometries=0;
+  for(const mesh of prepared.meshes)mesh.geometry.addEventListener('dispose',()=>disposedGeometries++);
 
   finishDecode.resolve();
   await oldLoad;
@@ -88,5 +96,6 @@ test('a cancelled bitmap decode cannot release a ready replacement journey', { t
 
   replacement.dispose();
   assert.equal(residency.entries.size, 0, 'final disposal releases all reservations');
+  assert.equal(disposedGeometries,prepared.meshes.length,'every owned mesh geometry, including dressing, is disposed exactly once');
   assert.ok(images.every(image => image.closed));
 });

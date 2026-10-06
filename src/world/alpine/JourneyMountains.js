@@ -19,7 +19,7 @@ const smooth = (a, b, value) => {
 };
 
 // Three incommensurate waves form one bounded analytic octave. There are
-// five octave samples per height, with no hashes, texture reads or iteration.
+// six octave samples per height, with no hashes, texture reads or iteration.
 // Depth variation stays coarser than x but crosses the falls of the faces:
 // gullies bend and interrupt, rather than drawing continuous parallel folds.
 function noise(x, z) {
@@ -87,7 +87,16 @@ export function journeyMountainHeight(x, v, layer, state = STILL) {
     + (rear ? 40 : 18) * state.melody * (.15 + .85 * incision * incision)
     + (rear ? 8 : 4) * state.pulse * spur
     + (rear ? 45 : 24) * bands * (.2 + .8 * spur * spur);
-  return (rear ? MOUNTAIN_DIMENSIONS.rearFootHeight : 0)
+  // A second, intersecting foothill watershed has its own wandering depth
+  // and lateral buttresses. It rises before the main face and exposes a gully
+  // behind it, replacing the uninterrupted triangular front-range apron.
+  const foothillDepth = .17 + .055 * noise(worldX * .0021 + phase * .4, 3.7);
+  const foothillOffset = (v - foothillDepth) / .115;
+  const foothillSupport = Math.max(0, 1 - foothillOffset * foothillOffset);
+  const foothill = (rear ? 0 : 150 + 95 * uplift + 45 * spur * spur)
+    * foothillSupport * foothillSupport * foothillSupport
+    * (.12 + .88 * smooth(-.5, .45, branch));
+  return foothill + (rear ? MOUNTAIN_DIMENSIONS.rearFootHeight : 0)
     + envelope * envelope * (body + erosion + shoulder * response);
 }
 
@@ -149,7 +158,13 @@ export const JOURNEY_MOUNTAIN_GLSL = /* glsl */`
       + mix(18.0, 40.0, rear) * uJourneyMelody * (0.15 + 0.85 * incision * incision)
       + mix(4.0, 8.0, rear) * uJourneyPulse * spur
       + mix(24.0, 45.0, rear) * bands * (0.2 + 0.8 * spur * spur);
-    return ${MOUNTAIN_DIMENSIONS.rearFootHeight}.0 * rear
+    float foothillDepth = 0.17 + 0.055 * journeyMountainNoise(worldX * 0.0021 + phase * 0.4, 3.7);
+    float foothillOffset = (v - foothillDepth) / 0.115;
+    float foothillSupport = max(0.0, 1.0 - foothillOffset * foothillOffset);
+    float foothill = (1.0 - rear) * (150.0 + 95.0 * uplift + 45.0 * spur * spur)
+      * foothillSupport * foothillSupport * foothillSupport
+      * (0.12 + 0.88 * smoothstep(-0.5, 0.45, branch));
+    return foothill + ${MOUNTAIN_DIMENSIONS.rearFootHeight}.0 * rear
       + envelope * envelope * (body + erosion + shoulder * response);
   }
 `;
