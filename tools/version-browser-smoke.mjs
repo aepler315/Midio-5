@@ -129,7 +129,7 @@ function installProbe() {
       if (probe.failRestore) { probe.failRestore = false; throw new Error('Injected interrupted restore'); }
       const record = { intent: { ...intent }, beforeStarts: probe.audioStarts.length };
       probe.restores.push(record);
-      try { const result = await load(source, intent); record.settled = snapshot(value); record.starts = probe.audioStarts.slice(record.beforeStarts); return result; }
+      try { const result = await load(source, intent); record.settled = snapshot(value); record.settledAudioContexts = probe.contexts.map(context => context.state); record.starts = probe.audioStarts.slice(record.beforeStarts); return result; }
       catch (error) { record.error = error.message; throw error; }
     };
     value.setPaused = async state => { probe.resumes.push({ requestedPaused: state, state: snapshot(value) }); return paused(state); };
@@ -142,7 +142,10 @@ function installProbe() {
   }
   const originalStart = AudioBufferSourceNode.prototype.start;
   AudioBufferSourceNode.prototype.start = function (...a) {
-    probe.audioStarts.push({ when: a[0] || 0, offset: a[1] || 0, atMs: performance.now() });
+    const context = this.context, OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    probe.audioStarts.push({ when: a[0] || 0, offset: a[1] || 0, atMs: performance.now(),
+      contextKind: context.constructor.name, offline: !!OfflineContext && context instanceof OfflineContext, contextState: context.state,
+      sampleRate: context.sampleRate, bufferDuration: this.buffer?.duration ?? null, bufferChannels: this.buffer?.numberOfChannels ?? null });
     return originalStart.apply(this, a);
   };
   const OriginalWorker = window.Worker;
@@ -281,11 +284,16 @@ async function verifyRestore(page, before, report) {
   assert.ok(Math.abs(restored.settled.positionMs - restored.intent.positionMs) <= 100, 'restore tolerance measured before resume');
   assert.equal(restored.settled.seed, before.seed); assert.equal(restored.settled.sourceId, before.sourceId);
   assert.equal(restored.intent.paused, before.paused);
-  assert.ok(restored.starts.every(s => s.offset >= (restored.intent.positionMs - 100) / 1000), 'restoration emitted audio from the song beginning');
+  const realtimeStarts = restored.starts.filter(start => start.offline === false);
+  assert.ok(realtimeStarts.length > 0, 'restoration must prepare the actual real-time soundtrack source');
+  assert.ok(realtimeStarts.every(start => Math.abs(start.offset * 1000 - restored.settled.positionMs) <= 100), 'real-time restoration emitted audio outside the saved song position');
+  assert.ok(realtimeStarts.every(start => start.contextState === 'suspended'), 'real-time soundtrack started before audio was held suspended');
+  assert.ok(restored.settledAudioContexts?.length && restored.settledAudioContexts.every(state => state === 'suspended'), 'audio must remain suspended at restore readiness before resume');
   const final = await state(page);
   assert.deepEqual(final.files, before.files, 'original ordered files and metadata survive handoff');
   assert.equal(final.paused, before.paused, 'saved pause state survives handoff');
-  report.push({ intent: restored.intent, heldPositionMs: restored.settled.positionMs, beforeResume: evidence.resumes.at(-1), initialAudioStarts: restored.starts });
+  report.push({ intent: restored.intent, heldPositionMs: restored.settled.positionMs, beforeResume: evidence.resumes.at(-1), initialAudioStarts: restored.starts,
+    realtimeStarts, offlineStarts: restored.starts.filter(start => start.offline), heldAudioContexts: restored.settledAudioContexts });
 }
 
 async function readRecords(page) {
