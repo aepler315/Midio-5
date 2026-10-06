@@ -486,6 +486,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     song = await state(page); assert.equal(song.paused, false);
     await switchVersion(page, 'next', audit.manifest.entries[liveIndex + 1], options.timeout);
     await verifyRestore(page, song, report.restores); report.checks.push('running restore before resumed clock');
+    console.log('Version-browser smoke: running restore passed; checking reload and history');
     const restoredDisplay = (await state(page)).settings;
     assert.equal(restoredDisplay.stageRes, '360'); assert.equal(restoredDisplay.stageFps, '30');
     await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true));
@@ -494,7 +495,9 @@ async function runPrefix(options, audit, prefix, wavs) {
     assert.equal((await state(page)).sourceId, song.sourceId);
     await page.goForward(); await waitReady(page, options.timeout);
     assert.equal((await state(page)).sourceId, song.sourceId); report.checks.push('reload and browser history preserve current source');
+    console.log('Version-browser smoke: reload/history passed; checking mobile HUD lifecycle');
     await mobileChecks(page, output, report);
+    console.log('Version-browser smoke: mobile HUD passed; checking real calibration and recording');
     // The real calibration/recording UI must block departure. Recording is
     // saved so the evidence includes the actual output, not just a flag.
     await clickHudButton(page, '#calibrateBtn');
@@ -514,6 +517,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     report.recordingCaptureSources = captures;
     await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
     await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true)); report.checks.push('real recording and calibration block arrows; saved canvas recording excludes DOM chrome');
+    console.log('Version-browser smoke: calibration and saved recording passed');
 
     // Reach Complete through the real transport, then start the application's
     // full-song export UI. Its existing HUD stop button ends the actual export
@@ -542,6 +546,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     await page.evaluate(async () => { await window.__MIDIO_VERSION_ADAPTER.setPaused(true); await window.__MIDIO_VERSION_ADAPTER.seek(6200); });
     report.export = { startedThrough: 'exportBtn', stoppedThrough: 'recordBtn', blockedReason: exporting.blockedReason, sampleFile: `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}`, captureSources: exportCaptures.slice(captures.length) };
     report.checks.push('actual full-song export blocks both arrows and excludes DOM chrome; real stop UI saves bounded sample');
+    console.log('Version-browser smoke: actual export start/stop passed; checking missing destination retry');
 
     // Failure before departure must preserve both current song and pause.
     await wake(page); const beforeFailure = await state(page), beforeUrl = page.url();
@@ -554,6 +559,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     await page.waitForURL(hosted.url + '*', { timeout: options.timeout }); await waitReady(page, options.timeout);
     report.checks.push('missing destination stays recoverable and retries');
     expectedHttpFailures.delete(new URL(destination).pathname);
+    console.log('Version-browser smoke: missing destination recovery passed; checking replacement/stems/quota');
 
     // Source replacement and ordered raw stems use the genuine loader.
     const replaced = await importAudio(page, [wavs[1], wavs[2]], options.timeout);
@@ -572,6 +578,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     assert.equal(sourceRows.length, 1); assert.equal(sourceRows[0].value.source.files.length, 2);
     assert.ok(sourceRows[0].value.source.files.every(f => f.isFile), 'real IndexedDB retains File metadata');
     report.indexedDB = rows; report.checks.push('ordered stems, replacement, real IndexedDB and quota recovery');
+    console.log('Version-browser smoke: replacement/stems/quota passed; checking interrupted restore');
 
     const beforeInterrupted = await state(page);
     await page.addInitScript(() => { if (location.pathname.includes('/spherical-world/')) window.__VERSION_SMOKE.failRestore = true; });
@@ -589,6 +596,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     await verifyRestore(page, beforeRapid, report.restores);
     assert.equal(await page.evaluate(() => window.__VERSION_SMOKE.restores.filter(r => r.settled).length), 1, 'rapid activation creates one successful restore');
     report.checks.push('rapid clicks prepare one switch');
+    console.log('Version-browser smoke: interrupted restore and rapid activation passed; checking tab ownership');
 
     // window.open copies sessionStorage, exercising actual duplicate-tab
     // ownership while the original owner remains alive.
@@ -637,6 +645,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     await verifyRestore(independent, independentBefore, report.restores);
     assert.equal((await state(page)).sourceId, beforeRapid.sourceId, 'other tab cannot take over original source');
     await independent.close(); report.checks.push('two independently loaded tabs retain different sources through navigation');
+    console.log('Version-browser smoke: tab ownership passed; checking storage and manifest denial');
 
     const denied = await addPage();
     await denied.addInitScript(() => {
