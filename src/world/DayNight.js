@@ -4,6 +4,7 @@
 // darken the sky, and brighten the stars at night.
 import { clamp01, smoothstep } from '../utils/math.js';
 import { OCEAN_HORIZON_FRAC } from './Ocean.js';
+import { hexLerp } from '../utils/color.js';
 
 const MIN_CYCLE_MS = 100000;
 const MAX_CYCLE_MS = 200000;
@@ -226,6 +227,8 @@ export function songNightClock(durationMs) {
   const edge = .15, sunEdge = .025;
   return Object.freeze({
     body: 'night', durationMs: d,
+    // Afterglow follows heard time rather than the short below-horizon arc.
+    twilightMs: known ? Math.min(d * .25, 45000) : 0,
     phaseAt(ms) {
       const t = Math.max(0, Number.isFinite(ms) ? ms : 0);
       const u = known ? clamp01(t / d) : (t % d) / d;
@@ -280,4 +283,25 @@ export function twilightAt(p01) {
   // Rising: the sun's morning half and the dark before it.
   const rising = p < SUN_SET_PHASE / 2 || p >= 0.5 + (MOON_SET_PHASE - 0.5) / 2;
   return { amount01, rising, xFrac, colors: rising ? TWILIGHT.dawn : TWILIGHT.dusk };
+}
+
+
+const BLUE_HOUR = Object.freeze({
+  horizon: '#394a83', mid: '#282c61', top: '#141c3f', glow: '#7a69ad',
+});
+
+/** The Range's afterglow continues through moonrise. A separate, eased
+ * color clock avoids losing all sunset color when the sun dips out of view.
+ * Sampling stays pure so held playback, exports and seeks agree. */
+export function twilightForClock(nowMs, clock) {
+  const orbit = twilightAt(cyclePhase01(nowMs, clock));
+  if (clock?.body !== 'night' || !(clock.twilightMs > 0)) return orbit;
+  const time = Math.min(clock.durationMs, Math.max(0, Number.isFinite(nowMs) ? nowMs : 0));
+  const rising = time > clock.durationMs / 2;
+  const progress = clamp01((rising ? clock.durationMs - time : time) / clock.twilightMs);
+  const amount01 = 1 - smoothstep(0, 1, progress);
+  const cool = smoothstep(.1, .8, progress);
+  const warm = rising ? TWILIGHT.dawn : TWILIGHT.dusk;
+  const colors = Object.fromEntries(Object.keys(warm).map(stop => [stop, hexLerp(warm[stop], BLUE_HOUR[stop], cool)]));
+  return { amount01, rising, xFrac: orbit.xFrac, colors };
 }

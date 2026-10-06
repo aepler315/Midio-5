@@ -63,7 +63,7 @@ import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO, scatterBiomeLayers } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
-import { cycleMs as dayNightCycleMs, songSkyClock, songNightClock, twilightAt, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
+import { cycleMs as dayNightCycleMs, songSkyClock, songNightClock, twilightForClock, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
 import { celestialApproach, approachScale } from './CelestialApproach.js';
@@ -2554,7 +2554,7 @@ export class BiomeManager {
     // reflection glint, so everything tracks the same body.
     const dn = dayNight(this.tSec * 1000, this._dayNightCycleMs);
     // Sunrise and sunset colour, for the Range's sky and air (rangeSkyState).
-    this._twilight = twilightAt(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
+    this._twilight = twilightForClock(this.tSec * 1000, this._dayNightCycleMs);
     const sunUp = dn.sunAlt > 0.001;
     const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
     // Cast shadow (Stage 5 of the mountain overhaul): a near range can only

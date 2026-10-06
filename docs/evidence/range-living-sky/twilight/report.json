@@ -1,0 +1,430 @@
+{
+  "frames": [
+    {
+      "timeMs": 1000.0000000000017,
+      "twilight": {
+        "amount01": 0.9872497724861659,
+        "rising": false,
+        "xFrac": 0.10665777439024371,
+        "colors": {
+          "horizon": "#ff4a1c",
+          "mid": "#b83e78",
+          "top": "#271f5c",
+          "glow": "#ff7a2a"
+        }
+      },
+      "sky": {
+        "top": "#19163b",
+        "mid": "#913260",
+        "horizon": "#e54420",
+        "air": "#e54420"
+      },
+      "activeBody": "sun",
+      "night": 0.9814930584219349,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 1999.999999999993,
+      "twilight": {
+        "amount01": 0.9513721713750507,
+        "rising": false,
+        "xFrac": 0.08331554878048797,
+        "colors": {
+          "horizon": "#fe4a1e",
+          "mid": "#b73e78",
+          "top": "#271f5c",
+          "glow": "#fe7a2d"
+        }
+      },
+      "sky": {
+        "top": "#18163b",
+        "mid": "#8e315f",
+        "horizon": "#e14321",
+        "air": "#e14321"
+      },
+      "activeBody": "sun",
+      "night": 0.9996823925883906,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 3000.00000000001,
+      "twilight": {
+        "amount01": 0.8959268188122324,
+        "rising": false,
+        "xFrac": 0.09450207632464269,
+        "colors": {
+          "horizon": "#f94a2b",
+          "mid": "#b33d77",
+          "top": "#261f5b",
+          "glow": "#fa793c"
+        }
+      },
+      "sky": {
+        "top": "#171539",
+        "mid": "#872f5c",
+        "horizon": "#d6412b",
+        "air": "#d6412b"
+      },
+      "activeBody": null,
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 4000.000000000028,
+      "twilight": {
+        "amount01": 0.8244733369432915,
+        "rising": false,
+        "xFrac": 0.11140506728343169,
+        "colors": {
+          "horizon": "#ee4a3b",
+          "mid": "#ac3c75",
+          "top": "#251f59",
+          "glow": "#f17850"
+        }
+      },
+      "sky": {
+        "top": "#161536",
+        "mid": "#7d2d57",
+        "horizon": "#c53f36",
+        "air": "#c53f36"
+      },
+      "activeBody": null,
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 4999.999999999997,
+      "twilight": {
+        "amount01": 0.7405713479138127,
+        "rising": false,
+        "xFrac": 0.12830805824222036,
+        "colors": {
+          "horizon": "#e04a4a",
+          "mid": "#a13a73",
+          "top": "#231e56",
+          "glow": "#e57663"
+        }
+      },
+      "sky": {
+        "top": "#141432",
+        "mid": "#702a52",
+        "horizon": "#b13d3f",
+        "air": "#b13d3f"
+      },
+      "activeBody": null,
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 5999.999999999961,
+      "twilight": {
+        "amount01": 0.6477804738693728,
+        "rising": false,
+        "xFrac": 0.14521104920100836,
+        "colors": {
+          "horizon": "#cd4a58",
+          "mid": "#943870",
+          "top": "#211e52",
+          "glow": "#d77475"
+        }
+      },
+      "sky": {
+        "top": "#12132e",
+        "mid": "#61274c",
+        "horizon": "#993a46",
+        "air": "#993a46"
+      },
+      "activeBody": null,
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 6999.9999999999245,
+      "twilight": {
+        "amount01": 0.5496603369555507,
+        "rising": false,
+        "xFrac": 0.1621140401597967,
+        "colors": {
+          "horizon": "#b74a64",
+          "mid": "#84356c",
+          "top": "#1f1d4e",
+          "glow": "#c57185"
+        }
+      },
+      "sky": {
+        "top": "#10122a",
+        "mid": "#502345",
+        "horizon": "#7f374a",
+        "air": "#7f374a"
+      },
+      "activeBody": null,
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 7999.999999999888,
+      "twilight": {
+        "amount01": 0.44977055931792576,
+        "rising": false,
+        "xFrac": 0.17901703111858502,
+        "colors": {
+          "horizon": "#9e4a6e",
+          "mid": "#723369",
+          "top": "#1c1d4a",
+          "glow": "#b36f92"
+        }
+      },
+      "sky": {
+        "top": "#0e1126",
+        "mid": "#3f203f",
+        "horizon": "#65344b",
+        "air": "#65344b"
+      },
+      "activeBody": null,
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 8999.99999999994,
+      "twilight": {
+        "amount01": 0.35167076310206935,
+        "rising": false,
+        "xFrac": 0.19588193860517644,
+        "colors": {
+          "horizon": "#824a77",
+          "mid": "#5e3066",
+          "top": "#191d46",
+          "glow": "#a06d9d"
+        }
+      },
+      "sky": {
+        "top": "#0c1123",
+        "mid": "#2f1c39",
+        "horizon": "#4b304b",
+        "air": "#4b304b"
+      },
+      "activeBody": "moon",
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 10000.000000000013,
+      "twilight": {
+        "amount01": 0.2589205704535684,
+        "rising": false,
+        "xFrac": 0.20170999732113426,
+        "colors": {
+          "horizon": "#644a7d",
+          "mid": "#482e63",
+          "top": "#171c42",
+          "glow": "#8d6ba6"
+        }
+      },
+      "sky": {
+        "top": "#0d1428",
+        "mid": "#22203b",
+        "horizon": "#3c3852",
+        "air": "#3c3852"
+      },
+      "activeBody": "moon",
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 11000.000000000085,
+      "twilight": {
+        "amount01": 0.17507960351800578,
+        "rising": false,
+        "xFrac": 0.20773232451661805,
+        "colors": {
+          "horizon": "#484a82",
+          "mid": "#332d62",
+          "top": "#151c40",
+          "glow": "#8069ab"
+        }
+      },
+      "sky": {
+        "top": "#0f182d",
+        "mid": "#1c2641",
+        "horizon": "#43475c",
+        "air": "#43475c"
+      },
+      "activeBody": "moon",
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 12000.000000000158,
+      "twilight": {
+        "amount01": 0.10370748444096212,
+        "rising": false,
+        "xFrac": 0.21413817944332858,
+        "colors": {
+          "horizon": "#394a83",
+          "mid": "#282c61",
+          "top": "#141c3f",
+          "glow": "#7a69ad"
+        }
+      },
+      "sky": {
+        "top": "#0f1a30",
+        "mid": "#1c2a46",
+        "horizon": "#4c5062",
+        "air": "#4c5062"
+      },
+      "activeBody": "moon",
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 13000.000000000231,
+      "twilight": {
+        "amount01": 0.04836383536801803,
+        "rising": false,
+        "xFrac": 0.22110824745815139,
+        "colors": {
+          "horizon": "#394a83",
+          "mid": "#282c61",
+          "top": "#141c3f",
+          "glow": "#7a69ad"
+        }
+      },
+      "sky": {
+        "top": "#0f1a2f",
+        "mid": "#1b2a45",
+        "horizon": "#4c5060",
+        "air": "#4c5060"
+      },
+      "activeBody": "moon",
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 14000.000000000304,
+      "twilight": {
+        "amount01": 0.012608278444753873,
+        "rising": false,
+        "xFrac": 0.22881060073963289,
+        "colors": {
+          "horizon": "#394a83",
+          "mid": "#282c61",
+          "top": "#141c3f",
+          "glow": "#7a69ad"
+        }
+      },
+      "sky": {
+        "top": "#0f1a2f",
+        "mid": "#1b2a44",
+        "horizon": "#4d505e",
+        "air": "#4d505e"
+      },
+      "activeBody": "moon",
+      "night": 1,
+      "fullSky": 1
+    },
+    {
+      "timeMs": 15000.000000000377,
+      "twilight": {
+        "amount01": 0,
+        "rising": false,
+        "xFrac": 0.23739694097641484,
+        "colors": {
+          "horizon": "#394a83",
+          "mid": "#282c61",
+          "top": "#141c3f",
+          "glow": "#7a69ad"
+        }
+      },
+      "sky": {
+        "top": "#0f1a2f",
+        "mid": "#1b2a44",
+        "horizon": "#4d505e",
+        "air": "#4d505e"
+      },
+      "activeBody": "moon",
+      "night": 1,
+      "fullSky": 1
+    }
+  ],
+  "browserErrors": [],
+  "limitation": "Synthetic audio and software WebGL.",
+  "sourceHashes": {
+    "src/world/DayNight.js": "b03e455680b526b8a459ea6adc8f0c7166b5a480f5575ba7183b51acdfabd4ec",
+    "src/world/BiomeManager.js": "be833bbbb6ded004255fe2addba3d458a7fc8c28fa7f5af5e9d74b7ae511d85b",
+    "src/world/alpine/RangeFrame.js": "8adf1ecde5a03e7a2f04e43e0e8e4da99ea00e4afd092d03a8d10ce2b037f754",
+    "src/world/alpine/RangeScene.js": "0e5eee8f31044f4b6481c4397592b65db2187d25577854be9677719684804667",
+    "src/world/alpine/TerrainMaterial.js": "23b4fca3b397cd5aafe0b6da2c41cf16f40c34b4afedff04a6a656c04a01e8a1",
+    "src/world/alpine/FirmamentGL.js": "2bb3aeb5a73edcfb7a2a46d66cd0ebeffd6848524da80ed58140433677454a90"
+  },
+  "browser": "151.0.7922.173",
+  "moonlight": {
+    "timeMs": 29999.999999998498,
+    "twilight": {
+      "amount01": 0,
+      "rising": true,
+      "xFrac": 0.5002649284628814,
+      "colors": {
+        "horizon": "#394a83",
+        "mid": "#282c61",
+        "top": "#141c3f",
+        "glow": "#7a69ad"
+      }
+    },
+    "sky": {
+      "top": "#0f1a2f",
+      "mid": "#1b2a44",
+      "horizon": "#4d505e",
+      "air": "#4d505e"
+    },
+    "activeBody": "moon",
+    "night": 1,
+    "fullSky": 1
+  },
+  "sunrise": {
+    "timeMs": 59500.00000000587,
+    "twilight": {
+      "amount01": 0.9970265947637292,
+      "rising": true,
+      "xFrac": 0.8811375762193753,
+      "colors": {
+        "horizon": "#ff7a3a",
+        "mid": "#d4627c",
+        "top": "#34386e",
+        "glow": "#ffb24a"
+      }
+    },
+    "sky": {
+      "top": "#212548",
+      "mid": "#a84f65",
+      "horizon": "#e66f3a",
+      "air": "#e66f3a"
+    },
+    "activeBody": "sun",
+    "night": 0.75,
+    "fullSky": 1
+  },
+  "seek": {
+    "timeMs": 9000,
+    "twilight": {
+      "amount01": 0.3516707631020636,
+      "rising": false,
+      "xFrac": 0.19588193860517644,
+      "colors": {
+        "horizon": "#824a77",
+        "mid": "#5e3066",
+        "top": "#191d46",
+        "glow": "#a06d9d"
+      }
+    },
+    "sky": {
+      "top": "#0c1123",
+      "mid": "#2f1c39",
+      "horizon": "#4b304b",
+      "air": "#4b304b"
+    },
+    "activeBody": "moon",
+    "night": 1,
+    "fullSky": 1
+  },
+  "passed": true
+}

@@ -24,3 +24,9 @@ Full suite: 3,816 tests passed. Browser evidence uses Chromium with software Web
 ![Eight seconds of the cove under the living sky](living-sky.gif)
 
 Still frames: [sunset](sunset.png), [moonlight](moonlight.png), [sunrise](sunrise.png), [portrait](portrait.png). Exact diagnostics and source hashes: [report.json](report.json).
+
+## Twilight follow-up
+
+The latest color update decouples sunset afterglow from the sun’s altitude. Pink lingers through moonrise, cools through violet and blue, and fades on an eased heard-time clock. A cool night palette also prevents pale warm biome colors from turning moonrise into beige haze. The sky, distant-land air and lake share these colors.
+
+[Sunset fade preview and diagnostics](twilight/README.md) show this later change. The resident animation and layer-difference report above were recorded before the twilight update. Latest full suite: 3,821 tests pass; lint passes.
