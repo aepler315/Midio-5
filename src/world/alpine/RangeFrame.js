@@ -325,7 +325,7 @@ export function buildRangeFrame({
   const narrative = sim.rangeNarrativeAt?.(timeMs) || null;
   const reducedFlash = !!mgr.reducedFlash;
   const reducedMotion = !!(sim.reducedMotion || mgr.reducedMotion);
-  const performance = !!sim.presentation?.trioStage;
+  const performance = !!sim.presentation?.trioHabitat;
   const progress01 = mgr.terrainPreview ? SCENE_PREVIEW_PROGRESS : sceneProgressAt({
     timeMs, curves: mgr.energyCurves, durationMs: mgr.durationMs, reducedFlash: reducedMotion, response: mgr.world?.response,
   });
@@ -429,7 +429,7 @@ export function buildRangeFrame({
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
     userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
-    light: lightState, music: land, ridges, narrative, groundBars, emitters,
+    light: lightState, music: land, habitatMusic: performance ? ridgeSample || null : null, ridges, narrative, groundBars, emitters,
     waterHits,
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,

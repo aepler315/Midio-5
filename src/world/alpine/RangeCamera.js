@@ -23,6 +23,7 @@
 // zoomed frame only ever shows land the authored frame already covers.
 import { cameraBasis, cameraPoseAt, SCENE_PREVIEW_PROGRESS } from '../terrain/SceneTravel.js';
 import { hashSeed, mulberry32 } from '../../utils/math.js';
+import { rangeHabitatCameraPose } from './RangeHabitat.js';
 
 export const NEUTRAL_MOVE = Object.freeze({ dolly: 0, yaw: 0, crane: 0, truck: 0, kind: 'rest' });
 // Moves start only at the song's big structural turns, at least this far
@@ -73,11 +74,12 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const add = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
-/** A steady side view of the same approved rail: the eye retains its
- * authored horizontal path, while eye and target translate together with
- * one viewing direction. The stable height clears every authored eye
- * height, including an optional upward rail arc. */
+/** A steady side view. Muncho approaches its inhabited cove; other views
+ * retain their authored horizontal path. Eye and target translate together
+ * with one viewing direction and a stable height. */
 export function performanceCameraPose(view, progress01) {
+  const habitat = rangeHabitatCameraPose(view, progress01);
+  if (habitat) return habitat;
   const center = cameraPoseAt(view, SCENE_PREVIEW_PROGRESS);
   const authored = cameraPoseAt(view, progress01);
   const height = Math.max(view.camera.eyeStartM[1], view.camera.eyeEndM[1])

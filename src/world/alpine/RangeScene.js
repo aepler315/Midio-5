@@ -29,10 +29,13 @@ import { RockStageGL } from './RockStageGL.js';
 import { applyCameraMoves, rangeUserCamera, rangeRailPose, NEUTRAL_MOVE } from './RangeCamera.js';
 import { BANDS, terrainFringeBytes, terrainHeightAt } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
-import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT, MIRROR_LEVEL_TOLERANCE_M } from './WaterMirror.js';
+import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, backdropBounds, MIRROR_CLIP_M, MIRROR_LIFT, MIRROR_LEVEL_TOLERANCE_M } from './WaterMirror.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors, glacierSample } from './GlacierField.js';
 import { ActorsGL } from './ActorsGL.js';
+import { CoveGL, COVE_GPU_BYTES } from './CoveGL.js';
+import { buildRangeHabitat } from './RangeHabitat.js';
+import { sampleRangePerformance } from './RangePerformance.js';
 import { ACTOR_IDS, ACTOR_HUES, ACTOR_LOOK, ACTOR_START, actorRoutes, routePosition } from './RangeActors.js';
 // Storm light, linear: the deck's underside, the rain-dimmed horizon, the rain air.
 // STORM_AIR meets the slate the sky paints at the horizon (drawStormSky) once displayed.
@@ -307,6 +310,7 @@ export class RangeScene {
         : Object.assign(document.createElement('canvas'), { width, height });
       const THREE = this.THREE;
       const texture = new THREE.CanvasTexture(canvas);
+      texture.premultiplyAlpha = true;
       texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = false;
       b = { width, height, epoch: this.contextEpoch, canvas, ctx: canvas.getContext('2d'), texture, frame: -1 };
       const dispose = (x) => { x.texture.dispose(); x.canvas.width = x.canvas.height = 0; if (this.backdrop === x) this.backdrop = null; };
@@ -317,6 +321,7 @@ export class RangeScene {
     const T = ctx.getTransform?.() || { a: 1, d: 1, e: 0, f: 0 };
     b.ctx.clearRect(0, 0, width, height);
     b.ctx.drawImage(ctx.canvas, T.e, T.f, T.a * stage.width, T.d * stage.height, 0, 0, width, height);
+    b.bounds = backdropBounds({ ...frame?.scenicViewport, logicalWidth: stage.width, logicalHeight: stage.height }, T, ctx.canvas);
     b.texture.needsUpdate = true;
     b.frame = frame?.frameId ?? -1;
     return true;
@@ -376,7 +381,7 @@ export class RangeScene {
     if (m.frame !== frame.frameId || m.view !== viewId) {
       const r = this.renderer;
       const THREE = this.THREE;
-      mirrorCameraFor(THREE, this.camera, level, this.mirrorCamera, MIRROR_LIFT);
+      mirrorCameraFor(THREE, this.camera, level, this.mirrorCamera, frame.performance && p.habitat ? 1 : MIRROR_LIFT);
       mirrorTextureMatrix(THREE, this.mirrorCamera, m.matrix);
       for (const fm of p.fringeMeshes || []) fm.visible = false;
       u.uMirrorAmount.value = 0;
@@ -405,6 +410,7 @@ export class RangeScene {
     const b = this.backdrop?.frame === frame.frameId ? this.backdrop : null;
     u.uBackdrop.value = b?.texture || null;
     u.uBackdropAmount.value = b ? 1 : 0;
+    u.uBackdropBounds.value.set(...(b?.bounds || [0, 0, 0, 0]));
     u.uViewProj.value.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     u.uMirrorLevel.value = level;
     u.uMirrorRipple.value = ripple(frame.music);
@@ -451,7 +457,7 @@ export class RangeScene {
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
-      let surface, geos, material, forest, stageGL, featureMaterial, actors;
+      let surface, geos, material, depthMaterial, forest, stageGL, featureMaterial, actors, habitat;
       const featureGeometries = {};
       const stale = () => {
         if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
@@ -486,8 +492,9 @@ export class RangeScene {
         // buffers; their exact size is counted from the tile plan (no
         // geometry built), so the one reservation covers them and a view
         // that cannot fit is denied before the mesh is built.
+        const habitatLayout = buildRangeHabitat(cpu.data, view);
         const fringeBytes = terrainFringeBytes(cpu.data, { budget: this.budget });
-        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes();
+        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes() + (habitatLayout ? COVE_GPU_BYTES : 0);
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
@@ -507,7 +514,7 @@ export class RangeScene {
         featureMaterial = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms,
           vertexShader: SCENE_VERT, fragmentShader: FEATURE_FRAG, transparent: true,
           depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth });
-        const depthMaterial = createDepthMaterial(THREE, uniforms);
+        depthMaterial = createDepthMaterial(THREE, uniforms);
         await yieldToMain();
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const meshes = {}, depthMeshes = {}, scenes = {};
@@ -572,6 +579,14 @@ export class RangeScene {
           depthScenes[band].add(dm);
           for (const d of forest.depthByBand?.[band] || []) depthScenes[band].add(d);
         }
+        if (habitatLayout) {
+          habitat = new CoveGL(THREE, uniforms, habitatLayout);
+          scenes[habitatLayout.band].add(habitat.group);
+          depthScene.add(habitat.depthGroup);
+          depthScenes[habitatLayout.band].add(habitat.bandDepthGroup);
+          // Scenery-only views use the same cache; visibility belongs to the frame.
+          habitat.group.visible = habitat.depthGroup.visible = habitat.bandDepthGroup.visible = false;
+        }
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
@@ -579,7 +594,7 @@ export class RangeScene {
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
-          forest, stageGL, featureGeometries, featureMaterial,
+          forest, stageGL, featureGeometries, featureMaterial, habitat, habitatLayout,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
           giantLayout: layout, lakeMusicOriginM: lakeMusicOrigin(cpu.data, layout, waterLevelM),
           rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key, actors, actorRoutes: routes,
@@ -602,6 +617,8 @@ export class RangeScene {
           this.residency?.release(cpu.key);
           forest?.dispose();
           actors?.dispose();
+          habitat?.dispose();
+          depthMaterial?.dispose();
           stageGL?.dispose();
           material?.dispose();
           featureMaterial?.dispose();
@@ -737,6 +754,7 @@ export class RangeScene {
     for (const g of Object.values(p.featureGeometries || {})) g.dispose();
     p.forest?.dispose();
     p.actors?.dispose();
+    p.habitat?.dispose();
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
     for (const g of Object.values(p.fringes || {})) g.dispose();
@@ -819,9 +837,10 @@ export class RangeScene {
     const THREE = this.THREE;
     const u = p.uniforms;
     const n = frame.narrative;
+    u.uMirrorLift.value = frame.performance && p.habitat ? 1 : MIRROR_LIFT;
     // The anchor is a real hydroflattened lake sample chosen once at view
     // preparation, so a hit stays on the water as the camera travels.
-    bindLakeMusic(u, frame, { originM: p.lakeMusicOriginM });
+    bindLakeMusic(u, frame, { originM: frame.performance && p.habitatLayout ? p.habitatLayout.anchors.midio : p.lakeMusicOriginM });
     u.uNarrative.value.set(n?.relief ?? 1, n?.atmosphere ?? 1, n?.materials ?? 1, n?.features ?? 1);
     u.uNarrativeInk.value = n ? (1 - n.materials) * (1 - n.skyDark) : 0;
     applyGlacierUniforms(u, p.view.glacier, frame.glacier);
@@ -944,6 +963,7 @@ export class RangeScene {
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
     u.uCameraPos.value.copy(this.camera.position);
     this._setActors(p, frame);
+    this._setHabitat(p, frame);
   }
 
   /**
@@ -1033,6 +1053,36 @@ export class RangeScene {
       }
       if (id === 'broshi') u.uParting.value.set(pos[0], pos[2], 90, presence * (0.35 + 0.65 * s.glow));
     });
+  }
+
+  /** The cove owns real meshes, shared terrain light and water responses.
+   * No Canvas overlay or gameplay actor is involved. */
+  _setHabitat(p, frame) {
+    const habitat = p.habitat;
+    const u = p.uniforms;
+    if (u.uCovePressure) u.uCovePressure.value.set(0, 0, 0, 0);
+    if (!habitat) return;
+    const active = !!frame.performance;
+    habitat.group.visible = habitat.depthGroup.visible = habitat.bandDepthGroup.visible = active;
+    if (!active) { habitat.snapshot = null; return; }
+    const pose = sampleRangePerformance({ timeMs: frame.timeMs, music: frame.habitatMusic,
+      layout: p.habitatLayout, reducedMotion: frame.reducedMotion, reducedFlash: frame.reducedFlash });
+    habitat.update(pose);
+    pose.actors.forEach((actor, i) => {
+      const color = new this.THREE.Color().setHSL(ACTOR_HUES[actor.id] / 360, .55, .6).convertSRGBToLinear();
+      const gain = actor.glow * (.28 + .48 * (frame.light?.night01 ?? 0));
+      // Low contact light reaches the bank and the adjacent water.
+      const lift = actor.id === 'midasus' ? 0 : actor.heightM * .2;
+      u.uActorPos.value[i].set(actor.positionM[0], actor.positionM[1] + lift, actor.positionM[2]);
+      u.uActorColor.value[i].set(color.r * gain, color.g * gain, color.b * gain);
+      u.uActorRadius.value[i] = actor.id === 'midasus' ? 24 : 18;
+    });
+    const midio = p.habitatLayout.anchors.midio, broshi = p.habitatLayout.anchors.broshi;
+    const f = p.habitatLayout.forward;
+    u.uWake.value.set(midio[0], midio[2], midio[0] - f[0] * 35, midio[2] - f[2] * 35);
+    const flash = frame.reducedFlash ? .35 : 1;
+    u.uWakeAmt.value = pose.waterResponse.wake * .45 * flash;
+    if (u.uCovePressure) u.uCovePressure.value.set(broshi[0], broshi[2], pose.waterResponse.bass * flash, frame.reducedMotion ? 0 : frame.timeMs / 1000);
   }
 
   _tileAt(data, x, z) {

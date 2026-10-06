@@ -1,5 +1,4 @@
 import { resolveLandscapePresentation } from '../world/LandscapePresentation.js';
-import { sampleRangePerformance, drawRangePerformance } from '../world/alpine/RangePerformance.js';
 import { drawInhabitedShore, kickHop01 } from '../world/InhabitedShore.js';
 // Canvas 2D compositor. Draws sky -> parallax biome layers -> ground ->
 // telegraph glints -> world FX -> companions -> Midio -> foreground veil ->
@@ -219,9 +218,6 @@ export class Renderer {
     // Completed stage draws. Evidence tools compare it across one capture
     // to prove a fixture frame was painted exactly once at its time.
     this.drawCount = 0;
-    this.rangePerformanceDraws = 0;
-    this.lastRangePerformance = null;
-    this.lastRangePerformanceDraw = null;
   }
 
   dispose() { this._groundResponse.dispose(); this._capture?.dispose(); }
@@ -294,8 +290,6 @@ export class Renderer {
     const narrative = sim.rangeNarrativeAt?.() || null;
     this.rangeListeningActive = !!narrative;
     const presentation = sim.presentation || resolveLandscapePresentation(biomeManager?.world);
-    this.lastRangePerformance = null;
-    this.lastRangePerformanceDraw = null;
     const groundY = sim.stageAnchor?.groundY ?? sim.midio?.groundY ?? 625;
     this._capture?.dispose(); this._capture = null;
     if (biomeManager) biomeManager.rangeNarrative = narrative;
@@ -421,20 +415,6 @@ export class Renderer {
         hits: recentConductorHits(sim.conductor?.timeline, sim.timeMs),
         reducedFlash: !!sim.reducedFlash, reducedMotion: !!sim.reducedMotion,
         quality: perf?.level ?? 0 });
-    }
-    if (biomeManager && presentation.trioStage) {
-      const heardMs = sim.heardTimeMs ?? sim.timeMs;
-      const music = biomeManager.ridgeMusicSession?.sample(heardMs) || null;
-      const frame = sampleRangePerformance({ timeMs: heardMs, music,
-        width: nominalW, height: nominalH, reducedMotion: !!sim.reducedMotion, reducedFlash: !!sim.reducedFlash });
-      ctx.save();
-      applyFixedGroundTransform(ctx, { sx: sxFixed, sy: syFixed, width: nominalW, height: nominalH, camera,
-        outputX: outputFit.x, outputY: outputFit.y });
-      ctx.translate(SHAKE_MARGIN_PX, SHAKE_MARGIN_PX);
-      this.lastRangePerformanceDraw = drawRangePerformance(ctx, frame, { light: biomeManager._groundLight || biomeManager.light });
-      ctx.restore();
-      this.lastRangePerformance = frame;
-      this.rangePerformanceDraws++;
     }
     // The inhabited shore: near sea over the bottom third, with Midio's
     // ship, Broshi on the beach and Midasus in the sky. Nominal stage space

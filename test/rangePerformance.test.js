@@ -1,125 +1,139 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RidgeMotionHistory, createRidgeMusicSampler } from '../src/world/RidgeMotionHistory.js';
-let api = {};
-try { api = await import('../src/world/alpine/RangePerformance.js'); }
-catch (e) { if (e.code !== 'ERR_MODULE_NOT_FOUND') throw e; }
+import { EnergyCurves } from '../src/audio/EnergyCurves.js';
+import { sampleRangePerformance } from '../src/world/alpine/RangePerformance.js';
 
+const layout = { anchors: { midio: [-700, 825, -6220], broshi: [-520, 825.1, -6080], midasus: [-380, 890.15, -5940] },
+  heights: { midio: 28, broshi: 35, midasus: 22 }, right: [-1, 0, 0], forward: [0, 0, 1] };
 const note = (role, options = {}) => ({ tMs: 1000, durMs: 1500, vel: .9,
   pitch: 72, src: 'midi', role, ...options });
-const make = timeline => new RidgeMotionHistory({ timeline, durationMs: 6000 });
-function frame(history = make([]), timeMs = 1100, options = {}) {
-  assert.equal(typeof api.sampleRangePerformance, 'function', 'passive sampler is available');
-  return api.sampleRangePerformance({ timeMs, music: history.sample(timeMs), width: 1280, height: 720, ...options });
-}
-const actor = (f, id) => f.actors.find(a => a.id === id);
-function recordingContext() {
-  const commands = [], paint = [];
-  const ctx = { save() {}, restore() {}, beginPath() {}, closePath() {}, clip() {},
-    moveTo(...v) { commands.push(v); }, lineTo(...v) { commands.push(v); },
-    rect(...v) { commands.push(v); }, ellipse(...v) { commands.push(v); },
-    arc(...v) { commands.push(v); }, fill() { paint.push({ kind: 'fill', color: this.fillStyle, alpha: this.globalAlpha }); },
-    stroke() { paint.push({ kind: 'stroke', color: this.strokeStyle, alpha: this.globalAlpha }); },
-    createLinearGradient() { return { addColorStop() {} }; },
-    createRadialGradient() { return { addColorStop() {} }; },
-    drawImage() { assert.fail('passive stage must not allocate or sample capture canvases'); },
-    fillRect() { assert.fail('passive stage must not cover the geographic lake with a rectangular overlay'); },
-    globalAlpha: 1, globalCompositeOperation: 'source-over' };
-  return { ctx, commands, paint };
-}
+const make = (timeline, options = {}) => new RidgeMotionHistory({ timeline, durationMs: 6000, ...options });
+const frame = (history = make([]), timeMs = 1100, options = {}) =>
+  sampleRangePerformance({ timeMs, music: history.sample(timeMs), layout, ...options });
+const actor = (snapshot, id) => snapshot.actors.find(value => value.id === id);
+const poses = snapshot => snapshot.actors.map(({ id, positionM, heightM, leanRad, turnRad, tailAngle, jawOpen, babies }) =>
+  ({ id, positionM, heightM, leanRad, turnRad, tailAngle, jawOpen, babies }));
 
-test('passive stage answers isolated rhythm, bass and melody with distinguishable poses', () => {
+test('habitat requires authored world anchors and returns immutable world poses', () => {
+  assert.deepEqual(sampleRangePerformance().actors, []);
+  assert.equal(sampleRangePerformance({ layout: { ...layout, anchors: {} } }).active, false);
+  const snapshot = frame();
+  assert.equal(snapshot.active, true);
+  assert.deepEqual(snapshot.actors.map(value => value.positionM), Object.values(layout.anchors));
+  assert.ok(Object.isFrozen(snapshot) && Object.isFrozen(snapshot.actors[0].positionM));
+  assert.equal(Object.isFrozen(layout.anchors.midio), false, 'sampling must not freeze caller-owned layout');
+  assert.ok(!('platform' in snapshot) && !('transform' in snapshot.actors[0]) && !('reflection' in snapshot.actors[0]));
+});
+
+test('isolated rhythm, bass and melody reach distinct water responses without lifting grounded roots', () => {
   const quiet = frame(), rhythm = frame(make([note('RHYTHM', { kick: true })]));
-  const bass = frame(make([note('BASS', { pitch: 36 })]));
-  const melody = frame(make([note('MELODY')]));
-  assert.ok(actor(rhythm, 'midio').hopPx > actor(quiet, 'midio').hopPx + 10);
-  assert.ok(actor(bass, 'broshi').activity > .8);
+  const bass = frame(make([note('BASS', { pitch: 36 })])), melody = frame(make([note('MELODY')]));
+  assert.ok(rhythm.waterResponse.rhythm > .2 && rhythm.waterResponse.wake > .1);
+  assert.equal(rhythm.waterResponse.bass, 0);
+  assert.equal(bass.waterResponse.bass, .9);
+  assert.equal(bass.waterResponse.melody, 0);
+  assert.equal(melody.waterResponse.melody, .9);
+  assert.equal(melody.waterResponse.bass, 0);
+  for (const id of ['midio', 'broshi']) {
+    assert.deepEqual(actor(rhythm, id).positionM, actor(quiet, id).positionM);
+    assert.deepEqual(actor(bass, id).positionM, actor(quiet, id).positionM);
+  }
+  assert.equal(actor(bass, 'broshi').activity, .9);
   assert.equal(actor(bass, 'midio').activity, 0);
-  assert.equal(actor(bass, 'midasus').activity, 0);
-  assert.notDeepEqual(actor(bass, 'broshi').transform, actor(quiet, 'broshi').transform);
   assert.equal(actor(melody, 'broshi').activity, 0);
-  assert.notDeepEqual(actor(melody, 'midio').transform, actor(quiet, 'midio').transform);
-  assert.notDeepEqual(actor(melody, 'midasus').transform, actor(quiet, 'midasus').transform);
   assert.equal(actor(melody, 'midio').source, actor(melody, 'midasus').source);
   assert.equal(actor(melody, 'midio').sharedSource, true);
 });
 
-test('untrusted synthetic pitch retains note glow but cannot choose melodic height', () => {
+test('dedicated lanes keep their canonical identity and only illuminate their resident', () => {
+  const snapshot = frame(make([note('PAD', { lane: 'MIDASUS' })]));
+  assert.equal(actor(snapshot, 'midasus').source, 'lane:MIDASUS');
+  assert.equal(actor(snapshot, 'midasus').sharedSource, false);
+  assert.ok(actor(snapshot, 'midasus').glow > .14);
+  assert.equal(actor(snapshot, 'midio').activity, 0);
+  assert.equal(actor(snapshot, 'broshi').glow, .14);
+});
+
+test('untrusted synthetic pitch preserves musical light without steering a body or firefly', () => {
   const low = frame(make([note('MELODY', { pitch: 36, pitchProvenance: 'synthetic' })]));
   const high = frame(make([note('MELODY', { pitch: 96, pitchProvenance: 'synthetic' })]));
   assert.ok(actor(low, 'midasus').glow > actor(frame(), 'midasus').glow);
   assert.equal(actor(low, 'midasus').pitchActivity, 0);
-  assert.deepEqual(low.actors, high.actors, 'synthetic placeholder pitch cannot change any gesture');
+  assert.deepEqual(low.actors, high.actors);
   const trustedLow = frame(make([note('MELODY', { pitch: 36 })]));
   const trustedHigh = frame(make([note('MELODY', { pitch: 96 })]));
-  assert.ok(actor(trustedHigh, 'midasus').transform.ty < actor(trustedLow, 'midasus').transform.ty);
+  assert.ok(actor(trustedHigh, 'midasus').positionM[1] > actor(trustedLow, 'midasus').positionM[1]);
 });
 
-test('future notes do not move the trio and all figures settle after silence', () => {
-  const h = make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]);
-  assert.deepEqual(frame(h, 999).actors, frame(make([]), 999).actors);
-  const early = frame(h, 1100);
-  frame(h, 5000); frame(h, 0);
-  assert.deepEqual(frame(h, 1100), early);
-  const rest = frame(make([]), 5000), settled = frame(h, 6000);
-  assert.deepEqual(settled.actors.map(a => a.transform), rest.actors.map(a => a.transform));
+test('physical silence overrides detected notes and residual motion or bass envelopes', () => {
+  const curves = new EnergyCurves(6000, 50);
+  curves.bands.forEach(band => band.fill(.9));
+  curves.rmsBands = curves.bands.map(band => new Float32Array(band.length).fill(1e-6));
+  const history = make([note('MELODY', { src: 'audio' }), note('BASS', { src: 'audio' })], { energyCurves: curves });
+  const first = frame(history), later = frame(history, 2200);
+  assert.deepEqual(poses(first), poses(later));
+  assert.deepEqual(first.waterResponse, { bass: 0, rhythm: 0, melody: 0, wake: 0 });
+  const stale = sampleRangePerformance({ layout, timeMs: 2000,
+    music: { ...make([note('MELODY'), note('BASS')]).sample(1100), activity01: 0, motionPresence01: 1, bassPressure01: 1 } });
+  assert.deepEqual(poses(stale), poses(first));
+  assert.ok(stale.actors.every(value => value.glow === .14 && value.activity === 0));
 });
 
-test('canonical analysis handoff reconstructs the same immutable passive stage', () => {
+test('future notes do not animate inhabitants and all figures rest in silence', () => {
+  const history = make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]);
+  assert.deepEqual(poses(frame(history, 999)), poses(frame(make([]), 999)));
+  assert.deepEqual(poses(frame(history, 6000)), poses(frame(make([]), 5000)));
+});
+
+test('forward, backward, held and analysis-handoff sampling reconstruct exactly the same world poses', () => {
   const previous = make([note('MELODY', { durMs: 4000 })]);
   const primary = make([note('MELODY', { lane: 'MIDASUS', pitch: 84, durMs: 4000 }), note('BASS')]);
   const history = createRidgeMusicSampler({ previous, primary, handoffStartMs: 1100 });
-  const f = frame(history, 1350);
+  const snapshot = frame(history, 1350);
   frame(history, 5000); frame(history, 500);
-  assert.deepEqual(frame(history, 1350), f);
-  assert.ok(Object.isFrozen(f) && Object.isFrozen(f.actors) && Object.isFrozen(f.actors[0].transform));
-  assert.equal(actor(f, 'midasus').source, null);
-  assert.equal(actor(f, 'midasus').contributors.length, 2);
+  assert.deepEqual(frame(history, 1350), snapshot);
+  assert.deepEqual(frame(history, 1350), snapshot);
+  assert.equal(actor(snapshot, 'midasus').source, null);
+  assert.equal(actor(snapshot, 'midasus').contributors.length, 2);
+  assert.ok(Object.isFrozen(actor(snapshot, 'midasus').contributors[0]));
 });
 
-test('reduced motion freezes hops, body transforms and star orbits while retaining figures', () => {
-  const h = make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]);
-  const first = frame(h, 1080, { reducedMotion: true }), later = frame(h, 1200, { reducedMotion: true });
-  assert.equal(first.actors.length, 3);
-  for (const a of first.actors) { assert.equal(a.hopPx, 0); assert.equal(a.transform.rot, 0); }
-  assert.deepEqual(first.actors.map(a => a.transform), later.actors.map(a => a.transform));
-  assert.deepEqual(actor(first, 'midasus').babies, actor(later, 'midasus').babies);
+test('reduced motion freezes every root, articulation and firefly while retaining musical light', () => {
+  const history = make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]);
+  const first = frame(history, 1080, { reducedMotion: true });
+  const later = frame(history, 2200, { reducedMotion: true });
+  assert.deepEqual(poses(first), poses(later));
+  assert.deepEqual(poses(first), poses(frame(make([]))));
+  assert.deepEqual(first.waterResponse, { bass: 0, rhythm: 0, melody: 0, wake: 0 });
+  assert.ok(first.actors.every(value => value.glow > .14));
 });
 
-test('reduced flash softens transient glow without suppressing musical motion', () => {
-  const h = make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]);
-  const ordinary = frame(h), reduced = frame(h, 1100, { reducedFlash: true });
-  assert.deepEqual(ordinary.actors.map(a => a.transform), reduced.actors.map(a => a.transform));
-  for (const a of ordinary.actors) assert.ok(actor(reduced, a.id).glow < a.glow);
-});
-
-test('the small platform and complete trio remain bounded at portrait and wide output sizes', () => {
-  const h = make([note('MELODY', { pitch: 96 }), note('BASS'), note('RHYTHM', { kick: true })]);
-  for (const [width, height] of [[1280, 720], [360, 640], [640, 360], [2560, 720], [320, 240]]) {
-    for (const timeMs of [0, 1080, 1273, 2400, 5000]) {
-      const f = frame(h, timeMs, { width, height });
-      assert.ok(Math.abs(f.platform.x / width - .3) < .02);
-      assert.ok(f.platform.width < width * .36, 'platform is a shared small dock, not a foreground wall');
-      assert.ok(f.platform.y > height * .76 && f.platform.y < height * .86);
-      assert.ok(f.bounds.x >= 0 && f.bounds.y >= 0);
-      assert.ok(f.bounds.x + f.bounds.width <= width && f.bounds.y + f.bounds.height <= height,
-        `complete drawn stage fits ${width}x${height} at ${timeMs}: ${JSON.stringify(f.bounds)}`);
-    }
+test('reduced flash attenuates light modulation without changing any pose', () => {
+  const history = make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]);
+  const ordinary = frame(history), reduced = frame(history, 1100, { reducedFlash: true });
+  assert.deepEqual(poses(ordinary), poses(reduced));
+  for (const value of ordinary.actors) {
+    assert.ok(actor(reduced, value.id).glow - .14 < (value.glow - .14) * .25);
   }
 });
 
-test('pure painter draws three identifiable glyphs, local reflections and a small physical dock', () => {
-  const f = frame(make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]));
-  assert.equal(typeof api.drawRangePerformance, 'function');
-  const { ctx, commands, paint } = recordingContext();
-  const before = JSON.stringify(f);
-  const diagnostic = api.drawRangePerformance(ctx, f, { light: { x: 900, y: 100, intensity: .5, colorHex: '#dde5ff' } });
-  assert.equal(diagnostic.actorCount, 3);
-  assert.equal(diagnostic.reflectionCount, 3);
-  assert.deepEqual(Object.keys(diagnostic.actorBounds), ['midio', 'broshi', 'midasus']);
-  assert.deepEqual(diagnostic.bounds, f.bounds);
-  assert.ok(paint.filter(p => p.kind === 'stroke').length > 65, 'mesh edges and physical dock edges reach the real painter');
-  for (const hue of [178, 16, 276]) assert.ok(paint.some(p => typeof p.color === 'string' && p.color.includes(`(${hue},`)), `identity hue ${hue} is painted`);
-  assert.ok(commands.flat().every(Number.isFinite), 'no non-finite geometry reaches Canvas');
-  assert.equal(JSON.stringify(f), before, 'drawing does not mutate immutable performance state');
+test('sustained music keeps fixed sizes, grounded contact, small drift and slow articulation', () => {
+  const music = { activity01: 1, motionPresence01: 1, kick01: 1, bassPressure01: 1,
+    trioSources: Object.fromEntries(['midio', 'broshi', 'midasus'].map(id => [id,
+      { source: `lane:${id.toUpperCase()}`, activity: 1, pitchActivity: 1, pitch01: 1 }])) };
+  let previous;
+  for (let timeMs = 0; timeMs <= 60000; timeMs += 100) {
+    const snapshot = sampleRangePerformance({ layout, music, timeMs });
+    for (const value of snapshot.actors) {
+      assert.equal(value.heightM, layout.heights[value.id]);
+      if (value.id !== 'midasus') assert.deepEqual(value.positionM, layout.anchors[value.id]);
+      else assert.ok(Math.hypot(...value.positionM.map((v, axis) => v - layout.anchors.midasus[axis])) < 8);
+      if (previous) {
+        const old = actor(previous, value.id);
+        for (const angle of ['leanRad', 'turnRad', 'tailAngle']) assert.ok(Math.abs(value[angle] - old[angle]) / .1 < .3);
+      }
+    }
+    previous = snapshot;
+  }
 });

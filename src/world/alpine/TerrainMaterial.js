@@ -1,7 +1,7 @@
 import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { GUST_FRONTS, GUST_IDLE_SEC, GUST_SWEEP_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
-import { MIRROR_LIFT } from './WaterMirror.js';
+import { MIRROR_LIFT, BACKDROP_FEATHER_UV } from './WaterMirror.js';
 import { ACTOR_GLSL, WAKE_GLSL, actorUniforms } from './ActorsGL.js';
 import { STORM_GLSL } from './RangeStorm.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
@@ -135,6 +135,8 @@ export const SCENE_FRAG = /* glsl */`
   uniform vec2 uLakeMusicOrigin;
   uniform int uLakeMusicCount;
   uniform float uLakeMusicGain;
+  uniform float uMirrorLift;
+  uniform vec4 uCovePressure; // shore xz, bass pressure, heard seconds
   // Lake mirror (WaterMirror.js): the ground seen from the camera reflected
   // about the water level, projected by uMirrorMatrix; uMirrorAmount 0 when
   // there is none. While that image is drawn, ground below uClipBelow is cut.
@@ -149,6 +151,7 @@ export const SCENE_FRAG = /* glsl */`
   // and the camera's view-projection to find where a reflected ray meets it.
   uniform sampler2D uBackdrop;
   uniform float uBackdropAmount;
+  uniform vec4 uBackdropBounds;
   uniform mat4 uViewProj;
   // Gust fronts (the forest's): on the water they are cat's paws, rough
   // patches that cross the frame with each front and break the mirror.
@@ -424,6 +427,15 @@ export const SCENE_FRAG = /* glsl */`
         musicRing = clamp(musicRing, 0.0, 1.0) * uLakeMusicGain;
         ripple += radial / max(radius, 1.0) * musicRing * 0.018;
       }
+      // Bass presses gently into the water beside the grounded resident.
+      // The geographic water branch clips it at the bank; no dry-land rings.
+      if (uCovePressure.z > 0.0) {
+        vec2 radial = vWorld.xz - uCovePressure.xy;
+        float radius = length(radial);
+        float pressure = sin(radius * .18 - uCovePressure.w * 1.4)
+          * exp(-radius / 38.0) * uCovePressure.z;
+        ripple += radial / max(radius, 1.0) * pressure * .045;
+      }
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       waterN = waterNormal;
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(vec3(0.0, 1.0, 0.0), V), 0.0), 5.0);
@@ -476,9 +488,18 @@ export const SCENE_FRAG = /* glsl */`
       // lies beyond its far shore; magical naturalism lowers the reflected
       // ray (MIRROR_LIFT, as the mirror camera does) so the water holds them.
       vec3 ray = normalize(vRenderedWorld - uCameraPos);
-      vec3 up = vec3(ray.x, abs(ray.y) * ${MIRROR_LIFT.toFixed(3)}, ray.z);
-      vec4 bc = uViewProj * vec4(uCameraPos + normalize(up) * 60000.0, 1.0);
-      vec3 mirrored = srgbToLinear(texture(uBackdrop, clamp(bc.xy / bc.w * 0.5 + 0.5 + shiver, vec2(0.001), vec2(0.999))).rgb);
+      vec3 up = normalize(vec3(ray.x, abs(ray.y) * uMirrorLift, ray.z));
+      vec4 bc = uViewProj * vec4(uCameraPos + up * 60000.0, 1.0);
+      vec2 backdropUv = bc.xy / max(bc.w, 0.00001) * 0.5 + 0.5 + shiver;
+      vec4 captured = texture(uBackdrop, clamp(backdropUv, vec2(0.001), vec2(0.999)));
+      vec2 edge = min(backdropUv - uBackdropBounds.xy, uBackdropBounds.zw - backdropUv);
+      float capturedWeight = smoothstep(0.0, ${BACKDROP_FEATHER_UV.toFixed(3)}, min(edge.x, edge.y))
+        * captured.a * uBackdropAmount * step(0.00001, bc.w);
+      // Near-water rays reach above the captured sky. Transparent overscan
+      // and opaque letterboxing must continue into sky, never black borders.
+      vec3 reflectedSky = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.45, up.y));
+      vec3 capturedSky = srgbToLinear(clamp(captured.rgb / max(captured.a, 0.00001), 0.0, 1.0));
+      vec3 mirrored = mix(reflectedSky, capturedSky, capturedWeight);
       float have = uBackdropAmount;
       vec4 mc = uMirrorMatrix * vec4(vRenderedWorld, 1.0);
       if (mc.w > 0.0 && abs(vWorld.y - uMirrorLevel) < 3.0) {
@@ -562,6 +583,8 @@ export function sceneUniforms(THREE, base) {
     uDebugMask: { value: 0 },
     uTime: { value: 0 },
     uLakeMusicHits: { value: Array.from({ length: LAKE_MUSIC_HITS }, () => new THREE.Vector2(-1, 0)) },
+    uMirrorLift: { value: MIRROR_LIFT },
+    uCovePressure: { value: new THREE.Vector4() },
     uLakeMusicOrigin: { value: new THREE.Vector2() }, uLakeMusicCount: { value: 0 }, uLakeMusicGain: { value: 0 },
     // Gust fronts in flight: age (s), strength, and way across the frame.
     ...gustUniforms(),
@@ -573,7 +596,7 @@ export function sceneUniforms(THREE, base) {
     uMirror: { value: null }, uMirrorMatrix: { value: new THREE.Matrix4() }, uMirrorAmount: { value: 0 },
     uMirrorLevel: { value: 0 }, uMirrorRipple: { value: 0 }, uClipBelow: { value: -1e9 },
     uViewportPx: { value: new THREE.Vector2(1, 1) },
-    uBackdrop: { value: null }, uBackdropAmount: { value: 0 }, uViewProj: { value: new THREE.Matrix4() },
+    uBackdrop: { value: null }, uBackdropAmount: { value: 0 }, uBackdropBounds: { value: new THREE.Vector4(0, 0, 0, 0) }, uViewProj: { value: new THREE.Matrix4() },
     tRock: { value: null }, sRock: { value: 150 }, tRockNear: { value: null }, sRockNear: { value: 6 },
     tCanopy: { value: null }, sCanopy: { value: 70 }, tSnow: { value: null }, sSnow: { value: 60 },
     tSoil: { value: null }, sSoil: { value: 3 },
