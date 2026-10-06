@@ -427,7 +427,7 @@ async function mobileChecks(page, output, report) {
 async function runPrefix(options, audit, prefix, wavs) {
   const hosted = await serve(options.site, prefix), output = path.join(options.output, prefix === '/' ? 'root' : 'project-subpath');
   await fs.mkdir(output, { recursive: true });
-  const report = { prefix, passed: false, traversalSkipped: options.checksOnly, traversal: [], restores: [], checks: [], errors: [], limitations: options.checksOnly ? ['Diagnostic checks-only mode skips catalog traversal and cannot establish full eight-checkpoint browser proof.'] : [] };
+  const report = { prefix, passed: false, traversalSkipped: options.checksOnly, traversal: [], restores: [], checks: [], errors: [], identityFallbacks: [], limitations: options.checksOnly ? ['Diagnostic checks-only mode skips catalog traversal and cannot establish full eight-checkpoint browser proof.'] : [] };
   let browser, context;
   const expectedHttpFailures = new Set();
   const addPage = async () => {
@@ -463,7 +463,11 @@ async function runPrefix(options, audit, prefix, wavs) {
     page.on('response', response => {
       const url = new URL(response.url()); if (!url.href.startsWith(hosted.url) || response.status() !== 200 || !/\.(js|json|bin|wasm|png|jpg|webp|tif)$/.test(url.pathname)) return;
       const file = decodeURIComponent(url.pathname.slice(prefix.length));
-      pending.push(boundedResponseBody(response).catch(async () => { const r = await fetch(response.url(), { signal: AbortSignal.timeout(15000) }); assert.ok(r.ok); return Buffer.from(await r.arrayBuffer()); }).then(bytes => { assert.equal(hash(bytes), audit.outputHashes.get(file), `served runtime bytes differ: ${file}`); loaded.set(file, hash(bytes)); }).catch(error => report.errors.push({ type: 'identity', file, text: error.message })));
+      pending.push(boundedResponseBody(response).catch(async error => {
+        const fallback = { file, url: response.url(), reason: error.message }; report.identityFallbacks.push(fallback);
+        const r = await fetch(fallback.url, { signal: AbortSignal.timeout(15000) }); assert.ok(r.ok);
+        const bytes = Buffer.from(await r.arrayBuffer()); fallback.digest = hash(bytes); return bytes;
+      }).then(bytes => { assert.equal(hash(bytes), audit.outputHashes.get(file), `served runtime bytes differ: ${file}`); loaded.set(file, hash(bytes)); }).catch(error => report.errors.push({ type: 'identity', file, text: error.message })));
     });
     await page.goto(hosted.url); await page.locator('#versionPrevious').waitFor();
     const desktop = await page.locator('#versionPrevious').boundingBox(); assert.ok(desktop.width >= 64 && desktop.height >= 64, 'desktop arrow target');
