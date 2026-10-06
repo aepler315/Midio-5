@@ -1,3 +1,4 @@
+import { sampleFirmamentMusic } from './RangeFirmament.js';
 import { stormAt } from './RangeStorm.js';
 import { resolveRangeComposition } from './RangeComposition.js';
 import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
@@ -429,7 +430,8 @@ export function buildRangeFrame({
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
     userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
-    light: lightState, music: land, habitatMusic: performance ? ridgeSample || null : null, ridges, narrative, groundBars, emitters,
+    light: lightState, music: land, habitatMusic: performance ? ridgeSample || null : null,
+    skyMusic: performance ? sampleFirmamentMusic(mgr.ridgeMusicSession, timeMs) : null, ridges, narrative, groundBars, emitters,
     waterHits,
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,

@@ -2671,7 +2671,8 @@ export class BiomeManager {
       return;
     }
 
-    this._drawSky(ctx, canvas, A, B, t, dn.night);
+    this._fullRangeSky = !!(this._rangeV2Active && this.rangePresentation?.drawFirmament?.(ctx, canvas));
+    if (!this._fullRangeSky) this._drawSky(ctx, canvas, A, B, t, dn.night);
     // The Range's sky is real sky: the narrative's coloured glyph arcs read
     // as marks on a chart, so they only draw where there is no Range sky.
     if (!this._rangeSky) drawNarrativeMarks(ctx, this.rangeNarrative, this.tSec * 1000, canvas, this.songSeed, this.reducedMotion);
@@ -2702,7 +2703,7 @@ export class BiomeManager {
       if (n) spaceCol = this.lerpCache.get('#000000', spaceCol, n.skyDark);
       const authority = n ? .15 + .85 * n.spaceAuthority : 1;
       // Worn as an aurora: the same musical skyline, given a natural body.
-      if (this._pass('space-ridge')) this.spaceRidge.drawAurora(ctx, canvas, spaceCol, this.tSec, {
+      if (!this._fullRangeSky && this._pass('space-ridge')) this.spaceRidge.drawAurora(ctx, canvas, spaceCol, this.tSec, {
         reducedFlash: this.reducedFlash, reducedMotion: this.reducedMotion, presentation: authority, night01: dn.night || 0 });
     }
 
@@ -2775,7 +2776,7 @@ export class BiomeManager {
     // greyer and lighter (brighter skies, whiter cloud), lit on the side
     // facing the celestial. They do not read the aurora's live outline; a
     // static fade keeps the few that reach up toward it thin.
-    if (this._rangeV2Active && this._pass('range-clouds')) {
+    if (this._rangeV2Active && !this._fullRangeSky && this._pass('range-clouds')) {
       const halo = hexToRgb(this._scenicLight.colorHex);
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
       const mid = hexToRgb(this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)));

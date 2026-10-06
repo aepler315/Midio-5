@@ -138,3 +138,16 @@ test('disposal retires each owned buffer and material once, leaving shared resou
   assert.ok(shared.uCameraPos.value.isVector3);
   assert.ok(shared.uClipBelow.value < -1e8);
 });
+
+test('Broshi head articulation moves solid faces, luminous edges, and both depth passes together', () => {
+  const l = layout(), cove = new CoveGL(THREE, sceneUniforms(THREE, {}), l);
+  try {
+    const snapshot = pose(l);
+    snapshot.actors.find(a => a.id === 'broshi').headAngle = .25;
+    cove.update(snapshot);
+    const broshi = cove.actors.broshi;
+    assert.equal(broshi.mesh.material.uniforms.uHead.value, .25);
+    assert.ok([...broshi.mesh.geometry.attributes.aJoint.array].filter(j => j === 3).length > 30);
+    assert.ok(broshi.depth.every(mesh => mesh.material.uniforms.uHead === broshi.mesh.material.uniforms.uHead));
+  } finally { cove.dispose(); }
+});

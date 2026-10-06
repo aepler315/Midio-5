@@ -117,3 +117,21 @@ test('reduced motion holds the cove, seeking reconstructs it, and scenery-only k
   assert.deepEqual(rangeRailPose(view, { ...frame, performance: false }), cameraPoseAt(view, frame.progress01));
   assert.equal(rangeHabitatCameraPose({ ...view, id: 'another-lake' }, .5), null);
 });
+
+test('the living trio stays in the real wet cove and above the bank along its motion paths', async () => {
+  const { sampleRangePerformance } = await import('../src/world/alpine/RangePerformance.js');
+  const music = { activity01: 1, motionPresence01: 1,
+    trioSources: Object.fromEntries(['midio', 'broshi', 'midasus'].map(id => [id, { activity: 1 }])) };
+  for (let timeMs = 0; timeMs <= 60000; timeMs += 100) {
+    const pose = sampleRangePerformance({ layout: habitat, music, timeMs });
+    const [midio, broshi, midasus] = pose.actors;
+    assert.equal(terrainHeightAt(data, midio.positionM[0], midio.positionM[2]), habitat.waterLevelM);
+    assert.ok(Math.abs(midio.positionM[1] - habitat.waterLevelM) <= 1.6);
+    assert.deepEqual(broshi.positionM, habitat.anchors.broshi);
+    assert.ok(midasus.positionM[1] - terrainHeightAt(data, midasus.positionM[0], midasus.positionM[2]) > 30);
+    for (const actor of pose.actors) {
+      const q = projectPoint(rangeHabitatCameraPose(view, timeMs / 60000), 16 / 9, actor.positionM);
+      assert.ok(q && Math.abs(q.x) < .9 && Math.abs(q.y) < .9, `${actor.id} remains framed`);
+    }
+  }
+});
