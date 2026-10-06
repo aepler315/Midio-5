@@ -48,6 +48,8 @@
 .version-browser-enabled #hud { top: calc(max(16px, env(safe-area-inset-top)) + 80px); left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); gap: 8px; }
 .version-browser-enabled #hudRight { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
 .version-browser-enabled #hudLeft { flex-shrink: 0; }
+/* Portrait guidance must not cover the checkpoint in the shared top row. */
+.version-browser-enabled #landscapeHint { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); }
 @media (max-width: 720px) {
   .version-navigation { --version-arrow-size: 52px; gap: 2px 8px; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); }
   .version-navigation .version-arrow { font-size: 32px; }
