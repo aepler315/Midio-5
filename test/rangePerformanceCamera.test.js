@@ -95,7 +95,7 @@ function simulation(performance) {
       _profile: () => profile, _rotated: c => c, lerpCache: new LerpCache(), _airColor: '#556677' } };
 }
 
-test('performance snapshot declares camera ownership and suppresses old actor owners without changing land or light', () => {
+test('performance snapshot owns the camera and stronger land gestures while sharing canonical music and light', () => {
   const inputs = { frameId: 1, pose: { worldX: 1000, midioX: 400 }, scenicViewport: vp, groundViewport: vp };
   const landscape = buildRangeFrame({ ...inputs, sim: simulation(false) });
   const performance = buildRangeFrame({ ...inputs, sim: simulation(true) });
@@ -104,7 +104,8 @@ test('performance snapshot declares camera ownership and suppresses old actor ow
   assert.deepEqual(performance.cameraMove, camera.NEUTRAL_MOVE);
   assert.equal(performance.actors, null);
   assert.ok(landscape.actors.presence > .99, 'the same source still owns scenery-only figures');
-  assert.deepEqual(performance.music, landscape.music);
+  assert.deepEqual(performance.music.source, landscape.music.source);
+  assert.ok(performance.music.amplitudeM > landscape.music.amplitudeM);
   assert.deepEqual(performance.light, landscape.light);
   assert.ok(Object.isFrozen(performance));
 });

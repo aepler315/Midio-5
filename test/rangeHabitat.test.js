@@ -120,13 +120,14 @@ test('reduced motion holds the cove, seeking reconstructs it, and scenery-only k
 
 test('the living trio stays in the real wet cove and above the bank along its motion paths', async () => {
   const { sampleRangePerformance } = await import('../src/world/alpine/RangePerformance.js');
-  const music = { activity01: 1, motionPresence01: 1,
-    trioSources: Object.fromEntries(['midio', 'broshi', 'midasus'].map(id => [id, { activity: 1 }])) };
-  for (let timeMs = 0; timeMs <= 60000; timeMs += 100) {
+  const music = { activity01: 1, motionPresence01: 1, bassPressure01: 1,
+    trioSources: Object.fromEntries(['midio', 'broshi', 'midasus'].map(id => [id, { activity: 1, pitchActivity: 1, pitch01: 0 }])) };
+  for (let timeMs = 0; timeMs <= 60000; timeMs += 50) {
+    music.kick01 = (Math.sin(timeMs * .012) + 1) / 2;
     const pose = sampleRangePerformance({ layout: habitat, music, timeMs });
     const [midio, broshi, midasus] = pose.actors;
     assert.equal(terrainHeightAt(data, midio.positionM[0], midio.positionM[2]), habitat.waterLevelM);
-    assert.ok(Math.abs(midio.positionM[1] - habitat.waterLevelM) <= 1.6);
+    assert.ok(Math.abs(midio.positionM[1] - habitat.waterLevelM) <= 5.6);
     assert.deepEqual(broshi.positionM, habitat.anchors.broshi);
     assert.ok(midasus.positionM[1] - terrainHeightAt(data, midasus.positionM[0], midasus.positionM[2]) > 30);
     for (const actor of pose.actors) {

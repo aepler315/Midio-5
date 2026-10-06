@@ -5,6 +5,7 @@ export function firmamentUniforms(THREE) {
     uFullSky:{value:0},uFirmamentTime:{value:0},uFirmamentSeed:{value:0},
     uFirmamentNight:{value:1},uFirmamentFlash:{value:1},
     uFirmamentBands:{value:new THREE.Vector3(.36,0,0)},
+    uFirmamentMotion:{value:new THREE.Vector4()}, // rhythm, bass, melody, spatial motion enabled
     uFirmamentLayers:{value:new THREE.Vector3(1,1,1)},
     uFirmamentBody:{value:new THREE.Vector4(0,1,0,.015)},
     uFirmamentBodyColor:{value:new THREE.Vector3()},
@@ -24,7 +25,8 @@ const artCode=CONSTELLATION_ART.map((a,index)=>`
     float line=1.0-smoothstep(0.002,0.002+aa/${f(Math.min(a.width,a.height))},lineDistance);
     float core=exp(-pow(starDistance/max(0.009,aa/${f(Math.min(a.width,a.height))}),2.0));
     float breath=1.0-uFirmamentFlash*(0.14-0.14*sin(uFirmamentTime*0.34+${f(index*1.7)}));
-    art+=vec3(.22,.33,.49)*line*(.5+.5*breath)+vec3(.7,.83,1.0)*core;
+    float trace=uFirmamentFlash*uFirmamentMotion.z*(.5+.5*sin(q.x*6.0+q.y*5.0-uFirmamentTime*1.8+${f(index)}));
+    art+=vec3(.22,.33,.49)*line*(.5+.5*breath+.4*trace)+vec3(.7,.83,1.0)*core;
   }`).join('\n');
 
 export const FIRMAMENT_GLSL=/* glsl */`
@@ -34,6 +36,7 @@ export const FIRMAMENT_GLSL=/* glsl */`
   uniform float uFirmamentNight;
   uniform float uFirmamentFlash;
   uniform vec3 uFirmamentBands;
+  uniform vec4 uFirmamentMotion;
   uniform vec3 uFirmamentLayers;
   uniform vec4 uFirmamentBody;
   uniform vec3 uFirmamentBodyColor;
@@ -70,15 +73,21 @@ export const FIRMAMENT_GLSL=/* glsl */`
   }
   vec3 auroraCurtains(vec2 angles){
     float t=uFirmamentTime;
+    vec3 music=uFirmamentMotion.xyz*uFirmamentMotion.w;
     vec3 glow=vec3(0.0);
     for(int i=0;i<3;i++){
       float k=float(i);
-      float hem=.028+k*.075+.028*sin(angles.x*6.0+t*.10+k*2.1)+.014*sin(angles.x*13.0-t*.13+k);
+      // Fold displacement, not a screen-wide flash: every hit pulls a
+      // different part of the same curtain. The lake evaluates it too.
+      float flow=angles.x+.022*music.y*sin(angles.x*5.0-t*.9+k)+.026*music.x;
+      float hem=.028+k*.075+.028*sin(angles.x*6.0+t*.10+k*2.1)+.014*sin(angles.x*13.0-t*.13+k)
+        +.025*music.x*(.5+.5*sin(angles.x*5.0+k))+.02*music.y*sin(angles.x*9.0-t*.85+k)
+        +.014*music.z*sin(angles.x*7.0+t*1.1+k);
       float above=angles.y-hem;
-      float height=.22+.035*sin(angles.x*4.0+t*.08+k);
+      float height=.22+.035*sin(angles.x*4.0+t*.08+k)+.13*music.y+.06*music.z;
       float skirt=smoothstep(-.022,0.012,above);
       float curtain=skirt*exp(-max(0.0,above)/height*3.0);
-      float folds=.18+.82*pow(.5+.5*sin(angles.x*54.0+t*.25+k+sin(angles.x*11.0-t*.12)),3.0);
+      float folds=.18+.82*pow(.5+.5*sin(flow*54.0+t*.25+k+sin(flow*11.0-t*.12)),3.0);
       float base=.13+.26*uFirmamentBands.x*(.45+.55*uFirmamentFlash);
       vec3 shade=mix(vec3(.13,.85,.52),vec3(.46,.18,.73),clamp(above/height,0.0,1.0));
       glow+=shade*curtain*(.2+.8*folds)*base;

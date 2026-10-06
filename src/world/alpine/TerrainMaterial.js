@@ -427,16 +427,16 @@ export const SCENE_FRAG = /* glsl */`
           musicRing += lakeRing(radius, uLakeMusicHits[i].x, uLakeMusicHits[i].y);
         }
         musicRing = clamp(musicRing, 0.0, 1.0) * uLakeMusicGain;
-        ripple += radial / max(radius, 1.0) * musicRing * 0.018;
+        ripple += radial / max(radius, 1.0) * musicRing * mix(.018, .045, uFullSky);
       }
-      // Bass presses gently into the water beside the grounded resident.
+      // Bass sends visible pressure through the water beside the resident.
       // The geographic water branch clips it at the bank; no dry-land rings.
       if (uCovePressure.z > 0.0) {
         vec2 radial = vWorld.xz - uCovePressure.xy;
         float radius = length(radial);
-        float pressure = sin(radius * .18 - uCovePressure.w * 1.4)
-          * exp(-radius / 38.0) * uCovePressure.z;
-        ripple += radial / max(radius, 1.0) * pressure * .045;
+        float pressure = sin(radius * .18 - uCovePressure.w * 3.5)
+          * exp(-radius / 62.0) * uCovePressure.z;
+        ripple += radial / max(radius, 1.0) * pressure * .075;
       }
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       waterN = waterNormal;

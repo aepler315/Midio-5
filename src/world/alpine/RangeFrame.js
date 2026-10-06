@@ -205,7 +205,7 @@ export function landWaveDir(seed = 0) {
   return [Math.cos(angle), Math.sin(angle)];
 }
 
-export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, seed = 0 } = {}) {
+export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, seed = 0, performance = false } = {}) {
   const m = reducedMotion ? 0 : unit(moment01);
   // The source already has causal pressure, overlapping kick tails and
   // confidence-weighted melodic release. Keep that phrasing visible between
@@ -215,17 +215,23 @@ export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, s
   // full swell, staying below the existing 106.7 m calibration reference.
   const response = reducedMotion ? 0 : 1 - .8 * m;
   const out = { ...music, source: music, landMoment01: m, waveDir: landWaveDir(seed),
-    amplitudeM: LAND_SWELL.waveM * m + music.amplitudeM * .35 * response,
-    kickM: music.kickM * .6 * response,
-    gestureM: music.gestureM * .35 * response,
-    melodicM: music.melodicM * .65 * response,
+    amplitudeM: LAND_SWELL.waveM * m + music.amplitudeM * (performance ? .7 : .35) * response,
+    kickM: music.kickM * (performance ? 2 : .6) * response,
+    gestureM: music.gestureM * (performance ? .8 : .35) * response,
+    melodicM: music.melodicM * (performance ? 1.2 : .65) * response,
     structuralM: LAND_SWELL.liftM * m,
     // Multiplying absolute time by live pitch spins the field on a note
     // change late in the song. Pitch may shape its wavelength and strength,
     // but this deterministic carrier always advances at one slow rate.
-    melodyPhaseRad: 2 * Math.PI * .025 * tSec,
-    phaseRad: 2 * Math.PI * LAND_SWELL.waveHz * tSec, calibrationActivity01: 1 };
+    melodyPhaseRad: 2 * Math.PI * (performance ? .07 : .025) * tSec,
+    phaseRad: 2 * Math.PI * (performance ? .045 : LAND_SWELL.waveHz) * tSec, calibrationActivity01: 1 };
   out.totalBoundM = out.amplitudeM + out.kickM + out.gestureM + out.melodicM + out.structuralM;
+  // Stronger performance gestures still obey the same geological budget.
+  if (out.totalBoundM > RANGE_MOTION_REFERENCE_M) {
+    const gain = RANGE_MOTION_REFERENCE_M / out.totalBoundM;
+    for (const k of ['amplitudeM', 'kickM', 'gestureM', 'melodicM', 'structuralM']) out[k] *= gain;
+    out.totalBoundM = RANGE_MOTION_REFERENCE_M;
+  }
   return out;
 }
 
@@ -385,7 +391,7 @@ export function buildRangeFrame({
     motionPresence01: ridgeSample?.motionPresence01, calibrationActivity01: ridgeSample?.pressureEnergy01,
   });
   const land = landMotion(music, landMoment01(mgr.sections, timeMs, mgr._landHistory),
-    { tSec: timeMs / 1000, reducedMotion, seed: sim.songSeed ?? 0 });
+    { tSec: timeMs / 1000, reducedMotion, seed: sim.songSeed ?? 0, performance });
   const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
   const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
     stateKey: mgr.ridgeMusicSession.stateKey,
