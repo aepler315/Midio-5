@@ -95,6 +95,9 @@ export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome
  */
 export function sceneCaptionFor(view, { horizon = null, massif = null } = {}, biome = null) {
   if (!view?.title) return null;
+  if (view.id === 'moonlit-journey') return {
+    biome: null, rows: [{ label: '', name: 'Moonlit Journey', region: '' }], stats: '', credit: '',
+  };
   const rows = [];
   if (horizon?.name) rows.push({ label: 'HORIZON', name: horizon.name, region: shortRegion(horizon.region) });
   if (massif?.name) rows.push({ label: 'MASSIF', name: massif.name, region: shortRegion(massif.region) });

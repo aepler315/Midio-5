@@ -81,7 +81,7 @@ import {
 } from './ui/KeepAwake.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
-import { resolveRangeExperience, rangePerformanceViewId } from './world/LandscapePresentation.js';
+import { resolveRangeExperience, rangePerformanceViewId, rangeJourneyEnabled } from './world/LandscapePresentation.js';
 import { formatSeed, parseSeed, resolveSongSeed } from './utils/seed.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
@@ -488,7 +488,7 @@ let sceneChoice = resolveSceneChoice({
   catalog: SCENE_CATALOG, biomeNames: PICKABLE_BIOMES.map((b) => b.name),
 });
 const rangePresentation = rangeMode.mode === 'v2'
-  ? new RangePresentation({ mode: 'v2', forcedViewId: rangePerformanceViewId(sceneChoice, rangeExperience), diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
+  ? new RangePresentation({ mode: 'v2', journey: rangeJourneyEnabled(sceneChoice, rangeExperience), forcedViewId: rangePerformanceViewId(sceneChoice, rangeExperience), diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
   : null;
 
 // The title screen is alive from the very first frame: a living backdrop
@@ -2094,6 +2094,7 @@ function startTimeline(timelineData, extra = {}) {
   // it. Created here, per song, which is after the world is known.
   renderer = createPresentingRenderer({ canvas, mode: rendererMode, presentation: effectivePresentation(), residency: sharedResidency() });
   if (rangePresentation) {
+    rangePresentation.setJourney(rangeJourneyEnabled(timelineData.sceneChoice || sceneChoice, rangeExperience));
     rangePresentation.setForcedView(rangePerformanceViewId(timelineData.sceneChoice || sceneChoice, rangeExperience));
     rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen, exportMode });
     renderer.rangePresentation = rangePresentation;

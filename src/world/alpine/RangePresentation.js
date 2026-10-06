@@ -19,6 +19,9 @@ import { skyTurn } from './RangeSkyComposition.js';
 import { forcedSceneChoice } from '../terrain/SceneCatalog.js';
 import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
 import { noteViewShown } from '../terrain/RangeHistory.js';
+import { JOURNEY_VIEW } from './JourneyWorld.js';
+
+const JOURNEY_CHOICE = Object.freeze({ view: JOURNEY_VIEW });
 
 export const RANGE_RENDERER_MODES = Object.freeze(['legacy', 'v2']);
 export const RANGE_DEFAULT_MODE = 'v2';
@@ -65,10 +68,12 @@ function defaultCanvas(w, h) {
 }
 
 export class RangePresentation {
-  constructor({ mode = 'legacy', forcedViewId = null, diag = null, residency = null, budget = 'desktop',
+  constructor({ mode = 'legacy', forcedViewId = null, journey = false, diag = null, residency = null, budget = 'desktop',
     loadRuntime = () => import(RUNTIME_URL), sceneFactory = null, catalog = SCENE_CATALOG, assetBase = ASSET_BASE,
     makeCanvas = defaultCanvas } = {}) {
     this.mode = mode;
+    this.journey = journey;
+    this._runtimeToken = 0;
     this.forcedViewId = forcedViewId;
     this.diag = diag;
     this.residency = residency;
@@ -122,6 +127,17 @@ export class RangePresentation {
     this.forced = this.forcedViewId ? forcedSceneChoice(this.catalog, this.forcedViewId) : null;
   }
 
+  setJourney(enabled) {
+    if (this.journey === !!enabled) return;
+    this.journey = !!enabled;
+    this._runtimeToken++;
+    this._releaseScratch();
+    this.scene?.dispose();
+    this.scene = null;
+    this.active = false;
+    this.runtimeState = this.enabled ? 'idle' : 'off';
+  }
+
   /** True while the scene is fading in over legacy scenery that is still
    *  drawn underneath it. */
   get arriving() { return this.active && this.arrival < 1; }
@@ -166,6 +182,7 @@ export class RangePresentation {
   }
 
   _choiceFor(biome) {
+    if (this.journey) return JOURNEY_CHOICE;
     if (this.forced) return this.forced;
     return this.sceneByBiome?.get?.(biome) || null;
   }
@@ -184,6 +201,7 @@ export class RangePresentation {
   }
 
   _wantedViewIds() {
+    if (this.journey) return [JOURNEY_VIEW.id];
     if (this.forced?.view) return [this.forced.view.id];
     return [...(this.sceneByBiome?.values?.() || [])].map((c) => c?.view?.id).filter(Boolean);
   }
@@ -191,15 +209,20 @@ export class RangePresentation {
   async _ensureRuntime() {
     if (this.runtimeState !== 'idle') return;
     this.runtimeState = 'loading';
+    const token = ++this._runtimeToken, journey = this.journey;
     try {
-      if (this._sceneFactory) this.scene = await this._sceneFactory();
+      let scene;
+      if (this._sceneFactory) scene = await this._sceneFactory();
       else {
         const THREE = await this._loadRuntime();
-        const { RangeScene } = await import('./RangeScene.js');
-        this.scene = new RangeScene({ THREE, residency: this.residency, budget: this.budget, diag: this.diag });
+        const Scene = journey ? (await import('./JourneyScene.js')).JourneyScene : (await import('./RangeScene.js')).RangeScene;
+        scene = new Scene({ THREE, residency: this.residency, budget: this.budget, diag: this.diag });
       }
+      if (token !== this._runtimeToken) { scene.dispose(); return; }
+      this.scene = scene;
       this.runtimeState = 'ready';
     } catch (err) {
+      if (token !== this._runtimeToken) return;
       this.runtimeState = 'failed';
       this.reason = `runtime-unavailable: ${err?.message || err}`;
       this._availabilityChanged();
@@ -281,6 +304,7 @@ export class RangePresentation {
 
   /** The song's views in song order (the biome order), each once. */
   _songViews() {
+    if (this.journey) return [JOURNEY_VIEW];
     const views = this.forced?.view ? [this.forced.view]
       : [...(this.sceneByBiome?.values?.() || [])].map((c) => c?.view).filter(Boolean);
     return [...new Map(views.map((v) => [v.id, v])).values()];
@@ -504,7 +528,7 @@ export class RangePresentation {
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
-      sceneAssignments: this.sceneByBiome, forcedView: this.forced, renderedViews: [view, incoming].filter(Boolean),
+      sceneAssignments: this.sceneByBiome, forcedView: this.journey ? JOURNEY_CHOICE : this.forced, renderedViews: [view, incoming].filter(Boolean),
     });
     this.scene.prepareShafts?.(this.frame, incoming ? [view.id, incoming.id] : [view.id]);
     this.skyPan = this._skyPan(view, incoming, this.frame);
@@ -512,7 +536,7 @@ export class RangePresentation {
     this.viewId = view.id;
     this.active = true;
     this.reason = null;
-    if (!this.shown.has(view.id) && !this.forced && !this.exportMode && !inputs.sim.exportMode) {
+    if (!this.journey && !this.shown.has(view.id) && !this.forced && !this.exportMode && !inputs.sim.exportMode) {
       this.shown.add(view.id);
       noteViewShown(view);
     }
@@ -815,7 +839,7 @@ export class RangePresentation {
 
   snapshot() {
     return {
-      mode: this.mode, active: this.active, reason: this.reason, viewId: this.active ? this.viewId : null,
+      mode: this.mode, journey: this.journey, active: this.active, reason: this.reason, viewId: this.active ? this.viewId : null,
       forcedCandidate: !!this.forced?.forcedCandidate, forcedViewId: this.forcedViewId, diag: this.diag,
       generation: this.generation, runtime: this.runtimeState, arrival: this.arrival, incomingFade: this.incomingFade, incomingViewId: this.active ? this.incomingViewId : null, seamP: this.seamP ?? null,
       failures: Object.fromEntries(this.failures), deferred: [...this.deferred.keys()], frameId: this.frameId, progress01: this.frame?.progress01 ?? null,
@@ -826,6 +850,7 @@ export class RangePresentation {
   }
 
   dispose() {
+    this._runtimeToken++;
     this._releaseScratch();
     if (this.residency && this.generation) this.residency.cancelGeneration(this.generation);
     this.scene?.dispose();

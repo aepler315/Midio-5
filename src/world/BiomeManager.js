@@ -2835,13 +2835,13 @@ export class BiomeManager {
       if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     }
     const glacialInland = v2 && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.glacier);
-    const performanceLake = v2 && this.rangePerformance && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.id === 'muncho-lake-south');
+    const performanceLake = v2 && this.rangePerformance && (this.rangePresentation.journey || [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.id === 'muncho-lake-south'));
     if (!glacialInland && !performanceLake) withNarrativeAlpha(ctx, this.rangeNarrative?.features ?? 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
     if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     // The horizon EQ belongs to the v2 sequence (between far and mid)
     // whenever v2 draws, arriving or not.
     if (!v2) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
-    this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
+    if (!v2 || !this.rangePresentation.journey) this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
     // Concert beams: anchored at the celestial, drawn before the mountain
     // silhouettes so the ranges occlude their lower reach the same way
@@ -3013,6 +3013,7 @@ export class BiomeManager {
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     const farTint = this.lerpCache.get(tint, skyHorizonNight, AERIAL_PULL.L2 || 0);
     pres.drawPartition(ctx, 'far', canvas);
+    if (pres.journey) return tint;
     this._drawCrestLight(ctx, canvas, worldX, A, B, t, pres.lastPartition);
     this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, farTint);
     pres.drawPartition(ctx, 'mid', canvas);
