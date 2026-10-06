@@ -18,9 +18,9 @@
 
 ## Work
 
-- [ ] Fields: update JourneyOrbit projection/bases/inverse and GLSL; extend JourneyWorld front terrain to pole; replace JourneyCore cap with submerged sphere; test radius/closure.
-- [ ] Materials: update JourneyMaterial normal/offset frames, spherical water and shoreline inverse; remove invalid planar mirror and point-star sparkle from water; test shader inputs.
-- [ ] Cast: adapt JourneyCast bases/feet and CoveGL spherical clipping; enlarge circular rigs and compact paths; test ground contacts and flat compatibility.
-- [ ] Camera: update JourneyOrbitCamera close composition and limited arrivals; update JourneyScene envelope/clearance; test route width, body size and silhouette fitting.
-- [ ] Render: inspect real landscape and portrait stills, then capture ten seconds of sequential motion; correct visible failures before declaring done.
-- [ ] Finish: focused review, full suite/lint/staging, publish source and honest visual evidence through GitHub.
+- [x] Fields: update JourneyOrbit projection/bases/inverse and GLSL; extend JourneyWorld front terrain to pole; replace JourneyCore cap with submerged sphere; test radius/closure.
+- [x] Materials: update JourneyMaterial normal/offset frames, spherical water and shoreline inverse; remove invalid planar mirror and point-star sparkle from water; test shader inputs.
+- [x] Cast: adapt JourneyCast bases/feet and CoveGL spherical clipping; enlarge circular rigs and compact paths; test ground contacts and flat compatibility.
+- [x] Camera: update JourneyOrbitCamera close composition and limited arrivals; update JourneyScene envelope/clearance; test route width, body size and silhouette fitting.
+- [x] Render: inspect real landscape and portrait stills, then capture ten seconds of sequential motion; correct visible failures before declaring done.
+- [x] Finish: focused review, full suite/lint/staging, publish source and honest visual evidence through GitHub.
