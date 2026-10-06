@@ -146,3 +146,44 @@ test('historical restore readiness failure only reaches the owning selection; st
   }
  }
 });
+
+test('historical adapters preserve generated custom world base and reload custom through their normal source loader',async()=>{
+ const {CHECKPOINTS}=await import('../tools/version-checkpoints.mjs');
+ for(const c of CHECKPOINTS){
+  const main=await emittedHistoricalMain(c.id);let loads=0;
+  const context=vm.createContext({...titleContext(),sim:{worldId:'custom',songSeed:123},getCustomWorld:()=>({id:'custom',registeredId:'alpine',baseId:'alpine'}),listWorlds:()=>[{id:'alpine'}],readFpsCap:()=>60,fpsCapMs:0,loadAudioFiles(files,restore){loads++;context.versionSession={phase:'loading',completion:Promise.resolve('loaded')};assert.equal(restore.restoreIntent.worldId,'custom');assert.equal(restore.restoreIntent.settings.worldBaseId,'alpine');return Promise.resolve();}});
+  vm.runInContext(['effectiveOutputLatencyMs','choreographyOutputLatencyMs','versionAdapterState','versionLoadSource'].map(name=>functionSource(main,name)).join('\n'),context);
+  const settings=context.versionAdapterState().settings;assert.equal(settings.worldBaseId,'alpine',`${c.id} must preserve the registered custom base`);
+  await assert.doesNotReject(context.versionLoadSource({kind:'audio-files',files:[]},{worldId:'custom',settings:{worldBaseId:'alpine'}}));assert.equal(loads,1);
+  for(const worldBaseId of [undefined,'not-a-world']) await assert.rejects(context.versionLoadSource({kind:'audio-files',files:[]},{worldId:'custom',settings:{worldBaseId}}),/world/i);
+  assert.equal(loads,1,'unsupported custom descriptors must not start unrelated playback');
+ }
+});
+
+test('historical custom restores regenerate only the requested registered base from destination analysis',async()=>{
+ const {CHECKPOINTS}=await import('../tools/version-checkpoints.mjs');
+ for(const c of CHECKPOINTS){
+  const main=await emittedHistoricalMain(c.id);assert.ok(main.includes('function versionRestoreWorldId('),`${c.id} must regenerate custom world explicitly`);
+  const pending={features:{drive:.7},profile:{version:1},data:{destinationAnalysis:true}};let saved=null;let bad=false;
+  const context=vm.createContext({lastWorldId:'alpine',DEFAULT_WORLD_ID:'alpine',listWorlds:()=>[{id:'alpine'}],buildWorldVariant(baseId,features,data){assert.equal(baseId,'alpine');assert.equal(features,pending.features);assert.equal(data.profile,pending.profile);assert.equal(data.destinationAnalysis,true);return{world:{id:bad?'alpine':'custom',registeredId:'alpine'}};},setCustomWorld(world){saved=world;}});
+  vm.runInContext(functionSource(main,'versionRestoreWorldId'),context);
+  assert.equal(context.versionRestoreWorldId(pending,{worldId:'custom',settings:{worldBaseId:'alpine'}}),'custom');assert.equal(saved.id,'custom');
+  for(const settings of [{},{worldBaseId:'missing'}])assert.throws(()=>context.versionRestoreWorldId(pending,{worldId:'custom',settings}),/world/i);
+  saved=null;bad=true;assert.throws(()=>context.versionRestoreWorldId(pending,{worldId:'custom',settings:{worldBaseId:'alpine'}}),/regenerate|world/i);assert.equal(saved,null,'invalid regeneration cannot silently substitute a stock world');
+ }
+});
+
+test('historical restored terrain rejection cannot poison a newer selection; owned rejection remains visible',async()=>{
+ const {CHECKPOINTS}=await import('../tools/version-checkpoints.mjs');
+ for(const c of CHECKPOINTS){
+  for(const stale of [true,false]){
+   const main=await emittedHistoricalMain(c.id);let rejectTerrain;const terrain=new Promise((resolve,reject)=>{rejectTerrain=reject;});const errors=[];const selection={};
+   const context=vm.createContext({loadGen:3,console:{error(){}},clearCustomWorld(){},PROFILE_VERSION:1,prepareSongTerrain:()=>terrain,sceneChoice:{viewId:null,biome:null},readPinnedSeed:()=>null,recordFitDiagnostic:()=>null,lastFitDiagnostic:null,pendingWorldStart:null,sourceSelection:{isCurrent:value=>value===selection},showErrorBanner(message){errors.push(message);},confirmWorld(){throw new Error('failed terrain must never start');}});
+   vm.runInContext(functionSource(main,'offerWorldsThenStart'),context);
+   context.offerWorldsThenStart({songIdentity:{seed:123,songProfile:{version:1,watch:{drive:.7}}}},{versionSelection:selection,restoreIntent:{seed:123,worldId:'alpine'}});
+   if(stale)context.sourceSelection.isCurrent=()=>false;
+   rejectTerrain(new Error('terrain unavailable'));await new Promise(resolve=>setImmediate(resolve));
+   assert.equal(errors.length,stale?0:1,`${c.id} terrain failure belongs only to its original selection`);
+  }
+ }
+});
