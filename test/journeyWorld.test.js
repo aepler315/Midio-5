@@ -5,9 +5,9 @@ import {
   journeyNearShore, journeyFarShore, journeyGroundHeight, journeySurface, journeyLakeShape, journeyLakeDistance,
 } from '../src/world/alpine/JourneyWorld.js';
 import { MOUNTAIN_DIMENSIONS } from '../src/world/alpine/JourneyMountains.js';
+import { JOURNEY_ORBIT, JOURNEY_ORBIT_GLSL, journeyOrbitPoint } from '../src/world/alpine/JourneyOrbit.js';
 import * as THREE from '../src/vendor/range/three-range.module.js';
-import { journeyGrid, journeyGridX } from '../src/world/alpine/JourneyMaterial.js';
-import { JourneyScene } from '../src/world/alpine/JourneyScene.js';
+import { journeyGrid } from '../src/world/alpine/JourneyMaterial.js';
 import { cameraPoseAt, cameraRailErrors, projectPoint } from '../src/world/terrain/SceneTravel.js';
 
 const music = { energy01: .7, bass01: .4, melody01: .8, pulse01: .3,
@@ -29,7 +29,7 @@ test('journey view is an immutable imagined place with a valid camera rail', () 
 
 test('state sanitizes missing and nonfinite music without keeping input array references', () => {
   const empty = sampleJourneyState({ timeMs: NaN, seed: Infinity });
-  assert.deepEqual(empty, { timeSec: 0, travelM: 0, seed: 0,
+  assert.deepEqual(empty, { circular: false, timeSec: 0, travelM: 0, seed: 0,
     energy: 0, bass: 0, melody: 0, pulse: 0, bands: [0, 0, 0, 0, 0, 0, 0] });
   assert.deepEqual(sampleJourneyState(), empty);
   const bands = [NaN, Infinity, -2, 2, .2];
@@ -242,13 +242,16 @@ test('all bands shape the rear massif through continuous overlapping shoulders',
 // the renderer smoke; this catches CPU/shader edits drifting independently.
 function shaderEvaluator(state) {
   const source = JOURNEY_SURFACE_GLSL
+    // Projection's vector arithmetic has its own CPU/GLSL tests. This scalar
+    // evaluator exercises intrinsic geographic fields in both modes.
+    .replace(JOURNEY_ORBIT_GLSL, '')
     .replace(/uniform\s+float\s+[^;]+;/g, '')
     .replace(/\b(?:float|vec2|vec3)\s+(journey\w+)\s*\(([^)]*)\)/g, (_, name, parameters) =>
       `function ${name}(${parameters.replace(/\b(?:float|vec2)\s+/g, '')})`)
     .replace(/\b(?:float|int|vec2|vec3)\s+(\w+)/g, 'let $1')
     .replace(/\bfloat\(([^()]*)\)/g, 'Number($1)');
   const make = new Function('uniforms', `
-    const { uJourneyTime, uJourneyTravel, uJourneySeed, uJourneyEnergy,
+    const { uJourneyOrbit, uJourneyTime, uJourneyTravel, uJourneySeed, uJourneyEnergy,
       uJourneyBass, uJourneyMelody, uJourneyPulse, uJourneyBands } = uniforms;
     const { sin, cos, abs, sqrt, min, max, pow } = Math;
     const clamp = (v,a,b) => min(b,max(a,v));
@@ -260,13 +263,15 @@ function shaderEvaluator(state) {
     ${source}
     return { journeyNearShore, journeyFarShore, journeyGroundHeight, journeySurface };
   `);
-  return make({ uJourneyTime: state.timeSec, uJourneyTravel: state.travelM,
+  return make({ uJourneyOrbit: state.circular ? 1 : 0, uJourneyTime: state.timeSec,
+    uJourneyTravel: state.circular ? state.travelM % JOURNEY_ORBIT.circumferenceM : state.travelM,
     uJourneySeed: state.seed, uJourneyEnergy: state.energy, uJourneyBass: state.bass,
     uJourneyMelody: state.melody, uJourneyPulse: state.pulse, uJourneyBands: state.bands });
 }
 
 test('exported shader formulas agree with CPU shores, ground and every surface', () => {
-  for (const state of [sampleJourneyState(), at(153000), at(43200000), at(121000, { reducedMotion: true })]) {
+  for (const state of [sampleJourneyState(), at(153000), at(43200000), at(121000, { reducedMotion: true }),
+    at(0, { circular: true }), at(172800000, { circular: true })]) {
     const shader = shaderEvaluator(state);
     for (const x of [-2500, -511, 0, 173, 3700]) {
       assert.ok(Math.abs(shader.journeyNearShore(x) - journeyNearShore(x, state)) < 1e-8);
@@ -358,56 +363,36 @@ test('the shared ground field has a smooth shallow shelf and inland relief', () 
   }
 });
 
-// Use actual grid triangles and the staged camera. A depth-parameter endpoint
-// alone cannot prove coverage: the complete finite apron can be in front of
-// the camera, leaving visible clear color below its last row.
-test('the shared foreground mesh covers the lower frame through aspect and phrase retreats', () => {
-  const geometry = journeyGrid(THREE, 512, 24, 8400);
+// Exercise the shipped circular grid's vertices: the duplicated meridian
+// must close every depth row, and its contact edge must stay on the water
+// radius all the way around the world, including after a circumference seek.
+test('the circular foreground mesh closes every depth row and meets the water along its shoreline edge', () => {
+  const columns = 768, rows = 24;
+  const geometry = journeyGrid(THREE, columns, rows, JOURNEY_ORBIT.circumferenceM, { circular: true });
   const position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-  const edge1 = new THREE.Vector3(), edge2 = new THREE.Vector3(), cross = new THREE.Vector3();
-  const offset = new THREE.Vector3(), q = new THREE.Vector3(), direction = new THREE.Vector3();
-  // Möller–Trumbore intersection against the shipped indexed triangles.
-  // The compact vendored runtime deliberately excludes Ray/Raycaster.
-  const intersectsGround = (camera, x, y) => {
-    direction.set(x, y, .5).unproject(camera).sub(camera.position).normalize();
-    for (let i = 0; i < geometry.index.count; i += 3) {
-      a.fromBufferAttribute(position, geometry.index.getX(i));
-      b.fromBufferAttribute(position, geometry.index.getX(i + 1));
-      c.fromBufferAttribute(position, geometry.index.getX(i + 2));
-      edge1.subVectors(b, a); edge2.subVectors(c, a); cross.crossVectors(direction, edge2);
-      const determinant = edge1.dot(cross);
-      if (Math.abs(determinant) < 1e-9) continue;
-      offset.subVectors(camera.position, a);
-      const u = offset.dot(cross) / determinant;
-      if (u < 0 || u > 1) continue;
-      q.crossVectors(offset, edge1);
-      const v = direction.dot(q) / determinant;
-      if (v < 0 || u + v > 1) continue;
-      const depth = edge2.dot(q) / determinant;
-      if (depth > camera.near && depth < camera.far) return true;
-    }
-    return false;
-  };
+  const vertex = i => [position.getX(i), position.getY(i), position.getZ(i)];
   try {
-    for (const timeMs of [28000, 48000, 43200000]) {
-      const state = at(timeMs, { seed: 2917029651 }), lake = journeyLakeShape(state);
+    const initial = at(28000, { seed: 2917029651, circular: true });
+    const nextLap = { ...initial, travelM: initial.travelM + JOURNEY_ORBIT.circumferenceM };
+    for (const state of [initial, nextLap, at(172800000, { seed: 73, circular: true })]) {
       for (let i = 0; i < position.count; i++) {
-        const x = journeyGridX(uv.getX(i), lake, 8400);
-        position.setXYZ(i, ...journeySurface(x, uv.getY(i), 0, state));
+        const x = (uv.getX(i) - .5) * JOURNEY_ORBIT.circumferenceM;
+        position.setXYZ(i, ...journeyOrbitPoint(journeySurface(x, uv.getY(i), 0, state)));
       }
-      for (const [width, height] of [[1920, 1080], [1024, 1024], [720, 1280]]) {
-        for (const cameraMove of [null, { dolly: -.09, yaw: .025, crane: .012, truck: 0, kind: 'pullback' }]) {
-          const frame = { timeMs, seed: 2917029651, journeyDirection: { cameraMove },
-            scenicViewport: { logicalWidth: width, logicalHeight: height, nominalWidth: width,
-              nominalHeight: height, overscanPx: 0 } };
-          const { pose, proj } = JourneyScene.prototype.movedPose(JOURNEY_VIEW, frame);
-          const camera = new THREE.PerspectiveCamera(proj.fovYDeg, proj.aspect, 1, 16000);
-          camera.position.fromArray(pose.eyeM); camera.lookAt(...pose.targetM); camera.updateMatrixWorld();
-          for (const y of [-.7, -.95]) for (const x of [-.95, -.5, 0, .5, .95]) {
-            assert.ok(intersectsGround(camera, x, y), `ground must cover lower frame at ${width}x${height}, ${timeMs}ms, ${x},${y}`);
-          }
-        }
+      for (let row = 0; row <= rows; row++) {
+        assert.ok(distance(vertex(row * (columns + 1)), vertex(row * (columns + 1) + columns)) < 1e-5,
+          `depth row ${row} has no gap at the circumference seam`);
+      }
+      for (let column = 0; column <= columns; column++) {
+        const [x, y, z] = vertex(column);
+        const longitude = (uv.getX(column) - .5) * JOURNEY_ORBIT.circumferenceM;
+        assert.ok(Math.abs(Math.hypot(x, y + JOURNEY_ORBIT.radiusM) - JOURNEY_ORBIT.radiusM) < .0002,
+          'the entire shoreline edge lies on the radial water surface');
+        assert.ok(Math.abs(z - journeyNearShore(longitude, state) * JOURNEY_ORBIT.depthScale) < 1e-5,
+          'the rendered contact edge follows the shared seeded shore');
+        const inland = vertex(columns + 1 + column);
+        assert.ok(Math.hypot(inland[0], inland[1] + JOURNEY_ORBIT.radiusM) > JOURNEY_ORBIT.radiusM,
+          'the first inland row rises above the water');
       }
     }
   } finally {
