@@ -183,7 +183,11 @@ async function waitReady(page, timeout) {
     // A real click is required after browsers deny audio activation.
     if (/Resume/.test(label)) await retry.click();
   }
-  await page.waitForFunction(() => window.__MIDIO_VERSION_ADAPTER?.getState().phase === 'ready', null, { timeout });
+  await page.waitForFunction(() => {
+    const nav = document.querySelector('[data-version-navigation]');
+    return window.__MIDIO_VERSION_ADAPTER?.getState().phase === 'ready'
+      && (!nav || nav.getAttribute('data-state') === 'idle');
+  }, null, { timeout });
 }
 
 async function importAudio(page, files, timeout) {
