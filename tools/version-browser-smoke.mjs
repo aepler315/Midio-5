@@ -171,7 +171,7 @@ async function state(page) {
   });
 }
 
-async function waitReady(page, timeout) {
+async function waitReady(page, timeout, allowNavigationError = false) {
   await page.waitForFunction(() => {
     const a = window.__MIDIO_VERSION_ADAPTER;
     const retry = document.getElementById('versionRetry');
@@ -183,14 +183,14 @@ async function waitReady(page, timeout) {
     // A real click is required after browsers deny audio activation.
     if (/Resume/.test(label)) await retry.click();
   }
-  await page.waitForFunction(() => {
+  await page.waitForFunction(allowError => {
     const nav = document.querySelector('[data-version-navigation]');
     return window.__MIDIO_VERSION_ADAPTER?.getState().phase === 'ready'
-      && (!nav || nav.getAttribute('data-state') === 'idle');
-  }, null, { timeout });
+      && (!nav || nav.getAttribute('data-state') === 'idle' || (allowError && nav.getAttribute('data-state') === 'error'));
+  }, allowNavigationError, { timeout });
 }
 
-async function importAudio(page, files, timeout) {
+async function importAudio(page, files, timeout, allowNavigationError = false) {
   const details = page.locator('#titleSettings');
   if (await details.count()) await details.evaluate(el => { el.open = true; });
   const lyrics = page.locator('#lyricGroundingBtn');
@@ -206,7 +206,7 @@ async function importAudio(page, files, timeout) {
     assert.ok(await range.count(), 'Range card must be present; do not replace historical rendering with a different world');
     await range.first().click();
   }
-  await waitReady(page, timeout);
+  await waitReady(page, timeout, allowNavigationError);
   const loaded = await state(page);
   assert.equal(loaded.sourceKind, 'audio-files'); assert.equal(loaded.files.length, files.length);
   return loaded;
@@ -505,7 +505,7 @@ async function runPrefix(options, audit, prefix, wavs) {
       const open = indexedDB.open.bind(indexedDB);
       indexedDB.open = (name, ...a) => { if (name === 'midio-version-handoff-v1') throw new DOMException('Injected storage denial', 'SecurityError'); return open(name, ...a); };
     });
-    await denied.goto(hosted.url); const deniedSong = await importAudio(denied, [wavs[0]], options.timeout);
+    await denied.goto(hosted.url); const deniedSong = await importAudio(denied, [wavs[0]], options.timeout, true);
     await denied.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true)); await wake(denied);
     const deniedUrl = denied.url(); await denied.locator('#versionNext').click();
     await denied.locator('#versionRetry').waitFor({ state: 'visible' });
