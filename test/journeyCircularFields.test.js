@@ -5,6 +5,7 @@ import {
   journeyGroundHeight, journeySurface,
 } from '../src/world/alpine/JourneyWorld.js';
 import { journeyMountainHeight } from '../src/world/alpine/JourneyMountains.js';
+import { JOURNEY_ORBIT, journeyOrbitPoint } from '../src/world/alpine/JourneyOrbit.js';
 
 const circumference = 2 * Math.PI * 1800;
 const stateAt = (timeMs = 0, seed = 73) => sampleJourneyState({ timeMs, seed, circular: true });
@@ -85,15 +86,25 @@ test('the circular lake is a broad connected belt with independent irregular sho
   }
 });
 
-// Reusing the 6650 m apron makes the circular globe a deep tube after wrapping.
-test('circular contact ground stays shallow and the two ranges retain varied relief', () => {
+// The contact shelf stays shallow while the continuous foreground wraps all
+// the way to one shared pole, covering the backing sphere's front hemisphere.
+test('spherical contact ground retains its shelf and closes smoothly at a shared near pole', () => {
   const state = stateAt(28000, 1811);
+  const pole = JOURNEY_ORBIT.radiusM * Math.PI / 2 / JOURNEY_ORBIT.depthScale;
   for (const x of [-4300, -1200, 0, 731, 4300]) {
     const near = journeyShorePair(x, state)[0];
     assert.deepEqual(journeySurface(x, 0, 0, state), [x, 0, near]);
-    close(journeySurface(x, 1, 0, state)[2] - near, 1100);
+    close(journeySurface(x, .25, 0, state)[2], near + 650 * .25);
+    const tip = journeySurface(x, 1, 0, state);
+    close(tip[2], pole); close(tip[1], 35);
+    journeyOrbitPoint(tip).forEach((value, i) => close(value, [0, -1800, 1835][i]));
+    close(journeyGroundHeight(x, pole - .01, state), 35, 1e-7);
     assert.ok(journeyGroundHeight(x, near + 35, state) > 0);
   }
+});
+
+test('spherical ranges retain varied relief with restrained heights', () => {
+  const state = stateAt(28000, 1811);
   for (const layer of [1, 2]) {
     const peaks = [], crests = [];
     for (let x = 0; x < circumference; x += 173) {

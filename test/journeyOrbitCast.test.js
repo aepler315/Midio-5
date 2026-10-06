@@ -27,21 +27,22 @@ const footPoint = (broshi, index) => {
 
 test('circular cast anchors and companions follow their own radial bases while wake coordinates stay intrinsic', () => {
   assert.equal(typeof cast.journeyOrbitCast, 'function', 'the scene needs a pure cast projection');
-  const pose = { actors: [{ id: 'midio', heightM: 40, positionM: [C / 4, 10, 100] },
-    { id: 'midasus', heightM: 36, positionM: [C / 2, 20, -100],
-      babies: [{ positionM: [-C / 4, 30, 50], heightM: 6, rotationRad: .2 }] }],
-  swimmer: { positionM: [C / 4, 10, 100], directionXZ: [.8, .6], speedMps: 20, strength: .5 } };
+  const latitude30 = 1000 * Math.PI, cos30 = Math.sqrt(3) / 2;
+  const pose = { actors: [{ id: 'midio', heightM: 40, positionM: [C / 4, 10, latitude30] },
+    { id: 'midasus', heightM: 36, positionM: [C / 2, 20, -latitude30],
+      babies: [{ positionM: [-C / 4, 30, latitude30], heightM: 6, rotationRad: .2 }] }],
+  swimmer: { positionM: [C / 4, 10, latitude30], directionXZ: [.8, .6], speedMps: 20, strength: .5 } };
   const converted = cast.journeyOrbitCast(pose);
-  near(converted.actors[0].positionM, [1810, -1800, 18]);
+  near(converted.actors[0].positionM, [1810 * cos30, -1800, 905]);
   near(converted.actors[0].right, [0, -1, 0]);
-  near(converted.actors[0].up, [1, 0, 0]);
-  near(converted.actors[0].forward, [0, 0, -1]);
-  near(converted.actors[1].positionM, [0, -3620, -18]);
-  near(converted.actors[1].babies[0].positionM, [-1830, -1800, 9]);
-  near(converted.actors[1].babies[0].up, [-1, 0, 0]);
+  near(converted.actors[0].up, [cos30, 0, .5]);
+  near(converted.actors[0].forward, [.5, 0, -cos30]);
+  near(converted.actors[1].positionM, [0, -1800 - 1820 * cos30, -910]);
+  near(converted.actors[1].babies[0].positionM, [-1830 * cos30, -1800, 915]);
+  near(converted.actors[1].babies[0].up, [-cos30, 0, .5]);
   assert.equal(converted.actors[0].heightM, 40, 'projecting the root must preserve actor scale');
   assert.deepEqual(converted.swimmer, pose.swimmer, 'the water shader samples the intrinsic lake');
-  assert.deepEqual(pose.actors[0].positionM, [C / 4, 10, 100], 'projection leaves the intrinsic sample intact');
+  assert.deepEqual(pose.actors[0].positionM, [C / 4, 10, latitude30], 'projection leaves the intrinsic sample intact');
   assert.ok(Object.isFrozen(converted.actors[1].babies[0].up));
 });
 
@@ -52,12 +53,31 @@ test('projected walking feet reconstruct the curved ground instead of following 
     const flat = actor(pose, 'broshi'), radial = actor(cast.journeyOrbitCast(pose), 'broshi');
     for (const index of [0, 1]) {
       const intrinsic = footPoint(flat, index), rendered = footPoint(radial, index);
-      const angle = intrinsic[0] / R, altitude = intrinsic[1];
-      near(rendered, [(R + altitude) * Math.sin(angle), (R + altitude) * Math.cos(angle) - R, intrinsic[2] * .18]);
+      const angle = intrinsic[0] / R, latitude = intrinsic[2] * .30 / R, altitude = intrinsic[1];
+      near(rendered, [(R + altitude) * Math.cos(latitude) * Math.sin(angle),
+        (R + altitude) * Math.cos(latitude) * Math.cos(angle) - R, (R + altitude) * Math.sin(latitude)]);
       const phase = ((timeMs / 1000 + index * .38) / .76 % 1 + 1) % 1;
-      if (phase <= .56) assert.ok(Math.abs(Math.hypot(rendered[0], rendered[1] + R) - R
+      if (phase <= .56) assert.ok(Math.abs(Math.hypot(rendered[0], rendered[1] + R, rendered[2]) - R
         - journeyGroundHeight(intrinsic[0], intrinsic[2], state)) < 1e-8, 'stance contact lands on the real radial surface');
     }
+  }
+});
+
+test('circular silhouettes grow with their rigs while excursions tighten and flat sizes stay unchanged', () => {
+  for (const timeMs of [0, 6000, 14000, 60000, 300000]) {
+    const spherical = sample(timeMs).pose;
+    const flat = cast.sampleJourneyCast({ timeMs });
+    for (const [id, height, center] of [['midio', 64, 0], ['broshi', 72, -174], ['midasus', 57.6, 145]]) {
+      const a = actor(spherical, id), b = actor(flat, id);
+      assert.ok(Math.abs(a.heightM - height) < 1e-10, `${id} has a readable circular silhouette`);
+      assert.equal(b.heightM, cast.JOURNEY_CAST_LAYOUT.heights[id], 'the old cove keeps its scale');
+      assert.ok(Math.abs(a.positionM[0] - center - (b.positionM[0] - center) * .7) < 1e-10,
+        `${id} keeps its path with a smaller excursion`);
+    }
+    const broshi = actor(spherical, 'broshi'), oldBroshi = actor(flat, 'broshi');
+    assert.equal(broshi.bodyLiftM, oldBroshi.bodyLiftM * 1.6, 'weight transfer remains proportional');
+    actor(spherical, 'midasus').babies.forEach((baby, i) =>
+      assert.equal(baby.heightM, actor(flat, 'midasus').babies[i].heightM * 1.6));
   }
 });
 

@@ -1,14 +1,13 @@
-// The range shells cover the outside of a shallow planetoid. This closed
-// rocky volume occludes its interior, including during full-circle shots.
+// A submerged spherical rock core closes the planetoid beneath its range
+// shells and water, including during full-circle shots.
 import { JOURNEY_ORBIT } from './JourneyOrbit.js';
 import { JOURNEY_WEATHER_GLSL } from './JourneyWeatherGL.js';
 
 const RADIUS=JOURNEY_ORBIT.radiusM, CORE_RADIUS=RADIUS-8;
 export const JOURNEY_CORE_BOUNDS=Object.freeze({
-  nearZ:1200*JOURNEY_ORBIT.depthScale,farZ:-7700*JOURNEY_ORBIT.depthScale,frontBulgeM:1300,
+  nearZ:CORE_RADIUS,farZ:-CORE_RADIUS,frontBulgeM:0,radiusM:CORE_RADIUS,
 });
-const {nearZ:NEAR_Z,farZ:FAR_Z}=JOURNEY_CORE_BOUNDS;
-const SECTORS=192, RINGS=24, DEPTH_ROWS=8;
+const SECTORS=192, LATITUDES=96;
 
 // Reuse this vertex stage for the core's depth/shadow material. Rotating
 // geometry and its material together keeps rock ridges fixed to the world.
@@ -95,62 +94,40 @@ const FRAGMENT=/* glsl */`
   }
 `;
 
-/** One watertight indexed mesh; < 0.4 MiB of vertex/index storage. */
+/** One watertight indexed sphere; < 0.7 MiB of vertex/index storage. */
 export function journeyCore(THREE,uniforms){
-  const positions=[],indices=[];
-  const point=(radius,angle,z)=>{
+  const positions=[],normals=[],indices=[];
+  const point=(x,y,z)=>{
     const index=positions.length/3;
-    positions.push(radius*Math.sin(angle),radius*Math.cos(angle)-RADIUS,z);
+    positions.push(x*CORE_RADIUS,y*CORE_RADIUS-RADIUS,z*CORE_RADIUS);
+    normals.push(x,y,z);
     return index;
   };
-  const rockNoise=(x,y)=>.52*Math.sin(.79*x+.41*y)
-    +.31*Math.sin(1.63*x-.87*y+1.8)+.17*Math.sin(-2.71*x+1.31*y+4.1);
-  const capRelief=(x,y,q,near)=>{
-    const macro=rockNoise(x*.0018,y*.0018);
-    const fold=rockNoise(x*.0037+macro*.8,y*.0037-macro*.5);
-    const ridge=1-Math.sqrt(fold*fold+.02);
-    const eroded=rockNoise(x*.006+fold*.7,y*.006-macro*.6);
-    // Every coefficient in rockNoise sums to one, so this front profile is
-    // bounded by 1195*sqrt(1-q²), inside the exported 1300 m clearance dome.
-    if(near)return Math.sqrt(Math.max(0,1-q*q))*(1100+60*macro+35*eroded);
-    return (1-q*q)*(180+90*(1+macro)+90*ridge+55*eroded);
-  };
-  for(const near of [true,false]){
-    const base=positions.length/3,edgeZ=near?NEAR_Z:FAR_Z,sign=near?1:-1;
-    point(0,0,edgeZ+sign*capRelief(0,0,0,near));
-    for(let ring=1;ring<=RINGS;ring++){
-      // Uniform ellipse-angle steps retain smooth normals at the steep rim.
-      const q=near?Math.sin(ring/RINGS*Math.PI*.5):ring/RINGS;
-      for(let sector=0;sector<SECTORS;sector++){
-        const angle=sector/SECTORS*Math.PI*2;
-        const x=CORE_RADIUS*q*Math.sin(angle),y=CORE_RADIUS*q*Math.cos(angle);
-        const relief=capRelief(x,y,q,near);
-        point(CORE_RADIUS*q,angle,edgeZ+sign*relief);
-      }
-    }
-    const triangle=(a,b,c)=>near?indices.push(a,c,b):indices.push(a,b,c);
+  // Single shared pole vertices and wrapped ring indices close the mesh
+  // without duplicated seams or the collapsed pole quads of a UV sphere.
+  const front=point(0,0,1);
+  for(let latitude=1;latitude<LATITUDES;latitude++){
+    const phi=latitude/LATITUDES*Math.PI,r=Math.sin(phi),z=Math.cos(phi);
     for(let sector=0;sector<SECTORS;sector++){
-      const next=(sector+1)%SECTORS;
-      triangle(base,base+1+sector,base+1+next);
-      for(let ring=1;ring<RINGS;ring++){
-        const a=base+1+(ring-1)*SECTORS+sector,b=base+1+(ring-1)*SECTORS+next;
-        const c=a+SECTORS,d=b+SECTORS;
-        triangle(a,c,b);triangle(b,c,d);
-      }
+      const angle=sector/SECTORS*Math.PI*2;
+      point(r*Math.sin(angle),r*Math.cos(angle),z);
     }
   }
-  const side=positions.length/3;
-  for(let row=0;row<=DEPTH_ROWS;row++)for(let sector=0;sector<SECTORS;sector++){
-    point(CORE_RADIUS,sector/SECTORS*Math.PI*2,NEAR_Z+(FAR_Z-NEAR_Z)*row/DEPTH_ROWS);
-  }
-  for(let row=0;row<DEPTH_ROWS;row++)for(let sector=0;sector<SECTORS;sector++){
+  const back=point(0,0,-1),lastRing=back-SECTORS;
+  for(let sector=0;sector<SECTORS;sector++){
     const next=(sector+1)%SECTORS;
-    const a=side+row*SECTORS+sector,b=side+row*SECTORS+next,c=a+SECTORS,d=b+SECTORS;
-    indices.push(a,b,c,b,d,c);
+    indices.push(front,1+next,1+sector);
+    for(let latitude=0;latitude<LATITUDES-2;latitude++){
+      const a=1+latitude*SECTORS+sector,b=1+latitude*SECTORS+next;
+      const c=a+SECTORS,d=b+SECTORS;
+      indices.push(a,b,c,b,d,c);
+    }
+    indices.push(lastRing+sector,lastRing+next,back);
   }
   const geometry=new THREE.BufferGeometry();
   geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  geometry.setIndex(indices);geometry.computeVertexNormals();
+  geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  geometry.setIndex(indices);
   const material=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,uniforms,
     vertexShader:JOURNEY_CORE_VERTEX,fragmentShader:FRAGMENT,
     side:THREE.DoubleSide,depthTest:true,depthWrite:true});

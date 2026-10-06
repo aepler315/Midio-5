@@ -119,17 +119,13 @@ test('listener zoom changes the journey camera and stays above its terrain',()=>
 
 import { sampleJourneyCast, journeyOrbitCast } from '../src/world/alpine/JourneyCast.js';
 import { journeyOrbitPoint, JOURNEY_ORBIT } from '../src/world/alpine/JourneyOrbit.js';
-import { JOURNEY_CORE_BOUNDS } from '../src/world/alpine/JourneyCore.js';
 
-test('listener zoom stops in front of the rounded planet interior',()=>{
+test('listener zoom stops outside the spherical foreground',()=>{
   const scenicViewport={logicalWidth:960,logicalHeight:540,nominalWidth:960,nominalHeight:540,overscanPx:0};
   for(const fx of [.65,.8,.95])for(const rx of [-.3,0,.3]){
     const {pose}=JourneyScene.prototype.movedPose(JOURNEY_VIEW,{timeMs:0,scenicViewport,userCamera:{fx,rx,uy:0}});
-    const [x,y,z]=pose.eyeM,{radiusM}=JOURNEY_ORBIT,{nearZ,frontBulgeM}=JOURNEY_CORE_BOUNDS;
-    if(z>nearZ&&z<nearZ+frontBulgeM){
-      const ellipsoid=(x*x+(y+radiusM)**2)/(radiusM**2)+(z-nearZ)**2/(frontBulgeM**2);
-      assert.ok(ellipsoid>=1,'zoom cannot fly inside the visible dome');
-    }
+    const [x,y,z]=pose.eyeM,{radiusM}=JOURNEY_ORBIT;
+    assert.ok(Math.hypot(x,y+radiusM,z)>radiusM+35,'zoom cannot enter the continuous foreground surface');
   }
 });
 
@@ -168,9 +164,9 @@ test('complete default silhouettes stay inside landscape, square and portrait fr
         const offsets=actor.id==='broshi'?[[-72,55],[-6,72],[-35,35]]
           : actor.id==='midio'?[[-40,40],[-30,46],[-18,18]]:[[-22,22],[-22,22],[-20,20]];
         for(const dx of offsets[0])for(const dy of offsets[1])for(const dz of offsets[2]){
-          const right=actor.right||[1,0,0],up=actor.up||[0,1,0];
-          const point=new THREE.Vector3(actor.positionM[0]+right[0]*dx+up[0]*dy,
-            actor.positionM[1]+right[1]*dx+up[1]*dy,actor.positionM[2]+dz).project(camera);
+          const right=actor.right||[1,0,0],up=actor.up||[0,1,0],forward=actor.forward||[0,0,-1];
+          const point=new THREE.Vector3(...actor.positionM.map((value,i)=>
+            value+right[i]*dx+up[i]*dy-forward[i]*dz)).project(camera);
           assert.ok(Math.abs(point.x)<.97&&Math.abs(point.y)<.97,`${actor.id} full extent clipped at ${timeMs}ms seed ${seed} ${width}x${height}: ${point.x}, ${point.y}`);
         }
       }
@@ -191,7 +187,24 @@ test('landscape staging keeps the cast readable with a modest retreat and steady
     const state=sampleJourneyState({timeMs:48000,seed:frame.seed,circular:true});
     const broshi=journeyOrbitCast(sampleJourneyCast({timeMs:48000,state})).actors.find(a=>a.id==='broshi');
     const bottom=new THREE.Vector3(...broshi.positionM).project(camera);
-    const top=new THREE.Vector3(broshi.positionM[0]+broshi.up[0]*broshi.heightM,broshi.positionM[1]+broshi.up[1]*broshi.heightM,broshi.positionM[2]).project(camera);
-    assert.ok((top.y-bottom.y)*360>30,'Broshi body remains readable at landscape resolution');
+    const top=new THREE.Vector3(...broshi.positionM.map((value,i)=>value+broshi.up[i]*broshi.heightM)).project(camera);
+    assert.ok((top.y-bottom.y)*360>50,'Broshi body must remain legible, not a distant point');
+  }
+});
+
+test('ordinary framing gives the lake visible depth and separates it from the foreground',()=>{
+  for(const [width,height,minimumDepth] of [[1280,720,.14],[720,1280,.065]]){
+    const scenicViewport={logicalWidth:width,logicalHeight:height,nominalWidth:width,nominalHeight:height,overscanPx:0};
+    const frame={timeMs:9000,seed:2917029651,scenicViewport};
+    const {pose,proj}=JourneyScene.prototype.movedPose(JOURNEY_VIEW,frame);
+    const camera=new THREE.PerspectiveCamera(proj.fovYDeg,proj.aspect,1,40000);
+    camera.position.fromArray(pose.eyeM);camera.lookAt(...pose.targetM);camera.updateMatrixWorld();
+    for(const seed of [0,73,2917029651])for(const timeMs of [9000,30000,48000]){
+      const state=sampleJourneyState({seed,timeMs,circular:true});
+      const near=new THREE.Vector3(...journeyOrbitPoint([0,0,journeyNearShore(0,state)])).project(camera);
+      const far=new THREE.Vector3(...journeyOrbitPoint([0,0,journeyFarShore(0,state)])).project(camera);
+      assert.ok((far.y-near.y)/2>minimumDepth,'the lake must read as an area, not reflective trim');
+      assert.ok(near.y>-.7&&near.y<0,'the near route stays in the lower part of the picture');
+    }
   }
 });

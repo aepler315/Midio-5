@@ -386,13 +386,16 @@ test('the circular foreground mesh closes every depth row and meets the water al
       for (let column = 0; column <= columns; column++) {
         const [x, y, z] = vertex(column);
         const longitude = (uv.getX(column) - .5) * JOURNEY_ORBIT.circumferenceM;
-        assert.ok(Math.abs(Math.hypot(x, y + JOURNEY_ORBIT.radiusM) - JOURNEY_ORBIT.radiusM) < .0002,
+        assert.ok(Math.abs(Math.hypot(x, y + JOURNEY_ORBIT.radiusM, z) - JOURNEY_ORBIT.radiusM) < .0002,
           'the entire shoreline edge lies on the radial water surface');
-        assert.ok(Math.abs(z - journeyNearShore(longitude, state) * JOURNEY_ORBIT.depthScale) < 1e-5,
+        const shoreLatitude = journeyNearShore(longitude, state) * JOURNEY_ORBIT.depthScale / JOURNEY_ORBIT.radiusM;
+        assert.ok(Math.abs(z - JOURNEY_ORBIT.radiusM * Math.sin(shoreLatitude)) < 1e-5,
           'the rendered contact edge follows the shared seeded shore');
         const inland = vertex(columns + 1 + column);
-        assert.ok(Math.hypot(inland[0], inland[1] + JOURNEY_ORBIT.radiusM) > JOURNEY_ORBIT.radiusM,
+        assert.ok(Math.hypot(inland[0], inland[1] + JOURNEY_ORBIT.radiusM, inland[2]) > JOURNEY_ORBIT.radiusM,
           'the first inland row rises above the water');
+        assert.ok(distance(vertex(rows * (columns + 1) + column), [0, -1800, 1835]) < .0002,
+          'the actual foreground mesh closes at one shared near pole');
       }
     }
   } finally {

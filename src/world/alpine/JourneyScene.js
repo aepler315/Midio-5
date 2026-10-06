@@ -4,7 +4,7 @@ import { JOURNEY_VIEW, sampleJourneyState, journeyGroundHeight, journeySurface, 
 import { JOURNEY_CAST_LAYOUT, sampleJourneyCast, journeyOrbitCast } from './JourneyCast.js';
 import { JOURNEY_ORBIT, journeyOrbitPoint } from './JourneyOrbit.js';
 import { journeyOrbitCamera } from './JourneyOrbitCamera.js';
-import { journeyCore, JOURNEY_CORE_BOUNDS } from './JourneyCore.js';
+import { journeyCore } from './JourneyCore.js';
 import { journeyUniforms, journeyMaterial, journeyGrid, journeyForest, journeyWaterGeometry } from './JourneyMaterial.js';
 import * as journeyMaterials from './JourneyMaterial.js';
 import { sceneUniforms, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
@@ -12,7 +12,7 @@ import { loadMaterialPack, materialGpuBytes } from './MaterialPackage.js';
 import { sampleJourneySky } from './JourneySky.js';
 import { CoveGL } from './CoveGL.js';
 import { FirmamentGL } from './FirmamentGL.js';
-import { mirrorCameraFor, mirrorTextureMatrix } from './WaterMirror.js';
+import { mirrorTextureMatrix } from './WaterMirror.js';
 import { scenicProjection } from './RangeFrame.js';
 import { applyCameraMoves, rangeUserCamera, NEUTRAL_MOVE } from './RangeCamera.js';
 import { cameraBasis } from '../terrain/SceneTravel.js';
@@ -23,11 +23,11 @@ const GEOMETRY_BYTES=7*1024*1024, SHADOW_SIZE=1024;
 // Fit these fixed bounds once per aspect/phrase, never sampled stride roots.
 const CAST_BOUNDS=[
   // Broshi: grounded spikes/head/tail, all bank excursions and foot swings.
-  [[-350,-15],[-15,85],[-260,340]],
+  [[-340,30],[-20,145],[-260,340]],
   // Midio: a low swimmer; its deepest silhouette never occupies the bank.
-  [[-195,195],[-42,65],[-300,-160]],
+  [[-205,205],[-70,110],[-300,-150]],
   // Midasus and companions: high but farther back, with bounded full rolls.
-  [[-5,305],[55,210],[-140,0]],
+  [[-10,335],[30,255],[-140,0]],
 ];
 function fitCastEnvelope(rail,tanX,tanY,margin=.88){
   const {forward,right,up}=cameraBasis(rail);
@@ -137,7 +137,7 @@ export class JourneyScene {
       coreShadow.frustumCulled=false;p.shadowScene.add(coreShadow);
       for(const layer of [2,1,0]) {
         const span=JOURNEY_ORBIT.circumferenceM;
-        const geometry=journeyGrid(THREE,768,layer===0?24:56,span,{circular:true});
+        const geometry=journeyGrid(THREE,768,layer===0?80:56,span,{circular:true});
         const mesh=new THREE.Mesh(geometry,journeyMaterial(THREE,p.uniforms,'surface',layer,span));
         mesh.frustumCulled=false;p.meshes.push(mesh);p.scene.add(mesh);
         const material=journeyMaterial(THREE,p.uniforms,'shadow',layer,span);
@@ -219,23 +219,27 @@ export class JourneyScene {
     const state=sampleJourneyState({timeMs:frame.timeMs,seed:frame.seed,music:frame.habitatMusic?.journey,reducedMotion:frame.reducedMotion,circular:true});
     const authored=journeyOrbitCamera({timeMs:frame.timeMs,tanX,tanY,direction:frame.journeyDirection,reducedMotion:frame.reducedMotion});
     const heightAt=(x,z)=>{
-      const {nearZ,frontBulgeM}=JOURNEY_CORE_BOUNDS;
-      if(z>320){
-        const depth=(z-nearZ)/frontBulgeM;
-        const radialSquared=JOURNEY_ORBIT.radiusM**2*(1-depth*depth);
-        if(depth>=1||x*x>radialSquared)return -1e6;
-        return Math.sqrt(radialSquared-x*x)-JOURNEY_ORBIT.radiusM;
+      const {radiusM,depthScale}=JOURNEY_ORBIT;
+      // Solve the upper surface along the camera's vertical ray. Latitude
+      // changes with altitude on a sphere; the old cylinder's z/scale lookup
+      // would allow the listener to move through the foreground hemisphere.
+      let altitude=0,highest=-Infinity;
+      for(let iteration=0;iteration<6;iteration++){
+        const radius=radiusM+altitude,squared=radius*radius-x*x-z*z;
+        if(squared<=0)return highest;
+        const y=Math.sqrt(squared)-radiusM;
+        const localX=Math.atan2(x,y+radiusM)*radiusM;
+        const localZ=Math.asin(Math.max(-1,Math.min(1,z/radius)))*radiusM/depthScale;
+        let next=Math.max(0,journeyGroundHeight(localX,localZ,state));
+        for(const layer of [1,2]){
+          const start=journeySurface(localX,0,layer,state),end=journeySurface(localX,1,layer,state);
+          const v=(localZ-start[2])/(end[2]-start[2]);
+          if(v>=0&&v<=1)next=Math.max(next,journeySurface(localX,v,layer,state)[1]);
+        }
+        highest=Math.max(highest,Math.sqrt(Math.max(0,(radiusM+next)**2-x*x-z*z))-radiusM);
+        altitude=next;
       }
-      if(z<-1450||Math.abs(x)>JOURNEY_ORBIT.radiusM+1000)return -1e6;
-      const localX=JOURNEY_ORBIT.radiusM*Math.asin(Math.max(-1,Math.min(1,x/JOURNEY_ORBIT.radiusM)));
-      const localZ=z/JOURNEY_ORBIT.depthScale;
-      let y=journeyGroundHeight(localX,localZ,state);
-      for(const layer of [1,2]){
-        const start=journeySurface(localX,0,layer,state),end=journeySurface(localX,1,layer,state);
-        const v=(localZ-start[2])/(end[2]-start[2]);
-        if(v>=0&&v<=1)y=Math.max(y,journeySurface(localX,v,layer,state)[1]);
-      }
-      return Math.sqrt(Math.max(0,(JOURNEY_ORBIT.radiusM+y)**2-x*x))-JOURNEY_ORBIT.radiusM;
+      return highest;
     };
     const rail=fitCastEnvelope(authored,tanX,tanY);
     const pose=applyCameraMoves(rail,NEUTRAL_MOVE,frame.userCamera,{heightAt,
@@ -332,12 +336,9 @@ export class JourneyScene {
     u.uJourneyShadow.value=this.shadow.depthTexture;
     r.setRenderTarget(this.shadow);r.setClearColor(0,0);r.clear();
     this._render(p.shadowScene,this.shadowCamera);
-    mirrorCameraFor(this.THREE,this.camera,0,this.mirrorCamera,1);
-    mirrorTextureMatrix(this.THREE,this.mirrorCamera,u.uMirrorMatrix.value);
-    p.water.visible=false;u.uClipBelow.value=.1;
-    r.setRenderTarget(this.mirror);r.setClearColor(0,0);r.clear();
-    this._render(p.scene,this.mirrorCamera);
-    p.water.visible=true;u.uClipBelow.value=-1e9;u.uMirror.value=this.mirror.texture;
+    // A spherical lake has no shared planar mirror. Its material reflects
+    // the smooth sky radiance using the local radial normal.
+    u.uClipBelow.value=-1e9;
     r.setRenderTarget(null);r.setClearColor(0,0);r.clear();
     this._render(p.scene,this.camera);
     return this.canvas;

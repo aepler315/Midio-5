@@ -51,7 +51,8 @@ const SURFACE_VERT = /* glsl */`
     vWorld = journeyOrbitPoint(journeySurface(vec2(x, uv.y), uLayer));
     vec3 dx=journeyOrbitPoint(journeySurface(vec2(x+8.0,uv.y),uLayer))-vWorld;
     vec3 dz=journeyOrbitPoint(journeySurface(vec2(x,uv.y<.997?uv.y+.003:uv.y-.003),uLayer))-vWorld;
-    vNormal=normalize(cross(dz,dx));
+    vec3 crossed=cross(dz,dx);
+    vNormal=dot(crossed,crossed)<.00000001?journeyOrbitUp(vWorld):normalize(crossed);
     if(dot(vNormal,journeyOrbitUp(vWorld))<0.0)vNormal=-vNormal;
     gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
   }
@@ -87,8 +88,18 @@ const JOURNEY_IRRADIANCE_GLSL=/* glsl */`
     float key=max(0.0,dot(n,uLightDir))*journeyShadow(p,n)*(1.0-.7*cover);
     float skyFace=.28+.72*max(0.0,dot(n,normalize(vec3(-.45,.85,.3))));
     vec3 fill=ambientFloor+uSkyHorizon*.32+uSkyZenith*.3;
+    vec3 broadside=vec3(0.0);
+    if(uJourneyOrbit>.5){
+      // Broad cool incident moon/sky light makes the curved ground and lake
+      // readable together. Keep normal-dependent side light and cavities so
+      // this reveals terrain planes instead of adding an emissive wash.
+      fill=max(ambientFloor,vec3(.10,.14,.20))+uSkyHorizon*.32+uSkyZenith*.3;
+      skyFace=.55+.45*max(0.0,dot(n,normalize(vec3(-.45,.85,.3))));
+      float facing=max(0.0,dot(n,normalize(vec3(-.55,.35,.75))));
+      broadside=vec3(.30,.38,.48)*(.12+.88*facing)*cavity*(1.0-.35*uStorm.x);
+    }
     vec3 irradiance=fill*skyFace*cavity*(1.0-.48*uStorm.x)+uLightColor*key*(.85+.3*uStorm.z);
-    return irradiance+vec3(.48,.57,.75)*uStorm.y*(.45+.55*max(dot(n,journeyOrbitUp(p)),0.0));
+    return irradiance+broadside+vec3(.48,.57,.75)*uStorm.y*(.45+.55*max(dot(n,journeyOrbitUp(p)),0.0));
   }
 `;
 
@@ -119,14 +130,16 @@ const LIGHTING = /* glsl */`
 const INTRINSIC_MATERIAL_GLSL=/* glsl */`
   vec3 journeyIntrinsicPosition(vec3 world){
     if(uJourneyOrbit<.5)return world;
-    return vec3(atan(world.x,world.y+JOURNEY_RADIUS)*JOURNEY_RADIUS,
-      journeyOrbitAltitude(world),world.z/JOURNEY_DEPTH_SCALE);
+    vec3 radial=world+vec3(0.0,JOURNEY_RADIUS,0.0);
+    float latitude=atan(radial.z,length(radial.xy));
+    return vec3(atan(radial.x,radial.y)*JOURNEY_RADIUS,
+      length(radial)-JOURNEY_RADIUS,latitude*JOURNEY_RADIUS/JOURNEY_DEPTH_SCALE);
   }
   vec3 journeyMaterialPosition(vec3 intrinsic){
     if(uJourneyOrbit<.5)return intrinsic;
-    float a=intrinsic.x/JOURNEY_RADIUS;
-    return vec3(JOURNEY_RADIUS*sin(a),intrinsic.y,
-      intrinsic.z+JOURNEY_RADIUS*cos(a));
+    float a=intrinsic.x/JOURNEY_RADIUS,latitude=intrinsic.z*JOURNEY_DEPTH_SCALE/JOURNEY_RADIUS;
+    float ring=JOURNEY_RADIUS*cos(latitude);
+    return vec3(ring*sin(a),intrinsic.y,JOURNEY_RADIUS*sin(latitude)+ring*cos(a));
   }
 `;
 const SURFACE_FRAG = /* glsl */`
@@ -164,14 +177,19 @@ const SURFACE_FRAG = /* glsl */`
     if(journeyOrbitAltitude(vWorld)<uClipBelow) discard;
     vec3 worldNormal=normalize(vNormal),up=journeyOrbitUp(vWorld);
     vec3 intrinsic=journeyIntrinsicPosition(vWorld);
-    vec3 tangent=journeyOrbitVector(vec3(1.0,0.0,0.0),intrinsic.x);
-    vec3 n=vec3(dot(worldNormal,tangent),dot(worldNormal,up),worldNormal.z);
+    vec3 tangent=journeyOrbitVector(vec3(1.0,0.0,0.0),intrinsic.x,intrinsic.z);
+    vec3 depthAxis=journeyOrbitVector(vec3(0.0,0.0,1.0),intrinsic.x,intrinsic.z);
+    vec3 n=vec3(dot(worldNormal,tangent),dot(worldNormal,up),dot(worldNormal,depthAxis));
     vec3 p=journeyMaterialPosition(intrinsic+vec3(uJourneyTravel,0.0,0.0));
+    // Longitude has no unique tangent at a pole. Let the true terrain normal
+    // take over smoothly before a local normal map can paint an azimuth fan.
+    float latitudeDetail=uJourneyOrbit>.5?smoothstep(.015,.16,
+      cos(intrinsic.z*JOURNEY_DEPTH_SCALE/JOURNEY_RADIUS)):1.0;
     vec4 broad=cliffSample(tRock,p,n,210.0,.19,.44);
     vec4 fine=cliffSample(tRockNear,p,n,54.0,.67,.77);
     float detail=rockNoise(p),relief=.65*broad.a+.35*fine.a;
     vec3 detailNormal=normalize(worldNormal+journeyOrbitVector(
-      (broad.xyz*.85+fine.xyz*.42)*(1.0-.45*n.y),intrinsic.x));
+      (broad.xyz*.85+fine.xyz*.42)*(1.0-.45*n.y)*latitudeDetail,intrinsic.x,intrinsic.z));
     float fracture=smoothstep(.3,.73,relief);
     vec3 rock=mix(vec3(.026,.038,.062),vec3(.24,.255,.29),fracture);
     rock*=.8+.2*detail;
@@ -194,6 +212,15 @@ const SURFACE_FRAG = /* glsl */`
     detailNormal=normalize(mix(detailNormal,worldNormal,snow*.65));
     if(uLayer<.5) {
       albedo=mix(vec3(.045,.073,.068),vec3(.105,.14,.105),detail);
+      if(uJourneyOrbit>.5){
+        // Meadow tufts, exposed stones and silty banks follow one continuous
+        // spherical field all the way to the foreground pole.
+        vec3 meadow=mix(vec3(.038,.071,.033),vec3(.12,.15,.068),.7*cover+.3*detail);
+        float exposed=clamp((1.0-smoothstep(.4,.76,n.y))*.85+smoothstep(.65,.82,cover)*.3,0.0,1.0);
+        albedo=mix(meadow,rock,exposed);
+        detailNormal=normalize(worldNormal+journeyOrbitVector(
+          (broad.xyz*.15+fine.xyz*.11)*mix(.55,1.0,exposed)*latitudeDetail,intrinsic.x,intrinsic.z));
+      }
       // Low damp sediments are dark patches, without tracing a luminous ring.
       float damp=(1.0-smoothstep(.3,5.0,p.y))*(.45+.55*rockGrain(p.xz*.018));
       albedo=mix(albedo,vec3(.032,.043,.044),damp*.7);
@@ -225,8 +252,8 @@ const TREE_VERT = /* glsl */`
     p*=aTree.z;
     float breeze=sin(uJourneyTime*.71+aTree.x*.03)+.35*sin(uJourneyTime*1.13+aTree.x*.017);
     p.x+=breeze*position.y*position.y*(.55+1.8*uStorm.x);
-    vWorld=journeyOrbitPoint(root)+journeyOrbitVector(p,x);
-    vNormal=journeyOrbitVector(normal,x);vCrown=aPart>0.5?position.y:-1.0;vTint=aShape.w;
+    vWorld=journeyOrbitPoint(root)+journeyOrbitVector(p,x,root.z);
+    vNormal=journeyOrbitVector(normal,x,root.z);vCrown=aPart>0.5?position.y:-1.0;vTint=aShape.w;
     gl_Position=projectionMatrix*viewMatrix*vec4(vWorld,1.0);
   }
 `;
@@ -264,8 +291,8 @@ const DRESSING_VERT=/* glsl */`
     if(aKind>.5)p.x+=sin(uJourneyTime*.9+aTree.x*.033)*position.y*position.y*(.06+.22*uStorm.x);
     float c=cos(aShape.w),s=sin(aShape.w);
     p.xz=mat2(c,-s,s,c)*p.xz;
-    vWorld=journeyOrbitPoint(root)+journeyOrbitVector(p,x);
-    vNormal=journeyOrbitVector(normal,x);vKind=aKind;vTint=fract(aShape.w*.7);
+    vWorld=journeyOrbitPoint(root)+journeyOrbitVector(p,x,root.z);
+    vNormal=journeyOrbitVector(normal,x,root.z);vKind=aKind;vTint=fract(aShape.w*.7);
     gl_Position=projectionMatrix*viewMatrix*vec4(vWorld,1.0);
   }
 `;
@@ -305,6 +332,20 @@ const WATER_FRAG = /* glsl */`
   ${JOURNEY_IRRADIANCE_GLSL}
   in vec3 vWorld;
   out vec4 outColor;
+  vec3 journeyWaterSky(vec3 ray){
+    if(uJourneyOrbit<.5)return firmamentRadiance(ray,uSkyZenith,uSkyHorizon,true);
+    // Water integrates a small solid angle of sky. Point-sized stars in the
+    // screen-space sky shader alias into white noise under curved reflection.
+    // Keep the smooth incident sky, clouds and a broad restrained body glint.
+    vec3 sky=mix(uSkyHorizon,uSkyZenith,smoothstep(-.12,.65,ray.y));
+    float cover=journeyCloudCover(ray,uFirmamentTime,uFirmamentSeed,uFirmamentWeather.x,uJourneyClearing);
+    vec3 cloud=mix(uSkyHorizon*.65,uSkyZenith*.72,smoothstep(.0,.8,ray.y));
+    sky=mix(sky,cloud,cover*.82);
+    float alignment=max(0.0,dot(ray,uFirmamentBody.xyz));
+    sky+=uFirmamentBodyColor*pow(alignment,160.0)*.10;
+    sky+=vec3(.06,.08,.11)*uFirmamentWeather.y*(.2+.8*cover);
+    return sky;
+  }
   void main(){
     vec3 intrinsic=journeyIntrinsicPosition(vWorld);
     vec2 q=intrinsic.xz;
@@ -336,25 +377,27 @@ const WATER_FRAG = /* glsl */`
     float wake=exp(-pow((across-behind*.23)/5.0,2.0))*smoothstep(0.0,14.0,behind)
       *(1.0-smoothstep(25.0,190.0,behind))*uSwimmer.z;
     float rings=sin(length(delta)*.25-t*3.5)*exp(-length(delta)*.024)*uSwimmer.z;
-    float slope=(.0011+.0045*wind+.002*uJourneyBass)*smoothstep(0.0,9.0,shore);
+    float calmSlope=uJourneyOrbit>.5?.0007+.0025*wind+.001*uJourneyBass+.003*uStorm.x
+      :.0011+.0045*wind+.002*uJourneyBass;
+    float slope=calmSlope*smoothstep(0.0,9.0,shore);
     vec3 intrinsicNormal=normalize(vec3(slope*(sin(waveQ.x*.034+waveQ.y*.082-t*1.3)+.35*crossWave),1.0,
       slope*ripple+.003*(wake+rings)));
-    vec3 normal=journeyOrbitVector(intrinsicNormal,q.x);
+    vec3 normal=journeyOrbitVector(intrinsicNormal,q.x,q.y);
     vec3 ray=reflect(normalize(vWorld-uCameraPos),normal);
-    vec3 sky=clamp(firmamentRadiance(ray,uSkyZenith,uSkyHorizon,true),0.0,1.0);
+    vec3 sky=clamp(journeyWaterSky(ray),0.0,1.0);
     vec4 projected=uMirrorMatrix*vec4(vWorld,1.0);
     vec2 uv=projected.xy/projected.w;
     // Project a small world-space normal displacement; division by w scales
     // distortion with perspective rather than assigning a screen-space wave.
-    vec3 distortion=journeyOrbitVector(vec3(intrinsicNormal.x,0.0,intrinsicNormal.z),q.x);
+    vec3 distortion=journeyOrbitVector(vec3(intrinsicNormal.x,0.0,intrinsicNormal.z),q.x,q.y);
     vec4 displaced=uMirrorMatrix*vec4(vWorld+distortion*24.0,1.0);
     uv=displaced.xy/max(displaced.w,.001);
     float edge=min(min(uv.x,uv.y),min(1.0-uv.x,1.0-uv.y));
     vec4 mirrored=texture(uMirror,clamp(uv,0.0,1.0));
     float valid=smoothstep(0.0,.025,edge)*mirrored.a*step(.001,projected.w);
-    // A tangent-plane mirror cannot describe the opposite side of the circle.
-    // The bounded local patch blends to the actual reflected sky direction.
-    if(uJourneyOrbit>.5)valid*=1.0-smoothstep(65.0,120.0,abs(q.x));
+    // The retained mirror camera reflects about the old horizontal plane.
+    // Spherical water uses incident sky until a local tangent capture exists.
+    if(uJourneyOrbit>.5)valid=0.0;
     vec3 reflection=mix(sky,pow(mirrored.rgb/max(mirrored.a,.001),vec3(2.2)),valid);
     float mu=max(0.0,dot(normal,normalize(uCameraPos-vWorld)));
     float fresnel=${WATER_F0}+${1-WATER_F0}*pow(1.0-mu,5.0);
@@ -362,7 +405,8 @@ const WATER_FRAG = /* glsl */`
     float transmission=exp(-depthM*${WATER_ABSORPTION});
     float sediment=.5+.5*journeyNoise(worldQ.x*.033,worldQ.y*.027);
     vec3 bed=mix(vec3(.073,.090,.080),vec3(.12,.13,.103),sediment);
-    vec3 body=mix(vec3(.009,.034,.045),bed,transmission);
+    vec3 deepWater=uJourneyOrbit>.5?vec3(.021,.065,.078):vec3(.009,.034,.045);
+    vec3 body=mix(deepWater,bed,transmission);
     // Absorption coefficients describe material, not emitted light. The bed
     // and volume receive the bank's actual sky/key/cloud/shadow illumination.
     // Reflection is already incoming radiance and must stay unattenuated.
@@ -405,7 +449,7 @@ export function journeyGrid(THREE,columns=416,rows=56,span=16000,{circular=false
 export function journeyWaterGeometry(THREE,{circular=false}={}){
   const g=new THREE.BufferGeometry();
   if(circular){
-    const positions=[],indices=[],columns=768,rows=12;
+    const positions=[],indices=[],columns=768,rows=64;
     for(let z=0;z<=rows;z++)for(let x=0;x<=columns;x++){
       positions.push((x/columns-.5)*JOURNEY_ORBIT.circumferenceM,0,800-z/rows*2300);
     }
