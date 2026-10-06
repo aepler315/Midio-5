@@ -20,9 +20,7 @@ export const COVE_VERT = /* glsl */`
   ${DEFORM_GLSL}
   uniform vec3 uRoot;
   uniform vec3 uRight;
-  uniform vec3 uUp;
   uniform vec3 uForward;
-  uniform float uOrbitRadius;
   uniform float uSize;
   uniform float uLean;
   uniform float uTurn;
@@ -88,9 +86,9 @@ export const COVE_VERT = /* glsl */`
     p.xz = rotate2(p.xz, uTurn);
     n.xz = rotate2(n.xz, uTurn);
     vec3 root = uRoot;
-    if (uOrbitRadius <= 0.0) root.y += uGrounded * deformAt(uRoot);
-    vWorld = root + (uRight * p.x + uUp * p.y + uForward * p.z) * uSize;
-    vNormal = normalize(uRight * n.x + uUp * n.y + uForward * n.z);
+    root.y += uGrounded * deformAt(uRoot);
+    vWorld = root + (uRight * p.x + vec3(0.0, p.y, 0.0) + uForward * p.z) * uSize;
+    vNormal = normalize(uRight * n.x + vec3(0.0, n.y, 0.0) + uForward * n.z);
     vEdge = aEdge;
     vShade = aShade;
     gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
@@ -105,7 +103,6 @@ export const COVE_FRAG = /* glsl */`
   uniform float uShadow;
   uniform float uShadowOpacity;
   uniform float uClipBelow;
-  uniform float uOrbitRadius;
   uniform vec3 uLightDir;
   uniform vec3 uLightColor;
   uniform vec3 uSkyZenith;
@@ -127,9 +124,7 @@ export const COVE_FRAG = /* glsl */`
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
   }
   void main() {
-    if (uOrbitRadius > 0.0) {
-      if (length(vWorld + vec3(0.0, uOrbitRadius, 0.0)) - uOrbitRadius < uClipBelow) discard;
-    } else if (vWorld.y < uClipBelow) discard;
+    if (vWorld.y < uClipBelow) discard;
     if (uShadow > 0.5) {
       outColor = vec4(0.025, 0.04, 0.045, 0.28 * uShadowOpacity * pow(max(0.0, 1.0 - vShade), 2.0));
       return;
@@ -141,18 +136,8 @@ export const COVE_FRAG = /* glsl */`
     vec3 albedo = uBodyColor * vShade;
     vec3 lit = albedo * (hemi + uLightColor * key);
     lit += albedo * actorLight(vWorld, n);
-    float edgeScale = 1.0;
-    if (uOrbitRadius > 0.0) {
-      // Broad moonlit sky keeps the modeled facets legible even when the
-      // shared night environment is too dim to illuminate their albedo.
-      vec3 radialUp = normalize(vWorld + vec3(0.0, uOrbitRadius, 0.0));
-      vec3 fillDirection = normalize(radialUp + vec3(-0.35, 0.2, 0.8));
-      float skyFill = 0.20 + 0.15 * max(dot(n, fillDirection), 0.0);
-      lit += albedo * vec3(0.84, 0.91, 1.0) * skyFill;
-      edgeScale = 0.5;
-    }
     // The body catches moonlight; emission is concentrated in fine seams.
-    lit += uEdgeColor * (vEdge * (0.07 + 0.30 * uGlow) + 0.009 * uGlow) * edgeScale;
+    lit += uEdgeColor * (vEdge * (0.07 + 0.30 * uGlow) + 0.009 * uGlow);
     vec3 color = tonemap(lit * uExposure);
     color = mix(color, mistColorAt(uCameraPos, vWorld), mistAmount(uCameraPos, vWorld));
     float dist = length(vWorld - uCameraPos);
@@ -166,13 +151,10 @@ export const COVE_FRAG = /* glsl */`
 export const COVE_DEPTH_FRAG = /* glsl */`
   precision highp float;
   uniform float uClipBelow;
-  uniform float uOrbitRadius;
   in vec3 vWorld;
   out vec4 outColor;
   void main() {
-    if (uOrbitRadius > 0.0) {
-      if (length(vWorld + vec3(0.0, uOrbitRadius, 0.0)) - uOrbitRadius < uClipBelow) discard;
-    } else if (vWorld.y < uClipBelow) discard;
+    if (vWorld.y < uClipBelow) discard;
     outColor = vec4(0.0);
   }
 `;
@@ -441,7 +423,6 @@ export class CoveGL {
     const uniforms = { ...this._shared,
       uRoot: { value: new THREE.Vector3(...root) },
       uRight: { value: new THREE.Vector3(...this.layout.right) }, uForward: { value: new THREE.Vector3(...this.layout.forward) },
-      uUp: { value: new THREE.Vector3(...(this.layout.up || [0, 1, 0])) }, uOrbitRadius: { value: 0 },
       uSize: { value: size }, uLean: { value: 0 }, uTurn: { value: 0 }, uGrounded: { value: grounded ? 1 : 0 },
       uHead: { value: 0 }, uTail: { value: 0 }, uJaw: { value: 0 }, uTailPivot: { value: new THREE.Vector2(-26 / 34, 16 / 34) },
       uWalking: { value: 0 }, uFrontFoot: { value: new THREE.Vector3() }, uRearFoot: { value: new THREE.Vector3() },
@@ -478,16 +459,6 @@ export class CoveGL {
     for (const depth of record.depth) depth.visible = visible;
   }
 
-  _basis(record, pose) {
-    for (const [field, fallback] of [['right', this.layout.right], ['up', this.layout.up || [0, 1, 0]],
-      ['forward', this.layout.forward]]) {
-      const value = pose[field];
-      record.uniforms[`u${field[0].toUpperCase()}${field.slice(1)}`].value.set(...(
-        value?.length === 3 && value.every(Number.isFinite) ? value : fallback));
-    }
-    record.uniforms.uOrbitRadius.value = Math.max(0, finite(pose.orbitRadiusM));
-  }
-
   update(pose) {
     if (this.disposed) return;
     this.snapshot = pose;
@@ -501,7 +472,6 @@ export class CoveGL {
       }
       const u = record.uniforms;
       u.uRoot.value.set(...actor.positionM);
-      this._basis(record, actor);
       u.uSize.value = Math.max(.1, finite(actor.heightM, this.layout.heights[id]));
       u.uLean.value = finite(actor.leanRad);
       u.uTurn.value = finite(actor.turnRad);
@@ -522,7 +492,6 @@ export class CoveGL {
         this._visible(baby, !!valid);
         if (!valid) return;
         baby.uniforms.uRoot.value.set(...at.positionM);
-        this._basis(baby, at);
         baby.uniforms.uSize.value = Math.max(.1, finite(at.heightM, 3));
         baby.uniforms.uLean.value = finite(at.rotationRad);
         baby.uniforms.uGlow.value = unit(actor.glow) * .7;
@@ -532,7 +501,6 @@ export class CoveGL {
     this._visible(this.contact, walker.mesh.visible);
     if (walker.mesh.visible) {
       const actor = pose.actors.find(actor => actor.id === 'broshi');
-      this._basis(this.contact, actor);
       this.contact.uniforms.uRoot.value.copy(walker.uniforms.uRoot.value);
       this.contact.uniforms.uTurn.value = walker.uniforms.uTurn.value;
       this.contact.uniforms.uSize.value = walker.uniforms.uSize.value / this.layout.heights.broshi

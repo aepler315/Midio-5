@@ -1,10 +1,7 @@
-// A circular mountain world: steady sky, radial terrain and automatic travel.
+// A compact 3D traveling valley: sky, one mirror, one color/depth scene.
 // Land, water, forest roots and inhabitants share the same continuous field.
 import { JOURNEY_VIEW, sampleJourneyState, journeyGroundHeight, journeySurface, journeyLakeShape } from './JourneyWorld.js';
-import { JOURNEY_CAST_LAYOUT, sampleJourneyCast, journeyOrbitCast } from './JourneyCast.js';
-import { JOURNEY_ORBIT, journeyOrbitPoint } from './JourneyOrbit.js';
-import { journeyOrbitCamera } from './JourneyOrbitCamera.js';
-import { journeyCore } from './JourneyCore.js';
+import { JOURNEY_CAST_LAYOUT, sampleJourneyCast } from './JourneyCast.js';
 import { journeyUniforms, journeyMaterial, journeyGrid, journeyForest, journeyWaterGeometry } from './JourneyMaterial.js';
 import * as journeyMaterials from './JourneyMaterial.js';
 import { sceneUniforms, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
@@ -12,7 +9,7 @@ import { loadMaterialPack, materialGpuBytes } from './MaterialPackage.js';
 import { sampleJourneySky } from './JourneySky.js';
 import { CoveGL } from './CoveGL.js';
 import { FirmamentGL } from './FirmamentGL.js';
-import { mirrorTextureMatrix } from './WaterMirror.js';
+import { mirrorCameraFor, mirrorTextureMatrix } from './WaterMirror.js';
 import { scenicProjection } from './RangeFrame.js';
 import { applyCameraMoves, rangeUserCamera, NEUTRAL_MOVE } from './RangeCamera.js';
 import { cameraBasis } from '../terrain/SceneTravel.js';
@@ -23,18 +20,17 @@ const GEOMETRY_BYTES=7*1024*1024, SHADOW_SIZE=1024;
 // Fit these fixed bounds once per aspect/phrase, never sampled stride roots.
 const CAST_BOUNDS=[
   // Broshi: grounded spikes/head/tail, all bank excursions and foot swings.
-  [[-340,30],[-20,145],[-260,340]],
+  [[-350,-15],[-15,85],[-260,340]],
   // Midio: a low swimmer; its deepest silhouette never occupies the bank.
-  [[-205,205],[-70,110],[-300,-150]],
+  [[-195,195],[-42,65],[-300,-160]],
   // Midasus and companions: high but farther back, with bounded full rolls.
-  [[-10,335],[30,255],[-140,0]],
+  [[-5,305],[55,210],[-140,0]],
 ];
 function fitCastEnvelope(rail,tanX,tanY,margin=.88){
   const {forward,right,up}=cameraBasis(rail);
   let retreat=0;
   for(const bounds of CAST_BOUNDS)for(const x of bounds[0])for(const y of bounds[1])for(const z of bounds[2]){
-    const point=journeyOrbitPoint([x,y,z]);
-    const v=point.map((value,i)=>value-rail.eyeM[i]);
+    const v=[x-rail.eyeM[0],y-rail.eyeM[1],z-rail.eyeM[2]];
     const dot=a=>v.reduce((n,value,i)=>n+value*a[i],0);
     const depth=dot(forward);
     retreat=Math.max(retreat,Math.abs(dot(right))/(tanX*margin)-depth,Math.abs(dot(up))/(tanY*margin)-depth);
@@ -61,7 +57,7 @@ export class JourneyScene {
     this.renderer.autoClear=false;
     this.renderer.outputColorSpace=THREE.LinearSRGBColorSpace;
     this.renderer.setPixelRatio(1);
-    this.camera=new THREE.PerspectiveCamera(44,1,1,40000);
+    this.camera=new THREE.PerspectiveCamera(44,1,1,16000);
     this.mirrorCamera=new THREE.PerspectiveCamera();
     this.shadowCamera=new THREE.OrthographicCamera(-6200,6200,5100,-5100,1,23000);
     this.prepared=new Map();this.pending=new Map();
@@ -126,30 +122,21 @@ export class JourneyScene {
       p.textures=createMaterialTextures(THREE,p.pack);
       applyMaterial(p.uniforms,p.pack,p.textures);
       p.scene=new THREE.Scene();p.shadowScene=new THREE.Scene();
-      p.uniforms.uJourneyOrbit.value=1;
-      p.core=journeyCore(THREE,p.uniforms);
-      p.core.frustumCulled=false;p.meshes.push(p.core);p.scene.add(p.core);
-      const coreDepth=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,
-        uniforms:p.core.material.uniforms,vertexShader:p.core.material.vertexShader,
-        fragmentShader:'precision highp float;out vec4 outColor;void main(){outColor=vec4(1.0);}',side:THREE.DoubleSide});
-      p.depthMaterials.push(coreDepth);
-      const coreShadow=new THREE.Mesh(p.core.geometry,coreDepth);
-      coreShadow.frustumCulled=false;p.shadowScene.add(coreShadow);
       for(const layer of [2,1,0]) {
-        const span=JOURNEY_ORBIT.circumferenceM;
-        const geometry=journeyGrid(THREE,768,layer===0?80:56,span,{circular:true});
+        const span=layer===0?8400:16000;
+        const geometry=layer===0?journeyGrid(THREE,512,24,8400):journeyGrid(THREE);
         const mesh=new THREE.Mesh(geometry,journeyMaterial(THREE,p.uniforms,'surface',layer,span));
         mesh.frustumCulled=false;p.meshes.push(mesh);p.scene.add(mesh);
         const material=journeyMaterial(THREE,p.uniforms,'shadow',layer,span);
         p.depthMaterials.push(material);
         const depth=new THREE.Mesh(geometry,material);depth.frustumCulled=false;p.shadowScene.add(depth);
       }
-      p.water=new THREE.Mesh(journeyWaterGeometry(THREE,{circular:true}),journeyMaterial(THREE,p.uniforms,'water'));
+      p.water=new THREE.Mesh(journeyWaterGeometry(THREE),journeyMaterial(THREE,p.uniforms,'water'));
       p.water.frustumCulled=false;p.meshes.push(p.water);p.scene.add(p.water);
-      const forest=journeyForest(THREE,p.uniforms,{circular:true});
+      const forest=journeyForest(THREE,p.uniforms);
       forest.frustumCulled=false;p.meshes.push(forest);p.scene.add(forest);
       if(journeyMaterials.journeyDressing){
-        p.dressing=journeyMaterials.journeyDressing(THREE,p.uniforms,{circular:true});
+        p.dressing=journeyMaterials.journeyDressing(THREE,p.uniforms);
         p.dressing.frustumCulled=false;p.meshes.push(p.dressing);p.scene.add(p.dressing);
       }
       p.cast=new CoveGL(THREE,p.uniforms,JOURNEY_CAST_LAYOUT);
@@ -213,37 +200,26 @@ export class JourneyScene {
 
   movedPose(view,frame){
     const c=view.camera;
+    const authored={eyeM:c.eyeStartM,targetM:[c.targetStartM[0],50,c.targetStartM[2]],fovYDeg:c.fovYDeg,up:[0,1,0]};
     const vp=frame.scenicViewport,proj=scenicProjection(c.fovYDeg,vp),margin=vp.overscanPx||0;
     const width=Math.max(1,vp.logicalWidth-2*margin),height=Math.max(1,vp.logicalHeight-2*margin);
     const tanY=Math.tan(proj.fovYDeg*Math.PI/360)*height/vp.logicalHeight,tanX=tanY*width/height;
-    const state=sampleJourneyState({timeMs:frame.timeMs,seed:frame.seed,music:frame.habitatMusic?.journey,reducedMotion:frame.reducedMotion,circular:true});
-    const authored=journeyOrbitCamera({timeMs:frame.timeMs,tanX,tanY,direction:frame.journeyDirection,reducedMotion:frame.reducedMotion});
+    const state=sampleJourneyState({timeMs:frame.timeMs,seed:frame.seed,music:frame.habitatMusic?.journey,reducedMotion:frame.reducedMotion});
     const heightAt=(x,z)=>{
-      const {radiusM,depthScale}=JOURNEY_ORBIT;
-      // Solve the upper surface along the camera's vertical ray. Latitude
-      // changes with altitude on a sphere; the old cylinder's z/scale lookup
-      // would allow the listener to move through the foreground hemisphere.
-      let altitude=0,highest=-Infinity;
-      for(let iteration=0;iteration<6;iteration++){
-        const radius=radiusM+altitude,squared=radius*radius-x*x-z*z;
-        if(squared<=0)return highest;
-        const y=Math.sqrt(squared)-radiusM;
-        const localX=Math.atan2(x,y+radiusM)*radiusM;
-        const localZ=Math.asin(Math.max(-1,Math.min(1,z/radius)))*radiusM/depthScale;
-        let next=Math.max(0,journeyGroundHeight(localX,localZ,state));
-        for(const layer of [1,2]){
-          const start=journeySurface(localX,0,layer,state),end=journeySurface(localX,1,layer,state);
-          const v=(localZ-start[2])/(end[2]-start[2]);
-          if(v>=0&&v<=1)next=Math.max(next,journeySurface(localX,v,layer,state)[1]);
-        }
-        highest=Math.max(highest,Math.sqrt(Math.max(0,(radiusM+next)**2-x*x-z*z))-radiusM);
-        altitude=next;
+      let y=journeyGroundHeight(x,z,state);
+      for(const layer of [1,2]){
+        const start=journeySurface(x,0,layer,state),end=journeySurface(x,1,layer,state);
+        const v=(z-start[2])/(end[2]-start[2]);
+        if(v>=0&&v<=1)y=Math.max(y,journeySurface(x,v,layer,state)[1]);
       }
-      return highest;
+      return y;
     };
     const rail=fitCastEnvelope(authored,tanX,tanY);
-    const pose=applyCameraMoves(rail,NEUTRAL_MOVE,frame.userCamera,{heightAt,
-      sampleStepM:24,cone:{tanX,tanY},heightRangeM:[-JOURNEY_ORBIT.radiusM,1000]});
+    const move=frame.reducedMotion?NEUTRAL_MOVE:frame.journeyDirection?.cameraMove||NEUTRAL_MOVE;
+    const staged=applyCameraMoves(rail,move,null,{heightAt,waterLevelM:0,heightRangeM:[0,2300]});
+    const safe=fitCastEnvelope(staged,tanX,tanY,.95);
+    const pose=applyCameraMoves(safe,NEUTRAL_MOVE,frame.userCamera,{heightAt,waterLevelM:0,
+      sampleStepM:24,cone:{tanX,tanY},heightRangeM:[0,2300]});
     return {rail,pose,proj,tanX,tanY};
   }
   _frame(frame,p){
@@ -254,13 +230,12 @@ export class JourneyScene {
     camera.position.fromArray(pose.eyeM);camera.up.set(0,1,0);camera.lookAt(...pose.targetM);
     camera.fov=proj.fovYDeg;camera.aspect=proj.aspect;camera.updateProjectionMatrix();camera.updateMatrixWorld();
     const music=frame.habitatMusic?.journey;
-    const state=sampleJourneyState({timeMs:frame.timeMs,seed:frame.seed,music,reducedMotion:frame.reducedMotion,circular:true});
+    const state=sampleJourneyState({timeMs:frame.timeMs,seed:frame.seed,music,reducedMotion:frame.reducedMotion});
     p.state=state;
     const u=p.uniforms;
-    for(const [key,value] of Object.entries({Time:state.timeSec,Travel:state.travelM%JOURNEY_ORBIT.circumferenceM,Seed:state.seed,
+    for(const [key,value] of Object.entries({Time:state.timeSec,Travel:state.travelM,Seed:state.seed,
       Energy:state.energy,Bass:state.bass,Melody:state.melody,Pulse:state.pulse}))u[`uJourney${key}`].value=value;
     u.uJourneyBands.value.set(state.bands);
-    u.uJourneyOrbit.value=1;
     const lake=journeyLakeShape(state);u.uJourneyLake.value.set(lake.centerX,lake.halfWidthM);
     u.uCameraPos.value.copy(camera.position);u.uTime.value=state.timeSec;
     const storm={amount:unit(frame.storm?.amount),flash:frame.reducedFlash?0:unit(frame.storm?.flash),
@@ -292,7 +267,7 @@ export class JourneyScene {
     u.uFirmamentBody.value.set(direction.x,direction.y,direction.z,radius);
     const body=setLinearFromHex(u.uLightColor.value.clone(),celestial.colorHex||'#c6d7ff').multiplyScalar(.8*(celestial.visibility??1));
     u.uFirmamentBodyColor.value.set(body.r,body.g,body.b);
-    p.pose=journeyOrbitCast(sampleJourneyCast({timeMs:frame.timeMs,state,music,reducedMotion:frame.reducedMotion,reducedFlash:frame.reducedFlash,direction:frame.journeyDirection}));
+    p.pose=sampleJourneyCast({timeMs:frame.timeMs,state,music,reducedMotion:frame.reducedMotion,reducedFlash:frame.reducedFlash,direction:frame.journeyDirection});
     p.cast.update(p.pose);
     // Dim competing companions through the same continuous evidence as the
     // aurora. Keep every silhouette present and restore its authored colors
@@ -329,16 +304,19 @@ export class JourneyScene {
     const p=this.prepared.get(id);if(pass!=='far'||!p||!this.mirror||!this.shadow||this.contextLost)return null;
     this._frame(frame,p);
     const r=this.renderer,u=p.uniforms;
-    const lightTarget=new this.THREE.Vector3(0,-JOURNEY_ORBIT.radiusM,-500);
+    const lightTarget=new this.THREE.Vector3(0,350,-3000);
     this.shadowCamera.position.copy(lightTarget).addScaledVector(u.uLightDir.value,11000);
     this.shadowCamera.lookAt(lightTarget);this.shadowCamera.updateMatrixWorld();
     mirrorTextureMatrix(this.THREE,this.shadowCamera,u.uJourneyShadowMatrix.value);
     u.uJourneyShadow.value=this.shadow.depthTexture;
     r.setRenderTarget(this.shadow);r.setClearColor(0,0);r.clear();
     this._render(p.shadowScene,this.shadowCamera);
-    // A spherical lake has no shared planar mirror. Its material reflects
-    // the smooth sky radiance using the local radial normal.
-    u.uClipBelow.value=-1e9;
+    mirrorCameraFor(this.THREE,this.camera,0,this.mirrorCamera,1);
+    mirrorTextureMatrix(this.THREE,this.mirrorCamera,u.uMirrorMatrix.value);
+    p.water.visible=false;u.uClipBelow.value=.1;
+    r.setRenderTarget(this.mirror);r.setClearColor(0,0);r.clear();
+    this._render(p.scene,this.mirrorCamera);
+    p.water.visible=true;u.uClipBelow.value=-1e9;u.uMirror.value=this.mirror.texture;
     r.setRenderTarget(null);r.setClearColor(0,0);r.clear();
     this._render(p.scene,this.camera);
     return this.canvas;
@@ -346,7 +324,7 @@ export class JourneyScene {
   snapshot(){
     const p=this.prepared.get(JOURNEY_VIEW.id);
     return {kind:'journey',prepared:[...this.prepared.keys()],pending:[...this.pending.keys()],contextLost:this.contextLost,
-      size:{...this.size},stats:{...this.stats},travelM:p?.state?.travelM??0,orbit:JOURNEY_ORBIT,cast:p?.pose??null,sky:p?.sky??null,lake:p?.state?journeyLakeShape(p.state):null};
+      size:{...this.size},stats:{...this.stats},travelM:p?.state?.travelM??0,cast:p?.pose??null,sky:p?.sky??null,lake:p?.state?journeyLakeShape(p.state):null};
   }
   dispose(){
     if(this.disposed)return;this.disposed=true;
