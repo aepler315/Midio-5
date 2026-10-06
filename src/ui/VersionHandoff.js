@@ -58,21 +58,32 @@ export function createVersionHandoffStore({ indexedDB = globalThis.indexedDB, se
       }).catch(reject);
     });
   }
-  async function acquire() {
+  async function acquire(waitForPrevious = false) {
     if (disposed) throw new Error('Version storage has been disposed.');
     if (claimed) return;
     if (acquiring) return acquiring;
     acquiring = (async () => {
       token = storedToken();
+      let waits = 0;
+      const waitForOwner = async () => {
+        if (++waits > 80) throw new Error('The previous page has not released this session. Retry restoration.');
+        await new Promise(resolve => setTimeout(resolve, 25));
+      };
       for (;;) {
-        if (!await lockToken()) { token = randomId(); continue; }
+        if (!await lockToken()) {
+          if (waitForPrevious) await waitForOwner();
+          else token = randomId();
+          continue;
+        }
         const won = await db.atomic(async tx => {
           const owner = await tx.get(key('owner'));
           if (owner && owner.documentId !== documentId && owner.expiresAtMs > now()) return false;
           await tx.put(key('owner'), { documentId, expiresAtMs: now() + LEASE_MS }); return true;
         });
         if (won) break;
-        releaseLock?.(); await lockCompletion; releaseLock = null; token = randomId();
+        releaseLock?.(); await lockCompletion; releaseLock = null;
+        if (waitForPrevious) await waitForOwner();
+        else token = randomId();
       }
       sessionStorage?.setItem(TOKEN_KEY, token);
       claimed = true;
@@ -118,7 +129,7 @@ export function createVersionHandoffStore({ indexedDB = globalThis.indexedDB, se
     } catch { /* An unsaved or replaced source cannot overwrite the last successful session. */ }
     finally { await release().catch(() => {}); }
   };
-  const pageshow = () => { acquire().catch(() => {}); };
+  const pageshow = event => { acquire(!!event?.persisted).catch(() => {}); };
   lifecycle?.addEventListener('pagehide', pagehide);
   lifecycle?.addEventListener('pageshow', pageshow);
   return {

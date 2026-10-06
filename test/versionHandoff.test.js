@@ -196,3 +196,14 @@ test('title-state adapter reads position zero before any AudioEngine exists',()=
  vm.runInContext(mainFunctions(['versionAdapterState']),ctx);
  const state=ctx.versionAdapterState();assert.equal(state.phase,'title');assert.equal(state.positionMs,0);assert.equal(state.source,null);
 });
+test('persisted pageshow waits for the outgoing document release instead of rotating its tab',async()=>{
+ const h=fixture();await h.store.tabId();
+ const listeners=new Map();const lifecycle={addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)};
+ const returning=createVersionHandoffStore({...h.options,lifecycle,sessionStorage:storage(h.ss.data)});
+ listeners.get('pageshow')({persisted:true});
+ const identity=returning.tabId();
+ await new Promise(resolve=>setTimeout(resolve,40));
+ await h.store.release();
+ assert.equal(await identity,h.ss.getItem('midio:version-tab'));
+ await returning.dispose();await h.store.dispose();
+});
