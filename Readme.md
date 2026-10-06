@@ -1,8 +1,7 @@
 # Super Maudio World
 
 Drop a song, pick a world, watch it play itself. Super Maudio World is a
-browser music visualizer with an automatically choreographed cast, moving
-scenery, and musical effects. The recording supplies the sound; its
+browser music visualizer with moving scenery and musical effects. The recording supplies the sound; its
 analysed rhythm, pitch, energy, and structure drive the performance. Each
 world keeps its own look and listens to that analysis in its own way.
 
@@ -34,8 +33,8 @@ LAN access, or set `PORT` to change the port.
 3. Choose a world. Every card is equal. Preview the **same** quiet stretch
    and the **same** peak in each world, then **Play**. **Choose for me**
    is optional and never ranks the cards.
-4. Watch the performance. Midio plays himself; there is no movement control
-   or failure condition. Optional taps help calibrate the groove.
+4. Watch the performance. There is nothing to steer and no way to fail;
+   optional taps help calibrate the groove.
 
 Several files selected or dropped together are treated as **stems of one
 song**, summed for playback and analysis. Use descriptive names such as
@@ -182,15 +181,18 @@ from a mixed recording are approximate; sharing a timeline format with the
 MIDI adapter does not imply MIDI-level transcription accuracy.
 
 The **Conductor** dispatches that timeline against the audio clock.
-Ahead-of-time subscriptions let a performer prepare a move whose peak
+Ahead-of-time subscriptions let the scene prepare a change whose peak
 lands on a note's onset. The visual clock compensates for reported audio
 output latency, with the optional Bluetooth trim above. Simulation runs at
 a fixed 120 Hz and rendering interpolates between steps.
 
-Musical casting assigns clean melodic material to **Midasus**, bass to
-**Broshi**, and lead material to **Midio**, with fallbacks when parts cannot
-be identified. With uploaded stems, filenames and each stem's activity
-help assign the notes.
+Musical casting sorts the notes into three lanes named for the cast:
+clean melodic material to **Midasus**, bass to **Broshi**, and lead
+material to **Midio**, with fallbacks when parts cannot be identified. The
+current presentation does not draw the three characters; the landscape
+reads each lane as its own source; the character code is kept in
+`src/sim/`. With uploaded stems, filenames and each stem's activity help
+assign the notes.
 
 The world registry contains eight landscape styles. Cathode has been retired; old playback IDs resolve to The Range.
 
@@ -254,7 +256,7 @@ src/
   core/      NoteEvent timeline, Conductor, ParamBus, MIDI utilities
   audio/     Filtering, onset/tempo/pitch analysis, song profile, caching, playback
   lyrics/    Song identity, lyric lookup, alignment, and section interpretation
-  sim/       Fixed-step choreography, companions, calibration, and effects
+  sim/       Fixed-step simulation, world directors, character performers, calibration, effects
   world/     World registry, adaptation, private fit, palettes, terrain, scenery
   eval/      Private world-quality corpus (no audio, no public scores)
   render/    Canvas compositor, optional WebGL overlay, performance governor
