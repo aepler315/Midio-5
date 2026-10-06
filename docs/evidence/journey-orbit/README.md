@@ -19,9 +19,9 @@ The run saved 30 frames: ten natural frames, one context-restoration frame, six 
 
 The harness passed CPU reverse-seek and reduced-motion sample equality, a real transport seek with the compositor camera unpinned, matched-input transport seek, and an actual `WEBGL_lose_context` fallback/restoration cycle. Comparisons cover sampled Journey world, cast, and camera, rounded to 1e-7; they do not assert whole-canvas pixel identity. The reduced-motion check covers the pure sampled state/cast/camera, rather than an additional rendered reduced-motion movie.
 
-The capture started from local base `8e54f7c774bca478f7cb0a08fd47c8a92c3e2363` with the integrated working-tree changes listed in the report. After source commit, **all 324 served file hashes were compared successfully** against local source commit `6c6a95bf580c3d4600689569a52425286e6b831e`. Published source commit `dd7ef8cef81e135fb8bd4e2df1a3a3a7147f259b` has the same tree `fe119b1a30e25f6d45f0795f5f2ceb6c8f1d3b27`. The served-file digest is `4c1f425f22c8277fd89b85e3bf905a396580ee3655866a90dfcef4ef377b571d`. The later evidence commit adds this package; the harness is included in the source commit.
+This package was regenerated after the original capture workspace was reset, using the same bounded cases and unchanged production code. The recovery capture started from `c44a3e699b7a15b557867048c60e5899fd51cc4e`; its working-tree status is recorded in the report. **All 324 served file hashes were compared successfully** against published source commit `dd7ef8cef81e135fb8bd4e2df1a3a3a7147f259b`, whose tree is `fe119b1a30e25f6d45f0795f5f2ceb6c8f1d3b27` (the original local source commit `6c6a95bf580c3d4600689569a52425286e6b831e` had the same tree). The served-file digest, unchanged from the accepted original run, is `4c1f425f22c8277fd89b85e3bf905a396580ee3655866a90dfcef4ef377b571d`. The later evidence commit completes this package; the harness is included in the source commit.
 
-The integration owner reported the full source suite: 3947 tests, 3942 passed, 0 failed, 5 skipped; lint and site staging passed. This evidence task did not repeat that suite. The new capture tool passed syntax and targeted lint checks before this run.
+The integration owner reported the full source suite: 3947 tests, 3942 passed, 0 failed, 5 skipped; lint and site staging passed. This evidence task did not repeat that suite. The capture tool passed syntax and targeted lint checks before the original run; the recovery reused its unchanged tracked bytes.
 
 ## Scope and reproduction
 
@@ -37,4 +37,4 @@ PLAYWRIGHT_CHROMIUM_PATH=/path/to/chromium node tools/journey-orbit-evidence.mjs
   --wav /path/to/journey-pilot.wav --output /path/to/orbit-evidence
 ```
 
-The full PNGs, 13 clip input PNGs, and raw report remain in the capture workspace at `/workspace/scratch/bb59e08d35c7/journey-evidence/orbit-final`. The raw report SHA-256 is `1ae7f8ecbf5adeb4613630d30acbf0824317eb4ddb88539a3fbd2b50e92c8254`; committed review images are resized PNG contact sheets and high-quality JPEG keyframes, with the original PNG hashes recorded in the compact report.
+The full PNGs, 13 clip input PNGs, and raw report remain in the capture workspace at `/workspace/scratch/bb59e08d35c7/journey-evidence/orbit-recovery`. The raw report SHA-256 is `9515833f1c5152e223598027f16d91f9f2cfaf0428c6d422fb8605286b4b60ee`; committed review images are resized PNG contact sheets and high-quality JPEG keyframes, with the original PNG hashes recorded in the compact report.

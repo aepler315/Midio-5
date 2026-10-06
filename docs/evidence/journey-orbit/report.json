@@ -1,0 +1,5447 @@
+{
+  "complete": true,
+  "classification": "Synthetic pilot/software WebGL correctness and appearance; no hardware FPS claim.",
+  "seed": 2917029651,
+  "pilotSha256": "d54dff2feae68bbf10623c9d51a5d76e66c8800f5f9d00ba4480ed893dc614e2",
+  "fixture": "Direct-scene seam frames retain the prepared 30s music/light inputs while overriding heard time, duration, and reveal. They omit Canvas compositor finish/HUD and are not natural long-song analysis.",
+  "browser": "153.0.8010.0",
+  "servedDigest": "4c1f425f22c8277fd89b85e3bf905a396580ee3655866a90dfcef4ef377b571d",
+  "servedFiles": {
+    "src/assets/range/v2/materials/wet-conifer.json": "8f5ff6bb64b01072364f9d4698c13591af20de8f32dfbd40b67f0614fd242bb0",
+    "src/assets/range/v2/textures/cc0-ground022.webp": "f177eaa80edb4e15276be1c6d8ae34085917e4838ea4b236695d952741da5af1",
+    "src/assets/range/v2/textures/cc0-ground068.webp": "3e6274d2650a6500398e7f0c8d2bda2d6cd46b4af70e759ac309a3e2ab81c786",
+    "src/assets/range/v2/textures/cc0-rock020.webp": "7cae7301552ce33ec53b49d9612ad800c561d8687601f1b76e5883bc998d69b1",
+    "src/assets/range/v2/textures/cc0-rock051.webp": "bd1026e5e4daacd471a6d1530ac732123a4e8770c6d54ac9b74142eee8ed1436",
+    "src/assets/range/v2/textures/cc0-rock063.webp": "c297085eeddd21e5659c1eb485ca9ea3c98c090f32f51734e8db40f6b35401a6",
+    "src/assets/range/v2/textures/proc-canopy.webp": "e00ed901f016f1315a635f298754a9eb3ab45ebd587dbb9d996dd0f6603c9417",
+    "src/assets/range/v2/textures/proc-cliff.webp": "3196ffb5ab32bd8a8d6e8f3c5d2ab9f2006f4d1e6762b97af9291f265d24c1ea",
+    "src/assets/range/v2/textures/proc-snow.webp": "a92a6b966a33db5c4d102fc1392202aa70b53ffbd1af2b33563fe27dd53cd519",
+    "src/audio/AnalysisBundle.js": "1ac03e935a342d3e7f7180e13effa79bd51d81c637a4b9568ec2e1a10ace7a40",
+    "src/audio/AnalysisCache.js": "147405df096e4c71d4d4dfc6e13b5c6d343a8367ff86455838736d22f55b1aed",
+    "src/audio/AnalysisReadiness.js": "8532d7852a4ece9267730279a3c47dd88e21b44bbcbfdad1626441f9afaac49c",
+    "src/audio/AudioAdapter.js": "e9926a12024fc6a22487139d333d9f18e99d85f2d06a11adc5a47262263c4073",
+    "src/audio/AudioEngine.js": "7e212594b549bf11e600ad95c0a79b7cdef1e3d24ad9c14b5c761df68399e5bc",
+    "src/audio/bands.js": "2775540a3dd28e45e1822e896a6b0ee1f21f9df302e5b13c1c57103b3f22e06d",
+    "src/audio/EnergyCurves.js": "29ebc577acea50318cb10f3f098a868626eed96578ae4377f4cdc3fcf547dcb1",
+    "src/audio/fingerprintWorker.js": "df0c446fc186516465e07abd740fb390f7213b376c20035e043c1211e9897d13",
+    "src/audio/FingerprintWorkerClient.js": "2f8ffc3a3b87fc9b67d168f088515a9d9cdadce3471373813bc8ea363b8c8ea2",
+    "src/audio/FontAudition.js": "b539e9df3a418aa5119e9c1d677b0dae2e12e66272887f29e403eef5faad0c2f",
+    "src/audio/FontRecommender.js": "fbae3f0f476eb779ec15e32655a5fc3cf52131e2ce4273f46db77735c3e2fe60",
+    "src/audio/loadLimits.js": "07372006d66c6d89ef186387796c1a6f0ec17d1682b40ce6316fb2ae718b1930",
+    "src/audio/OnsetDetector.js": "e79f846970a03f1bd447d5e60c0ec9879a88e9edbad26e80b750ece432a079eb",
+    "src/audio/OpeningAnalysis.js": "a947327a6fd6e6391e9874e6c256ec7a49963f4d1fdf696ec36912ee2f42baad",
+    "src/audio/PitchTracker.js": "ab991692c4580e013f9283752ec348f631e907fefcc5c115caee10947e081bf1",
+    "src/audio/pitchWorker.js": "c7a6323862459b8d071c9927324cb76d9324e7ab2d974e681a13d4f613b9b9d9",
+    "src/audio/PitchWorkerClient.js": "34f4fdbe026cd984d1c874c978e954ac63b0ff2fa1ed6da1924c401158c39851",
+    "src/audio/RhythmProfile.js": "3a62e31111e79403e633b3473392ff8f23cc2b21ed503b08cd8f3eac3f03f9f5",
+    "src/audio/sectionBudget.js": "5130161480e521c56cd0517d00a66c9ab9d02a64190a4e206c8d632e82270936",
+    "src/audio/Sf2Parser.js": "195fed8962ec27c6e95b42f02d45dbb81fd08fc277671a5938e9261357b7cbec",
+    "src/audio/Sf2Synth.js": "c79c06267911cb1c370cb974dcb7ecec248181c72de4b51c8d91bbff1b99f5ff",
+    "src/audio/SimpleSynth.js": "2173b9b3fadd3061946165cf945d05adf3134413c4343aa0b4b0e045500e028e",
+    "src/audio/SongFingerprint.js": "24597cb452f4e5ed787ea10b89b4b0f28a9bf0cc200909ab848db1564c2c340f",
+    "src/audio/SongProfile.js": "1861e5e3e35def31b97f7eb69db2e2d428ed35646078b3ee32b3d25bef68050a",
+    "src/audio/SoundfontLibrary.js": "c8c2d7be86c7ca13585c87f726470f8f80f5d8cba561eb7a90344e0c023d8a68",
+    "src/audio/SourceSelection.js": "036406ac3b7e40892e07d13df7a151890ccd646cd303e75dc1e7f02757b5be8f",
+    "src/audio/StemSeparator.js": "55fd985ffa4394d0a1a808a77671714d3f92a3efde8602dab7e5866a2466b49e",
+    "src/audio/StructureAnalyzer.js": "1d07e8b9082835c5db1461aad70049411db6682a9f079826adbec4163fb7a6e4",
+    "src/audio/structureWorker.js": "f72e57e742b52992ba71bb6dd4f420fbcc86d818957797ec829f9998d1f7749f",
+    "src/audio/StructureWorkerClient.js": "3608de64fa9cbd9215ae07b21660d6ff1a483e75ffea52a58ff11b34de59b10e",
+    "src/audio/TonalEvidence.js": "5177ee9fb55b8aaa22864cef23b99184c6130364caacde8b837610833c4fb102",
+    "src/core/CaptureClock.js": "7f7de88bdfd3bba4d21770b2f191243e04bd594db99c694f48ffda5f89120101",
+    "src/core/Casting.js": "d06397e08d09ac412ca58e8a76d242788322ebfcbc8f5471fbd8331e6657ee45",
+    "src/core/ChoreoClock.js": "b3a5deaa076d387aea88163f3bb61f6fe16dadb057bb2613774a8d0a8a46683b",
+    "src/core/Conductor.js": "a526a8b1d0f6ee699965b37ac21257b99d219870847eb558e543089454741f0c",
+    "src/core/ConductorTrack.js": "552511bb320f4045fa8b4ffa06e697a61642afd7fbd7872d5963035b01abbff4",
+    "src/core/DemoSong.js": "da070c904f7f1c6042c6e54d400a5417f0b058af389f9ecfae196e4dd6f333c4",
+    "src/core/EnergyCurvesSynth.js": "4a02ed964d49f433402ed4a6580742e4a53a897a41275a1045a27612f60dcd68",
+    "src/core/FixedStepClock.js": "f88f1a646184090d144f6294c12a0bf6fdff4250e8cde318d0d4c7c803b3945c",
+    "src/core/NoteEvent.js": "4f22ff5882c5fa2ba2cd6db77d5e9e6907bb3f6b46724c43bb3f270555d31eaf",
+    "src/core/ParamBus.js": "1f5f7d08adf6a1f61bedb32c04aa84c6b4981e34bcd39cf81d5f9d0926a494c6",
+    "src/core/SongDuration.js": "1a994428f526c6f97f67e78a13f01ae7b9daf5150c5df26ee83a49cfd96df93f",
+    "src/core/SongFinale.js": "9a37ab4c622c9ad549cdd37ffd43197ee4ac1b35b1281a05acaf7075b14a3f82",
+    "src/library/AutoTag.js": "a2f342e7be95618ed198fc813bef40942eb5a20de2218f222a4ef1f96406330c",
+    "src/library/LibraryDB.js": "aa5e819e35c2cc3ab70d035deeb0b5474ffb31198cdc9ca7bf0789cf2a92f7cd",
+    "src/library/LibraryScanner.js": "74d2c505116f6b0d429d4d3e4c4d68a653df9b407d967ee41b901ba7c086a699",
+    "src/library/MusicLibrary.js": "8abf3c3b507c63cf31fb8ac708480e806cb04c7887cbd6cc7f787aeee34a04c4",
+    "src/library/TrackIndex.js": "403d800048cd384460ef65bfc0618627b1a9eeb6185dd228348fd9b1f9a2b604",
+    "src/lyrics/LyricGrounding.js": "e8baaf6fd196bb527d072131a968cbb9fc2437130199dcbc2a002b1298a97766",
+    "src/lyrics/LyricLexicon.js": "bc8d6a865bc3dbabeeafcea0b7c710cb9f6008b075738ff9ff6e61c9222037c4",
+    "src/lyrics/LyricsClient.js": "f4f65b131e07d0b23c76ce79057712b3495e4e03cdd6b5c40c7d061f35a98e8d",
+    "src/lyrics/LyricStructure.js": "ef400a1adec9c0d6e78f0a3a44f901df72c23e47469dab373649d8807f1d8e78",
+    "src/lyrics/SectionFusion.js": "772544e34f46f2204d7f106a25ab8ec76fbf39547276c2b123f3e5bc8bfff42a",
+    "src/lyrics/SongIdentity.js": "18ba6f79d8d8b0f9137f2bd8868a8e177b83da9d63fbed1a3e917a192b44f343",
+    "src/lyrics/StemAlign.js": "acc8458afaefd9b8fec75c373d929432be105c266213ae406e8993079f436368",
+    "src/main.js": "95e4f887a54bb91e19ee804ee5798dafa37e7f388eab85997cbc63c22fb668d9",
+    "src/net/UrlAudioSource.js": "eca569506bfe2fd25171f9b4271f78fbed34556f1cc73e8ff1103554c4012fb1",
+    "src/render/BulkExport.js": "756c53f32f93e73eb9bb58c1d3cd7ffe0c54dd7e7f51b9a0cf1d96ef46c2c423",
+    "src/render/CameraDirector.js": "9efc4b770c8dbc1843736da02ef5287d2f75a2d3f48504185c9417315bb99ead",
+    "src/render/ColorLaw.js": "868d874b0b319b5a750e3c73bfdad2a5ee7f60da664a83c35b9ebc5c493919e0",
+    "src/render/ComposerStrip.js": "1484552e3d0c9732b0d27290704934c8ce1a727624f9818bd6e032bf9055e71b",
+    "src/render/DisplayProfile.js": "4c89db06408a34154d869654e44becaec787e51e652852172e556595e22c13f2",
+    "src/render/DrawErrorLog.js": "714d6514ed9122c96168aac889e470b26e3d1aa82ef93df01505667292577445",
+    "src/render/FilmFinish.js": "14c3361aac6941ee701c94a580bf89a315b17ecd5088b3082dd0bd8633a8ab9e",
+    "src/render/FpsMeter.js": "ff3a32fd8979342dea6178685bdde6322ae5d83daef5d625280e35dbdcf4a4dd",
+    "src/render/FrameCadence.js": "5c2f21bf4cb21a13c8d0a3bffc113a4bad6d67cd43942c2bda72ebe3ad73820a",
+    "src/render/GraphicsResidency.js": "47edd4735c75ed1338d9f9b2be73d9121efb6c715237bb8652b725a66cf0742b",
+    "src/render/HighlightReel.js": "72b33ff3a90963d2aab36aa7ef6776a3cc5452b97587b39187f1c5a84973d145",
+    "src/render/LightField.js": "e398b85106f12a4bf71a747b7b8d665343363c110dc657f43b297a1e1be50fca",
+    "src/render/MeshDrawer.js": "19ec57d759cb99a7f50d26dc2b9ee4f0281edf97109f06509ba0bddeac9b913b",
+    "src/render/meshes.js": "8b55783b952f637882410d4900a3841bcd4e0a54f4ffd0fe6348418699ebc5eb",
+    "src/render/MidioMotion.js": "4ba0f6f45d350a889cef5475aa34a7eac1d8d93d13e5c550fadde6fd2b9025bb",
+    "src/render/NarrativeDraw.js": "664be8b036e684ded4a95e3045ba3fa03ab9cc976f450dfe05b47e362ad389d8",
+    "src/render/oscillators.js": "8447dfdf8fb0709bd7997757a85759d9fb448216fff837ae11c7dab207a305b3",
+    "src/render/PaletteCatalog.js": "d07be2d0c007372dd7431a41f4048a71bb9059590b54a0085fa00c50a51641cf",
+    "src/render/PaletteQuantize.js": "0179d9af82ba86c35111680b8047e9cd5e7c869b3b205904410f762860d3b696",
+    "src/render/PerfGovernor.js": "07688b1bc40bc53941bf5b3d926f726abb334f59a1953d39d9fbe26682d8d45e",
+    "src/render/PixelPresentation.js": "b4f6219eb2de48fbd55eb73fe5daaa75ad4ee0762ae9e04acc94838fdebfd9cd",
+    "src/render/PresentingRenderer.js": "708af11c67ef84d4e7d73f2ec80f3a3772a526ceca0a0ff2f2b08be6ff1e61b5",
+    "src/render/Renderer.js": "43492c0d8f351550422c47808e3710d9649b0ee2d0cc15a622b9a2298bca1826",
+    "src/render/SalienceBudget.js": "0c59028a00ac81922a387eb241d0b1cb94cf0848c3673e37c8096bc46f81ddcb",
+    "src/render/SongRecorder.js": "714a041ed936d301607d34d81d6c2f3119f28d497edffd80638e78523ac54102",
+    "src/render/spectral.js": "1822b84ef74520e1cc2c259a994edef8813e9d2ecbb6415c1f11d6667232ee7f",
+    "src/render/StagePresets.js": "b8f2b980d4341ad1d0c2962d95178fbe074597558b571fb561294d428c08c879",
+    "src/render/stellar.js": "272d92d6dca04babddb33c774e95260e4fc87e06a0b16b54b37dca5187a8ab9a",
+    "src/render/VideoExport.js": "db3d781e8c5328cf1f2707e1526aa5e3f383d6499ae7992876b7c8ff1351e7f9",
+    "src/render/VisualStyle.js": "d199d95e24b15c4865f90460ebd7e940d5948029e9a545e848aeb98df8a7553a",
+    "src/render/WebGLRenderer.js": "bcb821d8972713eb171f3f9f83946d2d6180d74fc120cfae9b1dabed0eb2a206",
+    "src/sim/BeatAnchor.js": "086c74bfd340f2590f85542a8b16b898e458ef579f941bcfede4d7cda7652953",
+    "src/sim/CalmDirector.js": "7f92709fb88f48cce0b2661111a8861a332362c19bea9457bb12585c704b905e",
+    "src/sim/CodaDirector.js": "f5c2bd4577f3eab28fb4777c26c8a80a2231a78064c24ff61453d43f33650ac4",
+    "src/sim/ContinuousState.js": "afbce5b924f721f90119331c4245c8abfbba5f6292e92ffaf9be10a06279a367",
+    "src/sim/CueDirector.js": "b1b434ddfd6f9db3e50f5fda068547c24eaf6905eb4234b80f39e484d208a076",
+    "src/sim/DisasterDirector.js": "cbf28e6d55894abb56a64b206fa62f67ec141fa2675c4bfc9b203cbf199659df",
+    "src/sim/FireDirector.js": "255f55d01fcc27c7f20d11d0cbd95a4809c07aa6e71d00f64d9465ec31ff5697",
+    "src/sim/FloodDirector.js": "e4d749fe61e13204de71197e8526ca54487f6568289e90f31fd06514dba90d76",
+    "src/sim/GrooveFingerprint.js": "c7f6d334701d334996c991baab3c86c8aa7fd17e72db1d7e076307eadf330674",
+    "src/sim/HypeDirector.js": "c9a32374b082dd6741d4e37b276bd2f3cbf3efe6f8dc43cbe2668a3717c00658",
+    "src/sim/KeyDirector.js": "4633bb1e750c9c1d4cc5995b50fda1696f1364b08f98ebfd0dd8508d225357af",
+    "src/sim/LatencyCalibrator.js": "e92445ec951761b4e022b76acb306ec59800d3b37f8101e934ecc4dbd52bb708",
+    "src/sim/MidioPerformer.js": "c832385668b84b97288e1e04403222217f15823d918d84bac8c2100c45b30b5e",
+    "src/sim/OpeningDirector.js": "723d62b8c42a9f6e1194196675fea766a08767ceba0c0fe471efe24a1d717fe0",
+    "src/sim/ParallelUniverseDirector.js": "1912fa41e2e3ea80dd06bb2e43a8d03a29cfbb8371d0a8178a833e20ebffd934",
+    "src/sim/QuakeDirector.js": "60b2da7633e4a65d129607c57f64af002264f530065b57f6aaf40a836d349d07",
+    "src/sim/Simulation.js": "f37eae9838578721495d51a4e316997a33a6594429577855c64eb1db9864de99",
+    "src/sim/SkyVoyage.js": "ce072db2e65f33e8014ebc1a9a6bbe5acecdfb397f2f48c684092f972db4fad4",
+    "src/sim/SongBeatTransport.js": "1b5617718e4361b1ab41edb20390c8cc6930c7e60503b8804667fe30c8e253db",
+    "src/sim/SyncCalibrator.js": "449d475e285a1bdf1edbd875c97a2648f23cafa7a8d3a9b69dae2d5977292c16",
+    "src/sim/SyncMonitor.js": "2979be306af555827ada1565de4db05b448983943ab542074fc39dbf96a8161c",
+    "src/sim/VibeDirector.js": "6733c14141644e7c606b92ee63e0457d1404e566e9881845b9f27d3f7e69b561",
+    "src/sim/WeatherDirector.js": "eb7f6ff55f0bbeceefbf07554a36f56b26557979e26deff9025747e6fc0b586a",
+    "src/ui/Accessibility.js": "6dfc8e357cef1f328f28708f0551bd9bfa288610319195a78bfaf168a1d8c17d",
+    "src/ui/DebugOverlay.js": "647c260b087e2ef8137950d51ad6b4676b48e79b7d20b7e977c9e414b4bb18cc",
+    "src/ui/FileChooserProbe.js": "b44c3a81d1f18a06e19e6859baab31399f723463a87d76ab7677e918163b8e52",
+    "src/ui/KeepAwake.js": "f15f94e47e886a64d2e14221ca6fce08ed4663433771f7246e49af00bc689f27",
+    "src/ui/KeyboardOwnership.js": "f7407fb4e6f0ab4128525b8d0c972e6375ccf1abec31303c4bff607a3e97a3a0",
+    "src/ui/LibraryPanel.js": "ec276facbd5256fecfed46d8d46aed682dd23c6acf705d0f3d16674c4e767910",
+    "src/ui/LoadingShow.js": "08eb876c418dff1d1f7a57e00facdb8af0778be40ef0db623999b3f5e41af82a",
+    "src/ui/RangeCaption.js": "49ea215f9fab166865fd1cd605ee6d7408e2f062ec388b445c4829b6e8edf7fa",
+    "src/ui/RangeZoomInput.js": "285d2b36e132999d51172c40337aed1932d07fa157545f20ddd2423278fe8c55",
+    "src/ui/RecalibrationOverlay.js": "37f61c774fe6ab6efcba764241cd15aa0a5d4ae7194433f13b16300708ceaeb2",
+    "src/ui/SceneChoice.js": "d933cb55cfb3a849b7ca286f33bbccdd4cef6c8358b7bf516e5aea9d3771a4cb",
+    "src/ui/StageCoords.js": "424207d70ee2f2f9b75dbcd0cc38c49e3e761f5f5189599b957551ae09a15417",
+    "src/ui/style.css": "cd47437e1a6cb8a4cb3a3cd13fc55a152feeec5bc69f87953074ee9fdd58bf14",
+    "src/ui/TitleBackdrop.js": "ed2e3fde23b798067455bd6693ccf0e209a046f63cab69ae2d2417a82c55652a",
+    "src/ui/TitleWorldChoice.js": "3c8424678d5ac1e9c27b3a4b8503b6a1a01731c555bc9a3fb7974e026b3e6ff9",
+    "src/ui/WorldChooser.js": "557d9b88fd70abf2d90733dac70919c0f380380e7c6ca825e3fe7332d62306b5",
+    "src/ui/WorldPreview.js": "2aabfec41ad72535193f18da078d25cce21da0d0ebbd7407c59eaf1d20b9db3b",
+    "src/utils/color.js": "2753986f5572dfb9ab0b01307cb98ba95def2aea65c6002e1b5a263a60351ba9",
+    "src/utils/delaunay.js": "7b342747d23eb60e5343738d5e57a39402f7173d01c4f1b197ad2ed3ccd7bc5b",
+    "src/utils/fields.js": "2d039707f9eae061d4b521227cef55754934785ff9e23cd8f82056ed072bc9a6",
+    "src/utils/math.js": "55b84cb3623f8e7e5dd9fec438b8cd0b4265078f4828990efab63a791fba4733",
+    "src/utils/noise.js": "e752c66d8deaf2e641a1b17b97ae4a57e047985eee4de873a3f18a6a934bd2af",
+    "src/utils/ObjectPool.js": "d8c6ea6c5e6ac6f1a8a2f145122ee30342164cdd81a229253276bd0d01d3f530",
+    "src/utils/RingBuffer.js": "29c100d22cf82ed2b2750bb99a418e0150302aed3cba66f48dc5d7c66ade66db",
+    "src/utils/seed.js": "39b6c6d9be29c003e531494516e085a257e48a72039b40ab97fdadc3fd15a2c1",
+    "src/utils/yieldToMain.js": "cc024609809b412cf9851bd11ee38147b77857099912a2dea79dcc47b74542c1",
+    "src/utils/zip.js": "b59ab872679eb5aac160ea74806a823286a35f634fc14770d7546002ed019320",
+    "src/vendor/range/three-range.module.js": "71db55b57c96420b2e82ac2a0c2ce303a36154ff30b5e8044ea9c1390ef4a168",
+    "src/vision/config.js": "75cb346c976b220d2652cae068a1af04727d16e8917ac32a174a4116c17312df",
+    "src/vision/providers.js": "c5f3e15bfc141e35cdcf7e92b821da6d5ee0205ca45a21911588fef1c101b6d6",
+    "src/vision/VisionLoop.js": "ae3777f5acc89c1a4bf735f5c75b59d3260b910d0eed260da261e42dfb3afd21",
+    "src/world/alpine/ActorsGL.js": "c1a4d19ea5553e14dd47dc7a4ea39cedb6ff8ce4d7e83ea976a73935d2699e29",
+    "src/world/alpine/CloudSea.js": "882c485e23a21876755deba63d09e7835b2d0a282d724fb76d5f3d52991277b0",
+    "src/world/alpine/CoveGL.js": "e1674758ea3d295ad89b88e64825d4ad1309e064cc178a36e6555967c19e0a1a",
+    "src/world/alpine/FirmamentGL.js": "4e4ba3a86ba14da7067e53c1f9f04f49dbd44a0dd22f306a0e9e295326276f08",
+    "src/world/alpine/ForestCover.js": "15b8a42dde14f180a17547d6bb98f727c9ceeca41551ce1fcfce1c30791a5687",
+    "src/world/alpine/GiantCloudGL.js": "8a8e91375e54d9b1c037e3de1747ed3d3d13a39d4e9cb95baf7db53717578b58",
+    "src/world/alpine/GiantReflectionGL.js": "df40c754d4ed01ef0927107df6ca21a746400d1e5d685ac28a186394c5db56dc",
+    "src/world/alpine/GlacierField.js": "6b4f3d7cf48007d1f313ca0c9a497414c5dc9778f34d2444f44ebb7db9be6d35",
+    "src/world/alpine/GroundMaterial.js": "13c7cbf09aea6062183d0a69ce9af336f2c25eda0e80e07b596a77c89f15b4e9",
+    "src/world/alpine/GroundResponse.js": "4e2bd8bf678b60416d9a10b001a23ab63b357eaeae060b26ee50c72c9fc75455",
+    "src/world/alpine/Gust.js": "9a2dd938f716947eb07ff096651ecb5277fcd5335efe759d365430aec16f8f40",
+    "src/world/alpine/JourneyCast.js": "50948bebcc9c07b7e35f33244bf50602741b328b0e80ce5a77a8b64afcf39f95",
+    "src/world/alpine/JourneyCore.js": "d344af80738be30a2b08994d52b5943c53e2586b2f2515064f5bb76efd41557d",
+    "src/world/alpine/JourneyDirection.js": "840849e068ea9d5b08b89f386480584f9b21646751becedd2c594a7e714d4825",
+    "src/world/alpine/JourneyMaterial.js": "a3515c60fc8cc6ada603195284a303c56fd70b5c9cda62dbc15b1f6aa7b85036",
+    "src/world/alpine/JourneyMountains.js": "52f4c2d5d1c9b4521929c15cc72e641a3fb1046cc22c3049bb6e8821f8b3893e",
+    "src/world/alpine/JourneyOrbit.js": "82b7a2c49c404f9f489dfa637a7c4dcc805cb2fb8f6f0b58a133953bbf715a56",
+    "src/world/alpine/JourneyOrbitCamera.js": "f461b0d55c3bec0e723da285ee91ca426c6e7770b9328bbe782080cc8b793677",
+    "src/world/alpine/JourneyScene.js": "162f8dc19cf4dc527810e2ceaa9d9ab175abcc57e5db656d7abcbb6695df2d3a",
+    "src/world/alpine/JourneySky.js": "b669683dc3ad5b66128a54df57b84a0270e58a6103b4727044fe2bd609b09807",
+    "src/world/alpine/JourneyWeatherGL.js": "ff2c0b6228439080fb62889159a5ddc33938f60fed7f04a7219bc15e1576e671",
+    "src/world/alpine/JourneyWorld.js": "b0e79fc605f9523352085317264b305a6e6206111ee12c9e1fcdcdee27185ebd",
+    "src/world/alpine/LandscapeDiagnostics.js": "96e185e1a4d9a39806dc1aa53695bd277f5a707cfd298ab4affabf8a6c0d65e6",
+    "src/world/alpine/LandscapeGiants.js": "1419dd70e3771dce20dab0e7daf5a22b42425253a3007f0f7369e3bb8151146e",
+    "src/world/alpine/LandscapePolicy.js": "72fb5dab7f3550193439b115118c1cde7cb76a68fec6350bb91ec45064106799",
+    "src/world/alpine/LightSpace.js": "9ef64b7a5cb683362cd4deb12248a350a002bf3b6a1f68a783d7adf55a80a22f",
+    "src/world/alpine/MaterialPackage.js": "488e31406ccb70a6755ab8607373f394dde1de48ddd91c0ef485645012f034c8",
+    "src/world/alpine/RangeActors.js": "24cde6a3d9140052e375824d31b61dfcdb86dea885a71eb050649e4c8570e807",
+    "src/world/alpine/RangeAssets.js": "8ace94c71ee8566fb4267901255f1fec7b169112d69aecb85ece55f3c62d7605",
+    "src/world/alpine/RangeAtmosphere.js": "8dbfa7824d5e6c2e87cf5d0abeaa8630811af496452cc774fabc5ba7573c4385",
+    "src/world/alpine/RangeCamera.js": "c17db8ca0f30105c5474c36ba45453ebc7cabded81fcb3a33a0eeaddb6f0e6e0",
+    "src/world/alpine/RangeComposition.js": "76814aca457ef540ace0044d759da71f89fd682485c6b1580227b5a23c65b4f6",
+    "src/world/alpine/RangeEnergy.js": "f071db8ea89b18c6d08ad053e9f313870f055dfd0e1ca14c572f01bf2b6fef11",
+    "src/world/alpine/RangeFirmament.js": "5bfd26692f350760b191743c4637af924becadb9389acbfe0fa721f0bed9c55d",
+    "src/world/alpine/RangeFrame.js": "3a6c77903de33f50f415667fca80407db9e8c903f2aff8fe7d00b96c18d9ddfa",
+    "src/world/alpine/RangeHabitat.js": "c227c245629c22d376b1bba3779ab927b42a5e49558eeb90fd68a577d8712925",
+    "src/world/alpine/RangeNarrative.js": "4c5a5397a6b9cf79a93bf7cab589eb9159167e70b0ac1facc95060fe2479402e",
+    "src/world/alpine/RangePresentation.js": "9a3543b01d3c33fc65e00f6590b63a6214355e31d5107f6bfcfd932ea59a68c1",
+    "src/world/alpine/RangeSkyComposition.js": "f9b1b07c15a7b648551ea8cea979bab83ac454c2c0b32bac2ddac2c140f5f652",
+    "src/world/alpine/RangeSkyline.js": "f9ad789e5c96f2140a39a67dcab2fc37e49d4b6876c6a4130bad8f2115acee89",
+    "src/world/alpine/RangeStorm.js": "b2344f41e1f4e62d71744068dff771771aab9568a8abb61d741c0405a637435d",
+    "src/world/alpine/Ridge.js": "1180dbb3fc57946698c7201bed2889f52614ca1cd0fd4c2251d65655564628d3",
+    "src/world/alpine/RidgeComposition.js": "d981fa8cbf1ecb4f27267193a3751592f4082a80582781fbf3bc51ae68193130",
+    "src/world/alpine/RidgeMotion.js": "88618e97073625a2f3675bf7b41bc71226d179450b6bdf71726e44fc19918104",
+    "src/world/alpine/RidgeSurface.js": "f4b42509f3b8a0b494a20fa7af6e2c7dddbe5d1906dd62dcc85e1ece25eaf6bb",
+    "src/world/alpine/RidgeSurfaceDraw.js": "d66a00b95f14c394a5e85d9a636029030028ad4883704d94638d61043405a62c",
+    "src/world/alpine/RockStage.js": "7de149cc921f8a9cf6b5e0d4a719037e01c92bec7b1ba6439fcaebed01f70fe5",
+    "src/world/alpine/TerrainMaterial.js": "410636d76a4caf314c10f6e885ba107de3024b335ae41e1ee3860771cfd2a0a0",
+    "src/world/alpine/TerrainMesh.js": "ae0f62149ed324d648d97dc1f12a73b49438e290620e39c6b53abb430e31c639",
+    "src/world/alpine/TerrainPackage.js": "054db198cca7d267746c76845b029ed9378fe858fa4e28241174bf89c68da885",
+    "src/world/alpine/ValleyAtmosphere.js": "567fa7cc90030dfb10844cbdeab32ae46799f1a435d3947265c6c9d90170b8b4",
+    "src/world/alpine/WaterMirror.js": "eaa66d49f95f9fe059df15ecaad1a52486363f89cded5e74ee4c1b9de8bb0e23",
+    "src/world/Atmosphere.js": "6ad139725d94c8f320f0c2993ed681fe8df4b5093d91f9a12caa8ec4c1654554",
+    "src/world/BiomeImporter.js": "d520a6a7fd90775664f5e5de365fdae535ea507575ed8dd56b7a7a2e3109ee49",
+    "src/world/BiomeManager.js": "5895159ae99d25a36dbbb4dcaa214ff444976118f29057622bca1082911632fc",
+    "src/world/BiomePersonality.js": "95db30a6a18298fb6a1f1adb4da1ecbc25f22bc9ef389de2f7c866543d0c5870",
+    "src/world/BiomeProfiles.js": "34f17c2a0779795e8bf5bc4fa1edbe9f2995822a291fd4c0547254e7f25ae9db",
+    "src/world/BiomeSchedule.js": "57d98d0963f43ae718138d11e025c194e77cc19ac78c607a28739b0bee10a09a",
+    "src/world/BoundarySnap.js": "12438c3a4e2d4f2a78cecd041b371a50ee62d1e633f1b8aca8196f7b52b5cbb7",
+    "src/world/CelestialApproach.js": "395f4a7c3419d78d53e1e4d0a47a4ed85f19a8de4669e520725ac71d1bf92579",
+    "src/world/CelestialState.js": "02151ce6f3ccae45dbf8e758d5c77f8fc6ce9d5c917ed0dbceef7eabafd07202",
+    "src/world/ChaosRibbon.js": "c5be89e90c05896219facf8eee413558323dda63ccdd8458d344e72c0712e629",
+    "src/world/ChapterPlanner.js": "d78edd1d123e40fe3bd2889da6565a790590cc7635ec3185bdb6974d836dd187",
+    "src/world/city/CityGlow.js": "f1cd7c4492c509b228b292e7e898ad64814e16b5ab3b21ee7c89805f25f13678",
+    "src/world/city/CityPalettes.js": "ce05d9851ec2a23ecf960ba7d6a2f4ad9a453f2fa4ea952062e2a4660f2d8a96",
+    "src/world/city/CitySilhouette.js": "82cb600437d73bd8b899c836c31d48cc546b6e5a368de17a146226ed08ae69ca",
+    "src/world/city/drawCity.js": "078931fc39f37d47c212f120982ac69e1465c0d0951a7fca2b643b18928322ac",
+    "src/world/ColoradoPlateau.js": "8066c8a1961a9146e78afed676b10746a1f726ace3cd2204e4c8497443326b85",
+    "src/world/ConnectorHills.js": "027b86ef85c19b899db6a66d01c0e11e2396b4e49087908842a8453a3ea4bca1",
+    "src/world/ConstellationWeaver.js": "1bb6e383865804ec08c5d9328a6f9fd56602aff37c9ccd960c4eab687312cb52",
+    "src/world/CrestWire.js": "a890418753e92b36a000dd9199238ac30054a495719df59a37d2fe262380293b",
+    "src/world/CymaticField.js": "94abc632db073c10a8c16ea4fb506245f5178ce88d4406a6c4f156eecafcb241",
+    "src/world/DayNight.js": "e3d4ed9f897e1743ba55ad9bf5676d02ba1d26d7f42b5a4f3960cdeb3abc2969",
+    "src/world/DepthHaze.js": "73c2c09e9431b58673120bd1dfd57bb0fec85a0a57410c60620c8e36206719b8",
+    "src/world/DistantWave.js": "853f43e19e36ed82e5392b958c8816d981ece635fca94acf7736f89d4c4e44fb",
+    "src/world/dna/OklchColor.js": "5ef6e88a180cb98cc5695785cabff370ccebb81da569e9ec8070f49b56a5bf42",
+    "src/world/dna/PaletteSynth.js": "42f83172f6a97b7d407378378a3a187f576d45f744fc4714a374b4cff17a92d2",
+    "src/world/dna/ShapeGrammar.js": "ffa400e024d4fd10facf71c50356eae73de6a50350ed6c1e6728462fb341a3c8",
+    "src/world/dna/SongDNA.js": "f4841e3329253817e08cbceff0760a16e8ea0e582f88994b1acf37f35229ade5",
+    "src/world/Dramaturgy.js": "fb30a14307deb108d259c35ec3ecfa69522953dd97bd2cb1bdf143ccc2de72be",
+    "src/world/EnergyTravel.js": "01b0441ff16cbb806d7a90a427cca9e795a442866780715dc0b8678903653415",
+    "src/world/FarShore.js": "d1040bcd161288765f4b9b934dd2d1719b36f84dc9f1ba365e248229203a5e2d",
+    "src/world/farside/drawFarside.js": "23058960067bb7e6e5556ae88f1c7efbcfed767b242cac8481c0b546df2c7ed7",
+    "src/world/farside/FarsidePalettes.js": "3579f984d6fc433952d7cf9ebf7e4d77e21f553c0674d533bf1f2465bf061e56",
+    "src/world/farside/Vacuum.js": "bd6f559d8ecc372e3b17dded9e4c0eecd4a81a12ade31468d845af5d8bd59b82",
+    "src/world/FataMorgana.js": "23a94dca56edb3bf21ba51c0a907272718aefb0495d82b9e2c4dcc209ba31cd3",
+    "src/world/fathom/drawFathom.js": "ada5eb872acd2b9ec9c40430f59156bf43defdb3d728cbc8cd60b1aefe85e987",
+    "src/world/fathom/FathomPalettes.js": "39a9dd0047c188425ba4a3b6be480d96ba7cd1ec7c89f17aebcdf7ea0c945110",
+    "src/world/ForegroundProps.js": "6e2234d1bbe1c4386c0d1e9a6dd65bba7e30b28bbdd2bd8ea02ae2dbf357d6bd",
+    "src/world/foundry/drawFoundry.js": "78362c7b9343a52304c15ee6b9ef527564300a131e6bb1bc1e0645e4f6e2d2f7",
+    "src/world/foundry/FoundryPalettes.js": "936ed10ad514c435ddb0a99c87ce095b4b31c07fff07d1902f8206b5327d58cc",
+    "src/world/foundry/Furnace.js": "8e0abbc54bae83ad89bf1e1e508362f6fffbea5f276d879fc4ebcda4275f6b3d",
+    "src/world/FractureEngine.js": "b5ab9e315c6195dfb32a8275149981067869fdbb0914cec6bd6b755b64b3da6c",
+    "src/world/GeoCrest.js": "190c0bf71da030489bc419a2dd0abcba4d7bccc2bb40a072083e0ba760264fc1",
+    "src/world/GroundField.js": "34f8addad92300528357c15395f972f3602120545fde14076173188aefa0f2d1",
+    "src/world/GroundScatter.js": "904c12da288ed74b03958c8e5a9b0e0dee46d4100374a987fb452a8474ea14cd",
+    "src/world/InhabitedShore.js": "20bde0d7c4c6f52fea12925e791b38f8b469360a817fcfd9c6cb0025b433a2c1",
+    "src/world/KuramotoSwarm.js": "c2cf11aece9af81d7b578b0ec0dc491e62768624c0acb16688ff56de8acc46ca",
+    "src/world/Landmarks.js": "e9c68ba6d8b8d9dc88ed360d02c8eed42a998412ebe6b03094366265fbaa19bd",
+    "src/world/LandscapePresentation.js": "3c259b97aedb425aca3f72544aa92f6565eb4889e93297d022b8039e5c263a01",
+    "src/world/Lightning.js": "d9046e1496353f3dab30e8e180b2c9c91cbb86b46b078086e155479c5a57491c",
+    "src/world/LightRig.js": "7470ebc084a5af1d9ca48f0015add52ec678ae13bcfe6c93ecc4aed8e57c8748",
+    "src/world/LyricGlyph.js": "5d28a168b4aae09571986e1464b1afafc13beeda142e7894b7d690e635996cac",
+    "src/world/Mandala.js": "d6ec9b601b9513166db0b27ea73d4ac7d07b5c320c9db073927eee20477945c9",
+    "src/world/MeteorShower.js": "8ea21a8958611233832fd51a46272dee7d678ba391024d357672a3ffb17d7a4d",
+    "src/world/MountainChoreo.js": "718df630cb730746915d40409bc3a98f8379eab974891e2c2ae98c911828c088",
+    "src/world/nave/drawNave.js": "afb73597ab96513bd2e488b81ddacd4b8e8fe368a999b022d5969cd56be95b13",
+    "src/world/nave/NavePalettes.js": "81e55d645f4fb6aecd92d0cdda236a3fe9e348c081362895b77d57e811b6cc38",
+    "src/world/nave/Resonance.js": "e75f2f8936257061c37a70567d639567f67f4a759d386e5ce4797124558e059b",
+    "src/world/NearField.js": "cada0d29dffa420bc99b88733b1dace8b6cc5b1a393515e73866f96010428256",
+    "src/world/Ocean.js": "87ff94b36e86bb8961d714ed06ac7326870ead96fe6f1ceec80bbcc43c59d6f2",
+    "src/world/OceanLife.js": "5cf663489f29eba5ae008d28201b0999e30b519c11074edcc768517f43c93be8",
+    "src/world/OrogenyDirector.js": "6a7b927784fae3639ff06772610052980df05290e04ab00265abdf9aca157b5c",
+    "src/world/ParticleField.js": "0a5c6479caa502c271f3dd3c80f95c78740139f3033e898659f10274125decfb",
+    "src/world/ReactionDiffusion.js": "7ea8e7a0f8a04234324695818b48775a011827c2a0b536069148c9e9f3095629",
+    "src/world/RealBiomes.js": "da922156e4e965b84cc557ff6ecfe976beeba3603facfd3c2d254730c89b7965",
+    "src/world/redline/Cruise.js": "b338738dd6d8858d0ae48a4a8974589dc9e21820edad87db4fa6e444081656ad",
+    "src/world/redline/drawRedline.js": "0bc63411475528869a7879e6122c1c8bc7872306c5c13fcfa27857483ae6a7cd",
+    "src/world/redline/RedlinePalettes.js": "a86b17991224296d0f65bb3c4c1377655f28c17b4dbcbcab8ef6f0670fba1520",
+    "src/world/RidgeMotionHistory.js": "8e1b212dcfdde960dd5c61b16d846ce2773ee38ca2ad871580ebc83ad662d4de",
+    "src/world/RidgePortrait.js": "12f7a565804142d621723c94b9c0205839c1a4d39fcaa3a18e70263b55f16672",
+    "src/world/RidgeShape.js": "ebbe3ccfac0200fcd33952c94ac48bcee21245372ae9c6fa621cc4ee7d7527ea",
+    "src/world/RockStrata.js": "074e0c9ac1d3f467f6ca2cb98d1f961ae6377bef5a14dcb8254a88017b365aaa",
+    "src/world/SilhouetteGenerator.js": "0e248ce459358c6c3f51eae75246fcef45c3ce04948b4c81efec27ee5897adc4",
+    "src/world/SongForm.js": "7094ab982b9ed2b5f5829412c62d5c03408d6d27f35a1a1f74481a31fd576ab0",
+    "src/world/SpaceRidge.js": "6842cb29cf2151d9deedc5853ebf1826ae1c013914c94a442c15cab7caca8143",
+    "src/world/StarCatalogue.js": "39ddcbdb826295866ec1ad4407815752cc994684011272e14991fa829ff4a541",
+    "src/world/terrain/BiomeSet.js": "bde9e59746f55ea2bfce3b2c1f0ba0a8f1b8d670fd50a95a9aa4af8b0f655544",
+    "src/world/terrain/HorizonRidge.js": "3e551ade7e9ccf8962983fa97c8c9461d898a01cd9b960a2edd4a26c6a5d4a38",
+    "src/world/terrain/loadTerrain.js": "c24e6f65a7ef363466062fed3121bc0271a0d4f73944e7a20cd98291f263cef1",
+    "src/world/terrain/ProfileTravel.js": "48f0938216e717c744ac405049c245fdfaf27327db8eb2ed8914511b75347ce9",
+    "src/world/terrain/rangeBiomes.js": "7a6ab9aa8fd8f7a4be1219f56a69534d8fab52811936cee0cd941a2a61798fb3",
+    "src/world/terrain/RangeCharacter.js": "87af520fe95e09a08f2dedd73403e93d84821c24366a7055740760096a8df74b",
+    "src/world/terrain/RangeHistory.js": "8b268601752284ef8f77fe7bd01349fbd1e76ae16bc2043b0cae63f773499135",
+    "src/world/terrain/RangeLibrary.js": "7e2481da6cbfd6eede88683e9dd8e7be9ac4550b4b65f37452e0b3e89f8c4d5c",
+    "src/world/terrain/RangeMatcher.js": "a7023bbbe43863c3c02bf84b70c78259473360193695455fa646687626eac5aa",
+    "src/world/terrain/ranges/boundary-ranges.js": "d142c661252273bd7fbd88ac5d41929860750e4cd220672790340e81c50d596b",
+    "src/world/terrain/ranges/bull-valley-mountains.js": "73d165d2a18c66d01a84da2172c5a1ecd6485982f92fbea2ea9c86fb8554610f",
+    "src/world/terrain/ranges/cuprite-hills.js": "1af50c2f83ae12ad3e4572c80107eed70c894fcb68281caa9e44c2bc578a0b8c",
+    "src/world/terrain/ranges/garibaldi-ranges.js": "bbe14ab0488581a88b2e3fd0002c7d558a3922ba2383ee87fb59cfd325863318",
+    "src/world/terrain/ranges/gravelly-range.js": "0baa9e8ac713304348449ee42657029e8e07be8de29b90a181d472f754198dde",
+    "src/world/terrain/ranges/index.js": "8938fd045ffbd15ccaf23afe887ac1e24f44db94fec0c4b31b96cc6bbd88fade",
+    "src/world/terrain/ranges/new-range.js": "029f35323a99da661d9e4ef81e153c24eab7eee3d9a62d26ab9c9749c7109f9c",
+    "src/world/terrain/ranges/paradise-hills-washington-usa.js": "4f34ef3c0e3fa766342c217aaef84bf7556e7255accd754e0c95845168d6b6a6",
+    "src/world/terrain/ranges/reveille-range.js": "9a0f33c9e8df708c1d4b5296869c4a24cdcc34f4ccfd9380fa7bef840efd92c6",
+    "src/world/terrain/ranges/shapes.js": "faba16a68f21fbd7566ae51570fde03d8eb8d776bb24c287781ae36ba1279ff6",
+    "src/world/terrain/ranges/thudaka-range.js": "0d406fb270c2094c8b3894e1dff9e0fbe538930aecb2aee2ae9d9b55778e5252",
+    "src/world/terrain/ranges/tower-of-london-range.js": "22ae442c35d5381b833edb7c48c06a3bedbf270507fa89e005a9e3ac1607d5b5",
+    "src/world/terrain/ranges/waddington-range.js": "6efbe12cfe76d6630d0e7c3e7b97e0fcb38a9988622763bdb47a160c9458750f",
+    "src/world/terrain/SceneCatalog.js": "bc7c3951d6d5922a8a04931c46e6fd3ffcfbeeb6726135cc905237e2de4d77bc",
+    "src/world/terrain/sceneCatalogData.js": "e17fc00ec619284522ea573fe5fc9198065c13055a678ecfa1d7077709df7bbe",
+    "src/world/terrain/SceneTravel.js": "97f2b1b6c541acd43723ee4846cf47b59686ae52eb386a4907012592f8c1d4e7",
+    "src/world/terrain/SkylineScan.js": "c886a796fee661dfb18c419aeac0089c01763554cdf8c87051ab312c5f78abd8",
+    "src/world/terrain/StripRead.js": "35365fb8be65fa367e5167a1aac828e1a8b7bae2f0d36350ea3ca93dc4b2dfd4",
+    "src/world/terrain/TerrainProfile.js": "57c1a994fff9c601c28e19c15254e73441355266cc6bf75769b221e2093cd249",
+    "src/world/terrain/TerrainStripCache.js": "5ef76e665e7d8a3f23aaa137c1e5b30c31ddec44ebc1e167367b2f041056ba39",
+    "src/world/terrain/tetonsFrontData.js": "2324a31d519cc6a5b9e1535cd85937ea281a335a3a0de2f71261762e46846a5a",
+    "src/world/TerrainRelief.js": "3d49086c7b48a6e8e04e1101ffa79330f4349586f526e3cccfb7a61df4d85216",
+    "src/world/TravelSeam.js": "5a5ba9a6f1e539c199dd3217ec53600a3f3213fa6717be535007340fc12eda25",
+    "src/world/understory/Canopy.js": "30b3c57358fe142b4356dea87e68336160c16160b9d5966e6be7bcd17374b9c4",
+    "src/world/understory/drawUnderstory.js": "b4864ac055a1c6a4f99226f938c573e799175afde00d380e6c4463bccdc566d0",
+    "src/world/understory/UnderstoryPalettes.js": "df181bcab2866598831a1a0391b0e1ba817a2ed8232df19cbc4ba188ba3ef187",
+    "src/world/VisualMusicHistory.js": "d7fa7d493f9dc5566d66b2c5a71d8ddbbf2593af814b9dfd310a1257a1bda214",
+    "src/world/WaveField.js": "b327e6287724bedf8fe63cde43bdcb7c7394ae82e3a53e3e7de7bd9a761b7542",
+    "src/world/Wildfire.js": "3c6eea4bb5df09f17e6e880fcb6a945f240d359f2222724084de5728367e77b9",
+    "src/world/WorldAdaptation.js": "4e6e61b4d3229c8b98473029370962369ffb15e21f1df6487e7b4cfe75783ab2",
+    "src/world/WorldDraw.js": "fffddecc0e189a5d5574fc4ffba0cdab31d7ca3f1fce7b02a41ff6d56ed8259c",
+    "src/world/WorldIdentity.js": "9fc8a37cfde124ccc0f46171cfc9634b90e3704f573580ab51d0f4208a2a8345",
+    "src/world/WorldMaterial.js": "6c95d1aa616eb61ba02fcaecfb46ee87031eff864bbec5968eb98669ae9c1c0e",
+    "src/world/WorldMusic.js": "4c5841da9bf7f54b9894db19c314a88446de5b3a795c8dc94fc8542e48dc9efe",
+    "src/world/WorldRegistry.js": "f87c8d3ad9e59ce8aace63ea84442c4ad979097921448ebd19ee393284dee616",
+    "src/world/Worlds.js": "8f22762a9e96e65f2eed3c4ec04ae865f92ba29cd86c8a300ecbac4216130a0d",
+    "src/world/WorldScore.js": "087829db6246989d60054ec499c215d60e9110aba82228e0cef97697f255683a"
+  },
+  "captureSource": {
+    "baseCommit": "c44a3e699b7a15b557867048c60e5899fd51cc4e",
+    "dirtyAtCapture": [
+      "?? node_modules"
+    ],
+    "run": "Recovery reproduction after workspace reset; same bounded cases, unchanged production source."
+  },
+  "verifiedSource": {
+    "publishedCommit": "dd7ef8cef81e135fb8bd4e2df1a3a3a7147f259b",
+    "publishedTree": "fe119b1a30e25f6d45f0795f5f2ceb6c8f1d3b27",
+    "checkoutCommit": "c44a3e699b7a15b557867048c60e5899fd51cc4e",
+    "allServedFilesMatchPublishedSource": true,
+    "servedFileCount": 324
+  },
+  "rawReport": {
+    "scratchPath": "/workspace/scratch/bb59e08d35c7/journey-evidence/orbit-recovery/report.json",
+    "sha256": "9515833f1c5152e223598027f16d91f9f2cfaf0428c6d422fb8605286b4b60ee"
+  },
+  "harnessSha256": "41948b301012c8b2fc33d322253255f7644bce7d91c664fabdffe1dd8f09305f",
+  "browserExecutableSha256": "53a15d6c3a3d27dfb54c4ba60278b1683136f70cf1e67e989da7dfbd3d451ef0",
+  "checks": {
+    "naturalDimensionsAndUsableAspect": true,
+    "allRadialProjectionUniforms": true,
+    "pageAndShaderErrors": 0,
+    "captureCount": 30
+  },
+  "clip": {
+    "source": "direct-Journey-scene-fixture",
+    "frames": 13,
+    "fps": 6,
+    "width": 960,
+    "height": 540,
+    "durationSec": 2.1666666666666665,
+    "audibleSound": false
+  },
+  "cases": [
+    {
+      "aspect": "landscape",
+      "dimensions": {
+        "width": 960,
+        "height": 540
+      },
+      "errors": [],
+      "cpuChecks": {
+        "reverseSeek": true,
+        "reducedMotion": true
+      },
+      "unpinnedTransportSeek": true,
+      "transportSeek": true,
+      "contextRecovery": true,
+      "crossingMs": 297049.8885275168,
+      "frames": [
+        {
+          "name": "landscape-250ms",
+          "source": "application-stage",
+          "timeMs": 250.0000000000001,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              274.60176721565995,
+              6829.292025770213
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "requestedTimeMs": 250,
+          "usableAspect": 1.7777777777777777,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 1408,
+            "logicalHeight": 848,
+            "backingWidth": 1056,
+            "backingHeight": 636,
+            "overscanPx": 64,
+            "transform": [
+              0.75,
+              0,
+              0,
+              0.75,
+              -48,
+              -48
+            ],
+            "nominalWidth": 1280,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 9.649999023439412,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 250.0000000000001,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -51.48208236334092,
+                  -0.7478313412056824,
+                  -222.35768795900054
+                ],
+                "directionXZ": [
+                  0.9981448604771882,
+                  0.06088380328933379
+                ],
+                "speedMps": 62.559271850198755,
+                "strength": 0.47536144313238626
+              },
+              "waterResponse": {
+                "bass": 0.030952383725244746,
+                "rhythm": 0,
+                "melody": 0,
+                "wake": 0.47536144313238626
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -51.453677776425174,
+                    -1.4836988599035976,
+                    -40.024383832620096
+                  ],
+                  "up": [
+                    -0.028597257612188946,
+                    0.9995910147940817,
+                    0
+                  ],
+                  "right": [
+                    0.9995910147940817,
+                    0.028597257612188946,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.08975100112937871,
+                  "turnRad": 0.013489750772680748,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -177.9564976767227,
+                    -6.263739603462,
+                    15.360498468401957
+                  ],
+                  "up": [
+                    -0.09872528937280312,
+                    0.9951147256664712,
+                    0
+                  ],
+                  "right": [
+                    0.9951147256664712,
+                    0.09872528937280312,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.033480916232903696,
+                  "turnRad": 0.05078113336189897,
+                  "footOffsetsM": [
+                    [
+                      -1.859326964990947,
+                      -0.02046040987428621,
+                      -0.41685940092063173
+                    ],
+                    [
+                      4.339353385811277,
+                      4.796510654231243,
+                      0.5267462008050738
+                    ]
+                  ],
+                  "bodyLiftM": 1.5283390992567916,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    195.44785564619906,
+                    114.25266930458338,
+                    -11.48260827382662
+                  ],
+                  "up": [
+                    0.10157332584647215,
+                    0.9948280552319011,
+                    0
+                  ],
+                  "right": [
+                    0.9948280552319011,
+                    -0.10157332584647215,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": -0.0870471487386842,
+                  "turnRad": 0.17049819769732572,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "239b21c76bf3d6ab7e53ceee30e61ab03f3811c63f45933981cd947ac7948531"
+        },
+        {
+          "name": "landscape-9000ms",
+          "source": "application-stage",
+          "timeMs": 8999.99999999994,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "requestedTimeMs": 9000,
+          "usableAspect": 1.7777777777777777,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 1408,
+            "logicalHeight": 848,
+            "backingWidth": 1056,
+            "backingHeight": 636,
+            "overscanPx": 64,
+            "transform": [
+              0.75,
+              0,
+              0,
+              0.75,
+              -48,
+              -48
+            ],
+            "nominalWidth": 1280,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 347.3545526911596,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 8999.99999999994,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  136.66484300321056,
+                  -0.7515923391325103,
+                  -205.11928030250388
+                ],
+                "directionXZ": [
+                  0.9999693296146533,
+                  -0.007831974848075537
+                ],
+                "speedMps": 47.773134424417776,
+                "strength": 0.5463603846389047
+              },
+              "waterResponse": {
+                "bass": 0.06728606833958553,
+                "rhythm": 0.35812887247161534,
+                "melody": 0.025878745740316487,
+                "wake": 0.5463603846389047
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    136.47656821835787,
+                    -5.935068399834336,
+                    -36.9214704544507
+                  ],
+                  "up": [
+                    0.0758519877729311,
+                    0.9971190881489006,
+                    0
+                  ],
+                  "right": [
+                    0.9971190881489006,
+                    -0.0758519877729311,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": 0.0004863992968689862,
+                  "turnRad": 0.19747076794014365,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -94.99272335718709,
+                    0.02795000378068835,
+                    17.84754259342599
+                  ],
+                  "up": [
+                    -0.052699583114936256,
+                    0.9986104114916446,
+                    0
+                  ],
+                  "right": [
+                    0.9986104114916446,
+                    0.052699583114936256,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.03796477581869589,
+                  "turnRad": -0.0610147624252919,
+                  "footOffsetsM": [
+                    [
+                      4.808770579284674,
+                      4.462943578843615,
+                      0.8445215945462834
+                    ],
+                    [
+                      -2.0713640660580452,
+                      -0.07964826080692067,
+                      -0.9639918379872184
+                    ]
+                  ],
+                  "bodyLiftM": 1.472962571251848,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    266.63786994383247,
+                    129.82210502017506,
+                    -15.820314441747104
+                  ],
+                  "up": [
+                    0.13686684455608375,
+                    0.9905894542449263,
+                    0
+                  ],
+                  "right": [
+                    0.9905894542449263,
+                    -0.13686684455608375,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": -0.15842185812689424,
+                  "turnRad": 0.20210654076472143,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "303eb584560cd42749e0c4907a3b97fd7e0a41d3898aab33ffde3cc4ff28ad9c"
+        },
+        {
+          "name": "landscape-22000ms",
+          "source": "application-stage",
+          "timeMs": 21999.99999999966,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              295.62315014585965,
+              6062.1926600109
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "requestedTimeMs": 22000,
+          "usableAspect": 1.7777777777777777,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 1408,
+            "logicalHeight": 848,
+            "backingWidth": 1056,
+            "backingHeight": 636,
+            "overscanPx": 64,
+            "transform": [
+              0.75,
+              0,
+              0,
+              0.75,
+              -48,
+              -48
+            ],
+            "nominalWidth": 1280,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 848.5444934943228,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 21999.99999999966,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -51.94583314014525,
+                  -0.7646675706285395,
+                  -244.9595556466207
+                ],
+                "directionXZ": [
+                  0.9746902386363878,
+                  -0.22355969830660688
+                ],
+                "speedMps": 17.72138385116706,
+                "strength": 0.6454385273725496
+              },
+              "waterResponse": {
+                "bass": 0.9899601352302974,
+                "rhythm": 0.4150428038887431,
+                "melody": 0.26433694617516906,
+                "wake": 0.6454385273725496
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -51.91655877536598,
+                    -1.5138442603581552,
+                    -44.09272001639172
+                  ],
+                  "up": [
+                    -0.028854790610001513,
+                    0.9995836138407097,
+                    0
+                  ],
+                  "right": [
+                    0.9995836138407097,
+                    0.028854790610001513,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": 0.22871346106632928,
+                  "turnRad": -0.17525212886034067,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -128.57150879599286,
+                    -2.8523611324760623,
+                    14.821046917645797
+                  ],
+                  "up": [
+                    -0.07135959939358466,
+                    0.9974506542052028,
+                    0
+                  ],
+                  "right": [
+                    0.9974506542052028,
+                    0.07135959939358466,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.04416898772727682,
+                  "turnRad": 0.13272045070102026,
+                  "footOffsetsM": [
+                    [
+                      6.229227766495574,
+                      1.0451015581398684,
+                      -1.9743882593308049
+                    ],
+                    [
+                      -3.4294001777401064,
+                      -0.10701556553151814,
+                      2.253106171276155
+                    ]
+                  ],
+                  "bodyLiftM": 0.8830725617412031,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    94.02621316784497,
+                    118.13328669241764,
+                    -14.1276013183487
+                  ],
+                  "up": [
+                    0.0489608558521713,
+                    0.9988006981346294,
+                    0
+                  ],
+                  "right": [
+                    0.9988006981346294,
+                    -0.0489608558521713,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.08176019569980265,
+                  "turnRad": -0.14849281284808122,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "1c0f5e49272208918d4c219a2541a7404c9b51ca04cc5485ddbb4e202ff229b7"
+        },
+        {
+          "name": "landscape-30000ms",
+          "source": "application-stage",
+          "timeMs": 29999.999999998498,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "requestedTimeMs": 30000,
+          "usableAspect": 1.7777777777777777,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 1408,
+            "logicalHeight": 848,
+            "backingWidth": 1056,
+            "backingHeight": 636,
+            "overscanPx": 64,
+            "transform": [
+              0.75,
+              0,
+              0,
+              0.75,
+              -48,
+              -48
+            ],
+            "nominalWidth": 1280,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 1156.3593302405022,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 29999.999999998498,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -99.22058723392043,
+                  -0.7787802388841323,
+                  -264.8107301090032
+                ],
+                "directionXZ": [
+                  0.9999558807952621,
+                  -0.00939342658307917
+                ],
+                "speedMps": 50.14566806428074,
+                "strength": 0.6235493689654574
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.6235493689654574
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -99.12744136981009,
+                    -3.5115508286305612,
+                    -47.66593141962058
+                  ],
+                  "up": [
+                    -0.05509463776942966,
+                    0.9984811369720789,
+                    0
+                  ],
+                  "right": [
+                    0.9984811369720789,
+                    0.05509463776942966,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.01541579298952879,
+                  "turnRad": -0.10678082937734638,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -209.6405993088667,
+                    -10.210401512727913,
+                    9.240358924524896
+                  ],
+                  "up": [
+                    -0.11633608767606071,
+                    0.9932099046547149,
+                    0
+                  ],
+                  "right": [
+                    0.9932099046547149,
+                    0.11633608767606071,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.09256467231487078,
+                  "turnRad": 0.11917652747433524,
+                  "footOffsetsM": [
+                    [
+                      -4.46315462671178,
+                      0.0032269385167025266,
+                      -0.7291025399158272
+                    ],
+                    [
+                      6.838817091514395,
+                      0.2348324231582113,
+                      1.021690682607371
+                    ]
+                  ],
+                  "bodyLiftM": 0.6724770314042865,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    70.7001074692958,
+                    128.68481636977685,
+                    -9.341273869220096
+                  ],
+                  "up": [
+                    0.03663255558770329,
+                    0.9993288026826375,
+                    0
+                  ],
+                  "right": [
+                    0.9993288026826375,
+                    -0.03663255558770329,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.22260748350750964,
+                  "turnRad": -0.23407072025430162,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "751a0288234d8a990770a695b5f7204501d3719bde7c0d86186b1d52d229ce6c"
+        },
+        {
+          "name": "landscape-48000ms",
+          "source": "application-stage",
+          "timeMs": 48000.000000002525,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "requestedTimeMs": 48000,
+          "usableAspect": 1.7777777777777777,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 1408,
+            "logicalHeight": 848,
+            "backingWidth": 1056,
+            "backingHeight": 636,
+            "overscanPx": 64,
+            "transform": [
+              0.75,
+              0,
+              0,
+              0.75,
+              -48,
+              -48
+            ],
+            "nominalWidth": 1280,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 1846.36893806331,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 48000.000000002525,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  93.5248488676289,
+                  -0.7490447820067988,
+                  -212.72460184611882
+                ],
+                "directionXZ": [
+                  0.9896213430943194,
+                  0.1436996774255093
+                ],
+                "speedMps": 19.57753829654934,
+                "strength": 0.47523671983491883
+              },
+              "waterResponse": {
+                "bass": 0.12737307823141306,
+                "rhythm": 0.00014326779140893335,
+                "melody": 0.22799290009139841,
+                "wake": 0.47523671983491883
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    93.44387212367162,
+                    -3.1771810733825987,
+                    -38.29042833230139
+                  ],
+                  "up": [
+                    0.05193487426124511,
+                    0.9986504738072619,
+                    0
+                  ],
+                  "right": [
+                    0.9986504738072619,
+                    -0.05193487426124511,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": 0.1827051820463781,
+                  "turnRad": 0.0561880186974664,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -183.2644057392249,
+                    -6.93451528245032,
+                    17.848026214008634
+                  ],
+                  "up": [
+                    -0.10167761384418203,
+                    0.994817401759214,
+                    0
+                  ],
+                  "right": [
+                    0.994817401759214,
+                    0.10167761384418203,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.03326641652584081,
+                  "turnRad": -0.20588615003333693,
+                  "footOffsetsM": [
+                    [
+                      4.028252250479065,
+                      -0.10256674721549852,
+                      2.702627697909165
+                    ],
+                    [
+                      -8.554643621874359,
+                      2.1813977022653708,
+                      -4.362408629793144
+                    ]
+                  ],
+                  "bodyLiftM": 1.480315965283534,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    270.1724126417871,
+                    101.69508228925179,
+                    -10.318357730282228
+                  ],
+                  "up": [
+                    0.14065686480062642,
+                    0.9900584055420459,
+                    0
+                  ],
+                  "right": [
+                    0.9900584055420459,
+                    -0.14065686480062642,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": -0.28355012173938166,
+                  "turnRad": 0.22355313356152506,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "6da6a53045639ea09bc82589bcbfae95ea926c64827d47a670ea5bd8b018c4dd"
+        },
+        {
+          "name": "context-restored",
+          "source": "application-stage",
+          "timeMs": 10000.000000000073,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "requestedTimeMs": 10000,
+          "usableAspect": 1.7777777777777777,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 1408,
+            "logicalHeight": 848,
+            "backingWidth": 1056,
+            "backingHeight": 636,
+            "overscanPx": 64,
+            "transform": [
+              0.75,
+              0,
+              0,
+              0.75,
+              -48,
+              -48
+            ],
+            "nominalWidth": 1280,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 385.93769502211137,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 10000.000000000073,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  143.5392018350899,
+                  -0.762839711647465,
+                  -205.7845710736542
+                ],
+                "directionXZ": [
+                  0.9997550624945741,
+                  -0.02213176487472928
+                ],
+                "speedMps": 43.116617895394725,
+                "strength": 0.4979955994481101
+              },
+              "waterResponse": {
+                "bass": 0.22102550763370926,
+                "rhythm": 0.1256777569467715,
+                "melody": 0.29973860811374864,
+                "wake": 0.4979955994481101
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    143.32635260045896,
+                    -6.480578412170189,
+                    -37.04122279325775
+                  ],
+                  "up": [
+                    0.07965951113275636,
+                    0.9968221317196415,
+                    0
+                  ],
+                  "right": [
+                    0.9968221317196415,
+                    -0.07965951113275636,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": 0.011337368521273365,
+                  "turnRad": 0.18792909473706404,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -89.73636646976871,
+                    0.24005743902944232,
+                    18.2930531914017
+                  ],
+                  "up": [
+                    -0.0497850766603825,
+                    0.9987599542141845,
+                    0
+                  ],
+                  "right": [
+                    0.9987599542141845,
+                    0.0497850766603825,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.03323887016008683,
+                  "turnRad": -0.05071338697304557,
+                  "footOffsetsM": [
+                    [
+                      3.997151814394936,
+                      -0.09248477432149127,
+                      0.6648509787250112
+                    ],
+                    [
+                      -8.343032504937074,
+                      2.1927863415144735,
+                      -1.0517755150827084
+                    ]
+                  ],
+                  "bodyLiftM": 1.4922334465305216,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    262.073719251427,
+                    130.29592212291823,
+                    -16.1211221775573
+                  ],
+                  "up": [
+                    0.13453439154975314,
+                    0.9909089249221331,
+                    0
+                  ],
+                  "right": [
+                    0.9909089249221331,
+                    -0.13453439154975314,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": -0.1549361809550058,
+                  "turnRad": 0.1678067387536551,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "642774b10d7dbcafdbcf30eac7c1a893431c5f319de69169911aadf4539c8517"
+        },
+        {
+          "name": "landscape-seam-before",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296949.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11305.908596082098,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296949.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -84.60906118999694,
+                  -1.661590226880313,
+                  -262.1614773548816
+                ],
+                "directionXZ": [
+                  0.9995553075655185,
+                  -0.029819240728124967
+                ],
+                "speedMps": 59.80375752361379,
+                "strength": 0.47043446989671667
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.47043446989671667
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -84.49983337552072,
+                    -3.647914738087138,
+                    -47.18906592387869
+                  ],
+                  "up": [
+                    -0.04698772651259854,
+                    0.9988954667817735,
+                    0
+                  ],
+                  "right": [
+                    0.9988954667817735,
+                    0.04698772651259854,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.193705816455817,
+                  "turnRad": -0.0215999785029498,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -105.62813411704393,
+                    -0.5086585864153221,
+                    14.976314182783229
+                  ],
+                  "up": [
+                    -0.058598019679464305,
+                    0.998281659698126,
+                    0
+                  ],
+                  "right": [
+                    0.998281659698126,
+                    0.058598019679464305,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.020569786719664473,
+                  "turnRad": 0.016720682247099855,
+                  "footOffsetsM": [
+                    [
+                      -4.620782240408117,
+                      7.143375980703107,
+                      -0.10785405711710058
+                    ],
+                    [
+                      1.9473301438023753,
+                      -0.08353336403749201,
+                      0.21229022811480433
+                    ]
+                  ],
+                  "bodyLiftM": 3.202000519699889,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    85.56643811200655,
+                    120.96357537364406,
+                    -14.308257669369668
+                  ],
+                  "up": [
+                    0.044499374240812954,
+                    0.9990094122140072,
+                    0
+                  ],
+                  "right": [
+                    0.9990094122140072,
+                    -0.044499374240812954,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1289687824668845,
+                  "turnRad": -0.24406647824192867,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "2b8a2cd5076e92caff985970a0b67d1f5a2ae021630c1682611816fc5d1987a6"
+        },
+        {
+          "name": "landscape-seam-at",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297049.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11309.733552923253,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297049.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -82.442702285679,
+                  -1.4586227036956725,
+                  -262.33714037646297
+                ],
+                "directionXZ": [
+                  0.9995852895199607,
+                  -0.02879668340792383
+                ],
+                "speedMps": 60.07265520291569,
+                "strength": 0.5071210807650848
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5071210807650848
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -82.34709714666032,
+                    -3.3447627776758964,
+                    -47.22068526776333
+                  ],
+                  "up": [
+                    -0.045785489389435316,
+                    0.9989512945891657,
+                    0
+                  ],
+                  "right": [
+                    0.9989512945891657,
+                    0.045785489389435316,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.1838163094817285,
+                  "turnRad": -0.017818525433308665,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -104.87633768488362,
+                    -0.46072247166557645,
+                    14.963520782315634
+                  ],
+                  "up": [
+                    -0.05818082709834847,
+                    0.9983060609643478,
+                    0
+                  ],
+                  "right": [
+                    0.9983060609643478,
+                    0.05818082709834847,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.017509521298507587,
+                  "turnRad": 0.014330194089531588,
+                  "footOffsetsM": [
+                    [
+                      5.963011483919891,
+                      6.171512747136997,
+                      -0.22886371805949712
+                    ],
+                    [
+                      -2.6363496595164833,
+                      -0.13212270386588965,
+                      0.22870242365650392
+                    ]
+                  ],
+                  "bodyLiftM": 2.2684008457822604,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    84.37575724975103,
+                    121.22882123629597,
+                    -14.356154397888607
+                  ],
+                  "up": [
+                    0.043875307164265354,
+                    0.9990370150406047,
+                    0
+                  ],
+                  "right": [
+                    0.9990370150406047,
+                    -0.043875307164265354,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1332925827553941,
+                  "turnRad": -0.24332537601330426,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "f428353edf7760933753ca7b8d36cbbc1a874a39b0da7c18252c077fc3146839"
+        },
+        {
+          "name": "landscape-seam-after",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297149.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11313.558373278296,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297149.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -80.24952627230708,
+                  -1.1244047028095754,
+                  -262.5074454060451
+                ],
+                "directionXZ": [
+                  0.9996140313822149,
+                  -0.027781077441238342
+                ],
+                "speedMps": 60.33404480705954,
+                "strength": 0.5656847048537098
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5656847048537098
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -80.17283144171782,
+                    -2.9118762691578013,
+                    -47.25134017308812
+                  ],
+                  "up": [
+                    -0.04456830236138289,
+                    0.9990063395317491,
+                    0
+                  ],
+                  "right": [
+                    0.9990063395317491,
+                    0.04456830236138289,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.14676075116817863,
+                  "turnRad": -0.014030641649220067,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -104.1344892407084,
+                    -0.4137908918226003,
+                    14.952711155064062
+                  ],
+                  "up": [
+                    -0.05776915868137227,
+                    0.9983299676485958,
+                    0
+                  ],
+                  "right": [
+                    0.9983299676485958,
+                    0.05776915868137227,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.026668391674205955,
+                  "turnRad": 0.01196705933622367,
+                  "footOffsetsM": [
+                    [
+                      10.08073721191455,
+                      -0.04337278498809449,
+                      -0.23165483800142667
+                    ],
+                    [
+                      -7.209883054955142,
+                      -0.19211657131861637,
+                      0.22573011282220296
+                    ]
+                  ],
+                  "bodyLiftM": 0.6186517150104858,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    83.20363519477824,
+                    121.4970568767119,
+                    -14.403598126276842
+                  ],
+                  "up": [
+                    0.04326092528478412,
+                    0.9990638079439693,
+                    0
+                  ],
+                  "right": [
+                    0.9990638079439693,
+                    -0.04326092528478412,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.13758970916679422,
+                  "turnRad": -0.24251777973494773,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "db6c096078b3380c59ae6d31a0a941d48ee6583aaa0cd1f1b73d3b4059d46d7a"
+        },
+        {
+          "name": "seam-motion/frame-000",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296049.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11271.477868654243,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296049.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -102.77890870922512,
+                  -1.6699212922880942,
+                  -260.3454223869661
+                ],
+                "directionXZ": [
+                  0.999224378511497,
+                  -0.03937818416728698
+                ],
+                "speedMps": 57.06271806216404,
+                "strength": 0.4689158294405604
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.4689158294405604
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -102.62776907982531,
+                    -4.600709313222751,
+                    -46.862176029653895
+                  ],
+                  "up": [
+                    -0.0570683715380961,
+                    0.9983702724790987,
+                    0
+                  ],
+                  "right": [
+                    0.9983702724790987,
+                    0.0570683715380961,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.18125437511511563,
+                  "turnRad": -0.055119593768577925,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -112.81999652805162,
+                    -0.9858651370097959,
+                    15.185624380429426
+                  ],
+                  "up": [
+                    -0.0625891685614403,
+                    0.9980393759660926,
+                    0
+                  ],
+                  "right": [
+                    0.9980393759660926,
+                    0.0625891685614403,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.09301667766258662,
+                  "turnRad": 0.03931620469546177,
+                  "footOffsetsM": [
+                    [
+                      -9.22324181903262,
+                      -0.0016667579601910842,
+                      -0.08003360793022204
+                    ],
+                    [
+                      8.523845084592246,
+                      -0.03572582530826607,
+                      0.2911606473063822
+                    ]
+                  ],
+                  "bodyLiftM": 0.7600493015304367,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    97.06442285121693,
+                    118.7244043113592,
+                    -13.858184781597975
+                  ],
+                  "up": [
+                    0.05052338914792541,
+                    0.9987228780542715,
+                    0
+                  ],
+                  "right": [
+                    0.9987228780542715,
+                    -0.05052338914792541,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.0890837303437409,
+                  "turnRad": -0.24754091339716303,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "2929be18f75ee07a880d76f73a223926ad77e4a563f5acdcff1a7a45acb17563"
+        },
+        {
+          "name": "seam-motion/frame-001",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296216.5551941835,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11277.85475712724,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296216.5551941835,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -99.60637528618729,
+                  -1.300834687721408,
+                  -260.71299426561467
+                ],
+                "directionXZ": [
+                  0.9992945581612166,
+                  -0.0375551065685965
+                ],
+                "speedMps": 57.61206374175874,
+                "strength": 0.5351127786509154
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5351127786509154
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -99.48360040293528,
+                    -4.054093090229799,
+                    -46.92833896781064
+                  ],
+                  "up": [
+                    -0.055308637665189314,
+                    0.9984693057874242,
+                    0
+                  ],
+                  "right": [
+                    0.9984693057874242,
+                    0.055308637665189314,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.1572407163132591,
+                  "turnRad": -0.04900487737861121,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -111.43268174957328,
+                    -0.8912251991255289,
+                    15.133598743883498
+                  ],
+                  "up": [
+                    -0.061819247861515436,
+                    0.998087361203335,
+                    0
+                  ],
+                  "right": [
+                    0.998087361203335,
+                    0.061819247861515436,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.10271850672935767,
+                  "turnRad": 0.03500125826064195,
+                  "footOffsetsM": [
+                    [
+                      -1.8291003171002167,
+                      8.240193069486367,
+                      -0.30284682677547214
+                    ],
+                    [
+                      0.7494425563979625,
+                      -0.09813532135859293,
+                      0.47382189151465026
+                    ]
+                  ],
+                  "bodyLiftM": 3.2674306390712116,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    94.83462706790229,
+                    119.11763926624212,
+                    -13.943966962356463
+                  ],
+                  "up": [
+                    0.04935552030371845,
+                    0.9987812736608297,
+                    0
+                  ],
+                  "right": [
+                    0.9987812736608297,
+                    -0.04935552030371845,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.09657799778749314,
+                  "turnRad": -0.24735036097938834,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "25381fe9ef798e25961ce9f08f5d1a152e6007a8c7502ac502dd25a41c99a920"
+        },
+        {
+          "name": "seam-motion/frame-002",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296383.2218608501,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11284.231270155293,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296383.2218608501,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -96.3428432509252,
+                  -0.8086795272853475,
+                  -261.06656748252686
+                ],
+                "directionXZ": [
+                  0.9993604954888634,
+                  -0.035757517478894475
+                ],
+                "speedMps": 58.143025333010584,
+                "strength": 0.6185661542319216
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.6185661542319216
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -96.25358644650032,
+                    -3.3852236050888678,
+                    -46.99198214685483
+                  ],
+                  "up": [
+                    -0.0534982496587472,
+                    0.9985679432484553,
+                    0
+                  ],
+                  "right": [
+                    0.9985679432484553,
+                    0.0534982496587472,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.08798391024167461,
+                  "turnRad": -0.04284102848082161,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -110.06985786213062,
+                    -0.7994483571353612,
+                    15.087743034704195
+                  ],
+                  "up": [
+                    -0.061062930641343285,
+                    0.9981339181199538,
+                    0
+                  ],
+                  "right": [
+                    0.9981339181199538,
+                    0.061062930641343285,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.08964931223139944,
+                  "turnRad": 0.03074048357654927,
+                  "footOffsetsM": [
+                    [
+                      10.385086574185701,
+                      0.08908651749836416,
+                      -0.5800733634589477
+                    ],
+                    [
+                      -7.001030480728158,
+                      -0.1934657129617734,
+                      0.5960941157374026
+                    ]
+                  ],
+                  "bodyLiftM": 0.6511448910419935,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    92.64875467658011,
+                    119.52100719181067,
+                    -14.028687685163414
+                  ],
+                  "up": [
+                    0.048210476602149714,
+                    0.9988371989197207,
+                    0
+                  ],
+                  "right": [
+                    0.9988371989197207,
+                    -0.048210476602149714,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.10403044538690556,
+                  "turnRad": -0.24694858660979072,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "9a1f6cb71929a52396bb91dbbcbb358b0c2eb83f50bfb34b0338e136c78ce2e2"
+        },
+        {
+          "name": "seam-motion/frame-003",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296549.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11290.607406988767,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296549.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -92.99144683882665,
+                  -0.7927445681442444,
+                  -261.4059495454633
+                ],
+                "directionXZ": [
+                  0.999422372680248,
+                  -0.033984128445254405
+                ],
+                "speedMps": 58.655069615460626,
+                "strength": 0.6212219807554388
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.6212219807554388
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -92.90915089753379,
+                    -3.1932108103189876,
+                    -47.05307091818339
+                  ],
+                  "up": [
+                    -0.05163893743593937,
+                    0.998665820052177,
+                    0
+                  ],
+                  "right": [
+                    0.998665820052177,
+                    0.05163893743593937,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.060083001981161885,
+                  "turnRad": -0.03663422752940255,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -108.73217695563825,
+                    -0.7105234723437661,
+                    15.047936743627995
+                  ],
+                  "up": [
+                    -0.06032057829831712,
+                    0.9981790559983498,
+                    0
+                  ],
+                  "right": [
+                    0.9981790559983498,
+                    0.06032057829831712,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.030030896050480604,
+                  "turnRad": 0.026538544782930776,
+                  "footOffsetsM": [
+                    [
+                      2.9192515334198497,
+                      -0.04970498724972083,
+                      -0.3266533813384267
+                    ],
+                    [
+                      -6.690661408996512,
+                      5.643153805773597,
+                      0.4963707568715469
+                    ]
+                  ],
+                  "bodyLiftM": 2.991710000877814,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    90.5083903302833,
+                    119.93416857899547,
+                    -14.112306456632352
+                  ],
+                  "up": [
+                    0.047089108671751055,
+                    0.9988906926408415,
+                    0
+                  ],
+                  "right": [
+                    0.9988906926408415,
+                    -0.047089108671751055,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.111434593880604,
+                  "turnRad": -0.2463400773125765,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "461b06e755b3e1eaf3f9176e31447f5286bce9ae3bae8249beac8a4768fc62d7"
+        },
+        {
+          "name": "seam-motion/frame-004",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296716.5551941835,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11296.983166884538,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296716.5551941835,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -89.55540748320944,
+                  -1.2823979485176717,
+                  -261.7309556881278
+                ],
+                "directionXZ": [
+                  0.999480359971491,
+                  -0.03223367852509137
+                ],
+                "speedMps": 59.14768241632248,
+                "strength": 0.5383463874466469
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5383463874466469
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -89.45468822457403,
+                    -3.508176838959571,
+                    -47.111572023863
+                  ],
+                  "up": [
+                    -0.04973248058647379,
+                    0.9987625745765186,
+                    0
+                  ],
+                  "right": [
+                    0.9987625745765186,
+                    0.04973248058647379,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.11174935620256807,
+                  "turnRad": -0.03039069804633396,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -107.4202795543221,
+                    -0.6244375794383359,
+                    15.01405333987162
+                  ],
+                  "up": [
+                    -0.05959254580377179,
+                    0.9982227849957269,
+                    0
+                  ],
+                  "right": [
+                    0.9982227849957269,
+                    0.05959254580377179,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.06310629998387517,
+                  "turnRad": 0.022399964140672822,
+                  "footOffsetsM": [
+                    [
+                      -4.777816293577535,
+                      -0.010058537364249664,
+                      -0.1266929812083462
+                    ],
+                    [
+                      9.357249434645425,
+                      2.635443679068129,
+                      0.15026226298486098
+                    ]
+                  ],
+                  "bodyLiftM": 1.2709563725210233,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    88.41509011141889,
+                    120.35677075763874,
+                    -14.194783327125407
+                  ],
+                  "up": [
+                    0.045992250140385584,
+                    0.9989417965662585,
+                    0
+                  ],
+                  "right": [
+                    0.9989417965662585,
+                    -0.045992250140385584,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.11878397028204993,
+                  "turnRad": -0.24552975383795714,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "baf3dda8d35341c3da07ec19d781535e04a1f407408ad3503f5a932aa9f5a786"
+        },
+        {
+          "name": "seam-motion/frame-005",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296883.2218608501,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11303.358549106037,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296883.2218608501,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -86.03803059956311,
+                  -1.6701502816561535,
+                  -262.0414089707596
+                ],
+                "directionXZ": [
+                  0.9995346162333805,
+                  -0.030504933227081463
+                ],
+                "speedMps": 59.62036912762363,
+                "strength": 0.46887407575511864
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.46887407575511864
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -85.92547102557187,
+                    -3.7241131115088137,
+                    -47.16745361473673
+                  ],
+                  "up": [
+                    -0.04778070665903121,
+                    0.9988578497820216,
+                    0
+                  ],
+                  "right": [
+                    0.9988578497820216,
+                    0.04778070665903121,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.1819783767529508,
+                  "turnRad": -0.024116700381069448,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -106.13479430726484,
+                    -0.5411760023416718,
+                    14.985960572703506
+                  ],
+                  "up": [
+                    -0.05887918153296709,
+                    0.9982651160798959,
+                    0
+                  ],
+                  "right": [
+                    0.9982651160798959,
+                    0.05887918153296709,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.03728092300774103,
+                  "turnRad": 0.01832911139098952,
+                  "footOffsetsM": [
+                    [
+                      -9.699720550814797,
+                      2.2434223659406323,
+                      -0.030790634158308613
+                    ],
+                    [
+                      5.008642899981659,
+                      -0.0575155249086895,
+                      0.19036944759096025
+                    ]
+                  ],
+                  "bodyLiftM": 2.1189273183036605,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    86.37038048381697,
+                    120.78844793310259,
+                    -14.276078909549845
+                  ],
+                  "up": [
+                    0.044920717029864395,
+                    0.9989905551012597,
+                    0
+                  ],
+                  "right": [
+                    0.9989905551012597,
+                    -0.044920717029864395,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1260721139621107,
+                  "turnRad": -0.24452294759312,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "4bb5a2a240f4cb36cc6ebaef89086f9ae4c9b5b85e3d59e03d2806952608e014"
+        },
+        {
+          "name": "seam-motion/frame-006",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297049.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11309.733552923253,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297049.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -82.442702285679,
+                  -1.4586227036956725,
+                  -262.33714037646297
+                ],
+                "directionXZ": [
+                  0.9995852895199607,
+                  -0.02879668340792383
+                ],
+                "speedMps": 60.07265520291569,
+                "strength": 0.5071210807650848
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5071210807650848
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -82.34709714666032,
+                    -3.3447627776758964,
+                    -47.22068526776333
+                  ],
+                  "up": [
+                    -0.045785489389435316,
+                    0.9989512945891657,
+                    0
+                  ],
+                  "right": [
+                    0.9989512945891657,
+                    0.045785489389435316,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.1838163094817285,
+                  "turnRad": -0.017818525433308665,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -104.87633768488362,
+                    -0.46072247166557645,
+                    14.963520782315634
+                  ],
+                  "up": [
+                    -0.05818082709834847,
+                    0.9983060609643478,
+                    0
+                  ],
+                  "right": [
+                    0.9983060609643478,
+                    0.05818082709834847,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.017509521298507587,
+                  "turnRad": 0.014330194089531588,
+                  "footOffsetsM": [
+                    [
+                      5.963011483919891,
+                      6.171512747136997,
+                      -0.22886371805949712
+                    ],
+                    [
+                      -2.6363496595164833,
+                      -0.13212270386588965,
+                      0.22870242365650392
+                    ]
+                  ],
+                  "bodyLiftM": 2.2684008457822604,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    84.37575724975103,
+                    121.22882123629597,
+                    -14.356154397888607
+                  ],
+                  "up": [
+                    0.043875307164265354,
+                    0.9990370150406047,
+                    0
+                  ],
+                  "right": [
+                    0.9990370150406047,
+                    -0.043875307164265354,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1332925827553941,
+                  "turnRad": -0.24332537601330426,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "f428353edf7760933753ca7b8d36cbbc1a874a39b0da7c18252c077fc3146839"
+        },
+        {
+          "name": "seam-motion/frame-007",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297216.5551941835,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11316.108177612736,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297216.5551941835,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -78.77288594100018,
+                  -0.9115529197697958,
+                  -262.6179889032212
+                ],
+                "directionXZ": [
+                  0.9996325175823458,
+                  -0.027107744133019
+                ],
+                "speedMps": 60.504086633479865,
+                "strength": 0.6014205888178469
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.6014205888178469
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -78.70786507146025,
+                    -2.63406274808699,
+                    -47.271238002579814
+                  ],
+                  "up": [
+                    -0.043748746871893104,
+                    0.9990425652329029,
+                    0
+                  ],
+                  "right": [
+                    0.9990425652329029,
+                    0.043748746871893104,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.11605333625075964,
+                  "turnRad": -0.01150248834518809,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -103.64551368149411,
+                    -0.38305924347127984,
+                    14.946591218991054
+                  ],
+                  "up": [
+                    -0.05749781718616594,
+                    0.9983456320427441,
+                    0
+                  ],
+                  "right": [
+                    0.9983456320427441,
+                    0.05749781718616594,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.07244546987991135,
+                  "turnRad": 0.010407248940971349,
+                  "footOffsetsM": [
+                    [
+                      7.130640040043117,
+                      -0.08830372546928822,
+                      -0.17260266880143393
+                    ],
+                    [
+                      -10.145748188016867,
+                      -0.14739852068151027,
+                      0.21238178830234436
+                    ]
+                  ],
+                  "bodyLiftM": 1.1434572271735006,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    82.43268451246779,
+                    121.67749878798145,
+                    -14.434971585455868
+                  ],
+                  "up": [
+                    0.04285679959237436,
+                    0.9990812252908664,
+                    0
+                  ],
+                  "right": [
+                    0.9990812252908664,
+                    -0.04285679959237436,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.14043895908412424,
+                  "turnRad": -0.24194311648291636,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "4396c97e5a568c668fd3056aea40cca1519458e5bf233ee45878d2562b92722e"
+        },
+        {
+          "name": "seam-motion/frame-008",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297383.2218608501,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11322.482422457624,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297383.2218608501,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -75.0321188085152,
+                  -0.7408847521551462,
+                  -262.88380165155166
+                ],
+                "directionXZ": [
+                  0.9996764283487964,
+                  -0.02543695350850652
+                ],
+                "speedMps": 60.91423040431516,
+                "strength": 0.6298652834202885
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.6298652834202885
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -74.97951693939446,
+                    -2.3038533050162187,
+                    -47.319084297279296
+                  ],
+                  "up": [
+                    -0.041672439674741435,
+                    0.99913132658903,
+                    0
+                  ],
+                  "right": [
+                    0.99913132658903,
+                    0.041672439674741435,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.06862689349165225,
+                  "turnRad": -0.005174922169100699,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -102.44291352408024,
+                    -0.30816721905534905,
+                    14.935024369541452
+                  ],
+                  "up": [
+                    -0.05683047939651303,
+                    0.9983838423229627,
+                    0
+                  ],
+                  "right": [
+                    0.9983838423229627,
+                    0.05683047939651303,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.03209855603088755,
+                  "turnRad": 0.006564134164695004,
+                  "footOffsetsM": [
+                    [
+                      -0.45688601106808235,
+                      -0.030133766793836836,
+                      -0.06117684041686808
+                    ],
+                    [
+                      0.9645159007159769,
+                      8.283910344750868,
+                      0.07525048634860666
+                    ]
+                  ],
+                  "bodyLiftM": 3.0784908768829284,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    80.54259364477295,
+                    122.13407577820703,
+                    -14.512492882870596
+                  ],
+                  "up": [
+                    0.04186595402462724,
+                    0.9991232365897651,
+                    0
+                  ],
+                  "right": [
+                    0.9991232365897651,
+                    -0.04186595402462724,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.14750485609342073,
+                  "turnRad": -0.24038257892290762,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "c0dda7addbdff5c10081a5478aa094728bab0801af6cb28162f0a3f5eaf756e1"
+        },
+        {
+          "name": "seam-motion/frame-009",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297549.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11328.856286747654,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297549.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -71.22400844270223,
+                  -1.1786796608651742,
+                  -263.13443390774654
+                ],
+                "directionXZ": [
+                  0.9997171403721009,
+                  -0.02378317149223232
+                ],
+                "speedMps": 61.302674928084926,
+                "strength": 0.5563724248747108
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5563724248747108
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -71.15879714364617,
+                    -2.5867008126099336,
+                    -47.36419810339437
+                  ],
+                  "up": [
+                    -0.03955856890234683,
+                    0.9992172534671317,
+                    0
+                  ],
+                  "right": [
+                    0.9992172534671317,
+                    0.03955856890234683,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.10682977405698041,
+                  "turnRad": 0.0011578284824304422,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -101.26911538743339,
+                    -0.23602606546546667,
+                    14.928668289982973
+                  ],
+                  "up": [
+                    -0.05617913408687219,
+                    0.998420705360846,
+                    0
+                  ],
+                  "right": [
+                    0.998420705360846,
+                    0.05617913408687219,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.06479490752980421,
+                  "turnRad": 0.0028045228871222037,
+                  "footOffsetsM": [
+                    [
+                      -8.015763675991122,
+                      -0.0036476948546186327,
+                      -0.003267203951319242
+                    ],
+                    [
+                      9.137807829560437,
+                      -0.028775195941903753,
+                      0.02868340427392841
+                    ]
+                  ],
+                  "bodyLiftM": 0.6178401028583352,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    78.70688226433339,
+                    122.59813456170627,
+                    -14.5886813357382
+                  ],
+                  "up": [
+                    0.04090351028494283,
+                    0.9991631012234037,
+                    0
+                  ],
+                  "right": [
+                    0.9991631012234037,
+                    -0.04090351028494283,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1544839237916237,
+                  "turnRad": -0.23865047716643234,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "ab636c25a8440ca1f308e66f4b692ee3148e35b67f0c366bdaffcf3f09aa83ca"
+        },
+        {
+          "name": "seam-motion/frame-010",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297716.5551941835,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11335.22976977916,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297716.5551941835,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -67.35222910708934,
+                  -1.6462401850975603,
+                  -263.3697492226568
+                ],
+                "directionXZ": [
+                  0.9997547632453775,
+                  -0.022145278688223326
+                ],
+                "speedMps": 61.66903045842969,
+                "strength": 0.4732302990885326
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.4732302990885326
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -67.2749290830424,
+                    -2.9050305125031173,
+                    -47.406554860078224
+                  ],
+                  "up": [
+                    -0.03740917420494994,
+                    0.9993000318649569,
+                    0
+                  ],
+                  "right": [
+                    0.9993000318649569,
+                    0.03740917420494994,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.18255948147665438,
+                  "turnRad": 0.0074894137984186345,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -100.1246841157919,
+                    -0.16661433645958823,
+                    14.927366943408279
+                  ],
+                  "up": [
+                    -0.05554409421923557,
+                    0.9984562351937939,
+                    0
+                  ],
+                  "right": [
+                    0.9984562351937939,
+                    0.05554409421923557,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.06450789613346805,
+                  "turnRad": -0.0008681024284334887,
+                  "footOffsetsM": [
+                    [
+                      -3.8740127827669646,
+                      7.497280429166214,
+                      -0.0018940237984368677
+                    ],
+                    [
+                      1.6087257857404111,
+                      -0.08357207845954695,
+                      -0.008785056199339836
+                    ]
+                  ],
+                  "bodyLiftM": 3.2423631403900055,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    76.92691321639431,
+                    123.06924477009397,
+                    -14.663500642032114
+                  ],
+                  "up": [
+                    0.03997018777781088,
+                    0.9992008727423163,
+                    0
+                  ],
+                  "right": [
+                    0.9992008727423163,
+                    -0.03997018777781088,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.16136985518928992,
+                  "turnRad": -0.23675379925004927,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "5be364918db92e28455737f9122d762d0d88ebb8f3c75e908a7b12c9ac3dfbec"
+        },
+        {
+          "name": "seam-motion/frame-011",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297883.2218608501,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11341.602870855097,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297883.2218608501,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -63.420518104971634,
+                  -1.5103058475054538,
+                  -263.58961948597926
+                ],
+                "directionXZ": [
+                  0.9997893979873586,
+                  -0.020522175130218555
+                ],
+                "speedMps": 62.01292948012412,
+                "strength": 0.4978428540087938
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.4978428540087938
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -63.35419459421346,
+                    -2.6265201689293463,
+                    -47.44613150747627
+                  ],
+                  "up": [
+                    -0.035226331738346696,
+                    0.9993793601792365,
+                    0
+                  ],
+                  "right": [
+                    0.9993793601792365,
+                    0.035226331738346696,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.19548641414691573,
+                  "turnRad": 0.0138134851363578,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -99.0101709510963,
+                    -0.09990959361402929,
+                    14.93096054201048
+                  ],
+                  "up": [
+                    -0.05492566521086096,
+                    0.9984904462743469,
+                    0
+                  ],
+                  "right": [
+                    0.9984904462743469,
+                    0.05492566521086096,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.022576180463486632,
+                  "turnRad": -0.004450454535354623,
+                  "footOffsetsM": [
+                    [
+                      10.04828753041709,
+                      0.8470866135561936,
+                      0.06439324507740965
+                    ],
+                    [
+                      -5.889438802096791,
+                      -0.16909559200555058,
+                      -0.0944367992054187
+                    ]
+                  ],
+                  "bodyLiftM": 0.8398038673311334,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    75.20401356462543,
+                    123.54696344169042,
+                    -14.736915169168206
+                  ],
+                  "up": [
+                    0.03906668497095921,
+                    0.9992366056772439,
+                    0
+                  ],
+                  "right": [
+                    0.9992366056772439,
+                    -0.03906668497095921,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1681563924306397,
+                  "turnRad": -0.23469977675236892,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "47b1040a078719a978b37d1e643960bb6245d6494d6f910b7e0e17f6f870faf5"
+        },
+        {
+          "name": "seam-motion/frame-012",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 298049.8885275168,
+          "dimensions": {
+            "width": 960,
+            "height": 540
+          },
+          "camera": {
+            "position": [
+              0,
+              440,
+              800
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 1.6603773584905661
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 1056,
+              "height": 636
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11347.975589285063,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 298049.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -59.432672047012154,
+                  -0.949551037230855,
+                  -263.7939249960018
+                ],
+                "directionXZ": [
+                  0.9998211373982496,
+                  -0.01891277905729575
+                ],
+                "speedMps": 62.334027077772,
+                "strength": 0.5950875692410037
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5950875692410037
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -59.39052701268299,
+                    -1.9301228221697784,
+                    -47.482906499280325
+                  ],
+                  "up": [
+                    -0.033012152075515284,
+                    0.9994549503681209,
+                    0
+                  ],
+                  "right": [
+                    0.9994549503681209,
+                    0.033012152075515284,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.1288438083408109,
+                  "turnRad": 0.02012370138797521,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -97.92611326799961,
+                    -0.03588852729467362,
+                    14.939285892217846
+                  ],
+                  "up": [
+                    -0.05432414478873681,
+                    0.9985233534039013,
+                    0
+                  ],
+                  "right": [
+                    0.9985233534039013,
+                    0.05432414478873681,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.061948225816596515,
+                  "turnRad": -0.007939444959945044,
+                  "footOffsetsM": [
+                    [
+                      3.7197895112480683,
+                      -0.06099905794905103,
+                      0.09758727590890585
+                    ],
+                    [
+                      -8.039167322001905,
+                      4.084277815408932,
+                      -0.18538084564938276
+                    ]
+                  ],
+                  "bodyLiftM": 2.6671946550425805,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    73.53947359092093,
+                    124.03083516976335,
+                    -14.808889970763012
+                  ],
+                  "up": [
+                    0.03819367889393601,
+                    0.9992703552555469,
+                    0
+                  ],
+                  "right": [
+                    0.9992703552555469,
+                    -0.03819367889393601,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.174837332910978,
+                  "turnRad": -0.23249585331617317,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "591e3c6643e36c5a6b7a5484f08a60084e0acbf081979825b1103573befcba09"
+        }
+      ]
+    },
+    {
+      "aspect": "portrait",
+      "dimensions": {
+        "width": 540,
+        "height": 960
+      },
+      "errors": [],
+      "crossingMs": 297049.8885275168,
+      "frames": [
+        {
+          "name": "portrait-250ms",
+          "source": "application-stage",
+          "timeMs": 250.0000000000001,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              1822.8475861611728,
+              12358.741379147044
+            ],
+            "quaternion": [
+              -0.1360808220981529,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "requestedTimeMs": 250,
+          "usableAspect": 0.5625,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 533,
+            "logicalHeight": 848,
+            "backingWidth": 711,
+            "backingHeight": 1131,
+            "overscanPx": 64,
+            "transform": [
+              1.3333333730697632,
+              0,
+              0,
+              1.3333333730697632,
+              -85.33333587646484,
+              -85.33333587646484
+            ],
+            "nominalWidth": 405,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 9.649999023439412,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 250.0000000000001,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -51.48208236334092,
+                  -0.7478313412056824,
+                  -222.35768795900054
+                ],
+                "directionXZ": [
+                  0.9981448604771882,
+                  0.06088380328933379
+                ],
+                "speedMps": 62.559271850198755,
+                "strength": 0.47536144313238626
+              },
+              "waterResponse": {
+                "bass": 0.030952383725244746,
+                "rhythm": 0,
+                "melody": 0,
+                "wake": 0.47536144313238626
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -51.453677776425174,
+                    -1.4836988599035976,
+                    -40.024383832620096
+                  ],
+                  "up": [
+                    -0.028597257612188946,
+                    0.9995910147940817,
+                    0
+                  ],
+                  "right": [
+                    0.9995910147940817,
+                    0.028597257612188946,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.08975100112937871,
+                  "turnRad": 0.013489750772680748,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -177.9564976767227,
+                    -6.263739603462,
+                    15.360498468401957
+                  ],
+                  "up": [
+                    -0.09872528937280312,
+                    0.9951147256664712,
+                    0
+                  ],
+                  "right": [
+                    0.9951147256664712,
+                    0.09872528937280312,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.033480916232903696,
+                  "turnRad": 0.05078113336189897,
+                  "footOffsetsM": [
+                    [
+                      -1.859326964990947,
+                      -0.02046040987428621,
+                      -0.41685940092063173
+                    ],
+                    [
+                      4.339353385811277,
+                      4.796510654231243,
+                      0.5267462008050738
+                    ]
+                  ],
+                  "bodyLiftM": 1.5283390992567916,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    195.44785564619906,
+                    114.25266930458338,
+                    -11.48260827382662
+                  ],
+                  "up": [
+                    0.10157332584647215,
+                    0.9948280552319011,
+                    0
+                  ],
+                  "right": [
+                    0.9948280552319011,
+                    -0.10157332584647215,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": -0.0870471487386842,
+                  "turnRad": 0.17049819769732572,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "295257d3aa7b176e972c06d6df07de717a8bd8bb1259546dc0da819f823c4511"
+        },
+        {
+          "name": "portrait-9000ms",
+          "source": "application-stage",
+          "timeMs": 8999.99999999994,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              710.827613387055,
+              1767.2414763823392
+            ],
+            "quaternion": [
+              -0.13608082209815286,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "requestedTimeMs": 9000,
+          "usableAspect": 0.5625,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 533,
+            "logicalHeight": 848,
+            "backingWidth": 711,
+            "backingHeight": 1131,
+            "overscanPx": 64,
+            "transform": [
+              1.3333333730697632,
+              0,
+              0,
+              1.3333333730697632,
+              -85.33333587646484,
+              -85.33333587646484
+            ],
+            "nominalWidth": 405,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 347.3545526911596,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 8999.99999999994,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  136.66484300321056,
+                  -0.7515923391325103,
+                  -205.11928030250388
+                ],
+                "directionXZ": [
+                  0.9999693296146533,
+                  -0.007831974848075537
+                ],
+                "speedMps": 47.773134424417776,
+                "strength": 0.5463603846389047
+              },
+              "waterResponse": {
+                "bass": 0.06728606833958553,
+                "rhythm": 0.35812887247161534,
+                "melody": 0.025878745740316487,
+                "wake": 0.5463603846389047
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    136.47656821835787,
+                    -5.935068399834336,
+                    -36.9214704544507
+                  ],
+                  "up": [
+                    0.0758519877729311,
+                    0.9971190881489006,
+                    0
+                  ],
+                  "right": [
+                    0.9971190881489006,
+                    -0.0758519877729311,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": 0.0004863992968689862,
+                  "turnRad": 0.19747076794014365,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -94.99272335718709,
+                    0.02795000378068835,
+                    17.84754259342599
+                  ],
+                  "up": [
+                    -0.052699583114936256,
+                    0.9986104114916446,
+                    0
+                  ],
+                  "right": [
+                    0.9986104114916446,
+                    0.052699583114936256,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.03796477581869589,
+                  "turnRad": -0.0610147624252919,
+                  "footOffsetsM": [
+                    [
+                      4.808770579284674,
+                      4.462943578843615,
+                      0.8445215945462834
+                    ],
+                    [
+                      -2.0713640660580452,
+                      -0.07964826080692067,
+                      -0.9639918379872184
+                    ]
+                  ],
+                  "bodyLiftM": 1.472962571251848,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    266.63786994383247,
+                    129.82210502017506,
+                    -15.820314441747104
+                  ],
+                  "up": [
+                    0.13686684455608375,
+                    0.9905894542449263,
+                    0
+                  ],
+                  "right": [
+                    0.9905894542449263,
+                    -0.13686684455608375,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": -0.15842185812689424,
+                  "turnRad": 0.20210654076472143,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "eba5c523d3bf633497e0b13bedb1e1a56b727c2a7d3f9c096d8799dc4e143f85"
+        },
+        {
+          "name": "portrait-22000ms",
+          "source": "application-stage",
+          "timeMs": 21999.99999999966,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              1646.9059693930203,
+              10888.202728750759
+            ],
+            "quaternion": [
+              -0.13608082209815295,
+              0,
+              0,
+              0.9906977388977379
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "requestedTimeMs": 22000,
+          "usableAspect": 0.5625,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 533,
+            "logicalHeight": 848,
+            "backingWidth": 711,
+            "backingHeight": 1131,
+            "overscanPx": 64,
+            "transform": [
+              1.3333333730697632,
+              0,
+              0,
+              1.3333333730697632,
+              -85.33333587646484,
+              -85.33333587646484
+            ],
+            "nominalWidth": 405,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 848.5444934943228,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 21999.99999999966,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -51.94583314014525,
+                  -0.7646675706285395,
+                  -244.9595556466207
+                ],
+                "directionXZ": [
+                  0.9746902386363878,
+                  -0.22355969830660688
+                ],
+                "speedMps": 17.72138385116706,
+                "strength": 0.6454385273725496
+              },
+              "waterResponse": {
+                "bass": 0.9899601352302974,
+                "rhythm": 0.4150428038887431,
+                "melody": 0.26433694617516906,
+                "wake": 0.6454385273725496
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -51.91655877536598,
+                    -1.5138442603581552,
+                    -44.09272001639172
+                  ],
+                  "up": [
+                    -0.028854790610001513,
+                    0.9995836138407097,
+                    0
+                  ],
+                  "right": [
+                    0.9995836138407097,
+                    0.028854790610001513,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": 0.22871346106632928,
+                  "turnRad": -0.17525212886034067,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -128.57150879599286,
+                    -2.8523611324760623,
+                    14.821046917645797
+                  ],
+                  "up": [
+                    -0.07135959939358466,
+                    0.9974506542052028,
+                    0
+                  ],
+                  "right": [
+                    0.9974506542052028,
+                    0.07135959939358466,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.04416898772727682,
+                  "turnRad": 0.13272045070102026,
+                  "footOffsetsM": [
+                    [
+                      6.229227766495574,
+                      1.0451015581398684,
+                      -1.9743882593308049
+                    ],
+                    [
+                      -3.4294001777401064,
+                      -0.10701556553151814,
+                      2.253106171276155
+                    ]
+                  ],
+                  "bodyLiftM": 0.8830725617412031,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    94.02621316784497,
+                    118.13328669241764,
+                    -14.1276013183487
+                  ],
+                  "up": [
+                    0.0489608558521713,
+                    0.9988006981346294,
+                    0
+                  ],
+                  "right": [
+                    0.9988006981346294,
+                    -0.0489608558521713,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.08176019569980265,
+                  "turnRad": -0.14849281284808122,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "e7e5b1420a464210724b4e705478d905bc821103ba1d1aac7904e48a786c5bb5"
+        },
+        {
+          "name": "portrait-30000ms",
+          "source": "application-stage",
+          "timeMs": 29999.999999998498,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              710.827613387055,
+              1767.2414763823392
+            ],
+            "quaternion": [
+              -0.13608082209815286,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "requestedTimeMs": 30000,
+          "usableAspect": 0.5625,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 533,
+            "logicalHeight": 848,
+            "backingWidth": 711,
+            "backingHeight": 1131,
+            "overscanPx": 64,
+            "transform": [
+              1.3333333730697632,
+              0,
+              0,
+              1.3333333730697632,
+              -85.33333587646484,
+              -85.33333587646484
+            ],
+            "nominalWidth": 405,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 1156.3593302405022,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 29999.999999998498,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -99.22058723392043,
+                  -0.7787802388841323,
+                  -264.8107301090032
+                ],
+                "directionXZ": [
+                  0.9999558807952621,
+                  -0.00939342658307917
+                ],
+                "speedMps": 50.14566806428074,
+                "strength": 0.6235493689654574
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.6235493689654574
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -99.12744136981009,
+                    -3.5115508286305612,
+                    -47.66593141962058
+                  ],
+                  "up": [
+                    -0.05509463776942966,
+                    0.9984811369720789,
+                    0
+                  ],
+                  "right": [
+                    0.9984811369720789,
+                    0.05509463776942966,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.01541579298952879,
+                  "turnRad": -0.10678082937734638,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -209.6405993088667,
+                    -10.210401512727913,
+                    9.240358924524896
+                  ],
+                  "up": [
+                    -0.11633608767606071,
+                    0.9932099046547149,
+                    0
+                  ],
+                  "right": [
+                    0.9932099046547149,
+                    0.11633608767606071,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.09256467231487078,
+                  "turnRad": 0.11917652747433524,
+                  "footOffsetsM": [
+                    [
+                      -4.46315462671178,
+                      0.0032269385167025266,
+                      -0.7291025399158272
+                    ],
+                    [
+                      6.838817091514395,
+                      0.2348324231582113,
+                      1.021690682607371
+                    ]
+                  ],
+                  "bodyLiftM": 0.6724770314042865,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    70.7001074692958,
+                    128.68481636977685,
+                    -9.341273869220096
+                  ],
+                  "up": [
+                    0.03663255558770329,
+                    0.9993288026826375,
+                    0
+                  ],
+                  "right": [
+                    0.9993288026826375,
+                    -0.03663255558770329,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.22260748350750964,
+                  "turnRad": -0.23407072025430162,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "3c2af42f6adeab65e3ab4f191ab13ffd8933794fb9d6ffb25bc6bfa93eb0ca44"
+        },
+        {
+          "name": "portrait-48000ms",
+          "source": "application-stage",
+          "timeMs": 48000.000000002525,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              710.827613387055,
+              1767.2414763823392
+            ],
+            "quaternion": [
+              -0.13608082209815286,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "requestedTimeMs": 48000,
+          "usableAspect": 0.5625,
+          "active": true,
+          "reason": null,
+          "viewport": {
+            "logicalWidth": 533,
+            "logicalHeight": 848,
+            "backingWidth": 711,
+            "backingHeight": 1131,
+            "overscanPx": 64,
+            "transform": [
+              1.3333333730697632,
+              0,
+              0,
+              1.3333333730697632,
+              -85.33333587646484,
+              -85.33333587646484
+            ],
+            "nominalWidth": 405,
+            "nominalHeight": 720,
+            "pixelRatio": 1,
+            "presentationOffsetY": 0
+          },
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 1846.36893806331,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 48000.000000002525,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  93.5248488676289,
+                  -0.7490447820067988,
+                  -212.72460184611882
+                ],
+                "directionXZ": [
+                  0.9896213430943194,
+                  0.1436996774255093
+                ],
+                "speedMps": 19.57753829654934,
+                "strength": 0.47523671983491883
+              },
+              "waterResponse": {
+                "bass": 0.12737307823141306,
+                "rhythm": 0.00014326779140893335,
+                "melody": 0.22799290009139841,
+                "wake": 0.47523671983491883
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    93.44387212367162,
+                    -3.1771810733825987,
+                    -38.29042833230139
+                  ],
+                  "up": [
+                    0.05193487426124511,
+                    0.9986504738072619,
+                    0
+                  ],
+                  "right": [
+                    0.9986504738072619,
+                    -0.05193487426124511,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": 0.1827051820463781,
+                  "turnRad": 0.0561880186974664,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -183.2644057392249,
+                    -6.93451528245032,
+                    17.848026214008634
+                  ],
+                  "up": [
+                    -0.10167761384418203,
+                    0.994817401759214,
+                    0
+                  ],
+                  "right": [
+                    0.994817401759214,
+                    0.10167761384418203,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.03326641652584081,
+                  "turnRad": -0.20588615003333693,
+                  "footOffsetsM": [
+                    [
+                      4.028252250479065,
+                      -0.10256674721549852,
+                      2.702627697909165
+                    ],
+                    [
+                      -8.554643621874359,
+                      2.1813977022653708,
+                      -4.362408629793144
+                    ]
+                  ],
+                  "bodyLiftM": 1.480315965283534,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    270.1724126417871,
+                    101.69508228925179,
+                    -10.318357730282228
+                  ],
+                  "up": [
+                    0.14065686480062642,
+                    0.9900584055420459,
+                    0
+                  ],
+                  "right": [
+                    0.9900584055420459,
+                    -0.14065686480062642,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": -0.28355012173938166,
+                  "turnRad": 0.22355313356152506,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "5fe33bbc3818d9456313028b0142a3ad4a0d17ac33fb02a73a46806786d6a5ff"
+        },
+        {
+          "name": "portrait-seam-before",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 296949.8885275168,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              710.827613387055,
+              1767.2414763823392
+            ],
+            "quaternion": [
+              -0.13608082209815286,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11305.908596082098,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 296949.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -84.60906118999694,
+                  -1.661590226880313,
+                  -262.1614773548816
+                ],
+                "directionXZ": [
+                  0.9995553075655185,
+                  -0.029819240728124967
+                ],
+                "speedMps": 59.80375752361379,
+                "strength": 0.47043446989671667
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.47043446989671667
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -84.49983337552072,
+                    -3.647914738087138,
+                    -47.18906592387869
+                  ],
+                  "up": [
+                    -0.04698772651259854,
+                    0.9988954667817735,
+                    0
+                  ],
+                  "right": [
+                    0.9988954667817735,
+                    0.04698772651259854,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.193705816455817,
+                  "turnRad": -0.0215999785029498,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -105.62813411704393,
+                    -0.5086585864153221,
+                    14.976314182783229
+                  ],
+                  "up": [
+                    -0.058598019679464305,
+                    0.998281659698126,
+                    0
+                  ],
+                  "right": [
+                    0.998281659698126,
+                    0.058598019679464305,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.020569786719664473,
+                  "turnRad": 0.016720682247099855,
+                  "footOffsetsM": [
+                    [
+                      -4.620782240408117,
+                      7.143375980703107,
+                      -0.10785405711710058
+                    ],
+                    [
+                      1.9473301438023753,
+                      -0.08353336403749201,
+                      0.21229022811480433
+                    ]
+                  ],
+                  "bodyLiftM": 3.202000519699889,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    85.56643811200655,
+                    120.96357537364406,
+                    -14.308257669369668
+                  ],
+                  "up": [
+                    0.044499374240812954,
+                    0.9990094122140072,
+                    0
+                  ],
+                  "right": [
+                    0.9990094122140072,
+                    -0.044499374240812954,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1289687824668845,
+                  "turnRad": -0.24406647824192867,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "ba0b97c18b4f8e9c097cf63cdad7e1c1aec0947ad905b18571cae292e6427365"
+        },
+        {
+          "name": "portrait-seam-at",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297049.8885275168,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              710.827613387055,
+              1767.2414763823392
+            ],
+            "quaternion": [
+              -0.13608082209815286,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11309.733552923253,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297049.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -82.442702285679,
+                  -1.4586227036956725,
+                  -262.33714037646297
+                ],
+                "directionXZ": [
+                  0.9995852895199607,
+                  -0.02879668340792383
+                ],
+                "speedMps": 60.07265520291569,
+                "strength": 0.5071210807650848
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5071210807650848
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -82.34709714666032,
+                    -3.3447627776758964,
+                    -47.22068526776333
+                  ],
+                  "up": [
+                    -0.045785489389435316,
+                    0.9989512945891657,
+                    0
+                  ],
+                  "right": [
+                    0.9989512945891657,
+                    0.045785489389435316,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.1838163094817285,
+                  "turnRad": -0.017818525433308665,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -104.87633768488362,
+                    -0.46072247166557645,
+                    14.963520782315634
+                  ],
+                  "up": [
+                    -0.05818082709834847,
+                    0.9983060609643478,
+                    0
+                  ],
+                  "right": [
+                    0.9983060609643478,
+                    0.05818082709834847,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": -0.017509521298507587,
+                  "turnRad": 0.014330194089531588,
+                  "footOffsetsM": [
+                    [
+                      5.963011483919891,
+                      6.171512747136997,
+                      -0.22886371805949712
+                    ],
+                    [
+                      -2.6363496595164833,
+                      -0.13212270386588965,
+                      0.22870242365650392
+                    ]
+                  ],
+                  "bodyLiftM": 2.2684008457822604,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    84.37575724975103,
+                    121.22882123629597,
+                    -14.356154397888607
+                  ],
+                  "up": [
+                    0.043875307164265354,
+                    0.9990370150406047,
+                    0
+                  ],
+                  "right": [
+                    0.9990370150406047,
+                    -0.043875307164265354,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.1332925827553941,
+                  "turnRad": -0.24332537601330426,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "f11bef0d94f1bced59809a93d2e139612c28b2dbd30a86d07c8589c5ed78ee49"
+        },
+        {
+          "name": "portrait-seam-after",
+          "source": "direct-Journey-scene-fixture",
+          "timeMs": 297149.8885275168,
+          "dimensions": {
+            "width": 540,
+            "height": 960
+          },
+          "camera": {
+            "position": [
+              0,
+              710.827613387055,
+              1767.2414763823392
+            ],
+            "quaternion": [
+              -0.13608082209815286,
+              0,
+              0,
+              0.9906977388977382
+            ],
+            "fov": 50.895172619176186,
+            "aspect": 0.6285377358490566
+          },
+          "orbit": 1,
+          "reveal": 0,
+          "scene": {
+            "kind": "journey",
+            "contextLost": false,
+            "size": {
+              "width": 711,
+              "height": 1131
+            },
+            "stats": {
+              "submissions": 4,
+              "drawCalls": 38,
+              "triangles": 856617
+            },
+            "travelM": 11313.558373278296,
+            "orbit": {
+              "radiusM": 1800,
+              "circumferenceM": 11309.733552923255,
+              "depthScale": 0.18,
+              "reliefScale": 0.36
+            },
+            "lake": {
+              "centerX": 0,
+              "halfWidthM": 5654.8667764616275,
+              "centerZ": -310
+            },
+            "cast": {
+              "active": true,
+              "timeMs": 297149.8885275168,
+              "reducedMotion": false,
+              "reducedFlash": false,
+              "circular": true,
+              "swimmer": {
+                "positionM": [
+                  -80.24952627230708,
+                  -1.1244047028095754,
+                  -262.5074454060451
+                ],
+                "directionXZ": [
+                  0.9996140313822149,
+                  -0.027781077441238342
+                ],
+                "speedMps": 60.33404480705954,
+                "strength": 0.5656847048537098
+              },
+              "waterResponse": {
+                "bass": 0.9835201619684778,
+                "rhythm": 0.7654766034668966,
+                "melody": 0.3149184534911225,
+                "wake": 0.5656847048537098
+              },
+              "actors": [
+                {
+                  "id": "midio",
+                  "positionM": [
+                    -80.17283144171782,
+                    -2.9118762691578013,
+                    -47.25134017308812
+                  ],
+                  "up": [
+                    -0.04456830236138289,
+                    0.9990063395317491,
+                    0
+                  ],
+                  "right": [
+                    0.9990063395317491,
+                    0.04456830236138289,
+                    0
+                  ],
+                  "heightM": 40,
+                  "leanRad": -0.14676075116817863,
+                  "turnRad": -0.014030641649220067,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "broshi",
+                  "positionM": [
+                    -104.1344892407084,
+                    -0.4137908918226003,
+                    14.952711155064062
+                  ],
+                  "up": [
+                    -0.05776915868137227,
+                    0.9983299676485958,
+                    0
+                  ],
+                  "right": [
+                    0.9983299676485958,
+                    0.05776915868137227,
+                    0
+                  ],
+                  "heightM": 45,
+                  "leanRad": 0.026668391674205955,
+                  "turnRad": 0.01196705933622367,
+                  "footOffsetsM": [
+                    [
+                      10.08073721191455,
+                      -0.04337278498809449,
+                      -0.23165483800142667
+                    ],
+                    [
+                      -7.209883054955142,
+                      -0.19211657131861637,
+                      0.22573011282220296
+                    ]
+                  ],
+                  "bodyLiftM": 0.6186517150104858,
+                  "orbitRadiusM": 1800
+                },
+                {
+                  "id": "midasus",
+                  "positionM": [
+                    83.20363519477824,
+                    121.4970568767119,
+                    -14.403598126276842
+                  ],
+                  "up": [
+                    0.04326092528478412,
+                    0.9990638079439693,
+                    0
+                  ],
+                  "right": [
+                    0.9990638079439693,
+                    -0.04326092528478412,
+                    0
+                  ],
+                  "heightM": 36,
+                  "leanRad": 0.13758970916679422,
+                  "turnRad": -0.24251777973494773,
+                  "orbitRadiusM": 1800
+                }
+              ]
+            }
+          },
+          "rawPngSha256": "51df3c6c91690837a024a4cd606d2c73add13202c0e1eec8f58b61a739e81492"
+        }
+      ]
+    }
+  ],
+  "artifacts": {
+    "landscape-22000ms.jpg": {
+      "bytes": 87117,
+      "sha256": "fcd6426af5c06ad6497091d6fdf405ae66dc98cf536355582fb26d6f3b0d04a4"
+    },
+    "landscape-9000ms.jpg": {
+      "bytes": 96761,
+      "sha256": "aa65d7a51abfde0e29368481c23d14c08ed9644c1cdf94f4ba498415c7a24fc9"
+    },
+    "natural-landscape.png": {
+      "bytes": 581048,
+      "sha256": "6de0f876aed9dec69bccf2c0314be5c796b8145eb9f90943f94232209019ec39"
+    },
+    "natural-portrait.png": {
+      "bytes": 312512,
+      "sha256": "9e630321a68b08cbe67cb8c4c833a4191f698ef40af3145552a5474bd162bdb4"
+    },
+    "portrait-22000ms.jpg": {
+      "bytes": 64660,
+      "sha256": "90e32a28292ada813a482c42359253dac2f06c40a84bcde10ed7ecbc6b23a54f"
+    },
+    "portrait-9000ms.jpg": {
+      "bytes": 62431,
+      "sha256": "370447ffbdd5a23d7cd1183841f4caae7c32bdd911e850f6df294ccf5e68b07d"
+    },
+    "seam-contact.png": {
+      "bytes": 622658,
+      "sha256": "53564a16cfa6fa058d29af3f01cd9e2581782a28f97771c4899a1f999aac0c9a"
+    },
+    "seam-motion.mp4": {
+      "bytes": 242770,
+      "sha256": "d8713d9f0e6a35f4d0f1c9fea41556fb291f4e3347c2ed6c5da2eadca04ccd17"
+    }
+  }
+}

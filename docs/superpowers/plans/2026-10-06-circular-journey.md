@@ -29,7 +29,7 @@
 - [x] Fields worker: add optional `circular` state to `JourneyWorld.js` and periodic circular fields to it and `JourneyMountains.js`; retain default flat behavior. Verify heights, shores and slopes close at circumference and geography follows travel.
 - [x] Materials worker: project surface, water, trees, dressing and shadow geometry through the adapter; carry intrinsic material coordinates and radial slope; limit planar reflection to a tangent patch. Verify actual shader compilation and geometry closure with the integrated browser capture.
 - [x] Cast worker: add radial pose conversion and optional up basis to `CoveGL.js`, preserving vertical defaults and contact/shadow/companion semantics. Verify deterministic pose and foot reconstruction.
-- [ ] Root: integrate and capture actual rendered shots; resolve visual problems, run tests/lint/staging, obtain focused independent review and publish the branch/PR.
+- [x] Root: integrate and capture actual rendered shots; resolve visual problems, run tests/lint/staging, obtain focused independent review and publish the branch/PR.
 
 ## Shared interfaces
 
