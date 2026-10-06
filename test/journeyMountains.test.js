@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   MOUNTAIN_DIMENSIONS, JOURNEY_MOUNTAIN_GLSL, journeyMountainHeight,
 } from '../src/world/alpine/JourneyMountains.js';
-import { JOURNEY_ORBIT } from '../src/world/alpine/JourneyOrbit.js';
 
 const stateAt = (timeSec = 0, seed = 73, music = {}) => ({
   timeSec, travelM: 38 * timeSec + 24 * Math.sin(timeSec * .025), seed,
@@ -75,31 +74,6 @@ test('crests have fine erosion and irregularly spaced peaks instead of a repeate
     assert.ok(deviation(residual) > (layer === 1 ? 2.5 : 5), `layer ${layer} fine crest relief ${deviation(residual)}`);
     assert.ok(summits.length >= 8, `layer ${layer} has ${summits.length} local crests`);
     assert.ok(deviation(spacing) / mean(spacing) > .25, 'peak spacing is naturally irregular');
-  }
-});
-
-// Taking the maximum through depth must not erase every narrow summit: that
-// turns eroded faces into a rolling skyline once circular relief is reduced.
-test('circular silhouettes retain resolved asymmetric crags without excessive height or regular teeth', () => {
-  for (const seed of [73, 1811, 1021]) for (const layer of [1, 2]) {
-    const state = { ...stateAt(9, seed), circular: true }, peaks = [];
-    for (let x = -1800; x <= 1800; x += 20) peaks.push(crest(x, layer, state).y);
-    const summits = [], residual = [], asymmetries = [];
-    for (let i = 6; i < peaks.length - 6; i++) {
-      residual.push(peaks[i] - mean(peaks.slice(i - 5, i + 6)));
-      if (peaks[i] <= peaks[i - 1] || peaks[i] <= peaks[i + 1]) continue;
-      const left = peaks[i] - Math.min(...peaks.slice(i - 6, i));
-      const right = peaks[i] - Math.min(...peaks.slice(i + 1, i + 7));
-      if (Math.min(left, right) > (layer === 1 ? 12 : 20)) {
-        summits.push(i); asymmetries.push(Math.abs(left - right));
-      }
-    }
-    assert.ok(summits.length >= (layer === 1 ? 5 : 4), `seed ${seed}, layer ${layer}: only ${summits.length} resolved crags`);
-    assert.ok(deviation(residual) > (layer === 1 ? 6 : 11), 'the skyline retains relief at the 100 m scale');
-    const spacing = summits.slice(1).map((index, i) => index - summits[i]);
-    assert.ok(deviation(spacing) / mean(spacing) > .25, 'summits do not become regularly spaced teeth');
-    assert.ok(mean(asymmetries) > (layer === 1 ? 6 : 15), 'gullies descend differently on either side of summits');
-    assert.ok(Math.max(...peaks) < (layer === 1 ? 330 : 850), 'crags do not require taller overall terrain');
   }
 });
 
@@ -217,10 +191,8 @@ function shaderHeight(state) {
     .replace(/\b(?:float|int)\s+(\w+)/g, 'let $1')
     .replace(/\bfloat\(([^()]*)\)/g, 'Number($1)');
   return new Function('state', `
-    const { seed:uJourneySeed, energy:uJourneyEnergy,
+    const { travelM:uJourneyTravel, seed:uJourneySeed, energy:uJourneyEnergy,
       bass:uJourneyBass, melody:uJourneyMelody, pulse:uJourneyPulse, bands:uJourneyBands } = state;
-    const uJourneyOrbit = state.circular ? 1 : 0;
-    const uJourneyTravel = state.circular ? state.travelM % ${JOURNEY_ORBIT.circumferenceM} : state.travelM;
     const { sin, sqrt, min, max, abs } = Math;
     const clamp = (v,a,b) => min(b,max(a,v));
     const step = (edge,v) => v < edge ? 0 : 1;
@@ -232,8 +204,7 @@ function shaderHeight(state) {
 }
 
 test('the exported CPU and GLSL relief agree across layers, music and long travel', () => {
-  for (const state of [stateAt(), stateAt(153, 1811, loud), stateAt(43200, 17, loud), stateAt(172800),
-    { ...stateAt(0), circular: true }, { ...stateAt(172800, 1811, loud), circular: true }]) {
+  for (const state of [stateAt(), stateAt(153, 1811, loud), stateAt(43200, 17, loud), stateAt(172800)]) {
     const shader = shaderHeight(state);
     for (const x of [-6200, -511, 0, 173, 5700]) for (const layer of [1, 2]) {
       for (const v of [0, .11, .27, .51, .63, .85, 1]) {

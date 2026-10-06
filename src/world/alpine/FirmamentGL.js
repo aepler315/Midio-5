@@ -11,7 +11,7 @@ export function firmamentUniforms(THREE) {
     uFirmamentBody:{value:new THREE.Vector4(0,1,0,.015)},
     uFirmamentBodyColor:{value:new THREE.Vector3()},
     uFirmamentWeather:{value:new THREE.Vector2()},
-    uJourneyWeatherEnable:{value:0},uJourneyClearing:{value:0},uJourneyOrbit:{value:0},
+    uJourneyWeatherEnable:{value:0},uJourneyClearing:{value:0},
     uSkyProjectionInverse:{value:new THREE.Matrix4()},uSkyCameraWorld:{value:new THREE.Matrix4()},
   };
 }
@@ -44,10 +44,6 @@ export const FIRMAMENT_GLSL=/* glsl */`
   uniform vec3 uFirmamentBodyColor;
   uniform vec2 uFirmamentWeather;
   uniform float uJourneyWeatherEnable,uJourneyClearing;
-  #ifndef JOURNEY_ORBIT_UNIFORM
-  #define JOURNEY_ORBIT_UNIFORM
-  uniform float uJourneyOrbit;
-  #endif
   ${JOURNEY_WEATHER_GLSL}
   float skyHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uFirmamentSeed)*43758.5453);}
   float skySegment(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;return length(p-a-ab*clamp(dot(p-a,ab)/max(dot(ab,ab),.000001),0.0,1.0));}
@@ -114,9 +110,7 @@ export const FIRMAMENT_GLSL=/* glsl */`
   vec3 firmamentRadiance(vec3 direction,vec3 zenith,vec3 horizon,bool celestial){
     vec3 d=normalize(direction);
     vec2 angles=vec2(atan(d.x,d.z),asin(clamp(d.y,-1.0,1.0)));
-    // A circular world has space below the old valley horizon. Its opaque
-    // core supplies occlusion; stellar directions/artwork stay unchanged.
-    float skyAbove=mix(smoothstep(-.025,.025,d.y),1.0,step(.5,uJourneyOrbit));
+    float skyAbove=smoothstep(-.025,.025,d.y);
     float night=.32+.68*uFirmamentNight;
     vec3 base=mix(horizon,zenith,smoothstep(-.025,.22,d.y));
     float galaxy=exp(-pow((angles.y-.30-.09*sin(angles.x*2.0))/.10,2.0));

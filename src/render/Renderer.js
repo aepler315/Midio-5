@@ -148,12 +148,6 @@ function rangeViewWeight(presentation) {
 }
 
 export function presentationCamera(camera, presentation, biomes) {
-  // Journey fits its radial cast and planet in 3D. A second, history-dependent
-  // compositor zoom would move the stars and change framing after a seek.
-  const journeyView=presentation?.enabled&&presentation.journey&&presentation.captionViewFor?.();
-  if(journeyView&&presentation.scene?.isReady?.(journeyView.id)){
-    return {...camera,zoom:1,shakeX:0,shakeY:0,roll:0};
-  }
   const ice = glacialViewWeight(presentation, biomes);
   const range = rangeViewWeight(presentation);
   const weight = Math.max(ice, range);
@@ -260,8 +254,7 @@ export class Renderer {
     // alternative (translating to re-center) opens a gap on the opposite
     // edge for every non-tiled full-bleed layer (sky gradient, vignette),
     // which is a worse artifact than an off-center reveal.
-    const camera = presentationCamera(sim.camera, this.rangePresentation, sim.biomes);
-    const zoom = camera?.zoom || 1;
+    const zoom = (sim.camera && sim.camera.zoom) || 1;
     const baseStageW = zoom < 1 ? nominalW / zoom : nominalW;
     const baseStageH = zoom < 1 ? nominalH / zoom : nominalH;
     // Shake overscan: camera.shakeX/Y (impact shake, calm drift, beat sway)
@@ -298,6 +291,7 @@ export class Renderer {
     // removed, so the early-return now just blanks the screen. Removed.
 
     const pose = sim.lerpState(alpha);
+    const camera = presentationCamera(sim.camera, this.rangePresentation, sim.biomes);
     const biomeManager = sim.biomes || null;
     const narrative = sim.rangeNarrativeAt?.() || null;
     this.rangeListeningActive = !!narrative;
