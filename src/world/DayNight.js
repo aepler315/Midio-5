@@ -217,33 +217,42 @@ export function songSkyClock(durationMs) {
   });
 }
 
-/** Sunset -> moonlight -> sunrise for the Range. Twilight occupies the
- * first and last 15% of a known song; the moon owns the middle 70%.
- * Only a low slice of the sun's arc appears at either end. Hold sunrise
- * after the ending; without a known ending, repeat the moon's 150s arc. */
+/** A bounded afterglow shared by the physical bodies and the Journey's
+ * star/constellation reveal. The sun remains visible for the first 36%
+ * of twilight, then the moon rises at 60%, while the sky is still blue. */
+export const SONG_NIGHT_TWILIGHT = Object.freeze({ frac: .25, maxMs: 45000, sunsetFrac: .36, moonriseFrac: .6 });
+
+/** Sunset -> moonlight -> sunrise for the Range. The moon owns at least
+ * the middle 70% of a known song, with twilight bounded to 45s at either
+ * end. Only a low slice of the sun's arc appears. Hold sunrise after the
+ * ending; without a known ending, repeat the moon's existing 150s arc. */
 export function songNightClock(durationMs) {
   const known = Number.isFinite(durationMs) && durationMs > 0;
   const d = known ? durationMs : TARGET_CYCLE_MS;
-  const edge = .15, sunEdge = .025;
+  const sunEdge = .025;
+  const twilightMs = known ? Math.min(d * SONG_NIGHT_TWILIGHT.frac, SONG_NIGHT_TWILIGHT.maxMs) : 0;
+  const sunsetMs = twilightMs * SONG_NIGHT_TWILIGHT.sunsetFrac;
+  const moonriseMs = twilightMs * SONG_NIGHT_TWILIGHT.moonriseFrac;
+  const moonsetMs = d - moonriseMs, sunriseMs = d - sunsetMs;
   return Object.freeze({
     body: 'night', durationMs: d,
-    // Afterglow follows heard time rather than the short below-horizon arc.
-    twilightMs: known ? Math.min(d * .25, 45000) : 0,
+    twilightMs, sunsetMs, moonriseMs, moonsetMs, sunriseMs,
     phaseAt(ms) {
       const t = Math.max(0, Number.isFinite(ms) ? ms : 0);
-      const u = known ? clamp01(t / d) : (t % d) / d;
-      if (known && u < edge) {
-        const start = SUN_SET_PHASE - sunEdge;
-        return start + (0.5 - start) * (u / edge);
+      if (!known) {
+        const u = (t % d) / d;
+        const arc = u - SONG_SUN_LINGER * Math.sin(2 * Math.PI * u) / (2 * Math.PI);
+        return 0.5 + (MOON_SET_PHASE - 0.5) * arc;
       }
-      if (known && u > 1 - edge) {
-        const phase = MOON_SET_PHASE + (1 + sunEdge - MOON_SET_PHASE) * ((u - (1 - edge)) / edge);
-        return phase % 1;
+      // Ease at each horizon so both altitude and speed agree with the
+      // empty sky on the other side; a held opening/ending eases too.
+      if (t < sunsetMs) {
+        return SUN_SET_PHASE - sunEdge * (1 - smoothstep(0, sunsetMs, t));
       }
-      const moonU = known ? clamp01((u - edge) / (1 - 2 * edge)) : u;
-      // Linger at the horizons instead of popping up into the overhead sky.
-      const arc = moonU - SONG_SUN_LINGER * Math.sin(2 * Math.PI * moonU) / (2 * Math.PI);
-      return 0.5 + (MOON_SET_PHASE - 0.5) * arc;
+      if (t < moonriseMs) return SUN_SET_PHASE + CELESTIAL_GAP * smoothstep(sunsetMs, moonriseMs, t);
+      if (t <= moonsetMs) return 0.5 + (MOON_SET_PHASE - 0.5) * smoothstep(moonriseMs, moonsetMs, t);
+      if (t < sunriseMs) return MOON_SET_PHASE + (1 - MOON_SET_PHASE) * smoothstep(moonsetMs, sunriseMs, t);
+      return sunEdge * smoothstep(sunriseMs, d, t);
     },
   });
 }

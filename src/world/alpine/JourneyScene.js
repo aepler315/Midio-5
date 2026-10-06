@@ -1,32 +1,41 @@
 // A compact 3D traveling valley: sky, one mirror, one color/depth scene.
 // Land, water, forest roots and inhabitants share the same continuous field.
-import { JOURNEY_VIEW, sampleJourneyState, journeyGroundHeight, journeySurface } from './JourneyWorld.js';
+import { JOURNEY_VIEW, sampleJourneyState, journeyGroundHeight, journeySurface, journeyLakeShape } from './JourneyWorld.js';
 import { JOURNEY_CAST_LAYOUT, sampleJourneyCast } from './JourneyCast.js';
 import { journeyUniforms, journeyMaterial, journeyGrid, journeyForest, journeyWaterGeometry } from './JourneyMaterial.js';
-import { sceneUniforms, setLinearFromHex } from './TerrainMaterial.js';
+import { sceneUniforms, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
+import { loadMaterialPack, materialGpuBytes } from './MaterialPackage.js';
+import { sampleJourneySky } from './JourneySky.js';
 import { CoveGL } from './CoveGL.js';
 import { FirmamentGL } from './FirmamentGL.js';
 import { mirrorCameraFor, mirrorTextureMatrix } from './WaterMirror.js';
 import { scenicProjection } from './RangeFrame.js';
 import { applyCameraMoves, rangeUserCamera, NEUTRAL_MOVE } from './RangeCamera.js';
 
-const GPU_KEY='range:journey-geometry', TARGET_KEY='range:journey-targets';
-const GPU_BYTES=4*1024*1024;
+let nextSceneId=0;
+const GEOMETRY_BYTES=7*1024*1024, SHADOW_SIZE=1024;
+const MATERIAL_URL=new URL('../../assets/range/v2/materials/wet-conifer.json',import.meta.url).href;
 const refused=message=>Object.assign(new Error(message),{reason:'budget'});
 
 export class JourneyScene {
   constructor({THREE,residency=null,budget='desktop'}={}) {
     this.THREE=THREE;this.residency=residency;this.budget=budget;
+    // An aborted image decode may finish after a replacement scene is ready.
+    // Distinct ownership keeps that stale cleanup away from the new scene.
+    const instance=++nextSceneId;
+    this.gpuKey=`range:journey-geometry:${instance}`;
+    this.targetKey=`range:journey-targets:${instance}`;
     this.canvas=document.createElement('canvas');
     this.canvas.width=this.canvas.height=2;
-    const context=this.canvas.getContext('webgl2',{alpha:true,antialias:false,premultipliedAlpha:true});
+    const context=this.canvas.getContext('webgl2',{alpha:true,antialias:true,premultipliedAlpha:true});
     if(!context) throw new Error('WebGL2 unavailable');
-    this.renderer=new THREE.WebGLRenderer({canvas:this.canvas,context,alpha:true,antialias:false});
+    this.renderer=new THREE.WebGLRenderer({canvas:this.canvas,context,alpha:true,antialias:true});
     this.renderer.autoClear=false;
     this.renderer.outputColorSpace=THREE.LinearSRGBColorSpace;
     this.renderer.setPixelRatio(1);
-    this.camera=new THREE.PerspectiveCamera(44,1,1,9000);
+    this.camera=new THREE.PerspectiveCamera(44,1,1,16000);
     this.mirrorCamera=new THREE.PerspectiveCamera();
+    this.shadowCamera=new THREE.OrthographicCamera(-6200,6200,5100,-5100,1,23000);
     this.prepared=new Map();this.pending=new Map();
     this.size={width:0,height:0};this.contextLost=false;this.disposed=false;
     this.stats={submissions:0,drawCalls:0,triangles:0};
@@ -43,77 +52,122 @@ export class JourneyScene {
     if(this.disposed || !isCurrent(generation)) return;
     if(this.contextLost) throw Object.assign(new Error('context lost'),{reason:'context-lost'});
     if(this.isReady(view.id)) return;
-    const reservation=this.residency?.reserve({key:GPU_KEY,bytes:GPU_BYTES,owner:'range-journey',generation});
-    if(this.residency&&!reservation) throw refused('no room for journey geometry');
+    const previous=this.pending.get(view.id);
+    if(previous){
+      if(previous.generation===generation&&!previous.controller.signal.aborted)return previous.promise;
+      previous.controller.abort();
+      await previous.promise.catch(()=>{});
+      return this.prepare(view,{generation,isCurrent});
+    }
+    const task={generation,controller:new AbortController()};
+    this.pending.set(view.id,task);
+    task.promise=this._prepare(view,{generation,isCurrent,signal:task.controller.signal}).finally(()=>{
+      if(this.pending.get(view.id)===task)this.pending.delete(view.id);
+    });
+    return task.promise;
+  }
+  async _prepare(view,{generation,isCurrent,signal}) {
+    let reservation;
+    const current=()=>!signal.aborted&&!this.disposed&&!this.contextLost&&isCurrent(generation);
     const THREE=this.THREE;
-    const p={view,generation,gpuKey:GPU_KEY,meshes:[],disposed:false};
+    const p={view,generation,gpuKey:this.gpuKey,meshes:[],depthMaterials:[],disposed:false};
     const dispose=()=>{
-      if(p.disposed) return;p.disposed=true;
+      if(p.disposed)return;p.disposed=true;
       for(const mesh of p.meshes){mesh.geometry.dispose();mesh.material.dispose();}
-      p.cast?.dispose();p.firmament?.dispose();p.scene?.clear();
-      this.prepared.delete(view.id);
+      for(const material of p.depthMaterials)material.dispose();
+      p.textures?.dispose();
+      for(const image of p.pack?.images.values()||[])image.close?.();
+      p.cast?.dispose();p.firmament?.dispose();p.scene?.clear();p.shadowScene?.clear();
+      if(this.prepared.get(view.id)===p)this.prepared.delete(view.id);
     };
+    p.dispose=dispose;
     try {
-      p.uniforms=sceneUniforms(THREE,{...journeyUniforms(THREE),uHeightRange:{value:new THREE.Vector2(0,1200)}});
-      p.scene=new THREE.Scene();
+      p.pack=await loadMaterialPack(MATERIAL_URL,{signal,onManifest:manifest=>{
+        if(!current())throw Object.assign(new Error('stale journey'),{reason:'aborted'});
+        // Retain decoded data for lazy upload and context restoration. Reserve
+        // it together with mipmapped textures, mesh arrays and decode scratch.
+        const unique=[...new Map(Object.values(manifest.textures).map(t=>[t.sha256,t])).values()];
+        const decoded=unique.reduce((sum,t)=>sum+t.width*t.height*4,0);
+        const scratch=Math.max(...unique.map(t=>t.bytes));
+        reservation=this.residency?.reserve({key:this.gpuKey,bytes:GEOMETRY_BYTES+materialGpuBytes(manifest)+decoded+scratch,
+          owner:'range-journey',generation});
+        if(this.residency&&!reservation)throw refused('no room for journey materials');
+      }});
+      if(!current())throw Object.assign(new Error('stale journey'),{reason:'aborted'});
+      p.uniforms=sceneUniforms(THREE,{...journeyUniforms(THREE),uHeightRange:{value:new THREE.Vector2(0,2300)}});
+      p.textures=createMaterialTextures(THREE,p.pack);
+      applyMaterial(p.uniforms,p.pack,p.textures);
+      p.scene=new THREE.Scene();p.shadowScene=new THREE.Scene();
       for(const layer of [2,1,0]) {
-        const mesh=new THREE.Mesh(journeyGrid(THREE),journeyMaterial(THREE,p.uniforms,'surface',layer));
+        const span=layer===0?8400:16000;
+        const geometry=layer===0?journeyGrid(THREE,512,24,8400):journeyGrid(THREE);
+        const mesh=new THREE.Mesh(geometry,journeyMaterial(THREE,p.uniforms,'surface',layer,span));
         mesh.frustumCulled=false;p.meshes.push(mesh);p.scene.add(mesh);
+        const material=journeyMaterial(THREE,p.uniforms,'shadow',layer,span);
+        p.depthMaterials.push(material);
+        const depth=new THREE.Mesh(geometry,material);depth.frustumCulled=false;p.shadowScene.add(depth);
       }
-      const waterGeometry=journeyWaterGeometry(THREE);
-      p.water=new THREE.Mesh(waterGeometry,journeyMaterial(THREE,p.uniforms,'water'));
+      p.water=new THREE.Mesh(journeyWaterGeometry(THREE),journeyMaterial(THREE,p.uniforms,'water'));
       p.water.frustumCulled=false;p.meshes.push(p.water);p.scene.add(p.water);
       const forest=journeyForest(THREE,p.uniforms);
       forest.frustumCulled=false;p.meshes.push(forest);p.scene.add(forest);
       p.cast=new CoveGL(THREE,p.uniforms,JOURNEY_CAST_LAYOUT);
-      // This scene uses ordinary depth ownership instead of a separate
-      // terrain/character depth prepass. The contact shadow remains blended.
       p.cast.group.traverse(node=>{
-        if(node.material && !node.material.transparent) node.material.depthWrite=true;
+        if(node.material && !node.material.transparent)node.material.depthWrite=true;
       });
       p.scene.add(p.cast.group);
       p.firmament=new FirmamentGL(THREE,p.uniforms);
-      p.dispose=dispose;
-      if(reservation&&!this.residency.commit(reservation,p,dispose)) return;
+      if(reservation&&!this.residency.commit(reservation,p,dispose))return;
       this.prepared.set(view.id,p);
     } catch(error) {
-      dispose();if(reservation)this.residency.release(GPU_KEY);throw error;
+      dispose();if(reservation)this.residency.release(this.gpuKey);
+      if(current())throw error;
     }
   }
 
   isReady(id){return !this.contextLost && !this.disposed && this.prepared.has(id);}
   pinView(ids,extraKeys=[]){
-    this.residency?.pin([...(ids?[GPU_KEY]:[]),TARGET_KEY,...extraKeys]);
+    this.residency?.pin([...(ids?[this.gpuKey]:[]),this.targetKey,...extraKeys]);
   }
   release(id){
+    this.pending.get(id)?.controller.abort();
     const p=this.prepared.get(id);if(!p)return;
     if(this.residency)this.residency.release(p.gpuKey);else p.dispose();
   }
   _releaseTargets(){
-    if(this.residency)this.residency.release(TARGET_KEY);else this.mirror?.dispose();
-    this.mirror=null;this.size={width:0,height:0};
+    if(this.residency)this.residency.release(this.targetKey);else this.targets?.dispose();
+    this.targets=null;this.mirror=null;this.shadow=null;this.size={width:0,height:0};
   }
   resize({widthPx,heightPx,pixelRatio=1}){
-    // Bound fragment work on high-DPI phones and exports. The compositor
-    // scales this backing surface into its requested logical viewport.
     const maxPixels=this.budget==='mobile'?1280*720:1920*1080;
     const scale=Math.min(1,Math.sqrt(maxPixels/(widthPx*heightPx)));
     const width=Math.max(2,Math.round(widthPx*scale)),height=Math.max(2,Math.round(heightPx*scale));
     this.pixelRatio=pixelRatio;
-    if(this.mirror&&width===this.size.width&&height===this.size.height)return;
+    if(this.mirror&&this.shadow&&width===this.size.width&&height===this.size.height)return;
     this._releaseTargets();
     const mw=Math.max(2,Math.ceil(width/2)),mh=Math.max(2,Math.ceil(height/2));
-    const reservation=this.residency?.reserve({key:TARGET_KEY,bytes:width*height*8+mw*mh*8,owner:'range-journey-targets',protect:[GPU_KEY]});
+    // Multisample color/depth and resolved color, mirror color/depth, shadow
+    // color/depth. Driver overhead is outside this ownership estimate.
+    const samples=this.renderer.getContext().getParameter(this.renderer.getContext().SAMPLES)||1;
+    const bytes=width*height*(8*samples+4)+mw*mh*8+SHADOW_SIZE*SHADOW_SIZE*8;
+    const reservation=this.residency?.reserve({key:this.targetKey,bytes,owner:'range-journey-targets',protect:[this.gpuKey]});
     if(this.residency&&!reservation)throw refused('no room for journey render targets');
+    const targets={dispose:()=>{
+      targets.mirror?.dispose();targets.shadow?.dispose();targets.shadow?.depthTexture?.dispose();
+      if(this.targets===targets){this.targets=null;this.mirror=null;this.shadow=null;}
+    }};
+    this.targets=targets;
     try {
       const THREE=this.THREE;
-      this.mirror=new THREE.WebGLRenderTarget(mw,mh,{depthBuffer:true,stencilBuffer:false,
+      targets.mirror=new THREE.WebGLRenderTarget(mw,mh,{depthBuffer:true,stencilBuffer:false,
         minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+      targets.shadow=new THREE.WebGLRenderTarget(SHADOW_SIZE,SHADOW_SIZE,{depthBuffer:true,stencilBuffer:false,
+        minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
+      targets.shadow.depthTexture=new THREE.DepthTexture(SHADOW_SIZE,SHADOW_SIZE,THREE.UnsignedIntType);
+      this.mirror=targets.mirror;this.shadow=targets.shadow;
       this.renderer.setSize(width,height,false);this.size={width,height};
-      if(reservation)this.residency.commit(reservation,this.mirror,target=>{
-        target.dispose();if(this.mirror===target)this.mirror=null;
-      });
-    } catch(error){this._releaseTargets();throw error;}
+      if(reservation)this.residency.commit(reservation,targets,entry=>entry.dispose());
+    } catch(error){targets.dispose();this._releaseTargets();throw error;}
   }
 
   movedPose(view,frame){
@@ -133,7 +187,7 @@ export class JourneyScene {
       return y;
     };
     const pose=applyCameraMoves(rail,NEUTRAL_MOVE,frame.userCamera,{heightAt,waterLevelM:0,
-      sampleStepM:24,cone:{tanX,tanY},heightRangeM:[0,1300]});
+      sampleStepM:24,cone:{tanX,tanY},heightRangeM:[0,2300]});
     return {rail,pose,proj,tanX,tanY};
   }
   _frame(frame,p){
@@ -150,6 +204,7 @@ export class JourneyScene {
     for(const [key,value] of Object.entries({Time:state.timeSec,Travel:state.travelM,Seed:state.seed,
       Energy:state.energy,Bass:state.bass,Melody:state.melody,Pulse:state.pulse}))u[`uJourney${key}`].value=value;
     u.uJourneyBands.value.set(state.bands);
+    const lake=journeyLakeShape(state);u.uJourneyLake.value.set(lake.centerX,lake.halfWidthM);
     u.uCameraPos.value.copy(camera.position);u.uTime.value=state.timeSec;
     const sky=frame.light.sky;
     setLinearFromHex(u.uSkyZenith.value,sky.top);
@@ -162,7 +217,9 @@ export class JourneyScene {
     setLinearFromHex(u.uLightColor.value,celestial.colorHex||'#c6d7ff').multiplyScalar(celestial.intensity??.5);
     u.uAmbientScale.value=3;u.uAirDensity.value=.00008;u.uExposure.value=2.3;
     u.uFullSky.value=1;u.uFirmamentTime.value=state.timeSec;
-    u.uFirmamentSeed.value=state.seed*.01;u.uFirmamentNight.value=frame.light.night01;
+    p.sky=sampleJourneySky({timeMs:frame.timeMs,durationMs:frame.durationMs,light:frame.light,reducedMotion:frame.reducedMotion});
+    u.uFirmamentSeed.value=state.seed*.01;u.uFirmamentNight.value=p.sky.night01;
+    u.uFirmamentLayers.value.set(p.sky.stars01,p.sky.constellations01,p.sky.aurora01);
     u.uFirmamentFlash.value=frame.reducedFlash?.18:1;
     u.uFirmamentBands.value.set(.45+.55*state.energy,state.melody,state.bass);
     u.uFirmamentMotion.value.set(state.pulse,state.bass,state.melody,frame.reducedMotion?0:1);
@@ -191,9 +248,16 @@ export class JourneyScene {
     this._render(p.firmament.scene,this.camera);return this.canvas;
   }
   renderPartition(frame,pass,id){
-    const p=this.prepared.get(id);if(pass!=='far'||!p||!this.mirror||this.contextLost)return null;
+    const p=this.prepared.get(id);if(pass!=='far'||!p||!this.mirror||!this.shadow||this.contextLost)return null;
     this._frame(frame,p);
     const r=this.renderer,u=p.uniforms;
+    const lightTarget=new this.THREE.Vector3(0,350,-3000);
+    this.shadowCamera.position.copy(lightTarget).addScaledVector(u.uLightDir.value,11000);
+    this.shadowCamera.lookAt(lightTarget);this.shadowCamera.updateMatrixWorld();
+    mirrorTextureMatrix(this.THREE,this.shadowCamera,u.uJourneyShadowMatrix.value);
+    u.uJourneyShadow.value=this.shadow.depthTexture;
+    r.setRenderTarget(this.shadow);r.setClearColor(0,0);r.clear();
+    this._render(p.shadowScene,this.shadowCamera);
     mirrorCameraFor(this.THREE,this.camera,0,this.mirrorCamera,1);
     mirrorTextureMatrix(this.THREE,this.mirrorCamera,u.uMirrorMatrix.value);
     p.water.visible=false;u.uClipBelow.value=.1;
@@ -206,14 +270,14 @@ export class JourneyScene {
   }
   snapshot(){
     const p=this.prepared.get(JOURNEY_VIEW.id);
-    return {kind:'journey',prepared:[...this.prepared.keys()],pending:[],contextLost:this.contextLost,
-      size:{...this.size},stats:{...this.stats},travelM:p?.state?.travelM??0,cast:p?.pose??null};
+    return {kind:'journey',prepared:[...this.prepared.keys()],pending:[...this.pending.keys()],contextLost:this.contextLost,
+      size:{...this.size},stats:{...this.stats},travelM:p?.state?.travelM??0,cast:p?.pose??null,sky:p?.sky??null,lake:p?.state?journeyLakeShape(p.state):null};
   }
   dispose(){
     if(this.disposed)return;this.disposed=true;
     this.canvas.removeEventListener('webglcontextlost',this._lost);
     this.canvas.removeEventListener('webglcontextrestored',this._restored);
-    for(const id of [...this.prepared.keys()])this.release(id);
+    for(const id of new Set([...this.prepared.keys(),...this.pending.keys()]))this.release(id);
     this._releaseTargets();this.renderer.dispose();this.renderer.forceContextLoss?.();
   }
 }

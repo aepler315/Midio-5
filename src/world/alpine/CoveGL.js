@@ -28,6 +28,7 @@ export const COVE_VERT = /* glsl */`
   uniform float uHead;
   uniform float uTail;
   uniform float uJaw;
+  uniform float uStroke;
   uniform float uWalking;
   uniform vec3 uFrontFoot;
   uniform vec3 uRearFoot;
@@ -59,6 +60,12 @@ export const COVE_VERT = /* glsl */`
       p.xy = headPivot + rotate2(p.xy - headPivot, uHead);
       n.xy = rotate2(n.xy, uHead);
     }
+    // Midio's tapered lower body flexes through each swimming stroke.
+    // The same deformation reaches the color and both occlusion passes.
+    float stroke = uStroke * (1.0 - smoothstep(-0.12, 0.36, position.y));
+    vec2 swimPivot = vec2(0.0, 0.24);
+    p.xy = swimPivot + rotate2(p.xy - swimPivot, stroke);
+    n.xy = rotate2(n.xy, stroke);
     if (uWalking > 0.5) {
       // The retained Broshi glyph's two ground spikes act as feet. Only the
       // lower body bends; planted tips stay on the bank while the torso
@@ -94,6 +101,7 @@ export const COVE_FRAG = /* glsl */`
   uniform vec3 uEdgeColor;
   uniform float uGlow;
   uniform float uShadow;
+  uniform float uShadowOpacity;
   uniform float uClipBelow;
   uniform vec3 uLightDir;
   uniform vec3 uLightColor;
@@ -118,7 +126,7 @@ export const COVE_FRAG = /* glsl */`
   void main() {
     if (vWorld.y < uClipBelow) discard;
     if (uShadow > 0.5) {
-      outColor = vec4(0.025, 0.04, 0.045, 0.28 * pow(max(0.0, 1.0 - vShade), 2.0));
+      outColor = vec4(0.025, 0.04, 0.045, 0.28 * uShadowOpacity * pow(max(0.0, 1.0 - vShade), 2.0));
       return;
     }
     vec3 n = normalize(vNormal);
@@ -368,7 +376,7 @@ export class CoveGL {
       uSize: { value: size }, uLean: { value: 0 }, uTurn: { value: 0 }, uGrounded: { value: grounded ? 1 : 0 },
       uHead: { value: 0 }, uTail: { value: 0 }, uJaw: { value: 0 }, uTailPivot: { value: new THREE.Vector2(-26 / 34, 16 / 34) },
       uWalking: { value: 0 }, uFrontFoot: { value: new THREE.Vector3() }, uRearFoot: { value: new THREE.Vector3() },
-      uBodyLift: { value: 0 },
+      uBodyLift: { value: 0 }, uStroke: { value: 0 }, uShadowOpacity: { value: 1 },
       uJawPivot: { value: new THREE.Vector2(10 / 34, 13 / 34) }, uGlow: { value: 0 }, uShadow: { value: shadow ? 1 : 0 },
       uBodyColor: { value: new THREE.Color(colors[0]) }, uEdgeColor: { value: new THREE.Color(colors[1]) },
     };
@@ -420,6 +428,7 @@ export class CoveGL {
       u.uHead.value = finite(actor.headAngle);
       u.uTail.value = finite(actor.tailAngle);
       u.uJaw.value = unit(actor.jawOpen);
+      u.uStroke.value = finite(actor.strokeAngle);
       u.uGlow.value = unit(actor.glow);
       u.uWalking.value = id === 'broshi' && actor.footOffsetsM?.length === 2 ? 1 : 0;
       for (const [index, name] of ['uFrontFoot', 'uRearFoot'].entries()) {
@@ -441,9 +450,12 @@ export class CoveGL {
     const walker = this.actors.broshi;
     this._visible(this.contact, walker.mesh.visible);
     if (walker.mesh.visible) {
+      const actor = pose.actors.find(actor => actor.id === 'broshi');
       this.contact.uniforms.uRoot.value.copy(walker.uniforms.uRoot.value);
       this.contact.uniforms.uTurn.value = walker.uniforms.uTurn.value;
-      this.contact.uniforms.uSize.value = walker.uniforms.uSize.value / this.layout.heights.broshi;
+      this.contact.uniforms.uSize.value = walker.uniforms.uSize.value / this.layout.heights.broshi
+        * Math.max(.1, finite(actor.contactScale, 1));
+      this.contact.uniforms.uShadowOpacity.value = unit(finite(actor.contactOpacity, 1));
     }
   }
 

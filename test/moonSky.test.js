@@ -35,9 +35,12 @@ test('songs start at sunset, spend most of their time under the moon, and end at
     assert.deepEqual(sky.dayNight(duration * 2, clock), end, 'song end holds at sunrise');
     assert.deepEqual(sky.dayNight(-1000, clock), start);
     // The dawn phase wrap must not cause a jump in altitude or sky brightness.
-    for (let i = 1; i <= 1000; i++) {
-      const a = sky.dayNight(duration * (i - 1) / 1000, clock);
-      const b = sky.dayNight(duration * i / 1000, clock);
+    // Twilight is bounded in real time on long songs. Sample at a
+    // sub-frame/100ms cadence, rather than stretching each step with it.
+    const sampleMs = Math.min(duration / 1000, 100);
+    for (let timeMs = sampleMs; timeMs <= duration; timeMs += sampleMs) {
+      const a = sky.dayNight(timeMs - sampleMs, clock);
+      const b = sky.dayNight(timeMs, clock);
       assert.ok(Math.abs(a.sunAlt - b.sunAlt) < .01);
       assert.ok(Math.abs(a.moonAlt - b.moonAlt) < .01);
       assert.ok(Math.abs(a.night - b.night) < .01);

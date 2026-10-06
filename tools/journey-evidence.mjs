@@ -37,6 +37,16 @@ try{
   for(const time of [48000,58500]){
     const sample=await draw(time,path.join(out,`still-${time}.png`));delete sample.png;report.stills.push(sample);
   }
+  const sunset=report.stills.find(f=>f.timeMs===250).scene;
+  const night=report.frames[0].scene;
+  const sunrise=report.stills.find(f=>f.timeMs===58500).scene;
+  assert.equal(sunset.sky.phase,'sunset');assert.equal(sunset.sky.constellations01,0);
+  assert.equal(sunset.sky.stars01,0);assert.equal(sunset.sky.aurora01,0);
+  assert.equal(night.sky.phase,'moonlight');assert.equal(night.sky.constellations01,1);
+  assert.equal(night.sky.stars01,1);assert.equal(night.sky.aurora01,1);
+  assert.equal(sunrise.sky.phase,'sunrise');assert.equal(sunrise.sky.constellations01,0);
+  assert.ok(Math.abs(night.lake.halfWidthM-sunrise.lake.halfWidthM)>100);
+  report.checks.skyPhases=true;report.checks.basinReshapes=true;
   await fs.writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));
   await page.evaluate(()=>window.__SMW.seek(9000));
   const seek=await draw(9000,path.join(out,'seek-9000.png'));

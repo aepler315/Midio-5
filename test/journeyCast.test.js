@@ -4,7 +4,7 @@ import * as THREE from '../src/vendor/range/three-range.module.js';
 import { sceneUniforms } from '../src/world/alpine/TerrainMaterial.js';
 import { CoveGL } from '../src/world/alpine/CoveGL.js';
 import { JOURNEY_CAST_LAYOUT, sampleJourneyCast } from '../src/world/alpine/JourneyCast.js';
-import { sampleJourneyState, journeyNearShore, journeyFarShore, journeyGroundHeight } from '../src/world/alpine/JourneyWorld.js';
+import { JOURNEY_VIEW, sampleJourneyState, journeyNearShore, journeyFarShore, journeyGroundHeight } from '../src/world/alpine/JourneyWorld.js';
 
 const ids = ['midio', 'broshi', 'midasus'];
 const actor = (snapshot, id) => snapshot.actors.find(value => value.id === id);
@@ -20,9 +20,18 @@ const frame = (timeMs = 0, options = {}) => {
 };
 const poses = snapshot => snapshot.actors.map(({ glow, activity, pitchActivity, pitch01, source, contributors, sharedSource, ...pose }) => pose);
 const camera = new THREE.PerspectiveCamera(44, 640 / 360, .1, 10000);
-camera.position.set(0, 155, 820); camera.lookAt(0, 125, -1200); camera.updateMatrixWorld();
+camera.position.set(...JOURNEY_VIEW.camera.eyeStartM); camera.lookAt(...JOURNEY_VIEW.camera.targetStartM); camera.updateMatrixWorld();
 const project = p => { const v = new THREE.Vector3(...p).project(camera); return [v.x * 320, v.y * 180]; };
 const distance = (a, b) => Math.hypot(...a.map((value, i) => value - b[i]));
+const range = values => Math.max(...values) - Math.min(...values);
+const feetAt = (broshi, state) => broshi.footOffsetsM.map((foot, index) => {
+  const base = (index === 0 ? 9 : -13) / 34 * broshi.heightM;
+  const x = base + foot[0], z = foot[2], c = Math.cos(broshi.turnRad), s = Math.sin(broshi.turnRad);
+  const worldX = broshi.positionM[0] + c * x - s * z;
+  const worldZ = broshi.positionM[2] - s * x - c * z;
+  return { world: [worldX + state.travelM, worldZ],
+    lift: broshi.positionM[1] + foot[1] - journeyGroundHeight(worldX, worldZ, state) };
+});
 
 test('the three roots visibly travel at normal output size while fixed glyph sizes remain legible', () => {
   const start = frame(), one = frame(1000), four = frame(4000);
@@ -38,6 +47,27 @@ test('the three roots visibly travel at normal output size while fixed glyph siz
   }
 });
 
+test('silence retains energetic bounds, swimming strokes, low leaps, dives, and broad aerial rolls', () => {
+  const samples = Array.from({ length: 1441 }, (_, i) => frame(i * 1000 / 60));
+  const broshi = samples.map(snapshot => actor(snapshot, 'broshi'));
+  const midio = samples.map(snapshot => actor(snapshot, 'midio'));
+  const midasus = samples.map(snapshot => actor(snapshot, 'midasus'));
+  assert.ok(range(broshi.map(value => value.bodyLiftM)) > 5.5, 'runner has a visible spring in every stride');
+  assert.ok(range(broshi.map(value => value.tailAngle)) > .9, 'tail sweeps emphatically without music');
+  assert.ok(range(broshi.map(value => value.headAngle)) > .3, 'head counters the running gait');
+  assert.ok(Math.max(...midio.map(value => value.positionM[1])) > 11, 'a low leap clears the surface');
+  assert.ok(Math.min(...midio.map(value => value.positionM[1])) < -7, 'the swimmer dives between leaps');
+  assert.ok(range(midio.map(value => value.strokeAngle)) > .85, 'the body flexes through a strong swimming stroke');
+  assert.ok(range(midio.map(value => value.leanRad)) > 1.3, 'swimming tilts follow the action');
+  assert.ok(range(midasus.map(value => value.positionM[0])) > 275, 'flight makes a broad horizontal sweep');
+  assert.ok(range(midasus.map(value => value.positionM[1])) > 95, 'flight rises and swoops');
+  assert.ok(range(midasus.map(value => value.leanRad)) > 2, 'aerial rolls remain lively without music');
+  for (const snapshot of samples) {
+    const midio = actor(snapshot, 'midio');
+    if (midio.positionM[1] > 11) assert.ok(snapshot.swimmer.strength < .1, 'airborne swimmer does not emit a surface wake');
+  }
+});
+
 test('moving shores contain the swimmer and support the walker throughout full valley travel', () => {
   for (const seed of [0, 1, 71]) {
     for (let timeMs = 0; timeMs <= 240000; timeMs += 211) {
@@ -48,7 +78,8 @@ test('moving shores contain the swimmer and support the walker throughout full v
       const [x, , z] = midio.positionM;
       assert.ok(z < journeyNearShore(x, state) - midio.heightM, 'swimmer clears near bank');
       assert.ok(z > journeyFarShore(x, state) + midio.heightM, 'swimmer clears far bank');
-      assert.ok(Math.abs(midio.positionM[1]) < 4, 'swimmer remains buoyant at water surface');
+      assert.ok(Math.abs(x) < 220, 'swimmer remains in the open middle of the finite basin');
+      assert.ok(midio.positionM[1] > -15 && midio.positionM[1] < 20, 'leaps and dives remain close to the lake');
       assert.equal(broshi.positionM[1], journeyGroundHeight(broshi.positionM[0], broshi.positionM[2], state));
       const inland = broshi.positionM[2] - journeyNearShore(broshi.positionM[0], state);
       assert.ok(inland >= 35 && inland <= 60, 'walker follows bank');
@@ -59,23 +90,30 @@ test('moving shores contain the swimmer and support the walker throughout full v
   }
 });
 
-test('the walking gait transfers support between two feet on the actual bank', () => {
-  let frontLift = 0, rearLift = 0;
+test('the running gait plants both feet in turn with brief bounded airborne skips', () => {
+  let frontLift = 0, rearLift = 0, airborneSamples = 0, plantedSamples = 0, fadedSamples = 0;
   for (let timeMs = 3000; timeMs <= 6000; timeMs += 1000 / 60) {
     const state = sampleJourneyState({ timeMs });
     const broshi = actor(frame(timeMs, { state }), 'broshi');
-    const lifts = broshi.footOffsetsM.map((foot, index) => {
-      const base = (index === 0 ? 9 : -13) / 34 * broshi.heightM;
-      const x = base + foot[0], z = foot[2], c = Math.cos(broshi.turnRad), s = Math.sin(broshi.turnRad);
-      const worldX = broshi.positionM[0] + c * x - s * z;
-      const worldZ = broshi.positionM[2] - s * x - c * z;
-      return broshi.positionM[1] + foot[1] - journeyGroundHeight(worldX, worldZ, state);
-    });
+    const lifts = feetAt(broshi, state).map(foot => foot.lift);
     assert.ok(lifts.every(lift => lift > -1e-7), 'feet never penetrate the bank');
-    assert.ok(Math.min(...lifts) < 1e-7, 'one foot always bears weight');
+    assert.ok(lifts.every(lift => lift < 22), 'running feet stay close to the bank');
+    if (Math.min(...lifts) > 1e-7) {
+      airborneSamples++;
+      if (Math.min(...lifts) > 2) {
+        assert.ok(broshi.contactOpacity < .85, 'contact shadow softens during flight');
+        assert.ok(broshi.contactScale > 1, 'shadow spreads while the runner is airborne');
+        fadedSamples++;
+      }
+    } else {
+      assert.equal(broshi.contactOpacity, 1, 'planted steps keep a firm contact shadow');
+      plantedSamples++;
+    }
     frontLift = Math.max(frontLift, lifts[0]); rearLift = Math.max(rearLift, lifts[1]);
   }
-  assert.ok(frontLift > 5 && rearLift > 5, 'both feet make a visible swing');
+  assert.ok(frontLift > 10 && rearLift > 10, 'both feet make a strong running swing');
+  assert.ok(airborneSamples > 30 && airborneSamples < 65, 'short flight phases punctuate grounded steps');
+  assert.ok(plantedSamples > 100 && fadedSamples > 20, 'both stance and airborne contact are exercised');
 });
 
 test('supporting feet stay fixed in world space while the bank scrolls past the camera', () => {
@@ -83,23 +121,34 @@ test('supporting feet stay fixed in world space while the bank scrolls past the 
   for (let timeMs = 3000; timeMs < 5000; timeMs += 1000 / 60) {
     const state = sampleJourneyState({ timeMs });
     const broshi = actor(frame(timeMs, { state }), 'broshi');
-    const feet = broshi.footOffsetsM.map((foot, index) => {
-      const phase = (broshi.stridePhase / (Math.PI * 2) + index * .5) % 1;
-      const base = (index === 0 ? 9 : -13) / 34 * broshi.heightM;
-      const x = base + foot[0], z = foot[2], c = Math.cos(broshi.turnRad), s = Math.sin(broshi.turnRad);
-      return { phase, world: [broshi.positionM[0] + state.travelM + c * x - s * z,
-        broshi.positionM[2] - s * x - c * z] };
-    });
+    const feet = feetAt(broshi, state);
     if (previous) feet.forEach((foot, index) => {
       const old = previous[index];
-      if (foot.phase < .61 && old.phase < foot.phase) {
+      if (foot.lift < 1e-7 && old.lift < 1e-7) {
         assert.ok(distance(foot.world, old.world) < 1e-7, 'supporting foot must not slide along the bank');
         checked++;
       }
     });
     previous = feet;
   }
-  assert.ok(checked > 80, 'exercise multiple supports for both feet');
+  assert.ok(checked > 70, 'exercise multiple supports for both feet');
+});
+
+test('planted feet stay fixed while musical envelopes change the basin width', () => {
+  let previous, checked = 0;
+  for (let i = 0; i < 120; i++) {
+    const timeMs = 3000 + i * 1000 / 60, music = song(i / 119);
+    const state = sampleJourneyState({ timeMs, music });
+    const feet = feetAt(actor(frame(timeMs, { state, music }), 'broshi'), state);
+    if (previous) feet.forEach((foot, index) => {
+      if (foot.lift < 1e-7 && previous[index].lift < 1e-7) {
+        assert.ok(distance(foot.world, previous[index].world) < 1e-7, 'a changing lake cannot drag the planted foot');
+        checked++;
+      }
+    });
+    previous = feet;
+  }
+  assert.ok(checked > 70);
 });
 
 test('source pitch confidence steers distinct gestures without muting inertial envelopes', () => {
@@ -144,11 +193,11 @@ test('sixty-Hz musical ramps keep the path and articulation continuous, even lat
       const snapshot = frame(timeMs, { music: song(level, .5 + .5 * Math.sin(i * .006)) });
       if (previous) for (const value of snapshot.actors) {
         const before = actor(previous, value.id);
-        assert.ok(distance(value.positionM, before.positionM) < 1.6, `${value.id} continuous root`);
-        for (const key of ['leanRad', 'turnRad', 'tailAngle', 'headAngle', 'jawOpen'])
-          assert.ok(Math.abs(value[key] - before[key]) < .08, `${value.id} continuous ${key}`);
+        assert.ok(distance(value.positionM, before.positionM) < 2.3, `${value.id} continuous root`);
+        for (const key of ['leanRad', 'turnRad', 'tailAngle', 'headAngle', 'jawOpen', 'strokeAngle'])
+          assert.ok(Math.abs(value[key] - before[key]) < .1, `${value.id} continuous ${key}`);
         if (value.footOffsetsM) value.footOffsetsM.forEach((foot, index) =>
-          assert.ok(distance(foot, before.footOffsetsM[index]) < 3, 'smooth contact/swing transition'));
+          assert.ok(distance(foot, before.footOffsetsM[index]) < 4, 'smooth contact/swing transition'));
       }
       previous = snapshot;
     }
@@ -166,14 +215,30 @@ test('walking contact follows Broshi through forward, held, and reverse poses', 
   const at = (x, z, turnRad) => ({ actors: [{ id: 'broshi', positionM: [x, 7, z], heightM: 45, turnRad }] });
   try {
     const early = at(-135, 260, .3), late = at(-60, 280, -.2);
+    late.actors[0].contactOpacity = .4;
+    late.actors[0].contactScale = 1.2;
     for (const frame of [early, late, late, early]) {
       cove.update(frame);
       assert.deepEqual(cove.contact.uniforms.uRoot.value.toArray(), frame.actors[0].positionM);
       assert.equal(cove.contact.uniforms.uTurn.value, frame.actors[0].turnRad);
+      assert.equal(cove.contact.uniforms.uShadowOpacity?.value, frame.actors[0].contactOpacity ?? 1);
+      assert.equal(cove.contact.uniforms.uSize.value, frame.actors[0].contactScale ?? 1);
       assert.equal(cove.contact.mesh.visible, true);
     }
     cove.update({ actors: [] });
     assert.equal(cove.contact.mesh.visible, false, 'missing walker leaves no orphan contact shadow');
+  } finally { cove.dispose(); }
+});
+
+test('swimming strokes reach color and both depth passes and reset for old cove poses', () => {
+  const cove = new CoveGL(THREE, sceneUniforms(THREE, {}), layout);
+  try {
+    cove.update({ actors: [{ id: 'midio', positionM: [0, 4, 0], strokeAngle: .45 }] });
+    const record = cove.actors.midio;
+    assert.equal(record.uniforms.uStroke?.value, .45);
+    for (const pass of record.depth) assert.equal(pass.material.uniforms.uStroke, record.uniforms.uStroke);
+    cove.update({ actors: [{ id: 'midio', positionM: [0, 0, 0] }] });
+    assert.equal(record.uniforms.uStroke.value, 0);
   } finally { cove.dispose(); }
 });
 
