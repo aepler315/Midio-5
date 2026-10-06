@@ -226,10 +226,10 @@ async function capture(page, output, name) {
       hasAudioBuffer: !!app?.audioEngine?.sourceNode?.buffer, frames: app?.sim?.timeMs,
       workers: window.__VERSION_SMOKE.workerUrls, canvasCount: document.querySelectorAll('#stage').length };
   });
-  assert.ok(result.pixels.colors > 16 && result.pixels.litFraction > 0.02, `${name}: blank scene`);
-  assert.equal(result.canvasCount, 1, `${name}: multiple active application canvases`);
-  assert.ok(result.audioContexts.filter(s => s !== 'closed').length <= 1, `${name}: multiple audio engines`);
   result.pixelHash = hash(result.pixels.image); delete result.pixels.image;
+  // Persist the actual fallback/blank frame too. Failed assertions must not
+  // erase the runtime reason or scene state that explains their failure.
+  await fs.writeFile(path.join(output, `${name}.json`), JSON.stringify(result, null, 2));
   await page.screenshot({ path: path.join(output, `${name}.png`) });
   return result;
 }
@@ -341,6 +341,15 @@ async function runPrefix(options, audit, prefix, wavs) {
     await page.goto(hosted.url); await page.locator('#versionPrevious').waitFor();
     const desktop = await page.locator('#versionPrevious').boundingBox(); assert.ok(desktop.width >= 64 && desktop.height >= 64, 'desktop arrow target');
     let song = await importAudio(page, [wavs[0]], options.timeout);
+    // Adapter readiness establishes audio/source ownership. The normal live
+    // draw loop must also finish asynchronous Range preparation before we
+    // pause it; paused playback does not advance that initial render work.
+    try {
+      await page.waitForFunction(() => window.__SMW?.rangeState?.active === true, null, { timeout: options.timeout });
+    } catch (error) {
+      report.initialRenderFailure = await capture(page, output, 'initial-render-not-ready');
+      throw error;
+    }
     await page.evaluate(async () => { await window.__MIDIO_VERSION_ADAPTER.setPaused(true); await window.__MIDIO_VERSION_ADAPTER.seek(6200); });
     song = await state(page); assert.ok(song.positionMs > 5000, 'pilot position is nonzero');
     const liveIndex = audit.manifest.entries.findIndex(e => e.id === LIVE_ID);
@@ -350,6 +359,10 @@ async function runPrefix(options, audit, prefix, wavs) {
       await page.evaluate(() => window.__SMW?.rangeReady?.({ timeoutMs: 120000 }));
       await page.waitForTimeout(250);
       const frame = await capture(page, output, `${String(report.traversal.length).padStart(2, '0')}-${direction}-${entry.id}`);
+      report.traversal.push({ id: entry.id, direction, sourceSha: entry.sourceSha, frame });
+      assert.ok(frame.pixels.colors > 16 && frame.pixels.litFraction > 0.02, `${entry.id}: blank scene`);
+      assert.equal(frame.canvasCount, 1, `${entry.id}: multiple active application canvases`);
+      assert.ok(frame.audioContexts.filter(s => s !== 'closed').length <= 1, `${entry.id}: multiple audio engines`);
       const expectedScene = index < 3 ? 'RangeScene' : 'JourneyScene';
       assert.equal(frame.worldKind, 'alpine', `${entry.id}: wrong world`);
       assert.equal(frame.sceneClass, expectedScene, `${entry.id}: expected actual historical ${expectedScene}`);
@@ -358,7 +371,6 @@ async function runPrefix(options, audit, prefix, wavs) {
       const meta = await page.locator('#midio-version-metadata').textContent();
       assert.equal(JSON.parse(meta).currentId, entry.id);
       assert.ok(frame.workers.every(url => url.startsWith(new URL(entry.entryPath, hosted.url).href)), `${entry.id}: workers escaped selected build`);
-      report.traversal.push({ id: entry.id, direction, sourceSha: entry.sourceSha, frame });
     };
     await captureCheckpoint('initial');
     // First reach oldest, then cover every scene forward and backward.
