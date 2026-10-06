@@ -29,11 +29,12 @@ the `audio-smoke` job.
 | `audio-smoke` | Playback/lighting/shading/seek/world/export/car/URL-loader smokes against source, then `stage:site` + `test:bootstrap` against that artifact | each script exits 0; staged Browse opens a real chooser; artifacts under `.smoke/` | Chromium can boot the actual public file set, upload a short synthetic fixture, pick a world, draw, seek, and start an export | Watchability, identity, other engines, songs longer than the fixture |
 | `world-chooser` | `npm run test:chooser`, `test:chooser-keyboard` | exit 0 | Pointer and keyboard world selection in Chromium | Visual distinctness of the nine worlds |
 | `range-v2-pilot` | `stage:site`, then `tools/range-scene-smoke.mjs --suite pilot --view teton-jackson-lake` against `_site` with `--expect-sha $(git rev-parse HEAD)` | exit 0: served modules and assets match the checkout; v2 active at every pilot frame (no legacy fallback); each v2 frame composed and not blank (≥ 64 colours, ≥ 30% lit on a 160×90 probe); no page or shader errors | The default Range renderer boots from the public artifact and composes one approved view on the export clock under SwiftShader | Frame time on any device, travel between views, other views, mobile budgets, lifecycle/motion/export suites (release checks) |
+| `version-browser` | `stage:versions`, then `test:versions -- --site _site` | exit 0; pinned source/output hashes, eight actual scenes, transport handoffs and archive budget verified under `/` and `/Midio-5/` | Historical builds run from the emitted artifact; Chromium exercises browser IndexedDB and version navigation | Firefox/Safari, physical mobile devices, production deployment duration |
 
-GitHub Pages deploy stages one artifact with `stage:site`, runs bootstrap and
-audio playback against that exact directory, uploads it, and deploys only
+GitHub Pages deploy stages one artifact with `stage:versions`, runs bootstrap,
+audio playback and version browsing against that artifact, uploads it, and deploys only
 after the reusable validation workflow succeeds. It publishes `index.html`,
-`src/`, `soundfonts/`, `CNAME`, and `.nojekyll`; it does not publish tools,
+`src/`, `soundfonts/`, generated `versions/`, root-only `CNAME` and `.nojekyll`; it does not publish tools,
 tests, raw terrain inputs, or the Soulseek bridge.
 
 ## Thresholds that are measured today
