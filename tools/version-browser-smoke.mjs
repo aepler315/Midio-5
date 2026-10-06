@@ -319,11 +319,29 @@ async function readRecords(page) {
   });
 }
 
+async function configureRunningDisplay(page, report) {
+  // The all-checkpoint portrait/desktop scene captures keep their default
+  // resolution. Running software-GL checks use the app's actual controls to
+  // reduce frame pressure while keeping native Range/Journey rendering.
+  await wake(page); await page.locator('#displaySettingsBtn').click();
+  await page.locator('#displaySettingsDialog[open]').waitFor({ state: 'visible' });
+  await page.locator('#stageRes').selectOption('360');
+  await page.locator('#stageFps').selectOption('30');
+  await page.locator('#displaySettingsClose').click();
+  const configured = await state(page);
+  assert.equal(configured.settings.stageRes, '360'); assert.equal(configured.settings.stageFps, '30');
+  report.compatibilityDisplay = { selectedThrough: 'Display settings UI', stageRes: '360', stageFps: '30',
+    appliesTo: 'running restore, mobile, recording and export phases', reason: 'Bounded native scene rendering on Chromium software GL',
+    renderer: await page.evaluate(() => ({ mode: window.__SMW?.rangeState?.mode, sceneClass: window.__SMW?.sim?.biomes?.rangePresentation?.scene?.constructor.name })) };
+  assert.equal(report.compatibilityDisplay.renderer.mode, 'v2');
+  console.log('Version-browser smoke: actual Display controls selected native 360p / 30fps for running phases');
+}
+
 async function mobileChecks(page, output, report) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' }); await wake(page);
   const geometry = await page.evaluate(() => {
-    const ids = ['versionPrevious', 'versionNext', 'pauseBtn', 'recordBtn', 'fullscreenBtn', 'btBtn'];
+    const ids = ['versionPrevious', 'versionNext', 'pauseBtn', 'recordBtn', 'fullscreenBtn', 'btLatencyBtn', 'displaySettingsBtn', 'calibrateBtn'];
     return ids.map(id => { const el = document.getElementById(id); if (!el || !el.getClientRects().length) return null; const r = el.getBoundingClientRect(); return { id, x: r.x, y: r.y, width: r.width, height: r.height }; }).filter(Boolean);
   });
   for (const b of geometry.filter(b => b.id.startsWith('version'))) {
@@ -435,12 +453,15 @@ async function runPrefix(options, audit, prefix, wavs) {
     assert.equal(new Set(pictures).size, 3, 'live and rejected circular experiments must produce different rendered frames');
     await wake(page); await page.locator('#versionReturnLive').click();
     await page.waitForURL(hosted.url + '*', { timeout: options.timeout }); await waitReady(page, options.timeout);
+    await configureRunningDisplay(page, report);
     const beforeRun = await state(page);
     await page.locator('#pauseBtn').click();
     await page.waitForFunction(p => window.__MIDIO_VERSION_ADAPTER.getState().positionMs > p + 250, beforeRun.positionMs);
     song = await state(page); assert.equal(song.paused, false);
     await switchVersion(page, 'next', audit.manifest.entries[liveIndex + 1], options.timeout);
     await verifyRestore(page, song, report.restores); report.checks.push('running restore before resumed clock');
+    const restoredDisplay = (await state(page)).settings;
+    assert.equal(restoredDisplay.stageRes, '360'); assert.equal(restoredDisplay.stageFps, '30');
     await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true));
     song = await state(page); await page.reload(); await waitReady(page, options.timeout); await verifyRestore(page, song, report.restores);
     await page.goBack(); await waitReady(page, options.timeout);
