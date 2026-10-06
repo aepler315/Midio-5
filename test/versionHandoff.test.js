@@ -266,8 +266,8 @@ test('a connection arriving after a blocked open is rejected closes instead of l
  const store=createVersionHandoffStore({indexedDB,sessionStorage:storage(),locks:null,lifecycle:null,heartbeat:false});await assert.rejects(store.tabId(),/blocked/);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(closed,1);await store.dispose();
 });
 test('paused restore waits for its own scene then redraws before successful ownership publication',async()=>{
- for(const replaced of [false,true]) {
-  const calls=[];let ready;const waiting=new Promise(resolve=>{ready=resolve;});const selection={id:1};let current=true;
+ for(const replaced of [false,true,'rejected','ownedRejected']) {
+  const calls=[];let ready,rejectReady;const waiting=new Promise((resolve,reject)=>{ready=resolve;rejectReady=reject;});const selection={id:1};let current=true;
   const ctx=vm.createContext({loadGen:1,sourceSelection:{isCurrent:()=>current},resolveWorldId:x=>x,stopWorldPreview(){},closeWorldChooser(){},lastWorldId:null,readBulkExportFromUrl:()=>false,running:true,sim:{},canvas:{focus(){}},muteTimelineSynth:false,lastAudioBuffer:null,
    audioEngine:{ctx:{state:'running',async suspend(){this.state='suspended';calls.push('suspend');}},resume(){throw new Error('audible restore');},playBuffer(){assert.equal(ctx.audioEngine.ctx.state,'suspended');}},
    rangePresentation:{whenReady(){calls.push('wait');return waiting;}},renderer:{draw(){assert.equal(ctx.audioEngine.ctx.state,'suspended');calls.push('draw');}},startTimeline(){calls.push('timeline');},versionSourceStarted(){calls.push('ready');},
@@ -275,7 +275,9 @@ test('paused restore waits for its own scene then redraws before successful owne
   vm.runInContext(mainFunctions(['startConfirmedWorld']),ctx);
   const starting=ctx.startConfirmedWorld({data:{durationMs:20000},extra:{versionSelection:selection,versionSource:{kind:'demo'},restoreIntent:{positionMs:8000,seed:123,paused:true}}},'range');
   await new Promise(resolve=>setTimeout(resolve,0));assert.ok(calls.includes('wait'));assert.equal(calls.includes('ready'),false);
-  if(replaced)current=false;ready();await starting;
+  if(replaced && replaced !== 'ownedRejected')current=false;
+  if(replaced==='rejected' || replaced==='ownedRejected')rejectReady(new Error('Old readiness failed'));else ready();
+  if(replaced==='ownedRejected')await assert.rejects(starting,/Old readiness failed/);else await starting;
   assert.deepEqual(calls.filter(x=>x==='draw'||x==='ready'),replaced?[]:['draw','ready']);
  }
 });

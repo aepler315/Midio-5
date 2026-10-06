@@ -1921,7 +1921,12 @@ async function startConfirmedWorld(pending, id) {
     // A paused frame cannot advance the renderer's asynchronous preparation.
     // Wait for this version's own presentation, then paint it at the held
     // transport offset before advertising readiness to the navigator.
-    if (rangePresentation) await rangePresentation.whenReady();
+    try {
+      if (rangePresentation) await rangePresentation.whenReady();
+    } catch (error) {
+      if (generation !== loadGen || (selection && !sourceSelection.isCurrent(selection))) return;
+      throw error;
+    }
     if (generation !== loadGen || (selection && !sourceSelection.isCurrent(selection)) || !running || !sim) return;
     renderer.draw(sim, 1);
   }
