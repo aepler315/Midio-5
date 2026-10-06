@@ -17,7 +17,7 @@
 import { BABY_STAR_MESH } from '../render/meshes.js';
 import { computeRestLengths, drawMeshPart, drawGlowHalo } from '../render/MeshDrawer.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
-import { clamp, mulberry32 } from '../utils/math.js';
+import { mulberry32 } from '../utils/math.js';
 
 export const BABY_COUNT = 3;
 export const NEST_RADIUS = 22;

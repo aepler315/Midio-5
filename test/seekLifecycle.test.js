@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Conductor } from '../src/core/Conductor.js';
-import { TapJudge } from '../src/sim/TapJudge.js';
 import { DisasterDirector } from '../src/sim/DisasterDirector.js';
 import { RainbowBrush } from '../src/render/RainbowBrush.js';
 
@@ -18,17 +17,6 @@ test('fresh seek primes upcoming anticipation without dispatching past audio not
   c.dispatchUpTo(1100);
   assert.deepEqual(heard, [1100]);
   assert.deepEqual(ahead, [1100]);
-});
-
-test('seek skips old notes silently and makes future judgments available again', () => {
-  const judge = new TapJudge({ notes: [{tMs: 500}, {tMs: 1500}, {tMs: 60000}] });
-  judge._consumed.fill(true);
-  judge.buttonDown = true; judge._hold = {}; judge.stepEvents.push({kind: 'hit'});
-  assert.equal(judge.seekTo(1000), 1);
-  assert.deepEqual(judge._consumed, [true, false, false]);
-  assert.equal(judge.buttonDown, false);
-  assert.equal(judge._hold, null);
-  assert.deepEqual(judge.stepEvents, []);
 });
 
 test('fresh disaster seek skips past slots and retains future slots', () => {

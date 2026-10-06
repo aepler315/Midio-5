@@ -194,10 +194,6 @@ function activeConfigSync() {
   return { mode: 'free' };
 }
 
-function activeConfig() {
-  return activeConfigSync();
-}
-
 export async function setConfig(cfg) {
   const resetDirect = () => {
     directClient = null;
@@ -717,7 +713,7 @@ async function downloadViaDirect(cfg, item) {
 
 
 function mimeFor(name) {
-  const ext = (name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
+  const ext = (name.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
   return (
     {
       mp3: 'audio/mpeg',

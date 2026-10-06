@@ -16,12 +16,6 @@
 import { mulberry32, clamp01 } from '../utils/math.js';
 import { farShoreHeight01, FAR_SHORE_TILE_PX } from './FarShore.js';
 
-// A mirage does not creep past like scenery, it simply hangs there -- but
-// it IS the far shore, so it rides the shore's own (nearly static) parallax
-// rather than a separate, disconnected crawl. BiomeManager now passes the
-// same FAR_SHORE_PARALLAX scroll it uses for the shoreline itself.
-export const MIRAGE_PARALLAX = 0.012;
-
 // The silhouette tiles over the same span as the far shore it mirrors.
 export const MIRAGE_TILE_PX = FAR_SHORE_TILE_PX;
 

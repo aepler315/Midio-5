@@ -10,11 +10,10 @@
 //
 // Everything is seeded (mulberry32) so the composition is deterministic
 // per page load and unit-testable without a canvas.
-import { mulberry32, clamp } from '../utils/math.js';
+import { mulberry32 } from '../utils/math.js';
 
 export const STAR_COUNT = 140;
 export const NEBULA_COUNT = 3;
-const STAR_TWINKLE_PERIOD_SEC = 3.2;
 
 /** Build the deterministic starfield + nebula layout for a given seed. */
 export function buildBackdropLayout(seed = 1, w = 1280, h = 720) {
@@ -53,7 +52,6 @@ export class TitleBackdrop {
 
   /** Draw one frame at time tSec. Pure-ish: only reads this.layout + tSec. */
   draw(ctx, tSec) {
-    const { width: w, height: h } = this;
     ctx.save();
     this._drawNebula(ctx, tSec);
     this._drawStars(ctx, tSec);

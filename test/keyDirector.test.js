@@ -34,7 +34,7 @@ function feed(kd, t0, durationMs, ctxFn) {
 
 test('palette rotation eases toward 0 for tonic 0 (C) and stays there', () => {
   const kd = new KeyDirector();
-  const t = feed(kd, 0, 20000, () => ({ tonic: 0, tonicConfidence: 1 }));
+  feed(kd, 0, 20000, () => ({ tonic: 0, tonicConfidence: 1 }));
   assert.ok(Math.abs(kd.paletteRotation) < 0.01, `expected ~0, got ${kd.paletteRotation}`);
 });
 
@@ -112,14 +112,13 @@ test('a candidate below the 15% confidence margin never accumulates toward a mod
   const kd = new KeyDirector();
   let t = feed(kd, 0, 9000, () => ({ tonic: 0, tonicConfidence: 0.9 }));
   let fires = 0;
-  const t2 = (() => {
+  (() => {
     let tt = t, elapsed = 0;
     while (elapsed < 10000) {
       tt += STEP_MS; elapsed += STEP_MS;
       kd.update(tt, STEP_MS / 1000, { tonic: 7, tonicConfidence: 0.1 }); // below CANDIDATE_MARGIN
       if (kd.justKeyChange) fires++;
     }
-    return tt;
   })();
   assert.equal(fires, 0, 'low-confidence candidates must never confirm a modulation');
 });

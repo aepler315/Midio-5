@@ -20,8 +20,7 @@
 // So: a URL. `loadAudioFiles()` in main.js wants objects with `name`,
 // `size` and `arrayBuffer()`, which is exactly a `File` -- so a fetched
 // blob wrapped as a File plays, analyses and caches identically to a drop,
-// and nothing downstream of the picker changes. (`JamendoSource.js` already
-// reaches the pipeline this way.)
+// and nothing downstream of the picker changes.
 //
 // MIXED CONTENT, AND WHY LOOPBACK IS THE USEFUL CASE. supermaudio.com is
 // https, and an https page may not fetch http:// subresources. The one

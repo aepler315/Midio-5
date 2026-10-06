@@ -419,8 +419,6 @@ export class ParticleField {
           ctx.beginPath();
           ctx.moveTo(p.origin.x, p.origin.y);
           const tt = clamp01(p.t);
-          const qx = p.origin.x + (p.ctrl.x - p.origin.x) * tt;
-          const qy = p.origin.y + (p.ctrl.y - p.origin.y) * tt;
           ctx.quadraticCurveTo(p.ctrl.x, p.ctrl.y, p.origin.x + (p.end.x - p.origin.x) * tt, p.origin.y + (p.end.y - p.origin.y) * tt);
           ctx.stroke();
           break;

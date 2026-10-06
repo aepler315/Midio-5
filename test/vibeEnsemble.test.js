@@ -127,7 +127,7 @@ test('swell(i) rises above 1 during a build-up and is beat-phased (theta-depende
   const ens = new EnsembleDirector(3);
   let t = 0;
   for (let i = 0; i < 3 * 120; i++) { ens.update(t, STEP, { valence: 0.2, epic: 0.3 }, 500, null, 1); t += 8.33; }
-  let sawAbove1 = false, sawDistinctValues = false;
+  let sawAbove1 = false;
   const seen = new Set();
   for (let i = 0; i < 60; i++) {
     ens.update(t, STEP, { valence: 0.2, epic: 0.3 }, 500, null, 1);
@@ -136,7 +136,7 @@ test('swell(i) rises above 1 during a build-up and is beat-phased (theta-depende
     if (s > 1.001) sawAbove1 = true;
     seen.add(s.toFixed(3));
   }
-  sawDistinctValues = seen.size > 1;
+  const sawDistinctValues = seen.size > 1;
   assert.ok(sawAbove1, 'swell should rise above 1 during a sustained build-up');
   assert.ok(sawDistinctValues, 'swell should vary over time as theta advances (beat-phased, not a flat multiplier)');
 });

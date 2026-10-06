@@ -16,7 +16,6 @@ function str(s, len) {
   for (let i = 0; i < len; i++) a.push(i < s.length ? s.charCodeAt(i) : 0);
   return a;
 }
-function padEven(arr) { if (arr.length & 1) arr.push(0); return arr; }
 function cat(...arrs) { return arrs.flat(); }
 
 export function buildMinimalSf2(name = 'TestFont') {
@@ -30,8 +29,6 @@ export function buildMinimalSf2(name = 'TestFont') {
 
   // --- INFO/INAM ---
   const inamData = str(name, name.length + 1); // null-terminated
-  const inamChunk = padEven(cat(fourcc('INAM'), u32(inamData.length), inamData).slice());
-  // Actually padEven mutates in place, let me be explicit:
   const inamRaw = cat(fourcc('INAM'), u32(inamData.length), inamData);
   if (inamRaw.length & 1) inamRaw.push(0);
   const infoBody = cat(fourcc('INFO'), inamRaw);

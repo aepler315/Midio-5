@@ -9,15 +9,9 @@
 // catches it in milliseconds. So does `no-unused-private-class-members` for
 // the `_mirageRecipe` field orphaned alongside it.
 //
-// ABOUT THE BASELINE. Turning a linter on over 55k lines of code written
-// without one surfaces 129 pre-existing findings, none of them urgent and
-// none of them what this config is here for. Rewriting all 129 in the same
-// change as the fix would bury it and risk regressions in files nobody was
-// auditing. So every rule is a real error, and the existing findings are
-// recorded in eslint-suppressions.json instead: new violations fail, old
-// ones are visible and countable, and `--prune-suppressions` shrinks the
-// file as they get paid off. It is a debt ledger, not a set of rules turned
-// off.
+// Every rule is a real error. The baseline of pre-existing findings that
+// used to live in eslint-suppressions.json has been paid off, so there is no
+// suppression file: a new finding fails the lint run.
 import js from '@eslint/js';
 import globals from 'globals';
 
@@ -26,12 +20,6 @@ export default [
   {
     files: ['src/**/*.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: globals.browser },
-  },
-  {
-    // An AudioWorklet runs on the audio thread, which has its own global
-    // scope -- no window, no DOM, but AudioWorkletProcessor/registerProcessor.
-    files: ['src/audio/*-worklet.js'],
-    languageOptions: { globals: globals.audioWorklet },
   },
   {
     // Node harnesses that also evaluate code inside a page.

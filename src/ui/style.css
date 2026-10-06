@@ -654,7 +654,7 @@ html, body {
 }
 .titleAdvanced .hint a { color: color-mix(in srgb, var(--spec-gold) 85%, transparent); }
 
-/* Music-search rows (Jamendo/Soulseek panels) */
+/* Music-search rows (Soulseek panel) */
 .jamendoRow {
   display: flex;
   align-items: center;

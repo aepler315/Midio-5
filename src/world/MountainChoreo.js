@@ -516,8 +516,6 @@ export function massifClearing01(tSec) {
 // crossing the massif's face at ordinary parallax speed, against a backdrop
 // crawling at 1/30th that rate, IS the scale reveal: the comparison does the
 // work no amount of raw height ever could on its own.
-export const MASSIF_MARKER_SPEED_PX_S = 240;
-export const MASSIF_MARKER_LIFE_SEC = 7;
 export const MASSIF_MARKER_MIN_GAP_SEC = 16;
 export const MASSIF_MARKER_MAX_GAP_SEC = 40;
 
