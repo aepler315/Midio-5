@@ -160,6 +160,12 @@ html, body {
 
 .panel.hidden, .hidden { display: none !important; }
 
+/* Keep title inputs below the shared version arrow row, including phones
+   whose title card scrolls through its own panel. */
+.version-browser-enabled #loader.titleScreen {
+  padding-top: calc(max(16px, env(safe-area-inset-top)) + 84px);
+}
+
 /* ── Error banner ─────────────────────────────────────────────────────────── */
 /* Replaces the old native alert() surface (see showErrorBanner in main.js):
    a dismissible, styled-in-frame message instead of a browser dialog

@@ -81,3 +81,16 @@ test('staging verifies the Range v2 runtime bundle and shipped terrain assets', 
   await assert.rejects(verifyRangeRuntime(root, out), /scene catalog cannot be loaded/);
   await fsp.rm(out, { recursive: true, force: true });
 });
+
+test('stageSite rejects public input symlinks before deleting existing output', async(t)=>{
+  const {root,source,output}=await fixture();t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  await fs.mkdir(output);await fs.writeFile(path.join(output,'keep'),'prior artifact');
+  await fs.symlink(path.join(source,'secret.txt'),path.join(source,'src/leak.js'));
+  await assert.rejects(stageSite(source,output),/symlink/i);
+  assert.equal(await fs.readFile(path.join(output,'keep'),'utf8'),'prior artifact');
+});
+test('malformed Range runtime metadata fails verification', async(t)=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'midio-runtime-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  await fs.mkdir(path.join(root,'src/vendor/range'),{recursive:true});await fs.writeFile(path.join(root,'src/vendor/range/runtime.json'),'{bad');
+  const {verifyRangeRuntime}=await import('../tools/stage-site.mjs');await assert.rejects(verifyRangeRuntime(root,root),/runtime|JSON/i);
+});

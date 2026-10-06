@@ -133,6 +133,7 @@ let errorBannerTimer = null;
  *  the close button; a second failure just restarts the timer/text rather
  *  than stacking banners. */
 function showErrorBanner(message) {
+  if (typeof versionLoadFailed === 'function') versionLoadFailed(message);
   if (!errorBannerEl || !errorBannerTextEl) { window.alert(message); return; } // defensive: markup missing
   errorBannerTextEl.textContent = message;
   errorBannerEl.classList.remove('hidden');
@@ -414,6 +415,49 @@ let loadGen = 0;     // a newer load cancels a stale audition gate's start
 // public way of choosing a song claims one synchronously, in the gesture;
 // asynchronous work publishes only while its selection is still current.
 const sourceSelection = new SourceSelection();
+let versionSession = { phase: 'title', sourceId: null, source: null, selection: null, completion: null };
+const versionListeners = new Set();
+let versionNotifyTimer = null;
+
+function versionEmit() {
+  for (const listener of versionListeners) listener(versionAdapterState());
+}
+
+function versionSelectionChanged(selection) {
+  versionSession.reject?.(new Error('The selected song has changed.'));
+  let resolve, reject;
+  const completion = new Promise((yes, no) => { resolve = yes; reject = no; });
+  // Ordinary player loads have no consumer; still retain rejection for adapter callers.
+  completion.catch(() => {});
+  versionSession = { phase: 'loading', sourceId: null, source: null, selection, completion, resolve, reject };
+  versionEmit();
+}
+
+function versionLoadFailed(message) {
+  if (versionSession.phase !== 'loading') return;
+  const error = new Error(String(message));
+  if (/audio.*(blocked|start)|blocked.*audio/i.test(error.message)) error.code = 'AUDIO_GESTURE_REQUIRED';
+  versionSession.phase = 'error';
+  versionSession.reject?.(error);
+  versionEmit();
+}
+
+function versionClearSource() {
+  versionSession.reject?.(new Error('The song was stopped.'));
+  versionSession = { phase: 'title', sourceId: null, source: null, selection: null, completion: null };
+  versionEmit();
+}
+
+function versionSourceStarted(selection, source, restoreIntent = null) {
+  if (!sourceSelection.isCurrent(selection) || versionSession.selection !== selection) return;
+  versionSession.phase = source ? 'ready' : 'error';
+  versionSession.heldPositionMs = restoreIntent ? Math.max(0, Math.min(Number(restoreIntent.positionMs) || 0, Math.max(0, (conductor?.durationMs || 0) - 1))) : null;
+  versionSession.source = source || null;
+  versionSession.sourceId = source ? (versionSession.restoreSourceId || crypto.randomUUID()) : null;
+  versionSession.resolve?.(versionAdapterState());
+  versionSession.resolve = versionSession.reject = null;
+  versionEmit();
+}
 
 /** A player chose a song: abort the previous choice and start a new load
  *  generation. Only public actions call this -- code that finishes work for
@@ -421,6 +465,7 @@ const sourceSelection = new SourceSelection();
 function claimSelection(opts) {
   const selection = sourceSelection.begin(opts);
   loadGen++;
+  if (typeof versionSelectionChanged === 'function') versionSelectionChanged(selection);
   return selection;
 }
 
@@ -1214,7 +1259,10 @@ function updatePauseButtonUI() {
 function togglePause() {
   if (!running || !sim || !audioEngine) return;
   paused = !paused;
-  if (paused) audioEngine.ctx.suspend();
+  versionSession.heldPositionMs = null;
+  if (paused) audioEngine.ctx.suspend().then(() => {
+    if (paused) versionSession.heldPositionMs = Math.max(0, audioEngine.nowMs - choreographyOutputLatencyMs());
+  });
   else { audioEngine.ctx.resume(); lastRafMs = null; }
   updatePauseButtonUI();
 }
@@ -1231,6 +1279,7 @@ function backToTitle() {
   // failure must not redraw this title screen later, and its work stops.
   sourceSelection.cancel();
   loadGen++;
+  versionClearSource();
   stopTimeline();
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
@@ -1536,7 +1585,7 @@ function offerWorldsThenStart(data, extra = {}) {
     const autoSeed = Number.isFinite(identity?.seed)
       ? identity.seed >>> 0
       : resolveSongSeed({ timeline: data.timeline, durationMs: data.durationMs }, null);
-    const pinnedSeed = readPinnedSeed();
+    const pinnedSeed = extra.restoreIntent?.seed ?? readPinnedSeed();
     const seed = pinnedSeed != null && Number.isFinite(pinnedSeed) ? pinnedSeed >>> 0 : autoSeed;
     if (!identity) offerIdentity(data, { seed: autoSeed, songProfile: profile, customBiome: data.customBiome || null });
     pendingWorldStart = { data, extra, features, seed, profile };
@@ -1551,6 +1600,16 @@ function offerWorldsThenStart(data, extra = {}) {
       pendingForRange.data.terrain = terrain;
       return terrain;
     });
+    if (extra.restoreIntent) {
+      const mine = pendingWorldStart;
+      const generation = loadGen;
+      const isCurrent = () => generation === loadGen && (!extra.versionSelection || sourceSelection.isCurrent(extra.versionSelection));
+      mine.terrainReady.then(() => {
+        if (pendingWorldStart !== mine || !isCurrent()) return;
+        confirmWorld(versionRestoreWorldId(mine, extra.restoreIntent));
+      }).catch(err => { if (isCurrent()) showErrorBanner(err?.message || String(err)); });
+      return;
+    }
     lastFitDiagnostic = recordFitDiagnostic(features, profile);
     if (!ALL_WORLDS) {
       // One world: start in it. The home biome's ranges have to be there
@@ -1595,6 +1654,7 @@ function offerWorldsThenStart(data, extra = {}) {
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
     console.error('[world chooser]', err);
+    if (extra.restoreIntent) { showErrorBanner('This version could not restore the selected song world: ' + (err?.message || err)); return; }
     pendingWorldStart = { data, extra };
     lastFitDiagnostic = null;
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
@@ -1818,14 +1878,30 @@ function confirmWorld(id) {
     Promise.race([lyricsReady, new Promise((r) => setTimeout(r, LYRICS_START_WAIT_MS))]).then(() => {
       // A newer song chosen while waiting wins.
       if (gen !== loadGen) return;
-      startConfirmedWorld(pending, id);
+      startConfirmedWorld(pending, id).catch(err => showErrorBanner(err?.message || String(err)));
     });
     return;
   }
-  startConfirmedWorld(pending, id);
+  startConfirmedWorld(pending, id).catch(err => showErrorBanner(err?.message || String(err)));
 }
 
-function startConfirmedWorld(pending, id) {
+function versionRestoreWorldId(pending, restoreIntent) {
+  const requested = restoreIntent.worldId;
+  if (requested !== 'custom') {
+    if (requested && !listWorlds().some(world => world.id === requested)) throw new Error('This version cannot restore the selected world.');
+    return requested || pending.data.worldId || lastWorldId || DEFAULT_WORLD_ID;
+  }
+  const baseId = restoreIntent.settings?.worldBaseId;
+  if (!baseId || !listWorlds().some(world => world.id === baseId)) throw new Error('This version cannot restore the selected song world.');
+  const { world } = buildWorldVariant(baseId, pending.features, { ...pending.data, profile: pending.profile });
+  if (world?.id !== 'custom' || (world.registeredId || world.baseId) !== baseId) throw new Error('This version could not regenerate the selected song world.');
+  setCustomWorld(world);
+  return world.id;
+}
+
+async function startConfirmedWorld(pending, id) {
+  const selection = pending.extra?.versionSelection;
+  if (selection && !sourceSelection.isCurrent(selection)) return;
   id = resolveWorldId(id);
   stopWorldPreview();
   lastWorldId = id;
@@ -1838,7 +1914,16 @@ function startConfirmedWorld(pending, id) {
   const extra = { ...(pending.extra || {}) };
   if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
   const exporting = !!(extra.exportMode || readBulkExportFromUrl());
-  if (!exporting) audioEngine?.resume?.();
+  const restore = extra.restoreIntent;
+  if (restore) {
+    await audioEngine.ctx.suspend();
+    if (selection && !sourceSelection.isCurrent(selection)) return;
+    extra.songSeed = restore.seed;
+    extra.startAtMs = Math.max(0, Math.min(Number(restore.positionMs) || 0, Math.max(0, pending.data.durationMs - 1)));
+    extra.startAtWallMs = 0;
+    extra.preservePause = true;
+    extra.restorePaused = true;
+  } else if (!exporting) audioEngine?.resume?.();
   // A recording already has every voice. The timeline synth (oscillator
   // "keyboard" tones + hat/kick clicks) must not sit on top of it.
   if (extra.playBuffer) muteTimelineSynth = true;
@@ -1846,8 +1931,23 @@ function startConfirmedWorld(pending, id) {
   if (running) canvas.focus({ preventScroll: true });
   if (extra.playBuffer) {
     lastAudioBuffer = extra.playBuffer;
-    if (!exporting) audioEngine.playBuffer(extra.playBuffer, 0);
+    if (!exporting) audioEngine.playBuffer(extra.playBuffer, (extra.startAtMs || 0) / 1000);
   }
+  if (restore && running && sim) {
+    const generation = loadGen;
+    // A paused frame cannot advance the renderer's asynchronous preparation.
+    // Wait for this version's own presentation, then paint it at the held
+    // transport offset before advertising readiness to the navigator.
+    try {
+      if (rangePresentation) await rangePresentation.whenReady();
+    } catch (error) {
+      if (generation !== loadGen || (selection && !sourceSelection.isCurrent(selection))) return;
+      throw error;
+    }
+    if (generation !== loadGen || (selection && !sourceSelection.isCurrent(selection)) || !running || !sim) return;
+    renderer.draw(sim, 1);
+  }
+  if (selection && running && sim) versionSourceStarted(selection, extra.versionSource, restore);
 }
 
 /** Name the real ranges behind The Range (RangeCaption.js): one caption per
@@ -1953,6 +2053,8 @@ function startTimeline(timelineData, extra = {}) {
   // stopTimeline: that resume is asynchronous and would land after the
   // suspend below, leaving the song playing under a stepped clock.
   stopTimeline({ preservePause: preservePause || exportMode, keepAudio });
+  versionSession.heldPositionMs = null;
+  if (extra.restorePaused) { paused = true; updatePauseButtonUI(); }
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
   // replay) mutes the timeline synth. Live listening mutes it for the same
@@ -2561,7 +2663,8 @@ function adoptLateLyrics(data, selection, evidence) {
 /** One audio file plays as itself; SEVERAL dropped together are treated as
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
-async function loadAudioFiles(files, { selection = null } = {}) {
+async function loadAudioFiles(files, { selection = null, restoreIntent = null } = {}) {
+  if (!selection) selection = claimSelection({ kind: 'file', name: files?.[0]?.name || '' });
   let selectedFiles;
   try {
     selectedFiles = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
@@ -2919,7 +3022,7 @@ async function loadAudioFiles(files, { selection = null } = {}) {
     if (selection.kind === 'library' && selection.libraryTrack) {
       musicLibrary.notePlayed(selection.libraryTrack, audioBuffer.duration).catch(() => {});
     }
-    offerWorldsThenStart(data, { playBuffer: audioBuffer, lyricsReady });
+    offerWorldsThenStart(data, { playBuffer: audioBuffer, lyricsReady, versionSelection: selection, versionSource: { kind: 'audio-files', files: [...selectedFiles] }, restoreIntent });
   } catch (err) {
     if (isStale() || err?.name === 'AbortError') return;
     console.error('[audio load failed]', err);
@@ -2943,6 +3046,7 @@ function handleFiles(files, { selection = null } = {}) {
   // the playback back. The URL path releases its own operation before
   // calling in here, so this never cancels the load that invoked it.
   cancelUrlLoad();
+  if (!selection) selection = claimSelection({ kind: 'file', name: files?.[0]?.name || '' });
   let list;
   try {
     list = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
@@ -3015,6 +3119,7 @@ function revealUrlLoad(why = '', { focus = false } = {}) {
 }
 
 function setUrlLoadStatus(text, isError = false) {
+  if (isError && text && typeof versionLoadFailed === 'function') versionLoadFailed(text);
   if (!urlLoadStatusEl) return;
   urlLoadStatusEl.textContent = text || '';
   urlLoadStatusEl.classList.toggle('isError', Boolean(isError) && Boolean(text));
@@ -3209,6 +3314,7 @@ async function openUrlTarget(raw) {
     const result = await openAudioUrl(raw, { pageUrl: location.href, signal });
     if (signal.aborted) return;
     if (result.kind === 'listing') {
+      if (typeof versionLoadFailed === 'function') versionLoadFailed('Choose a song from this folder before changing versions.');
       renderUrlListing(result);
       const count = result.entries.length;
       setUrlLoadStatus(count
@@ -3330,7 +3436,7 @@ worldSelectEl?.addEventListener('cancel', (e) => {
 });
 
 /** Authored sample (Proof) so a visitor can see the worlds without a file. */
-async function startDemoSample() {
+async function startDemoSample(restoreIntent = null) {
   // The sample is a choice too: it outranks an older fetch, an upload still
   // decoding or analysing, and a library permission prompt still open.
   const selection = claimSelection({ kind: 'sample', name: 'Proof' });
@@ -3365,7 +3471,7 @@ async function startDemoSample() {
       boundariesMs,
       confidence: 1,
     },
-  });
+  }, { versionSelection: selection, versionSource: { kind: 'demo' }, restoreIntent });
 }
 demoBtnEl?.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -3905,6 +4011,7 @@ function seekSong(ms) {
   if (buffer) audioEngine.playBuffer(buffer, t / 1000);
   if (wasPaused) {
     paused = true;
+    if (typeof versionSession !== 'undefined') versionSession.heldPositionMs = t;
     audioEngine.ctx.suspend();
     updatePauseButtonUI();
   }
@@ -4028,6 +4135,7 @@ const HUD_FADE_MS = 3000;
 let hudAwake = true;
 let hudSleepAtMs = 0;
 function wakeHud() {
+  for (const el of document.querySelectorAll('[data-version-navigation]')) { el.inert = false; el.classList.remove('hud-faded'); }
   hudSleepAtMs = performance.now() + HUD_FADE_MS;
   if (hudAwake) return;
   hudAwake = true;
@@ -4035,6 +4143,7 @@ function wakeHud() {
   hudLeftEl?.classList.remove('hud-faded');
 }
 function hudIdleTick(nowRafMs) {
+  if (document.activeElement?.closest?.('[data-version-navigation]')) { hudSleepAtMs = nowRafMs + HUD_FADE_MS; return; }
   // A recording holds the HUD open. The stop control is in there, and a
   // faded HUD sits under the canvas -- so letting it fade would mean the
   // only way to end a recording is to tap the stage first, and that tap is
@@ -4056,6 +4165,7 @@ function hudIdleTick(nowRafMs) {
   }
   if (hudAwake && nowRafMs >= hudSleepAtMs) {
     hudAwake = false;
+    for (const el of document.querySelectorAll('[data-version-navigation]')) { el.inert = true; el.classList.add('hud-faded'); }
     hudRightEl?.classList.add('hud-faded');
     hudLeftEl?.classList.add('hud-faded');
   }
@@ -4144,7 +4254,7 @@ window.addEventListener('keydown', (e) => {
   // a Ctrl/Meta/Alt chord all belong to the browser. Decide that before any
   // branch below can toggle a setting, open an overlay, tap the beat or
   // preventDefault a letter out of a URL (KeyboardOwnership.js).
-  if (ownsNativeKeyboard(e)) return;
+  if (ownsNativeKeyboard(e) || e.target?.closest?.('[data-version-navigation]')) return;
   // A modal chooser owns keyboard input. R stays available for accessibility;
   // all other keys retain native dialog/button behavior, including Escape.
   if (worldSelectEl?.open) {
@@ -5254,3 +5364,77 @@ if (!window.__SMW) window.__SMW = {
   get presentationDiagnostics() { return titlePresentation?.diagnostics; },
   get displayPrefs() { return { ...displayPrefs }; },
 };
+
+
+// Narrow production API: ownership comes from the actual selection and start,
+// never from an old debug object or a non-null decoded buffer.
+function versionAdapterState() {
+  let blockedReason = null;
+  if (songRecorder?.recording || pendingCapturePresetId) blockedReason = 'Finish recording before changing versions.';
+  else if (songRecorder?.finalizing || pendingExportPresetId || bulkExportArmed) blockedReason = 'Finish exporting before changing versions.';
+  else if (recalibration.active) blockedReason = 'Finish calibration before changing versions.';
+  else if (versionSession.phase === 'loading') blockedReason = 'The selected song is still loading.';
+  else if (running && !versionSession.source) blockedReason = 'This source cannot be carried to another version.';
+  const durationMs = conductor?.durationMs || 0;
+  return { phase: versionSession.phase, generation: loadGen, sourceId: versionSession.sourceId, source: versionSession.source,
+    positionMs: Math.max(0, Math.min(paused && versionSession.heldPositionMs != null ? versionSession.heldPositionMs : (audioEngine ? audioEngine.nowMs - choreographyOutputLatencyMs() : 0), durationMs)), durationMs,
+    seed: sim?.songSeed ?? lastSongSeed, paused, worldId: sim?.worldId || lastWorldId,
+    rangeViewId: sceneChoice?.viewId ?? null, settings: { reducedFlash, reducedMotion, stageRes: stageResEl?.value, stageFps: stageFpsEl?.value, worldBaseId: sim?.worldId === 'custom' ? (getCustomWorld()?.registeredId || getCustomWorld()?.baseId || null) : null }, blockedReason };
+}
+
+async function versionSetPaused(value) {
+  if (!audioEngine || !running || !sim) throw new Error('There is no ready song.');
+  if (value) {
+    await audioEngine.ctx.suspend();
+    versionSession.heldPositionMs = paused && versionSession.heldPositionMs != null ? versionSession.heldPositionMs : Math.max(0, audioEngine.nowMs - choreographyOutputLatencyMs());
+    paused = true;
+  } else {
+    const resumed = await audioEngine.resume();
+    if (!resumed) { const error = new Error('Tap Resume to enable audio.'); error.code = 'AUDIO_GESTURE_REQUIRED'; throw error; }
+    paused = false;
+    versionSession.heldPositionMs = null;
+    lastRafMs = null;
+  }
+  updatePauseButtonUI();
+  versionEmit();
+}
+
+function versionLoadSource(source, restoreIntent = {}) {
+  if (!['audio-files', 'demo'].includes(source?.kind)) return Promise.reject(new Error('This source cannot be carried to another version.'));
+  const settings = restoreIntent.settings || {};
+  if (typeof settings.reducedFlash === 'boolean') { reducedFlash = settings.reducedFlash; setReducedFlash(reducedFlash); }
+  if (typeof settings.reducedMotion === 'boolean') { reducedMotion = settings.reducedMotion; setReducedMotion(reducedMotion); syncMotionButton(); }
+  for (const [control, value] of [[stageResEl, settings.stageRes], [stageFpsEl, settings.stageFps]]) {
+    if (control && value != null && [...control.options].some(option => option.value === String(value))) control.value = String(value);
+  }
+  const restoreBaseId = restoreIntent.worldId === 'custom' ? settings.worldBaseId : restoreIntent.worldId;
+  if (restoreIntent.worldId && (!restoreBaseId || !listWorlds().some(world => world.id === restoreBaseId))) return Promise.reject(new Error('This version cannot restore the selected world.'));
+  if (restoreIntent.rangeViewId) {
+    const restoredChoice = resolveSceneChoice({ search: searchWithSceneChoice('', { viewId: restoreIntent.rangeViewId }), catalog: SCENE_CATALOG, biomeNames: PICKABLE_BIOMES.map(b => b.name) });
+    if (restoredChoice.viewId !== restoreIntent.rangeViewId) return Promise.reject(new Error('This version cannot restore the selected range view.'));
+    sceneChoice = restoredChoice;
+  }
+  fpsCapMs = 1000 / readFpsCap();
+  const loading = source.kind === 'demo' ? startDemoSample(restoreIntent) : loadAudioFiles(source.files, { restoreIntent });
+  const session = versionSession;
+  session.restoreSourceId = restoreIntent.sourceId || null;
+  loading.catch(error => { if (versionSession === session) versionLoadFailed(error?.message || String(error)); });
+  if (!session.completion || session.phase !== 'loading') return Promise.reject(new Error('The original audio source could not be loaded.'));
+  return session.completion;
+}
+
+const versionSessionAdapter = {
+  getState: versionAdapterState,
+  subscribe(listener) {
+    versionListeners.add(listener);
+    if (!versionNotifyTimer) versionNotifyTimer = setInterval(versionEmit, 250);
+    return () => { versionListeners.delete(listener); if (!versionListeners.size) { clearInterval(versionNotifyTimer); versionNotifyTimer = null; } };
+  },
+  pause: () => versionSetPaused(true),
+  loadSource: versionLoadSource,
+  async seek(ms) { seekSong(ms); versionSession.heldPositionMs = paused ? audioEngine.nowMs : null; versionEmit(); },
+  setPaused: versionSetPaused,
+  wakeHud,
+};
+window.__MIDIO_VERSION_ADAPTER = versionSessionAdapter;
+window.dispatchEvent(new CustomEvent('midio-version-adapter', { detail: versionSessionAdapter }));
