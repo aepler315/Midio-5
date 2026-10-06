@@ -1,12 +1,40 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
-import { mkdtempSync, symlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, symlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const serverFile = resolve(root, 'tools/serve.js');
+
+test('staged server serves version-local public graphs and rejects archive private paths', async (t) => {
+  const site = mkdtempSync(resolve(tmpdir(), 'midio-version-serve-'));
+  t.after(() => rmSync(site, { recursive: true, force: true }));
+  mkdirSync(resolve(site, 'versions/old/src'), { recursive: true });
+  mkdirSync(resolve(site, 'soundfonts'));
+  writeFileSync(resolve(site, 'index.html'), 'live');
+  writeFileSync(resolve(site, 'versions/manifest.json'), '{"schema":1}');
+  writeFileSync(resolve(site, 'versions/old/index.html'), 'old');
+  writeFileSync(resolve(site, 'versions/old/src/main.js'), '/* old engine */');
+  writeFileSync(resolve(site, 'versions/old/private.json'), 'private');
+  symlinkSync(resolve(site, 'versions/old/private.json'), resolve(site, 'versions/old/src/private.json'));
+  const port = 20_000 + Math.floor(Math.random() * 20_000);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [serverFile, String(port)], { cwd: root, env: { ...process.env, HOST: '127.0.0.1', SITE_ROOT: site }, stdio: 'ignore' });
+  try {
+    await waitForServer(baseUrl);
+    assert.equal((await fetch(`${baseUrl}/versions/manifest.json`)).status, 200);
+    assert.equal(await (await fetch(`${baseUrl}/versions/old/`)).text(), 'old');
+    assert.equal((await fetch(`${baseUrl}/versions/old/src/main.js`)).status, 200);
+    assert.equal((await fetch(`${baseUrl}/versions/old/private.json`)).status, 404);
+    assert.equal((await fetch(`${baseUrl}/versions/old/src/private.json`)).status, 403);
+  } finally {
+    child.kill('SIGTERM');
+    if (child.exitCode === null && child.signalCode === null) await new Promise(resolve => child.once('exit', resolve));
+  }
+});
 
 async function waitForServer(baseUrl) {
   const deadline = Date.now() + 5_000;
