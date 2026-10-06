@@ -193,3 +193,44 @@ test('Return after completion failure pauses and carries the current heard posit
 test('built-in demo surfing explains that each version uses its own demo', async () => {
   const f = fixture(); f.setState({ source: { kind: 'demo' } }); const nav = await mount(f); assert.match(f.button('versionStatus').textContent, /own built-in demo/); nav.dispose();
 });
+async function unavailableBootstrap(f, fetchOverride) {
+  const view = f.options.document.defaultView; view.__MIDIO_VERSION_ADAPTER = f.adapter; view.location.assign = url => f.navigated.push(url);
+  const metadata = new Element('script'); metadata.textContent = JSON.stringify({ currentId: 'old', liveId: 'live', siteRootRelative: './' });
+  const get = f.options.document.getElementById; f.options.document.getElementById = id => id === 'midio-version-metadata' ? metadata : get(id);
+  const { bootstrapVersionNavigation } = await import('../src/ui/VersionBootstrap.js');
+  const boot = bootstrapVersionNavigation({ document: f.options.document, fetch: fetchOverride || (async url => ({ ok: !url.includes('manifest'), url, headers: { get: () => 'text/html' } })), createStore: () => f.store });
+  await boot.ready; return boot;
+}
+test('missing-manifest Return cannot retarget a pending old source while recording', async () => {
+  const f = fixture(); f.setState({ blockedReason: 'Finish recording before changing versions.' });
+  f.store.readPending = async () => ({ sourceId: 'old-source', toId: 'old', positionMs: 1700, paused: false, switchId: 's' });
+  const boot = await unavailableBootstrap(f); click(f.button('versionReturnLive')); await flush();
+  assert.equal(f.navigated.length, 0); assert.equal(f.calls.some(c => c[0] === 'handoff'), false); assert.equal(f.button('versionReturnLive').disabled, true); boot.dispose();
+});
+test('missing-manifest Return cancels and invalidates old pending source on title preflight replacement', async () => {
+  const f = fixture(); f.setState({ phase: 'title', sourceId: null, source: null }); let finish;
+  f.store.readPending = async () => ({ sourceId: 'old-source', toId: 'old', positionMs: 1700, paused: false, switchId: 's' });
+  const boot = await unavailableBootstrap(f, url => url.includes('manifest') ? Promise.resolve({ ok: false }) : new Promise(resolve => { finish = () => resolve({ ok: true, url, headers: { get: () => 'text/html' } }); }));
+  click(f.button('versionReturnLive')); await flush(); f.setState({ phase: 'loading', generation: 2 }); finish(); await flush();
+  assert.equal(f.navigated.length, 0); assert.equal(f.calls.some(c => c[0] === 'handoff'), false); assert.equal(f.calls.filter(c => c === 'discard').length, 1); boot.dispose();
+});
+test('missing-manifest Return checks source again after ownership release', async () => {
+  const f = fixture(); let release;
+  f.store.release = () => new Promise(resolve => { release = resolve; });
+  const boot = await unavailableBootstrap(f); click(f.button('versionReturnLive')); await flush();
+  f.setState({ phase: 'loading', sourceId: null, source: null, generation: 2 }); release(); await flush();
+  assert.equal(f.navigated.length, 0); assert.equal(f.calls.some(c => c[0] === 'paused' && c[1] === false), false); boot.dispose();
+});
+test('delayed boot reads cannot restore an old handoff over a new user generation', async () => {
+  const f = fixture(); let finish;
+  f.store.readPending = () => new Promise(resolve => { finish = resolve; });
+  const { mountVersionNavigation } = await import('../src/ui/VersionNavigation.js'); const nav = mountVersionNavigation(f.options); await flush();
+  f.setState({ phase: 'loading', sourceId: null, source: null, generation: 2 });
+  finish({ sourceId: 'old-source', toId: 'live', positionMs: 1700, paused: true, switchId: 's' }); await nav.ready;
+  assert.equal(f.calls.some(c => c[0] === 'load'), false); assert.equal(f.calls.filter(c => c === 'discard').length, 1); nav.dispose();
+});
+test('missing-manifest recovery replaces stale pending data with the actual ready source', async () => {
+  const f = fixture(); f.store.readPending = async () => ({ sourceId: 'older-source', toId: 'old', positionMs: 1700, paused: true, switchId: 's' });
+  const boot = await unavailableBootstrap(f); click(f.button('versionReturnLive')); await flush();
+  const sent = f.calls.find(c => c[0] === 'handoff')[1]; assert.equal(sent.sourceId, 'source-1'); assert.equal(sent.positionMs, 1200); assert.equal(sent.paused, false); assert.equal(f.calls.filter(c => c === 'discard').length, 1); boot.dispose();
+});

@@ -211,12 +211,16 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
   async function boot(reconcileExisting = false) {
     if (disposed || booting || busy() || phase === 'error') return;
     booting = true;
+    const owner = adapter.getState(), epoch = restoreEpoch;
+    const ownsBoot = () => { const state = adapter.getState(); return !disposed && epoch === restoreEpoch && state.generation === owner.generation && state.sourceId === owner.sourceId; };
     try {
       if (!pruned) { await handoffStore.pruneExpired?.(); pruned = true; }
+      if (!ownsBoot()) return;
       const token = new URL(view.location.href).searchParams.get('versionSwitch') || undefined;
       const pending = await handoffStore.readPending(currentId, token);
+      if (!ownsBoot()) return;
       const latest = pending || await handoffStore.readLatest(currentId);
-      if (disposed || !latest) return;
+      if (!ownsBoot() || !latest) return;
       const key = `${latest.sourceId}:${latest.switchId || ''}`;
       if (pending && key === completedKey) return;
       // BFCache already owns its current source. Reload starts on the title;
@@ -229,7 +233,7 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
       if (key === completedKey) return;
       if (bootChecked && state.source) return;
       await restore(latest);
-    } catch (error) { failure(error, () => { phase = 'idle'; return boot(); }); }
+    } catch (error) { if (ownsBoot()) failure(error, () => { phase = 'idle'; return boot(); }); }
     finally { bootChecked = true; booting = false; }
   }
   on(previous, 'click', () => activate(() => { if (!previous.disabled) switchTo(neighbors.previous.id); }));
