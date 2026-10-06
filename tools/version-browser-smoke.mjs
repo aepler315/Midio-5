@@ -172,25 +172,31 @@ async function state(page) {
 }
 
 async function waitReady(page, timeout, allowNavigationError = false) {
-  await page.waitForFunction(() => {
-    const a = window.__MIDIO_VERSION_ADAPTER;
-    const retry = document.getElementById('versionRetry');
-    return (a?.getState().phase === 'ready') || (retry && !retry.hidden && /Resume|Retry/i.test(retry.textContent));
-  }, null, { timeout });
-  const retry = page.locator('#versionRetry');
-  if (await retry.isVisible()) {
-    const label = await retry.textContent();
-    // A real click is required after browsers deny audio activation.
-    if (/Resume/.test(label)) await retry.click();
-    else if (/Retry/.test(label) && !allowNavigationError) throw new Error(await page.locator('#versionStatus').textContent() || 'Version restore failed.');
+  const deadline = Date.now() + timeout; let gestures = 0;
+  for (;;) {
+    const remaining = deadline - Date.now();
+    assert.ok(remaining > 0, `Version restore did not settle at ${page.url()}`);
+    // Watch both readiness and gesture failures throughout the asynchronous
+    // load. Audio activation can fail after the initial adapter-ready signal.
+    const handle = await page.waitForFunction(allowError => {
+      const nav = document.querySelector('[data-version-navigation]');
+      const retry = document.getElementById('versionRetry');
+      const status = document.getElementById('versionStatus')?.textContent;
+      if (retry && !retry.hidden && /Resume/i.test(retry.textContent)) return { kind: 'resume', status };
+      if (!allowError && retry && !retry.hidden && /Retry/i.test(retry.textContent)) throw new Error(status || 'Version restore failed.');
+      if (window.__MIDIO_VERSION_ADAPTER?.getState().phase === 'ready'
+        && (!nav || nav.getAttribute('data-state') === 'idle' || (allowError && nav.getAttribute('data-state') === 'error'))) return { kind: 'ready' };
+      return false;
+    }, allowNavigationError, { timeout: remaining });
+    const signal = await handle.jsonValue(); await handle.dispose();
+    if (signal.kind === 'ready') return;
+    assert.ok(gestures < 3, `${signal.status || 'Audio remains blocked after Resume.'} ${page.url()}`);
+    console.log(`Version-browser smoke: real Resume gesture ${++gestures} at ${page.url()}`);
+    await page.locator('#versionRetry').click();
+    // Let the click's restore operation publish its new phase before polling
+    // again; every attempt remains a genuine user gesture.
+    await page.waitForTimeout(100);
   }
-  await page.waitForFunction(allowError => {
-    const nav = document.querySelector('[data-version-navigation]');
-    const retry = document.getElementById('versionRetry');
-    if (!allowError && retry && !retry.hidden && /Retry/i.test(retry.textContent)) throw new Error(document.getElementById('versionStatus')?.textContent || 'Version restore failed.');
-    return window.__MIDIO_VERSION_ADAPTER?.getState().phase === 'ready'
-      && (!nav || nav.getAttribute('data-state') === 'idle' || (allowError && nav.getAttribute('data-state') === 'error'));
-  }, allowNavigationError, { timeout });
 }
 
 async function importAudio(page, files, timeout, allowNavigationError = false) {
@@ -239,6 +245,7 @@ async function capture(page, output, name) {
 
 async function wake(page) { await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.wakeHud()); }
 async function switchVersion(page, direction, expected, timeout) {
+  console.log(`Version-browser smoke: ${direction} to ${expected.id}`);
   await wake(page);
   await page.locator(direction === 'previous' ? '#versionPrevious' : '#versionNext').click();
   await page.waitForFunction(id => {
@@ -374,6 +381,7 @@ async function runPrefix(options, audit, prefix, wavs) {
       const meta = await page.locator('#midio-version-metadata').textContent();
       assert.equal(JSON.parse(meta).currentId, entry.id);
       assert.ok(frame.workers.every(url => url.startsWith(new URL(entry.entryPath, hosted.url).href)), `${entry.id}: workers escaped selected build`);
+      console.log(`Version-browser smoke: captured ${entry.id} (${frame.sceneClass}, active=${frame.range.active}, colors=${frame.pixels.colors})`);
     };
     await captureCheckpoint('initial');
     // First reach oldest, then cover every scene forward and backward.
