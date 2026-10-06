@@ -88,7 +88,7 @@ test('historical adapter reads title state before an audio engine exists',async(
   const profile=historicalProfiles.get(c.sourceSha);const files=new Map(Object.keys(profile.expectedHashes).map(file=>[file,execFileSync('git',['show',`${c.sourceSha}:${file}`])]));
   const {files:output}=adaptVersion({sourceSha:c.sourceSha,checkpointId:c.id,files});const main=output.get('src/main.js').toString();
   const helpers=['effectiveOutputLatencyMs','choreographyOutputLatencyMs','versionAdapterState'].map(name=>main.match(new RegExp(`function ${name}\\([^]*?\\n}`))[0]).join('\n');
-  const state=vm.runInNewContext(`${helpers}\nversionAdapterState()`,{versionSession:{phase:'title',source:null,sourceId:null},songRecorder:null,pendingCapturePresetId:null,pendingExportPresetId:null,bulkExportArmed:false,recalibration:{active:false},running:false,conductor:{durationMs:0},audioEngine:null,paused:false,sim:null,lastSongSeed:null,lastWorldId:'the-range',sceneChoice:{viewId:null},rangeMode:{forcedViewId:null},reducedFlash:false,reducedMotion:false,stageResEl:null,stageFpsEl:null,captureClock:{captureRequested:false},btLatencyTrimMs:0});
-  assert.equal(state.phase,'title');assert.equal(state.positionMs,0);
+  const state=vm.runInNewContext(`${helpers}\nversionAdapterState()`,{loadGen:3,versionSession:{phase:'title',source:null,sourceId:null},songRecorder:null,pendingCapturePresetId:null,pendingExportPresetId:null,bulkExportArmed:false,recalibration:{active:false},running:false,conductor:{durationMs:0},audioEngine:null,paused:false,sim:null,lastSongSeed:null,lastWorldId:'the-range',sceneChoice:{viewId:null},rangeMode:{forcedViewId:null},reducedFlash:false,reducedMotion:false,stageResEl:null,stageFpsEl:null,captureClock:{captureRequested:false},btLatencyTrimMs:0});
+  assert.equal(state.phase,'title');assert.equal(state.positionMs,0);assert.equal(state.generation,3);
  }
 });
