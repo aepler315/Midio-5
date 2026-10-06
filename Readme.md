@@ -382,5 +382,13 @@ Software-GL timings are not device measurements; see
   the current upload page does not expose its search/connect controls.
 - [SoundFont tooling](soundfonts/README.md) — retained synthesis support;
   uploaded recordings play their own audio with the timeline synth muted.
+- [Terrain pipeline](docs/terrain-pipeline.md) — how elevation data becomes
+  the bundled terrain profiles.
+- [Frame pacing](docs/frame-pacing.md) — where to look first when playback
+  stalls.
+- [Spectral sea](docs/spectral-sea.md) — what the wave field does and does
+  not model.
+- [Archive](docs/archive/README.md) — finished plans and audits, kept for
+  history.
 
 Display settings now separate **Natural / Pixel / Palette** from **Auto / Economy** quality. Open **Display** during playback to change them. [Pixel presentation](docs/pixel-presentation.md) explains migration, palettes and exports; [landscape peaks](docs/landscape-peaks.md) explains climax storms and the three landscape-scale instrument characters.
