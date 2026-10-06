@@ -422,7 +422,7 @@ export function buildRangeFrame({
     onsetGain: event => event.src === 'midi' ? 1 : unit(mgr.ridgeMusicSession.sample(event.tMs).activity01),
   } : undefined);
   return freezeDeep({
-    frameId, generation, timeMs, seed: sim.songSeed ?? 0,
+    frameId, generation, timeMs, durationMs: mgr.durationMs || 0, seed: sim.songSeed ?? 0,
     beatTransport: mgr.beatTransport ? { ...mgr.beatTransport } : null,
     sectionId: section?.sectionId ?? section?.sourceSegmentId ?? null,
     motifId: motif.id, chapterId: section?.chapterId ?? null, motif,

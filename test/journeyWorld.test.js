@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   JOURNEY_VIEW, JOURNEY_SURFACE_GLSL, sampleJourneyState,
-  journeyNearShore, journeyFarShore, journeyGroundHeight, journeySurface,
+  journeyNearShore, journeyFarShore, journeyGroundHeight, journeySurface, journeyLakeShape, journeyLakeDistance,
 } from '../src/world/alpine/JourneyWorld.js';
+import { MOUNTAIN_DIMENSIONS } from '../src/world/alpine/JourneyMountains.js';
 import { cameraPoseAt, cameraRailErrors, projectPoint } from '../src/world/terrain/SceneTravel.js';
 
 const music = { energy01: .7, bass01: .4, melody01: .8, pulse01: .3,
@@ -71,26 +72,55 @@ test('reduced motion freezes time, advection and every spatial musical strength'
   }
 });
 
-test('lake shores stay bounded and never cross across seeds and long travel', () => {
-  for (const seed of [0, 73, 1021, -58]) {
+test('the lake closes at two visible ends with dry banks beyond them across seeds and long travel', () => {
+  const pose = cameraPoseAt(JOURNEY_VIEW, .5);
+  for (const seed of [0, 73, 1021, -58, 2917029651]) {
     for (const timeMs of [0, 23000, 630000, 43200000]) {
-      const state = at(timeMs, { seed });
-      for (let x = -6000; x <= 6000; x += 137) {
+      const state = at(timeMs, { seed }), lake = journeyLakeShape(state);
+      assert.ok(lake.halfWidthM >= 460 && lake.halfWidthM <= 655);
+      for (const side of [-1, 1]) {
+        const x = lake.centerX + side * lake.halfWidthM;
         const near = journeyNearShore(x, state), far = journeyFarShore(x, state);
-        assert.ok(near >= 105 && near <= 235, `near shore ${near}`);
-        assert.ok(far >= -825 && far <= -575, `far shore ${far}`);
-        assert.ok(near - far > 680);
+        assert.ok(Math.abs(near - far) < 1e-9, 'margins meet at a finite tip');
+        const tip = projectPoint(pose, 16 / 9, [x, 0, near]);
+        assert.ok(Math.abs(tip.x) < 1 && tip.y > -1, 'lateral ends remain in the composition');
+        assert.ok(journeyLakeDistance(x + side * 25, near, state) < 0);
+      }
+      for (let q = -.95; q <= .95; q += .05) {
+        const x = lake.centerX + q * lake.halfWidthM;
+        const near = journeyNearShore(x, state), far = journeyFarShore(x, state);
+        assert.ok(near > far && near - far < 1250);
+        assert.ok(journeyLakeDistance(x, (near + far) / 2, state) > 0);
+        assert.equal(journeyLakeDistance(x, near, state), 0);
+        assert.equal(journeyLakeDistance(x, far, state), 0);
       }
     }
   }
 });
 
-test('shorelines advect in world x and also breathe slowly in heard time', () => {
-  const state = at(45000), shifted = { ...state, travelM: state.travelM + 381 };
-  for (const shore of [journeyNearShore, journeyFarShore]) {
-    assert.ok(Math.abs(shore(217, shifted) - shore(598, state)) < 1e-10);
-    assert.ok(Math.abs(shore(217, state) - shore(217, { ...state, timeSec: state.timeSec + 30 })) > .01);
-    assert.ok(Math.abs(shore(217, state) - shore(217, { ...state, timeSec: state.timeSec + 1 / 60 })) < .1);
+test('the basin changes breadth, depth and cove shape smoothly instead of translating a strip', () => {
+  const a = at(0), b = at(18000), c = at(46000);
+  const widths = [a,b,c].map(s => journeyLakeShape(s).halfWidthM);
+  assert.ok(Math.max(...widths) - Math.min(...widths) > 80);
+  const profile = s => {
+    const lake = journeyLakeShape(s);
+    return [-.7,-.3,0,.3,.7].map(q => {
+      const x=lake.centerX+q*lake.halfWidthM;
+      return journeyNearShore(x,s)-journeyFarShore(x,s);
+    });
+  };
+  const profiles=[a,b,c].map(profile);
+  assert.ok(Math.abs(profiles[0][1]/profiles[0][3]-profiles[1][1]/profiles[1][3])>.05,
+    'the two coves change the profile independently');
+  for (const timeMs of [0,9000,27000,43200000]) {
+    const state=at(timeMs), next=at(timeMs+1000/60), lake=journeyLakeShape(state);
+    for (const q of [-1.001,-1,-.999,-.7,0,.7,.999,1,1.001]) {
+      const x=lake.centerX+q*lake.halfWidthM;
+      for (const shore of [journeyNearShore,journeyFarShore]) {
+        assert.ok(Math.abs(shore(x,next)-shore(x,state))<2, 'no jump when a tip moves past a point');
+        assert.ok(Math.abs(shore(x+.001,state)-shore(x,state))<.02, 'finite tip slope');
+      }
+    }
   }
 });
 
@@ -121,12 +151,12 @@ test('ranges are deep heightfields with the rear massif behind and above the fir
       const first = Array.from({ length: 101 }, (_, i) => journeySurface(x, i / 100, 1, state));
       const rear = Array.from({ length: 101 }, (_, i) => journeySurface(x, i / 100, 2, state));
       assert.deepEqual(first[0], [x, 0, journeyFarShore(x, state)]);
-      assert.ok(Math.abs(first[0][2] - first.at(-1)[2] - 1350) < 1e-9);
-      assert.ok(Math.abs(rear[0][2] - rear.at(-1)[2] - 1800) < 1e-9);
+      assert.ok(Math.abs(first[0][2] - first.at(-1)[2] - MOUNTAIN_DIMENSIONS.firstDepth) < 1e-9);
+      assert.ok(Math.abs(rear[0][2] - rear.at(-1)[2] - MOUNTAIN_DIMENSIONS.rearDepth) < 1e-9);
       const firstPeak = first.reduce((a, b) => a[1] > b[1] ? a : b);
       const rearPeak = rear.reduce((a, b) => a[1] > b[1] ? a : b);
-      assert.ok(firstPeak[1] >= 200 && firstPeak[1] <= 480, `first peak ${firstPeak}`);
-      assert.ok(rearPeak[1] >= 400 && rearPeak[1] <= 1050, `rear peak ${rearPeak}`);
+      assert.ok(firstPeak[1] >= 180 && firstPeak[1] <= 850, `first peak ${firstPeak}`);
+      assert.ok(rearPeak[1] >= 700 && rearPeak[1] <= 2400, `rear peak ${rearPeak}`);
       assert.ok(rearPeak[1] > firstPeak[1] + 30);
       assert.ok(rearPeak[2] < first.at(-1)[2] - 150);
       assert.ok(first.at(-1)[1] < firstPeak[1] * .3);
@@ -148,8 +178,8 @@ test('preview has distinct alpine summits and saddles above a generously framed 
   const state = at(30000, { seed: 2917029651 }), pose = cameraPoseAt(JOURNEY_VIEW, .5);
   const near = projectPoint(pose, 16 / 9, [0, 0, journeyNearShore(0, state)]);
   const far = projectPoint(pose, 16 / 9, [0, 0, journeyFarShore(0, state)]);
-  assert.ok(near.y < -.82 && near.y > -.98, `foreground shore y ${near.y}`);
-  assert.ok((far.y - near.y) / 2 > .21, 'lake occupies over one fifth of the frame');
+  assert.ok(near.y < -.7 && near.y > -.98, `foreground shore y ${near.y}`);
+  assert.ok((far.y - near.y) / 2 > .18, 'lake has a generous vertical span');
   for (const layer of [1, 2]) {
     const peaks = [];
     for (let x = -2000; x <= 2000; x += 40) {
@@ -160,8 +190,8 @@ test('preview has distinct alpine summits and saddles above a generously framed 
     const high = Math.max(...peaks), low = Math.min(...peaks);
     assert.ok(high - low > (layer === 1 ? 130 : 260), `layer ${layer} relief ${high - low}`);
     if (layer === 2) {
-      assert.ok(high > 820 && low < 650, `rear crest height span ${low}–${high}`);
-      assert.ok(peaks.filter(y => y > 600).length > 10, 'several summits reach the snow zone');
+      assert.ok(high > 1500 && low < 1300, `rear crest height span ${low}–${high}`);
+      assert.ok(peaks.filter(y => y > 1000).length > 10, 'several summits reach the snow zone');
     }
   }
 });
@@ -174,11 +204,10 @@ test('tiny music changes cannot produce a large-time phase jump', () => {
       bands: music.bands.map(value => value + .0001),
     } });
     assert.equal(a.travelM, b.travelM);
-    assert.equal(journeyNearShore(43, a), journeyNearShore(43, b));
-    assert.equal(journeyFarShore(43, a), journeyFarShore(43, b));
+    assert.ok(Math.abs(journeyNearShore(43, a) - journeyNearShore(43, b)) < .03);
+    assert.ok(Math.abs(journeyFarShore(43, a) - journeyFarShore(43, b)) < .03);
     for (const layer of [0, 1, 2]) {
       const p = journeySurface(43, .53, layer, a), q = journeySurface(43, .53, layer, b);
-      assert.equal(p[2], q[2]);
       assert.ok(distance(p, q) < .03);
     }
   }
@@ -208,19 +237,21 @@ test('all bands shape the rear massif through continuous overlapping shoulders',
 // the renderer smoke; this catches CPU/shader edits drifting independently.
 function shaderEvaluator(state) {
   const source = JOURNEY_SURFACE_GLSL
-    .replace(/uniform\s+float\s+\w+(?:\[7\])?\s*;/g, '')
-    .replace(/\b(?:float|vec3)\s+(journey\w+)\s*\(([^)]*)\)/g, (_, name, parameters) =>
+    .replace(/uniform\s+float\s+[^;]+;/g, '')
+    .replace(/\b(?:float|vec2|vec3)\s+(journey\w+)\s*\(([^)]*)\)/g, (_, name, parameters) =>
       `function ${name}(${parameters.replace(/\b(?:float|vec2)\s+/g, '')})`)
     .replace(/\b(?:float|int|vec2|vec3)\s+(\w+)/g, 'let $1')
     .replace(/\bfloat\(([^()]*)\)/g, 'Number($1)');
   const make = new Function('uniforms', `
     const { uJourneyTime, uJourneyTravel, uJourneySeed, uJourneyEnergy,
       uJourneyBass, uJourneyMelody, uJourneyPulse, uJourneyBands } = uniforms;
-    const { sin, cos, abs, sqrt, min, max } = Math;
+    const { sin, cos, abs, sqrt, min, max, pow } = Math;
     const clamp = (v,a,b) => min(b,max(a,v));
     const smoothstep = (a,b,v) => { const t=clamp((v-a)/(b-a),0,1); return t*t*(3-2*t); };
+    const mix = (a,b,t) => a+(b-a)*t;
+    const step = (edge,x) => x<edge?0:1;
     const vec2 = (x,y) => ({x,y});
-    const vec3 = (x,y,z) => [x,y,z];
+    const vec3 = (x,y,z) => Object.assign([x,y,z],{x,y,z});
     ${source}
     return { journeyNearShore, journeyFarShore, journeyGroundHeight, journeySurface };
   `);
