@@ -218,3 +218,50 @@ test('same-store pageshow serializes its prior snapshot and owner release',async
  assert.equal(latest.positionMs,17000);assert.equal(await store.tabId(),token);
  assert.ok(await store.readSource(h.state.sourceId));await store.dispose();
 });
+test('normal reload waits for fallback lease release while a fresh duplicate still rotates',async()=>{
+ const h=fixture();const original=await h.store.tabId();
+ const reload=createVersionHandoffStore({...h.options,navigationType:'reload',sessionStorage:storage(h.ss.data)});
+ const identity=reload.tabId();await new Promise(resolve=>setTimeout(resolve,40));await h.store.release();
+ assert.equal(await identity,original);await reload.dispose();await h.store.dispose();
+});
+test('winning a Web Lock reclaims its dead previous document lease without rotating a reload',async()=>{
+ const held=new Set();const locks={async request(name,_options,fn){if(held.has(name))return fn(null);held.add(name);try{return await fn({name});}finally{held.delete(name);}}};
+ const h=fixture();await h.store.dispose();const previous=createVersionHandoffStore({...h.options,locks});const token=await previous.tabId();const id=await previous.saveSource(h.state);await previous.prepareSwitch({...h.state,sourceId:id,fromId:'a',toId:'b'});
+ held.clear(); // Browser released the dead document's lock; its IDB cleanup never ran.
+ const reload=createVersionHandoffStore({...h.options,locks,navigationType:'reload',sessionStorage:storage(h.ss.data)});
+ assert.equal(await reload.tabId(),token);assert.ok(await reload.readPending('b'));await reload.dispose();await previous.dispose();
+});
+test('synchronous unload transport snapshot survives aborted IndexedDB cleanup without copying audio',async()=>{
+ const h=fixture();await h.store.dispose();const listeners=new Map();const lifecycle={addEventListener:(k,v)=>listeners.set(k,v),removeEventListener:k=>listeners.delete(k)};
+ const previous=createVersionHandoffStore({...h.options,lifecycle});const id=await previous.saveSource(h.state);const record=await previous.prepareSwitch({...h.state,sourceId:id,fromId:'a',toId:'b'});await previous.completeSwitch(record);
+ previous.setSnapshotProvider(()=>({state:{...h.state,positionMs:17000},currentId:'b'}));h.db.fail=true;await listeners.get('pagehide')();h.db.fail=false;h.setTime(16000);
+ const destination=createVersionHandoffStore({...h.options,navigationType:'reload',sessionStorage:storage(h.ss.data)});
+ assert.equal((await destination.readLatest('b')).positionMs,17000);
+ const values=[...h.ss.data.values()].join('');assert.equal(values.includes('bass.wav'),false);assert.equal(values.includes('audio-files'),false);
+ await destination.dispose();await previous.dispose();
+});
+test('cold browser history navigation waits for outgoing lease release',async()=>{
+ const h=fixture();const token=await h.store.tabId();const history=createVersionHandoffStore({...h.options,navigationType:'back_forward',sessionStorage:storage(h.ss.data)});
+ const identity=history.tabId();await new Promise(resolve=>setTimeout(resolve,40));await h.store.release();assert.equal(await identity,token);await history.dispose();await h.store.dispose();
+});
+test('source invalidation is synchronous so an interrupted discard cannot resurrect old audio on reload',async()=>{
+ const h=fixture();const id=await h.store.saveSource(h.state);const pending=await h.store.prepareSwitch({...h.state,sourceId:id,fromId:'a',toId:'b'});await h.store.completeSwitch(pending);
+ h.db.fail=true;await assert.rejects(h.store.discardSource());h.db.fail=false;await h.store.release();
+ const reload=createVersionHandoffStore({...h.options,navigationType:'reload',sessionStorage:storage(h.ss.data)});
+ assert.equal(await reload.readLatest('b'),null);assert.equal(await reload.readSource(id),null);
+ await reload.dispose();await h.store.dispose();
+});
+test('a transient IndexedDB open failure can retry without reloading the page',async()=>{
+ const rows=new Map();let opens=0;
+ const indexedDB={open(){if(++opens===1)throw new Error('Transient SecurityError');
+  const request={};queueMicrotask(()=>{request.result={transaction(){const tx={};let timer;
+   const response=fn=>{const r={};queueMicrotask(()=>{r.result=fn();r.onsuccess?.();clearTimeout(timer);timer=setTimeout(()=>tx.oncomplete?.(),1);});return r;};
+   tx.objectStore=()=>({get:k=>response(()=>rows.get(k)),put:(v,k)=>response(()=>rows.set(k,v)),delete:k=>response(()=>rows.delete(k)),getAllKeys:()=>response(()=>[...rows.keys()]),getAll:()=>response(()=>[...rows.values()])});return tx;},close(){}};request.onsuccess?.();});return request;
+ }};
+ const store=createVersionHandoffStore({indexedDB,sessionStorage:storage(),locks:null,lifecycle:null,heartbeat:false});
+ await assert.rejects(store.tabId(),/SecurityError/);assert.ok(await store.tabId());assert.equal(opens,2);await store.dispose();
+});
+test('a connection arriving after a blocked open is rejected closes instead of leaking',async()=>{
+ let closed=0;const indexedDB={open(){const request={result:{close(){closed++;}}};queueMicrotask(()=>{request.onblocked?.();queueMicrotask(()=>request.onsuccess?.());});return request;}};
+ const store=createVersionHandoffStore({indexedDB,sessionStorage:storage(),locks:null,lifecycle:null,heartbeat:false});await assert.rejects(store.tabId(),/blocked/);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(closed,1);await store.dispose();
+});
