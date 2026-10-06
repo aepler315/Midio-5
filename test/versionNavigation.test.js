@@ -23,7 +23,7 @@ function fixture(overrides = {}) {
   const document = { createElement: tag => new Element(tag), getElementById: id => ({ app, hud, hudRight: right })[id], body: app, defaultView: new EventTarget(), baseURI: 'https://example.test/Midio-5/' };
   document.defaultView.location = { href: document.baseURI };
   const manifest = { schema: 1, buildSha: 'a'.repeat(40), liveId: 'live', entries: ['old', 'live', 'new'].map((id, i) => ({ id, label: `Version ${id}`, sourceSha: String(i + 1).repeat(40), sourcePr: i + 1, entryPath: id === 'live' ? './' : `versions/${id}/`, live: id === 'live' })) };
-  let state = { phase: 'ready', sourceId: 'source-1', source: { kind: 'audio-files', files: [{}] }, positionMs: 1200, durationMs: 5000, seed: 42, paused: false, settings: { reducedFlash: true, export: true } };
+  let state = { phase: 'ready', generation: 1, sourceId: 'source-1', source: { kind: 'audio-files', files: [{}] }, positionMs: 1200, durationMs: 5000, seed: 42, paused: false, settings: { reducedFlash: true, export: true } };
   const calls = [], listeners = new Set(), navigated = [];
   const adapter = { getState: () => ({ ...state }), subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn); }, pause: async () => { calls.push('pause'); state.paused = true; }, setPaused: async p => { calls.push(['paused', p]); state.paused = p; }, loadSource: async (source, intent) => { calls.push(['load', source, intent]); state = { ...state, phase: 'ready', sourceId: intent.sourceId, positionMs: intent.positionMs, paused: true }; }, seek: async ms => { calls.push(['seek', ms]); state.positionMs = ms; }, wakeHud: () => calls.push('wake') };
   const store = { saveSource: async () => { calls.push('save'); return 'source-1'; }, prepareSwitch: async value => { calls.push(['handoff', value]); return { schema: 1, ...value, switchId: 'switch-1' }; }, readPending: async () => null, readLatest: async () => null, readSource: async () => ({ kind: 'audio-files', files: [{}] }), completeSwitch: async handoff => { calls.push(['complete', handoff]); }, release: async () => { calls.push('release'); }, discardSource: async () => { calls.push('discard'); }, dispose: async () => {} };
@@ -115,7 +115,7 @@ test('new load and Stop invalidate persisted sessions but restoring does not', a
   assert.equal(f.calls.filter(c => c === 'discard').length, 2); nav.dispose();
 });
 test('Return after failed restore retargets its exact pending token and retains transport intent', async () => {
-  const f = fixture({ currentId: 'old' }); f.adapter.loadSource = async () => { throw new Error('Cannot decode'); };
+  const f = fixture({ currentId: 'old' }); f.adapter.loadSource = async () => { f.setState({ phase: 'error', sourceId: null, source: null }); throw new Error('Cannot decode'); };
   f.store.readPending = async () => ({ sourceId: 'source-1', toId: 'old', positionMs: 1700, paused: false, switchId: 'failed-s' });
   const nav = await mount(f); click(f.button('versionReturnLive')); await flush();
   assert.equal(f.navigated[0], 'https://example.test/Midio-5/?versionSwitch=switch-1');
@@ -165,4 +165,31 @@ test('a synchronous adapter initialization failure leaves no partially mounted n
   const f = fixture(); let reads = 0; const original = f.adapter.getState;
   f.adapter.getState = () => { if (++reads > 1) throw new Error('Adapter unavailable'); return original(); };
   await assert.rejects(mount(f), /Adapter unavailable/); assert.equal(f.app.querySelectorAll('#versionPrevious').length, 0);
+});
+test('user replacement during an owned restore cancels its old intent even for loading-to-loading changes', async () => {
+  const f = fixture(); let rejectOld, loads = 0;
+  f.store.readPending = async () => ({ sourceId: 'old-source', toId: 'live', positionMs: 1700, paused: true, switchId: 's' });
+  f.adapter.loadSource = () => { loads++; f.setState({ phase: 'loading', sourceId: null, source: null, generation: 2 }); return new Promise((resolve, reject) => { rejectOld = reject; }); };
+  const { mountVersionNavigation } = await import('../src/ui/VersionNavigation.js'); const nav = mountVersionNavigation(f.options); await flush();
+  f.setState({ phase: 'loading', sourceId: null, source: null, generation: 3 }); rejectOld(new Error('Old generation cancelled')); await nav.ready;
+  f.setState({ phase: 'ready', sourceId: 'new-source', source: { kind: 'demo' }, generation: 3 }); click(f.button('versionRetry')); await flush();
+  assert.equal(f.button('versionRetry').hidden, true); assert.equal(loads, 1); assert.equal(f.calls.filter(c => c === 'discard').length, 1); assert.equal(f.calls.some(c => c[0] === 'complete'), false); nav.dispose();
+});
+test('title preflight cannot navigate away from a newly selected song without carrying it', async () => {
+  let finish; const f = fixture({ preflight: () => new Promise(resolve => { finish = resolve; }) }); f.setState({ phase: 'title', sourceId: null, source: null });
+  const nav = await mount(f); click(f.button('versionNext')); await flush(); f.setState({ phase: 'loading', generation: 2 }); finish(); await flush();
+  assert.equal(f.navigated.length, 0); assert.equal(f.calls.includes('save'), false); nav.dispose();
+});
+test('recording after a completion failure still blocks Return to live', async () => {
+  const f = fixture(); f.store.readPending = async () => ({ sourceId: 'source-1', toId: 'live', positionMs: 1700, paused: false, switchId: 's' }); f.store.completeSwitch = async () => { throw new Error('Storage denied'); };
+  const nav = await mount(f); f.setState({ blockedReason: 'Finish recording before changing versions.' }); click(f.button('versionReturnLive')); await flush();
+  assert.equal(f.navigated.length, 0); assert.equal(f.button('versionReturnLive').disabled, true); nav.dispose();
+});
+test('Return after completion failure pauses and carries the current heard position', async () => {
+  const f = fixture({ currentId: 'old' }); f.store.readPending = async () => ({ sourceId: 'source-1', toId: 'old', positionMs: 1700, paused: false, switchId: 's' }); f.store.completeSwitch = async () => { throw new Error('Storage denied'); };
+  const nav = await mount(f); f.setState({ positionMs: 3600 }); click(f.button('versionReturnLive')); await flush();
+  const sent = f.calls.find(c => c[0] === 'handoff')[1]; assert.equal(sent.positionMs, 3600); assert.equal(sent.paused, false); assert.equal(f.calls.includes('pause'), true); nav.dispose();
+});
+test('built-in demo surfing explains that each version uses its own demo', async () => {
+  const f = fixture(); f.setState({ source: { kind: 'demo' } }); const nav = await mount(f); assert.match(f.button('versionStatus').textContent, /own built-in demo/); nav.dispose();
 });

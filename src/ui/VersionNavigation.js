@@ -37,6 +37,7 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
   let phase = 'idle', disposed = false, errorMessage = '', retryOperation = null, gestureRequired = false;
   let restoreHandoff = null, restoreSource = null, booting = false, bootChecked = false;
   let restoreResumed = false, restoreLoaded = false, completedKey = null, invalidation = Promise.resolve();
+  let restoreEpoch = 0, restoreGeneration = null, restoreClaiming = false;
   let unsubscribe = null, observer = null, pruned = false;
   const controls = [previous, next, retry, returnLive];
   const listeners = [];
@@ -53,16 +54,16 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
     root.classList.toggle('version-faded', hidden); root.classList.toggle('version-title', title);
     root.setAttribute('data-state', phase);
     for (const control of controls) control.tabIndex = hidden ? -1 : 0;
-    const reason = restoreHandoff && phase === 'error' ? null : blocked(state);
+    const reason = restoreHandoff && phase === 'error' ? state.blockedReason : blocked(state);
     previous.disabled = !neighbors.previous || busy() || !!reason;
     next.disabled = !neighbors.next || busy() || !!reason;
     previous.setAttribute('aria-label', neighbors.previous ? `Previous version: ${neighbors.previous.label}` : 'No earlier version');
     next.setAttribute('aria-label', neighbors.next ? `Next version: ${neighbors.next.label}` : 'No later version');
     previous.title = reason || previous.getAttribute('aria-label'); next.title = reason || next.getAttribute('aria-label');
-    retry.hidden = phase !== 'error'; retry.disabled = busy(); retry.textContent = gestureRequired ? 'Resume' : 'Retry';
-    returnLive.hidden = entry.live && phase !== 'error'; returnLive.disabled = busy() || (!!reason && phase !== 'error');
+    retry.hidden = phase !== 'error'; retry.disabled = busy() || !!state.blockedReason; retry.textContent = gestureRequired ? 'Resume' : 'Retry';
+    returnLive.hidden = entry.live && phase !== 'error'; returnLive.disabled = busy() || !!reason;
     if (phase === 'error') status.textContent = errorMessage;
-    else if (phase === 'idle') status.textContent = reason || (state.source?.kind === 'demo' ? 'Built-in demos can differ between versions.' : '');
+    else if (phase === 'idle') status.textContent = reason || (state.source?.kind === 'demo' ? 'Each version uses its own built-in demo.' : '');
   }
   function failure(error, operation) {
     if (disposed) return;
@@ -85,13 +86,13 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
   });
   const move = navigate || (url => view.location.assign(url.href));
   function sameSource(before, after) {
-    return before.sourceId === after.sourceId && after.phase === 'ready' && !blocked(after);
+    return before.sourceId === after.sourceId && before.generation === after.generation && after.phase === 'ready' && !blocked(after);
   }
   async function switchTo(id) {
     if (disposed || busy()) return;
     const initial = adapter.getState();
     const recovering = phase === 'error' && restoreHandoff;
-    if (!recovering && blocked(initial)) { sync(); return; }
+    if (initial.blockedReason || (!recovering && blocked(initial))) { sync(); return; }
     phase = 'preparing'; gestureRequired = false;
     const target = manifest.entries.find(e => e.id === id);
     status.textContent = `Preparing ${target?.label || 'version'}…`; sync();
@@ -102,12 +103,31 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
       if (recovering) {
         // A restore failure keeps its original intent and raw source; Return
         // must work even though this engine never became ready.
-        const handoff = await handoffStore.prepareSwitch({ ...restoreHandoff, phase: 'ready', blockedReason: null, replaceSwitchId: restoreHandoff.switchId, fromId: currentId, toId: id, settings: compatibleVersionSettings(restoreHandoff.settings) });
+        const retained = restoreHandoff;
+        const checkRecovery = () => {
+          const current = adapter.getState();
+          if (!retained || !restoreHandoff || current.generation !== initial.generation || current.blockedReason || (current.sourceId && current.sourceId !== retained.sourceId)) throw new Error(current.blockedReason || 'The song changed while preparing the switch.');
+          return current;
+        };
+        const current = checkRecovery();
+        let carry = retained;
+        if (current.phase === 'ready' && current.sourceId === retained.sourceId) {
+          await adapter.pause(); pausedHere = true;
+          carry = { ...retained, ...checkRecovery(), paused: initial.paused };
+        }
+        const handoff = await handoffStore.prepareSwitch({ ...carry, phase: 'ready', blockedReason: null, replaceSwitchId: retained.switchId, fromId: currentId, toId: id, settings: compatibleVersionSettings(carry.settings) });
         if (disposed) return;
+        checkRecovery();
         restoreHandoff = handoff;
-        url.searchParams.set('versionSwitch', handoff.switchId); await handoffStore.release(); if (disposed) return; phase = 'leaving'; sync(); move(url); return;
+        url.searchParams.set('versionSwitch', handoff.switchId); await handoffStore.release(); if (disposed) return; checkRecovery(); phase = 'leaving'; sync(); move(url); return;
       }
-      if (initial.phase === 'title' && !initial.source) { await handoffStore.release(); if (disposed) return; phase = 'leaving'; sync(); move(url); return; }
+      if (initial.phase === 'title' && !initial.source) {
+        const stillTitle = () => { const state = adapter.getState(); return state.phase === 'title' && !state.source && state.generation === initial.generation && !state.blockedReason; };
+        if (!stillTitle()) throw new Error('A song was selected while preparing the switch.');
+        await handoffStore.release(); if (disposed) return;
+        if (!stillTitle()) throw new Error('A song was selected while preparing the switch.');
+        phase = 'leaving'; sync(); move(url); return;
+      }
       if (!supported(initial.source)) throw new Error('This source cannot be carried between versions. Load audio files first.');
       if (!sameSource(initial, adapter.getState())) throw new Error('The song changed while preparing the switch.');
       await invalidation;
@@ -132,46 +152,61 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
   }
   async function restore(handoff) {
     if (disposed || busy()) return;
+    const epoch = ++restoreEpoch;
+    const current = () => !disposed && epoch === restoreEpoch;
+    restoreGeneration = adapter.getState().generation;
     restoreHandoff = handoff; phase = 'restoring'; gestureRequired = false; status.textContent = `Restoring your song in ${entry.label}…`; sync();
     try {
-      if (!restoreSource) restoreSource = await handoffStore.readSource(handoff.sourceId);
+      const source = restoreSource || await handoffStore.readSource(handoff.sourceId);
+      if (!current()) return;
+      restoreSource = source;
       if (!supported(restoreSource)) throw new Error('The saved audio source is unavailable.');
       if (disposed) return;
       if (!restoreResumed) {
-        if (!restoreLoaded) await adapter.loadSource(restoreSource, { ...handoff, settings: compatibleVersionSettings(handoff.settings) });
-        if (disposed) return;
+        if (!restoreLoaded) {
+          let loading;
+          restoreClaiming = true;
+          try {
+            loading = adapter.loadSource(restoreSource, { ...handoff, settings: compatibleVersionSettings(handoff.settings) });
+            restoreGeneration = adapter.getState().generation;
+          } finally { restoreClaiming = false; }
+          await loading;
+        }
+        if (!current()) return;
         const loaded = adapter.getState();
         const position = Math.min(Math.max(0, handoff.positionMs || 0), Math.max(0, loaded.durationMs || 0));
-        if (loaded.phase !== 'ready' || !loaded.paused || !Number.isFinite(loaded.positionMs) || Math.abs(loaded.positionMs - position) > 100) {
+        if (loaded.phase !== 'ready' || loaded.sourceId !== handoff.sourceId || !loaded.paused || !Number.isFinite(loaded.positionMs) || Math.abs(loaded.positionMs - position) > 100) {
           throw new Error('The song could not be restored at its saved position.');
         }
         restoreLoaded = true;
-        await adapter.setPaused(!!handoff.paused); restoreResumed = true;
+        await adapter.setPaused(!!handoff.paused); if (!current()) return; restoreResumed = true;
       }
       await handoffStore.completeSwitch(handoff);
-      if (disposed) return;
+      if (!current()) return;
       completedKey = `${handoff.sourceId}:${handoff.switchId || ''}`;
-      restoreHandoff = null; restoreSource = null; restoreResumed = false; restoreLoaded = false; phase = 'idle'; retryOperation = null;
+      restoreHandoff = null; restoreSource = null; restoreResumed = false; restoreLoaded = false; restoreGeneration = null; phase = 'idle'; retryOperation = null;
       // The token is only a pending transaction hint. Keeping it after success
       // would turn a subsequent reload into an attempt to consume stale state.
       if (view.history?.replaceState) {
         const clean = new URL(view.location.href); clean.searchParams.delete('versionSwitch'); view.history.replaceState(view.history.state, '', clean.href);
       }
       adapter.wakeHud(); sync();
-    } catch (error) { failure(error, () => restore(handoff)); }
+    } catch (error) { if (current()) failure(error, () => restore(handoff)); }
   }
   async function reconcileTransport(latest) {
     const before = adapter.getState();
     if (before.phase !== 'ready' || before.sourceId !== latest.sourceId || blocked(before)) return;
     const position = Math.min(Math.max(0, latest.positionMs || 0), Math.max(0, before.durationMs || 0));
     if (Math.abs(before.positionMs - position) <= 100 && before.paused === !!latest.paused) return;
+    const epoch = ++restoreEpoch, current = () => !disposed && epoch === restoreEpoch;
+    restoreGeneration = before.generation;
     phase = 'restoring'; status.textContent = 'Restoring your song position…'; sync();
     try {
-      await adapter.pause(); await adapter.seek(position);
+      await adapter.pause(); if (!current()) return; await adapter.seek(position); if (!current()) return;
       const settled = adapter.getState();
       if (settled.sourceId !== latest.sourceId || settled.phase !== 'ready' || Math.abs(settled.positionMs - position) > 100) throw new Error('The current song changed while restoring its position.');
-      await adapter.setPaused(!!latest.paused); phase = 'idle'; sync();
-    } catch (error) { failure(error, () => reconcileTransport(latest)); }
+      await adapter.setPaused(!!latest.paused); if (!current()) return; restoreGeneration = null; phase = 'idle'; sync();
+    } catch (error) { if (current()) failure(error, () => reconcileTransport(latest)); }
   }
   async function boot(reconcileExisting = false) {
     if (disposed || booting || busy() || phase === 'error') return;
@@ -200,16 +235,19 @@ export function mountVersionNavigation({ document, manifest: value, currentId, s
   on(previous, 'click', () => activate(() => { if (!previous.disabled) switchTo(neighbors.previous.id); }));
   on(next, 'click', () => activate(() => { if (!next.disabled) switchTo(neighbors.next.id); }));
   on(returnLive, 'click', () => activate(() => { if (!returnLive.disabled) switchTo(manifest.liveId); }));
-  on(retry, 'click', () => activate(() => retryOperation?.()));
+  on(retry, 'click', () => activate(() => { if (!retry.disabled && !retry.hidden) retryOperation?.(); }));
   on(root, 'focusin', () => adapter.wakeHud()); on(root, 'focusout', () => adapter.wakeHud()); on(root, 'pointerdown', () => adapter.wakeHud());
   try {
     unsubscribe = adapter.subscribe(() => {
       const state = adapter.getState();
-      const userReplacement = phase !== 'restoring' && phase !== 'leaving' && ((state.phase === 'loading' && lastObserved.phase !== 'loading') || (state.phase === 'title' && !!lastObserved.sourceId));
+      const changedGeneration = state.generation !== lastObserved.generation;
+      const replacesRestore = phase === 'restoring' && !restoreClaiming && state.generation !== restoreGeneration;
+      const userReplacement = replacesRestore || (phase !== 'restoring' && phase !== 'leaving' && (changedGeneration || (state.phase === 'loading' && lastObserved.phase !== 'loading') || (state.phase === 'title' && !!lastObserved.sourceId)));
       lastObserved = state;
       if (userReplacement) {
+        restoreEpoch++; restoreGeneration = null;
         restoreHandoff = null; restoreSource = null; restoreResumed = false; restoreLoaded = false; completedKey = null;
-        if (phase === 'error') { phase = 'idle'; retryOperation = null; errorMessage = ''; }
+        if (phase === 'error' || phase === 'restoring') { phase = 'idle'; retryOperation = null; errorMessage = ''; }
         // Do not let an old latest record survive a replacement that subsequently
         // fails. A fresh successful source is persisted only on the next switch.
         invalidation = handoffStore.discardSource().catch(error => { failure(error, () => switchTo(manifest.liveId)); });
