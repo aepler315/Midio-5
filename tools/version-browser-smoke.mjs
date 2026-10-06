@@ -243,14 +243,32 @@ async function capture(page, output, name) {
   return result;
 }
 
-async function wake(page) { await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.wakeHud()); }
+async function wake(page) {
+  // Wake through the same real input lifecycle as the viewer. Calling only
+  // wakeHud leaves Car mode's 20s idle gate armed, which correctly absorbs
+  // the next button tap even though its HUD was programmatically revealed.
+  const stage = page.locator('#stage'), bounds = await stage.boundingBox();
+  assert.ok(bounds, 'stage must be present for a real wake tap');
+  await stage.click({ position: { x: bounds.width / 2, y: bounds.height / 3 } });
+}
 async function switchVersion(page, direction, expected, timeout) {
   console.log(`Version-browser smoke: ${direction} to ${expected.id}`);
   await wake(page);
-  await page.locator(direction === 'previous' ? '#versionPrevious' : '#versionNext').click();
+  const selector = direction === 'previous' ? '#versionPrevious' : '#versionNext';
+  await page.evaluate(selector => {
+    const nav = document.querySelector('[data-version-navigation]'), button = document.querySelector(selector), adapter = window.__MIDIO_VERSION_ADAPTER?.getState();
+    const attempt = { url: location.href, selector, atMs: performance.now(), idleMs: performance.now() - (window.__SMW?.carMode?.lastInputMs || 0),
+      navigation: { state: nav?.getAttribute('data-state'), inert: nav?.inert, className: nav?.className, hudClass: document.getElementById('hudRight')?.className, disabled: button?.disabled },
+      adapter: { phase: adapter?.phase, sourceId: adapter?.sourceId, positionMs: adapter?.positionMs, paused: adapter?.paused, blockedReason: adapter?.blockedReason } };
+    window.__VERSION_SMOKE.lastSwitchClick = attempt;
+    sessionStorage.setItem('midio:smoke-last-switch-click', JSON.stringify(attempt));
+  }, selector);
+  await page.locator(selector).click();
   await page.waitForFunction(id => {
     const text = document.getElementById('midio-version-metadata')?.textContent;
-    return text && JSON.parse(text).currentId === id;
+    if (text && JSON.parse(text).currentId === id) return true;
+    if (document.querySelector('[data-version-navigation]')?.getAttribute('data-state') === 'error') throw new Error(document.getElementById('versionStatus')?.textContent || 'Version navigation failed before departure.');
+    return false;
   }, expected.id, { timeout });
   await waitReady(page, timeout);
 }
@@ -574,7 +592,8 @@ async function runPrefix(options, audit, prefix, wavs) {
               navigation: { state: nav?.getAttribute('data-state'), status: document.getElementById('versionStatus')?.textContent, retry: document.getElementById('versionRetry')?.textContent },
               metadata: metadata ? JSON.parse(metadata) : null, range: window.__SMW?.rangeState,
               sceneClass: window.__SMW?.sim?.biomes?.rangePresentation?.scene?.constructor.name,
-              probe: { restores: window.__VERSION_SMOKE?.restores, resumes: window.__VERSION_SMOKE?.resumes } };
+              probe: { restores: window.__VERSION_SMOKE?.restores, resumes: window.__VERSION_SMOKE?.resumes,
+                lastSwitchClick: window.__VERSION_SMOKE?.lastSwitchClick || JSON.parse(sessionStorage.getItem('midio:smoke-last-switch-click') || 'null') } };
           }),
           new Promise((resolve, reject) => { diagnosticTimeout = setTimeout(() => reject(new Error('Diagnostic evaluation timed out')), 5000); }),
         ]);
