@@ -150,7 +150,7 @@ export class Simulation {
     });
     this.rangeNarrative = compileLandscapeSources({ durationMs: conductor.durationMs,
       timeline: conductor.timeline, casting: this.casting });
-    this.biomes.rangePerformance = this.presentation.trioStage;
+    this.biomes.rangePerformance = this.presentation.trioHabitat;
     this.reducedFlash = false;
     this.visualStyle = 'rendered';
     this.biomes.reducedFlash = this.reducedFlash;

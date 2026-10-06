@@ -28,7 +28,7 @@ function recording(rms = 1e-6) {
 }
 function contactFrame(session, timeline = [kick], timeMs = 1080) {
   const profile = { name: 'TAIGA', sky: ['#102030', '#304050', '#607080'] };
-  const sim = { presentation: { trioStage: true }, heardTimeMs: timeMs, songSeed: 42,
+  const sim = { presentation: { trioHabitat: true }, heardTimeMs: timeMs, songSeed: 42,
     biomes: { durationMs: 4000, _dayNightCycleMs: 6000, ridgeMusicSession: session,
       conductor: { timeline }, currentBlend: { from: 'TAIGA', to: 'TAIGA', t: 1 }, world: {},
       _profile: () => profile, _rotated: c => c, lerpCache: new LerpCache(), _airColor: '#556677' } };

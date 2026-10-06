@@ -21,6 +21,7 @@ const frameAt = (progress01, extra = {}) => ({ performance: true, progress01,
 const near = (a, b) => a.forEach((v, i) => assert.ok(Math.abs(v - b[i]) < 1e-9, `${a} != ${b}`));
 
 test('performance camera keeps one direction and height while travelling inside the approved rail', () => {
+  const view = catalog.views.find(v => v.id !== 'muncho-lake-south');
   assert.equal(typeof camera.performanceCameraPose, 'function');
   const first = camera.performanceCameraPose(view, 0);
   const forward = cameraBasis(first).forward;
@@ -85,7 +86,7 @@ test('reflection uses the rendered lateral camera and retains listener zoom', ()
 
 function simulation(performance) {
   const profile = { name: 'TAIGA', sky: ['#102030', '#304050', '#607080'] };
-  return { presentation: { trioStage: performance }, songSeed: 42, stageW: 1280,
+  return { presentation: { trioHabitat: performance }, songSeed: 42, stageW: 1280,
     rangeNarrative: { durationMs: 180000, sample: () => ({ sources: {
       midio: { activity: .6 }, broshi: { activity: .4 }, midasus: { activity: .5 } } }) },
     biomes: { tSec: 60, durationMs: 180000, _dayNightCycleMs: 240000,
@@ -111,11 +112,12 @@ test('performance snapshot declares camera ownership and suppresses old actor ow
 test('listener zoom stops above the real Muncho terrain from every lateral station', async () => {
   const data = await loadShippedTerrain(fileURLToPath(new URL('../src/assets/range/v2/', import.meta.url)), view);
   const scene = bareScene();
-  scene.prepared.set(view.id, { data, waterLevelM: 820 });
+  scene.prepared.set(view.id, { data, waterLevelM: 825,
+    uniforms: { uHeightRange: { value: new THREE.Vector2(data.manifest.boundsM.min[1], data.manifest.boundsM.max[1]) } } });
   for (let i = 0; i <= 20; i++) {
     const frame = frameAt(i / 20, { userCamera: { fx: camera.USER_FX_MAX, rx: 0, uy: -.1 } });
     const pose = scene.movedPose(view, frame).pose;
-    const ground = Math.max(820, terrainHeightAt(data, pose.eyeM[0], pose.eyeM[2]));
+    const ground = Math.max(825, terrainHeightAt(data, pose.eyeM[0], pose.eyeM[2]));
     assert.ok(pose.eyeM[1] - ground >= 49.99, `${i}: camera must clear the geographic surface`);
     assert.ok(pose.userScale >= 0 && pose.userScale <= 1);
   }

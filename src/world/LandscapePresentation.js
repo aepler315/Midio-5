@@ -1,6 +1,6 @@
-// The Range's passive stage is separate from retired gameplay ownership.
-const landscape = Object.freeze({ performers: false, decorativeActors: false, artificialNearProps: false, inhabitants: false, trioStage: false });
-const performance = Object.freeze({ ...landscape, trioStage: true });
+// The Range's shoreline inhabitants are separate from retired gameplay ownership.
+const landscape = Object.freeze({ performers: false, decorativeActors: false, artificialNearProps: false, inhabitants: false, trioHabitat: false });
+const performance = Object.freeze({ ...landscape, trioHabitat: true });
 
 export function resolveRangeExperience(search = '') {
   const q = new URLSearchParams(String(search || '').replace(/^\?/, ''));

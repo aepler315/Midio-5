@@ -23,6 +23,40 @@ export const MIRROR_LIFT = 0.45;
  *  stand on tiles visible from the rail. */
 export const MIRROR_MIN_SAMPLES = 40;
 
+/** Fade a reflected screen capture into directional sky before its edge. */
+export const BACKDROP_FEATHER_UV = .045;
+
+/** Valid captured picture in texture UVs (bottom-left origin). The capture
+ * includes scenic overscan, but the source Canvas only contains the fitted
+ * nominal picture. Opaque portrait letterboxing is invalid reflection too. */
+export function backdropBounds(viewport, transform, canvas) {
+  const W = viewport?.logicalWidth, H = viewport?.logicalHeight;
+  const width = canvas?.width, height = canvas?.height, margin = viewport?.overscanPx || 0;
+  const nw = viewport?.nominalWidth || W - 2 * margin, nh = viewport?.nominalHeight || H - 2 * margin;
+  const a = transform?.a ?? 1, d = transform?.d ?? 1, e = transform?.e ?? 0, f = transform?.f ?? 0;
+  if (![W, H, width, height, nw, nh, a, d].every(v => Number.isFinite(v) && v > 0)
+    || ![e, f].every(Number.isFinite)) return [0, 0, 0, 0];
+  const scale = Math.min(width / nw, height / nh);
+  const fitW = nw * scale, fitH = nh * scale;
+  const fitX = (width - fitW) / 2, fitY = (height - fitH) / 2;
+  const sourceW = a * W, sourceH = d * H;
+  const x0 = Math.max(0, fitX, e), y0 = Math.max(0, fitY, f);
+  const x1 = Math.min(width, fitX + fitW, e + sourceW), y1 = Math.min(height, fitY + fitH, f + sourceH);
+  if (!(x1 > x0 && y1 > y0)) return [0, 0, 0, 0];
+  return [(x0 - e) / sourceW, 1 - (y1 - f) / sourceH,
+    (x1 - e) / sourceW, 1 - (y0 - f) / sourceH];
+}
+
+/** CPU twin of the reflection shader's validity weight, for projection and
+ * capture regression tests; transparent or missing pixels never darken sky. */
+export function backdropWeight(uv, bounds, alpha = 1) {
+  if (!Array.isArray(uv) || !Array.isArray(bounds) || uv.length !== 2 || bounds.length !== 4
+    || ![...uv, ...bounds, alpha].every(Number.isFinite) || !(bounds[2] > bounds[0] && bounds[3] > bounds[1])) return 0;
+  const edge = Math.min(uv[0] - bounds[0], uv[1] - bounds[1], bounds[2] - uv[0], bounds[3] - uv[1]);
+  const t = Math.max(0, Math.min(1, edge / BACKDROP_FEATHER_UV));
+  return t * t * (3 - 2 * t) * Math.max(0, Math.min(1, alpha));
+}
+
 export function mirrorSize(width, height, scale = MIRROR_SCALE) {
   return { width: Math.max(2, Math.round(width * scale)), height: Math.max(2, Math.round(height * scale)) };
 }
