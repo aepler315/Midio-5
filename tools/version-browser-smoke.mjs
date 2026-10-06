@@ -500,11 +500,12 @@ async function runPrefix(options, audit, prefix, wavs) {
     console.log('Version-browser smoke: mobile HUD passed; checking real calibration and recording');
     // The real calibration/recording UI must block departure. Recording is
     // saved so the evidence includes the actual output, not just a flag.
+    await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(false));
     await clickHudButton(page, '#calibrateBtn');
     await page.waitForFunction(() => /calibr/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''));
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
     await clickHudButton(page, '#calibrateBtn');
-    await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(false));
+    await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
     await clickHudButton(page, '#recordBtn');
     await page.waitForFunction(() => /record/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''));
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
