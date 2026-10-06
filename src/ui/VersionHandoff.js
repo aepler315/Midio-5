@@ -43,7 +43,7 @@ export function createVersionHandoffStore({ indexedDB = globalThis.indexedDB, se
   heartbeat = true } = {}) {
   const db = storage || idbStorage(indexedDB);
   const documentId = randomId();
-  let token, claimed = false, acquiring, releaseLock, lockCompletion, timer, snapshotProvider, disposed = false;
+  let token, claimed = false, acquiring, releaseLock, lockCompletion, timer, snapshotProvider, lifecycleHide, lifecycleRestore, disposed = false;
   const key = name => `${token}:${name}`;
   function storedToken() {
     try { return sessionStorage?.getItem(TOKEN_KEY) || randomId(); }
@@ -92,6 +92,7 @@ export function createVersionHandoffStore({ indexedDB = globalThis.indexedDB, se
     try { await acquiring; } catch (error) { releaseLock?.(); await lockCompletion; releaseLock = null; throw error; } finally { acquiring = null; }
   }
   async function owned(fn) {
+    if (lifecycleRestore) await lifecycleRestore;
     await acquire();
     return db.atomic(async tx => {
       const owner = await tx.get(key('owner'));
@@ -120,7 +121,7 @@ export function createVersionHandoffStore({ indexedDB = globalThis.indexedDB, se
         worldId: state.worldId ?? null, rangeViewId: state.rangeViewId ?? null, settings: { ...(state.settings || {}) } });
     });
   }
-  const pagehide = async () => {
+  const snapshotAndRelease = async () => {
     try {
       if (claimed && snapshotProvider) {
         const snapshot = snapshotProvider();
@@ -129,11 +130,18 @@ export function createVersionHandoffStore({ indexedDB = globalThis.indexedDB, se
     } catch { /* An unsaved or replaced source cannot overwrite the last successful session. */ }
     finally { await release().catch(() => {}); }
   };
-  const pageshow = event => { acquire(!!event?.persisted).catch(() => {}); };
+  const pagehide = () => { lifecycleHide = snapshotAndRelease(); return lifecycleHide; };
+  const pageshow = event => {
+    const restore = (async () => { await lifecycleHide; await acquire(!!event?.persisted); })();
+    lifecycleRestore = restore;
+    const finished = () => { if (lifecycleRestore === restore) lifecycleRestore = null; };
+    restore.then(finished, finished);
+    return restore;
+  };
   lifecycle?.addEventListener('pagehide', pagehide);
   lifecycle?.addEventListener('pageshow', pageshow);
   return {
-    tabId: async () => { await acquire(); return token; }, release, updateLatest,
+    tabId: async () => { if (lifecycleRestore) await lifecycleRestore; await acquire(); return token; }, release, updateLatest,
     setSnapshotProvider(provider) { snapshotProvider = provider; },
     async saveSource(state) {
       if (state.phase !== 'ready' || state.blockedReason || !state.sourceId || !['audio-files','demo'].includes(state.source?.kind)) throw new Error(state.blockedReason || 'The selected song is not ready to carry.');

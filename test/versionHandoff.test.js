@@ -207,3 +207,14 @@ test('persisted pageshow waits for the outgoing document release instead of rota
  assert.equal(await identity,h.ss.getItem('midio:version-tab'));
  await returning.dispose();await h.store.dispose();
 });
+test('same-store pageshow serializes its prior snapshot and owner release',async()=>{
+ const listeners=new Map();const lifecycle={addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)};
+ const h=fixture();await h.store.dispose();const store=createVersionHandoffStore({...h.options,lifecycle});await store.saveSource(h.state);const token=await store.tabId();
+ store.setSnapshotProvider(()=>({state:{...h.state,positionMs:17000},currentId:'a'}));
+ const hide=listeners.get('pagehide')();const show=listeners.get('pageshow')({persisted:true});
+ await hide;await show;
+ assert.ok(h.db.rows().has(token+':owner'),'pageshow retains ownership after the earlier hide releases');
+ const latest=await store.readLatest('a');
+ assert.equal(latest.positionMs,17000);assert.equal(await store.tabId(),token);
+ assert.ok(await store.readSource(h.state.sourceId));await store.dispose();
+});
