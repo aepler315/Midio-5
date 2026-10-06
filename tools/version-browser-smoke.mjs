@@ -502,12 +502,15 @@ async function runPrefix(options, audit, prefix, wavs) {
     // saved so the evidence includes the actual output, not just a flag.
     await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(false));
     await clickHudButton(page, '#calibrateBtn');
-    await page.waitForFunction(() => /calibr/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''));
+    await page.waitForFunction(() => /calibr/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || '')
+      && document.getElementById('versionPrevious').disabled && document.getElementById('versionNext').disabled);
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
     await clickHudButton(page, '#calibrateBtn');
-    await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
+    await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason
+      && !document.getElementById('versionPrevious').disabled && !document.getElementById('versionNext').disabled);
     await clickHudButton(page, '#recordBtn');
-    await page.waitForFunction(() => /record/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''));
+    await page.waitForFunction(() => /record/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || '')
+      && document.getElementById('versionPrevious').disabled && document.getElementById('versionNext').disabled);
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
     await page.waitForFunction(() => document.getElementById('recordBtn')?.title === 'Stop recording and save the video', null, { timeout: options.timeout });
     await page.waitForTimeout(1800);
@@ -532,7 +535,8 @@ async function runPrefix(options, audit, prefix, wavs) {
     await page.locator('#completePanel:not(.hidden)').waitFor({ state: 'visible', timeout: 30000 });
     await page.locator('#exportPreset').selectOption('car');
     await page.locator('#exportBtn').click();
-    await page.waitForFunction(() => /record|export/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''), null, { timeout: options.timeout });
+    await page.waitForFunction(() => /record|export/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || '')
+      && document.getElementById('versionPrevious').disabled && document.getElementById('versionNext').disabled, null, { timeout: options.timeout });
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
     await page.waitForFunction(() => document.getElementById('recordBtn')?.title === 'Stop recording and save the video', null, { timeout: options.timeout });
     const exporting = await state(page);
