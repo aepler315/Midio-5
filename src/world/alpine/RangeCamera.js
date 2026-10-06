@@ -21,7 +21,7 @@
 // authored view cone (|right| <= forward * tanX, same for up). A cone moved
 // along a vector inside itself is a subset of the original cone, so a
 // zoomed frame only ever shows land the authored frame already covers.
-import { cameraBasis } from '../terrain/SceneTravel.js';
+import { cameraBasis, cameraPoseAt, SCENE_PREVIEW_PROGRESS } from '../terrain/SceneTravel.js';
 import { hashSeed, mulberry32 } from '../../utils/math.js';
 
 export const NEUTRAL_MOVE = Object.freeze({ dolly: 0, yaw: 0, crane: 0, truck: 0, kind: 'rest' });
@@ -72,6 +72,29 @@ const smoother = (u) => u * u * u * (u * (u * 6 - 15) + 10);
 const lerp = (a, b, t) => a + (b - a) * t;
 const add = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+
+/** A steady side view of the same approved rail: the eye retains its
+ * authored horizontal path, while eye and target translate together with
+ * one viewing direction. The stable height clears every authored eye
+ * height, including an optional upward rail arc. */
+export function performanceCameraPose(view, progress01) {
+  const center = cameraPoseAt(view, SCENE_PREVIEW_PROGRESS);
+  const authored = cameraPoseAt(view, progress01);
+  const height = Math.max(view.camera.eyeStartM[1], view.camera.eyeEndM[1])
+    + Math.max(0, view.camera.eyeArcM?.[1] || 0);
+  const eyeM = [authored.eyeM[0], height, authored.eyeM[2]];
+  return { eyeM, targetM: add(eyeM, sub(center.targetM, center.eyeM)), fovYDeg: center.fovYDeg };
+}
+
+/** One rail policy for terrain, reflected terrain, and the sky reference.
+ * Accessibility freezes performance travel; scenery-only keeps its existing
+ * authored (including glacier) rail behavior. */
+export function rangeRailPose(view, frame) {
+  if (frame.performance) return performanceCameraPose(view,
+    frame.reducedMotion ? SCENE_PREVIEW_PROGRESS : frame.progress01);
+  return cameraPoseAt(view, view.glacier && !frame.reducedMotion
+    ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+}
 
 const keyCache = new WeakMap();
 

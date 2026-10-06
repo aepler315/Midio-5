@@ -81,6 +81,7 @@ import {
 } from './ui/KeepAwake.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
+import { resolveRangeExperience, rangePerformanceViewId } from './world/LandscapePresentation.js';
 import { formatSeed, parseSeed, resolveSongSeed } from './utils/seed.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
@@ -283,6 +284,7 @@ const rangeSeekEl = document.getElementById('rangeSeek');
 rangeSeekEl?.addEventListener('change', () => { if (sim) seekSong(Number(rangeSeekEl.value) * 1000); });
 document.getElementById('rangeRestart')?.addEventListener('click', () => { if (sim) seekSong(0); });
 const rangeListening = true;
+const rangeExperience = resolveRangeExperience(typeof location !== 'undefined' ? location.search : '');
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
@@ -486,7 +488,7 @@ let sceneChoice = resolveSceneChoice({
   catalog: SCENE_CATALOG, biomeNames: PICKABLE_BIOMES.map((b) => b.name),
 });
 const rangePresentation = rangeMode.mode === 'v2'
-  ? new RangePresentation({ mode: 'v2', forcedViewId: sceneChoice.viewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
+  ? new RangePresentation({ mode: 'v2', forcedViewId: rangePerformanceViewId(sceneChoice, rangeExperience), diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
   : null;
 
 // The title screen is alive from the very first frame: a living backdrop
@@ -1995,6 +1997,7 @@ function startTimeline(timelineData, extra = {}) {
     sim = new Simulation(conductor, paramBus, {
       bpm: timelineData.bpm || 120,
       rangeListening,
+      rangeExperience,
       rangeNarrative: timelineData.rangeNarrative || null,
       energyCurves: timelineData.energyCurves || null,
       ridgeMusicSession: timelineData.ridgeMusicSession,
@@ -2091,7 +2094,7 @@ function startTimeline(timelineData, extra = {}) {
   // it. Created here, per song, which is after the world is known.
   renderer = createPresentingRenderer({ canvas, mode: rendererMode, presentation: effectivePresentation(), residency: sharedResidency() });
   if (rangePresentation) {
-    rangePresentation.setForcedView((timelineData.sceneChoice || sceneChoice).viewId);
+    rangePresentation.setForcedView(rangePerformanceViewId(timelineData.sceneChoice || sceneChoice, rangeExperience));
     rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen, exportMode });
     renderer.rangePresentation = rangePresentation;
   }

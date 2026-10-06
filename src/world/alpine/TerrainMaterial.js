@@ -15,6 +15,27 @@ import { STORM_GLSL } from './RangeStorm.js';
 import { MIST_GLSL, MIST_SAMPLES } from './RangeAtmosphere.js';
 import { GLACIER_GLSL } from './GlacierField.js';
 
+const LAKE_MUSIC_HITS = 4;
+
+/** Bounded conductor contacts for the geographic water shader. Rebind every
+ * frame so seeking, accessibility changes and view changes cannot retain an
+ * old ripple. Strength is preserved; the shader owns its short decay. */
+export function bindLakeMusic(uniforms, frame, { originM = null } = {}) {
+  const anchored = Array.isArray(originM) && originM.length === 3 && originM.every(Number.isFinite);
+  const enabled = !!frame.performance && !frame.reducedMotion && anchored;
+  const limit = (frame.qualityLevel ?? 0) >= 4 ? 2 : LAKE_MUSIC_HITS;
+  const hits = frame.waterHits || [];
+  uniforms.uLakeMusicOrigin.value.set(anchored ? originM[0] : 0, anchored ? originM[2] : 0);
+  uniforms.uLakeMusicGain.value = enabled ? (frame.reducedFlash ? .35 : 1) : 0;
+  uniforms.uLakeMusicCount.value = enabled ? Math.min(limit, hits.length) : 0;
+  for (let i = 0; i < LAKE_MUSIC_HITS; i++) {
+    const hit = enabled && i < limit ? hits[i] : null;
+    const age = hit ? (frame.timeMs - hit.tMs) / 1000 : -1;
+    const valid = Number.isFinite(age) && age >= 0 && age <= 2 && Number.isFinite(hit?.strength);
+    uniforms.uLakeMusicHits.value[i].set(valid ? age : -1, valid ? Math.max(0, Math.min(1, hit.strength)) : 0);
+  }
+}
+
 export const DEFORM_GLSL = /* glsl */`
   ${GLACIER_GLSL}
   uniform vec2 uHeightRange;
@@ -110,6 +131,10 @@ export const SCENE_FRAG = /* glsl */`
   uniform float rForestFloor;
   uniform float rWaterSkyMix; uniform float rWaterGlintGain;
   uniform float uTime;
+  uniform vec2 uLakeMusicHits[${LAKE_MUSIC_HITS}]; // age seconds, conductor strength
+  uniform vec2 uLakeMusicOrigin;
+  uniform int uLakeMusicCount;
+  uniform float uLakeMusicGain;
   // Lake mirror (WaterMirror.js): the ground seen from the camera reflected
   // about the water level, projected by uMirrorMatrix; uMirrorAmount 0 when
   // there is none. While that image is drawn, ground below uClipBelow is cut.
@@ -195,6 +220,11 @@ export const SCENE_FRAG = /* glsl */`
   float waterGlint(float cosine, float gain, float keyEnergy) {
     if (keyEnergy < 1e-10 || gain <= 0.0) return 0.0;
     return pow(max(cosine, 0.0), 600.0) * gain;
+  }
+  float lakeRing(float radius, float age, float strength) {
+    if (age < 0.0 || age > 2.0 || strength <= 0.0) return 0.0;
+    float band = (radius - (45.0 + age * 170.0)) / 14.0;
+    return exp(-band * band) * exp(-age / 0.65) * clamp(strength, 0.0, 1.0);
   }
 
   void main() {
@@ -374,7 +404,7 @@ export const SCENE_FRAG = /* glsl */`
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
     if (uDebugMask == 5) { outColor = vec4(vec3(key), 1.0); return; }
     vec3 V = normalize(uCameraPos - vRenderedWorld);
-    float waterFres = 0.0, paw = 0.0, wake = 0.0;
+    float waterFres = 0.0, paw = 0.0, wake = 0.0, musicRing = 0.0;
     vec3 waterN = vec3(0.0, 1.0, 0.0);
     if (water && uHasMaterial > 0.5) {
       // Midio's wake roughens the water as a cat's paw does.
@@ -382,6 +412,18 @@ export const SCENE_FRAG = /* glsl */`
       // Rain stipples the whole lake while the squall is over it.
       paw = max(max(catsPaw(vWorld.xz), wake), uStorm.x * 0.75);
       vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * (0.025 + 0.05 * paw);
+      // World-space rings never leave the hydroflattened water mask, and
+      // several simultaneous contacts still have one small bounded response.
+      if (uLakeMusicGain > 0.0) {
+        vec2 radial = vWorld.xz - uLakeMusicOrigin;
+        float radius = length(radial);
+        for (int i = 0; i < ${LAKE_MUSIC_HITS}; i++) {
+          if (i >= uLakeMusicCount) break;
+          musicRing += lakeRing(radius, uLakeMusicHits[i].x, uLakeMusicHits[i].y);
+        }
+        musicRing = clamp(musicRing, 0.0, 1.0) * uLakeMusicGain;
+        ripple += radial / max(radius, 1.0) * musicRing * 0.018;
+      }
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       waterN = waterNormal;
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(vec3(0.0, 1.0, 0.0), V), 0.0), 5.0);
@@ -455,6 +497,7 @@ export const SCENE_FRAG = /* glsl */`
       vec3 glow = actorGlint(vRenderedWorld, V, waterN) * 0.6 + uActorColor[0] * wake * 0.12;
       // Rain on the lake breaks the path up, so it fades with the squall.
       color += glow * clear * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0)) * (1.0 - 0.75 * uStorm.x);
+      color += mix(uSkyHorizon, vec3(0.3, 0.42, 0.5), 0.45) * musicRing * 0.035 * clear * uNarrative.z * uNarrative.w;
     }
     // A narrow physical silhouette supplies the main opening ink. Sparse
     // source-space hints are drawn separately against this same depth.
@@ -518,6 +561,8 @@ export function sceneUniforms(THREE, base) {
     uAmbientScale: { value: 2.5 },
     uDebugMask: { value: 0 },
     uTime: { value: 0 },
+    uLakeMusicHits: { value: Array.from({ length: LAKE_MUSIC_HITS }, () => new THREE.Vector2(-1, 0)) },
+    uLakeMusicOrigin: { value: new THREE.Vector2() }, uLakeMusicCount: { value: 0 }, uLakeMusicGain: { value: 0 },
     // Gust fronts in flight: age (s), strength, and way across the frame.
     ...gustUniforms(),
     uForestKeep: { value: 1 },

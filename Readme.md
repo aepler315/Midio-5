@@ -189,14 +189,24 @@ a fixed 120 Hz and rendering interpolates between steps.
 Musical casting sorts the notes into three lanes named for the cast:
 clean melodic material to **Midasus**, bass to **Broshi**, and lead
 material to **Midio**, with fallbacks when parts cannot be identified. The
-current presentation does not draw the three characters; the landscape
-reads each lane as its own source; the character code is kept in
-`src/sim/`. With uploaded stems, filenames and each stem's activity help
-assign the notes.
+Range presentation brings the three luminous characters onto a small
+foreground platform. Midio follows rhythm and lead material, Broshi follows
+bass, and Midasus follows melody. Their poses read the heard audio clock,
+including after a seek. MIDI role fallbacks retain real note pitches;
+uncertain recording pitches are weighted by confidence. With uploaded
+stems, filenames and each stem's activity help assign the notes.
+
+The Range starts at sunset, passes through dense stars and moonlight, and
+ends at sunrise. Stars retain a visible core on small screens. Its default
+view travels sideways across Muncho Lake in 3D, with the platform held
+steady and musical rings on the geographic
+lake. Reduced motion holds the camera and performers still; reduced flash
+softens their light changes. Explicit scenery choices remain available,
+and `?rangeExperience=landscape` selects the scenery-only presentation.
 
 The world registry contains eight landscape styles. Cathode has been retired; old playback IDs resolve to The Range.
 
-- **The Range** — mountains that breathe with the mix.
+- **The Range** — a moonlit 3D range, a lake, and a trio that moves with the mix.
 - **After Hours** — a city that glows with the groove.
 - **Far Side** — a lunar landscape. No air. Nothing softens.
 - **The Fathom** — an underwater world, slow on purpose.

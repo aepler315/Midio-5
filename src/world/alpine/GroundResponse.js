@@ -9,8 +9,10 @@ export function sampleWetResponse({ nowMs = 0, hits = [], x = 0, reducedFlash = 
   return Math.min(reducedFlash ? .35 : 1, sum * (reducedFlash ? .35 : 1));
 }
 
-/** Query the existing sorted conductor timeline; no seek-dependent event log. */
-export function recentConductorHits(timeline = [], nowMs = 0) {
+/** Query the existing sorted conductor timeline; no seek-dependent event log.
+ * Optional onsetGain gates a contact before the eight-contact bound, so a
+ * false later detection cannot crowd an audible releasing contact out. */
+export function recentConductorHits(timeline = [], nowMs = 0, { onsetGain = null } = {}) {
   if (!timeline?.length) return [];
   let lo = 0, hi = timeline.length;
   while (lo < hi) {
@@ -22,7 +24,10 @@ export function recentConductorHits(timeline = [], nowMs = 0) {
     const event = timeline[i];
     if (!event.kick || !Number.isFinite(event.tMs)) continue;
     const vel = Math.max(0, event.vel ?? 1);
-    hits.push({ id: `${i}`, tMs: event.tMs, strength: Math.min(1, vel > 1 ? vel / 127 : vel) });
+    const gain = onsetGain ? onsetGain(event) : 1;
+    const strength = Math.min(1, vel > 1 ? vel / 127 : vel) * (Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 0);
+    if (onsetGain && !(strength > 0)) continue;
+    hits.push({ id: `${i}`, tMs: event.tMs, strength });
   }
   return hits;
 }

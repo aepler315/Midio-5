@@ -21,11 +21,12 @@ function manager() {
 
 // Record actual point fills, including the batched faint stars. Testing the
 // shared painter alone missed the narrative sky's early return.
-function skyPoints(m, options = {}) {
+function skyPoints(m, options = {}, scale = 1) {
   const points = [], stack = [];
   let path = [];
   const ctx = {
     globalAlpha: 1,
+    getTransform() { return { a: scale, b: 0, c: 0, d: scale }; },
     save() { stack.push(this.globalAlpha); },
     restore() { this.globalAlpha = stack.pop(); },
     createLinearGradient() { return { addColorStop() {} }; },
@@ -33,7 +34,7 @@ function skyPoints(m, options = {}) {
     rect(x, y, w, h) { path.push([x, y, w, h]); },
     fill() { for (const p of path) this.fillRect(...p); },
     fillRect(x, y, w, h) {
-      if (w === 1 && h === 1 && this.globalAlpha > 0) points.push([x, y, this.globalAlpha]);
+      if (w <= 4 && w === h && this.globalAlpha > 0) points.push([x, y, this.globalAlpha, w * scale]);
     },
   };
   const { night } = dayNight(m.tSec * 1000, m._dayNightCycleMs);
@@ -67,4 +68,20 @@ test('Range stars remain present during quiet openings and respect the astronomy
     assert.deepEqual(skyPoints(m), full, `opening gain ${gain} must not fade the night sky`);
   }
   assert.deepEqual(skyPoints(m, { astronomical: false }), []);
+});
+
+test('stage stars retain their output cores when the actual sky is fitted to small screens', () => {
+  const m = manager();
+  m.rangeNarrative = compileLandscapeSources().sample(30000);
+  m.tSec = 30;
+  const baseline = skyPoints(m);
+  m.rangePerformance = true;
+  assert.deepEqual(skyPoints(m), baseline, 'full-size sky retains its catalogue and light');
+  for (const scale of [.5, 360 / 1280, 1.5]) {
+    const points = skyPoints(m, {}, scale);
+    assert.equal(points.length, baseline.length, 'fitting must not discard stars');
+    assert.ok(points.every(p => p[3] >= 1), 'dots survive the output sampling grid');
+    assert.deepEqual(points.map(p => p[2]), baseline.map(p => p[2]), 'no extra brightness or flashing');
+  }
+  assert.ok(skyPoints(m, {}, .125).every(p => p[3] === .5), 'extreme thumbnail enlargement is bounded');
 });

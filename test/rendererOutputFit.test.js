@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Renderer, applyFixedGroundTransform } from '../src/render/Renderer.js';
 import { displayLimitedSize } from '../src/render/StagePresets.js';
+import { resolveLandscapePresentation } from '../src/world/LandscapePresentation.js';
 
 // Replace only the Canvas boundary: production Renderer owns every transform,
 // viewport, clip and post-processing call exercised below.
@@ -38,6 +39,7 @@ function renderFixture(width, height, { zoom = 1, retro = false } = {}) {
   renderer._drawFilmFinish = ctx => ctx.arc(640 / zoom, 360 / zoom, 40, 0, Math.PI * 2);
   const sim = {
     stageW: 1280, stageH: 720, timeMs: 4000,
+    presentation: resolveLandscapePresentation('range', { rangeExperience: 'landscape' }),
     camera: { zoom, roll: 0, shakeX: 0, shakeY: 0 },
     lerpState: () => ({ worldX: 0, midioX: 220, midioDrawX: 220 }),
     perf: { particleMul: 1, heavyPostFx: true, bloomEnabled: false, retroPalette: retro },

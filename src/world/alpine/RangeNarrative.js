@@ -14,10 +14,10 @@ const LANES = { midio: 'MIDIO', broshi: 'BROSHI', midasus: 'MIDASUS' };
 const FALLBACK = { midio: 'BASS', broshi: 'MELODY', midasus: 'MELODY' };
 const DEFAULT_CASTING = { midio: 'bass', broshi: 'melody', midasus: 'melody' };
 
-function sourceIndex(events, id, casting) {
+function sourceIndex(events, id, casting, fallback = FALLBACK[id]) {
   const lane = casting[id]?.endsWith('-lane');
-  const source = lane ? `lane:${LANES[id]}` : `role:${FALLBACK[id]}`;
-  const notes = events.filter(e => lane ? e.lane === LANES[id] : e.role === FALLBACK[id]);
+  const source = lane ? `lane:${LANES[id]}` : `role:${fallback}`;
+  const notes = events.filter(e => lane ? e.lane === LANES[id] : e.role === fallback);
   const endPrefix = []; let end = 0;
   for (const e of notes) { end = Math.max(end, e.tMs + e.durMs + 120); endPrefix.push(end); }
   return timeMs => {
@@ -187,5 +187,23 @@ export function compileLandscapeSources({ durationMs = 0, timeline = [], casting
       cast: Object.freeze({ midio: 0, broshi: 0, midasus: 0 }),
       handoff: Object.freeze({ midio: 1, broshi: 1, midasus: 1 }),
       sources: Object.freeze(Object.fromEntries(Object.entries(sources).map(([id, sample]) => [id, sample(at)]))) });
+  } });
+}
+
+/** Passive stage ownership is separate from the ridge's retained casting.
+ * The same melodic fallback explicitly names the same source for both glyphs.
+ * Snapshot notes once; seek and rendering never dispatch or integrate them. */
+export function compileTrioSources({ durationMs = 0, timeline = [] } = {}) {
+  const events = timeline.filter(e => Number.isFinite(e.tMs) && e.tMs >= 0 && unit(e.vel) > 0)
+    .map(e => ({ ...e, durMs: Math.max(90, Number.isFinite(e.durMs) ? e.durMs : 90) }))
+    .sort((a, b) => a.tMs - b.tMs);
+  const fallback = { midio: 'MELODY', broshi: 'BASS', midasus: 'MELODY' };
+  const casting = Object.fromEntries(Object.entries(LANES).map(([id, lane]) =>
+    [id, events.some(e => e.lane === lane) ? 'source-lane' : fallback[id]]));
+  const sources = Object.fromEntries(Object.keys(LANES).map(id =>
+    [id, sourceIndex(events, id, casting, fallback[id])]));
+  return Object.freeze({ durationMs, sample(timeMs = 0) {
+    const at = Math.max(0, Number.isFinite(timeMs) ? timeMs : 0);
+    return Object.freeze(Object.fromEntries(Object.entries(sources).map(([id, sample]) => [id, sample(at)])));
   } });
 }
