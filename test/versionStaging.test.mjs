@@ -88,7 +88,61 @@ test('historical adapter reads title state before an audio engine exists',async(
   const profile=historicalProfiles.get(c.sourceSha);const files=new Map(Object.keys(profile.expectedHashes).map(file=>[file,execFileSync('git',['show',`${c.sourceSha}:${file}`])]));
   const {files:output}=adaptVersion({sourceSha:c.sourceSha,checkpointId:c.id,files});const main=output.get('src/main.js').toString();
   const helpers=['effectiveOutputLatencyMs','choreographyOutputLatencyMs','versionAdapterState'].map(name=>main.match(new RegExp(`function ${name}\\([^]*?\\n}`))[0]).join('\n');
-  const state=vm.runInNewContext(`${helpers}\nversionAdapterState()`,{loadGen:3,versionSession:{phase:'title',source:null,sourceId:null},songRecorder:null,pendingCapturePresetId:null,pendingExportPresetId:null,bulkExportArmed:false,recalibration:{active:false},running:false,conductor:{durationMs:0},audioEngine:null,paused:false,sim:null,lastSongSeed:null,lastWorldId:'the-range',sceneChoice:{viewId:null},rangeMode:{forcedViewId:null},reducedFlash:false,reducedMotion:false,stageResEl:null,stageFpsEl:null,captureClock:{captureRequested:false},btLatencyTrimMs:0});
+  const state=vm.runInNewContext(`${helpers}\nversionAdapterState()`,{loadGen:3,versionSelectionGeneration:3,versionSession:{phase:'title',source:null,sourceId:null},songRecorder:null,pendingCapturePresetId:null,pendingExportPresetId:null,bulkExportArmed:false,recalibration:{active:false},running:false,conductor:{durationMs:0},audioEngine:null,paused:false,sim:null,lastSongSeed:null,lastWorldId:'the-range',sceneChoice:{viewId:null},rangeMode:{forcedViewId:null},reducedFlash:false,reducedMotion:false,stageResEl:null,stageFpsEl:null,captureClock:{captureRequested:false},btLatencyTrimMs:0});
   assert.equal(state.phase,'title');assert.equal(state.positionMs,0);assert.equal(state.generation,3);
+ }
+});
+
+async function emittedHistoricalMain(id) {
+ const {CHECKPOINTS}=await import('../tools/version-checkpoints.mjs');const {historicalProfiles}=await import('../tools/lib/version-adapters.mjs');
+ const checkpoint=CHECKPOINTS.find(c=>c.id===id);const profile=historicalProfiles.get(checkpoint.sourceSha);
+ const files=new Map(Object.keys(profile.expectedHashes).map(file=>[file,execFileSync('git',['show',`${checkpoint.sourceSha}:${file}`])]));
+ return adaptVersion({sourceSha:checkpoint.sourceSha,checkpointId:id,files}).files.get('src/main.js').toString();
+}
+const functionSource=(main,name)=>main.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n}`))[0];
+const titleContext=()=>({loadGen:3,versionSelectionGeneration:3,versionSession:{phase:'title',source:null,sourceId:null},songRecorder:null,pendingCapturePresetId:null,pendingExportPresetId:null,bulkExportArmed:false,recalibration:{active:false},running:false,conductor:{durationMs:0},audioEngine:null,paused:false,sim:null,lastSongSeed:null,lastWorldId:'the-range',sceneChoice:{viewId:null},rangeMode:{forcedViewId:null},reducedFlash:false,reducedMotion:false,stageResEl:null,stageFpsEl:null,captureClock:{captureRequested:false},btLatencyTrimMs:0});
+
+test('glacial demo and URL claims emit independent generation before loading; Stop emits a newer generation',async()=>{
+ const main=await emittedHistoricalMain('glacial-flight');
+ const selectionBridge=main.slice(main.includes('let versionSelectionGeneration') ? main.indexOf('let versionSelectionGeneration') : main.indexOf('const sourceSelection ='),main.indexOf('// Retained so'));
+ const functions=['effectiveOutputLatencyMs','choreographyOutputLatencyMs','versionAdapterState','startDemoSample','beginUrlLoadOperation','backToTitle'].map(name=>functionSource(main,name)).join('\n');
+ const context=vm.createContext({...titleContext(),crypto:{randomUUID:()=> 'source'},cancelUrlLoad(){},bootAudio:()=>new Promise(()=>{}),urlLoadAbort:null,AbortController,setUrlLoadBusy(){},stopTimeline(){},completePanelEl:{classList:{add(){}}},hudEl:{classList:{add(){}}},hudLeftEl:{classList:{add(){}}},hudRightEl:{classList:{add(){}}},loaderEl:{classList:{remove(){}}},exportDialogEl:{open:false},lastAudioBuffer:null,loadShow:null,stopWorldPreview(){},closeWorldChooser(){},syncRecordUI(){},startTitleBackdrop(){},canvas:{focus(){}},performance:{now:()=>0},wakeHud(){},pendingWorldStart:null});
+ vm.runInContext(`${selectionBridge}\n${functions}\nconst states=[];versionListeners.add(state=>states.push({generation:state.generation,phase:state.phase}));\nstartDemoSample();beginUrlLoadOperation();`,context);
+ const states=vm.runInContext('states',context);assert.equal(states.length,2);assert.ok(states[1].generation>states[0].generation,'URL replacement must emit a new identity before any fetch/decode');
+ const generation=states[1].generation;vm.runInContext('loadGen += 1;',context);
+ assert.equal(vm.runInContext('versionAdapterState().generation',context),generation,'internal historical audio boot must not change selection identity');
+ // Stop's ownership notification must precede unrelated title/layout cleanup.
+ try { vm.runInContext('backToTitle()',context); } catch { /* Remaining historical title DOM is outside this contract. */ }
+ assert.equal(states.at(-1).phase,'title');assert.ok(states.at(-1).generation>generation,'Stop must revoke ownership before its title notification');
+});
+
+function confirmedStartContext(main) {
+ const events=[];const selection={};let resolveReady,rejectReady;
+ const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
+ const context=vm.createContext({events,loadGen:3,sourceSelection:{isCurrent:value=>value===selection},resolveWorldId:value=>value,stopWorldPreview(){},closeWorldChooser(){},lastWorldId:null,readBulkExportFromUrl:()=>null,audioEngine:{ctx:{state:'running',async suspend(){this.state='suspended';events.push('suspended');}},playBuffer(buffer,offset){events.push(['buffer',offset]);}},muteTimelineSynth:false,running:false,sim:null,startTimeline(data,extra){context.running=true;context.sim={};events.push(['timeline',extra.startAtMs,extra.restorePaused]);},canvas:{focus(){}},lastAudioBuffer:null,rangePresentation:{whenReady(){events.push('whenReady');return ready;}},renderer:{draw(){events.push('draw');}},versionSourceStarted(){events.push('started');}});
+ vm.runInContext(functionSource(main,'startConfirmedWorld'),context);
+ const pending={data:{durationMs:20000},extra:{versionSelection:selection,versionSource:{kind:'demo'},playBuffer:{},restoreIntent:{positionMs:8000,seed:123}}};
+ return {context,events,pending,resolveReady,rejectReady};
+}
+test('every paused historical restore waits its own scene and draws held transport before source completion',async()=>{
+ const {CHECKPOINTS}=await import('../tools/version-checkpoints.mjs');
+ for(const c of CHECKPOINTS){
+  const {context,events,pending,resolveReady}=confirmedStartContext(await emittedHistoricalMain(c.id));
+  let completed=false;const restoring=context.startConfirmedWorld(pending,'the-range').then(()=>{completed=true;});await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(events.includes('whenReady'),`${c.id} must wait its own scene`);assert.equal(completed,false);assert.equal(context.audioEngine.ctx.state,'suspended');
+  assert.deepEqual(events.find(event=>Array.isArray(event)&&event[0]==='buffer'),['buffer',8]);assert.ok(!events.includes('draw'));assert.ok(!events.includes('started'));
+  resolveReady();await restoring;assert.deepEqual(events.slice(-2),['draw','started']);assert.equal(context.audioEngine.ctx.state,'suspended');
+ }
+});
+test('historical restore readiness failure only reaches the owning selection; stale failure cannot corrupt a replacement',async()=>{
+ const {CHECKPOINTS}=await import('../tools/version-checkpoints.mjs');
+ for(const c of CHECKPOINTS){
+  for(const stale of [true,false]){
+   const {context,events,pending,rejectReady}=confirmedStartContext(await emittedHistoricalMain(c.id));const restoring=context.startConfirmedWorld(pending,'the-range');await new Promise(resolve=>setImmediate(resolve));
+   assert.ok(events.includes('whenReady'));if(stale)context.sourceSelection.isCurrent=()=>false;
+   rejectReady(new Error('owned scene failed'));
+   if(stale)await assert.doesNotReject(restoring);else await assert.rejects(restoring,/owned scene failed/);
+   assert.ok(!events.includes('draw'));assert.ok(!events.includes('started'));
+  }
  }
 });
