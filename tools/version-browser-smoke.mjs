@@ -14,6 +14,15 @@ import { CHECKPOINTS, LIVE_ID, MAX_SITE_BYTES } from './version-checkpoints.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+async function boundedResponseBody(response) {
+  let timer;
+  try {
+    return await Promise.race([
+      response.body(),
+      new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error(`Response body timed out: ${response.url()}`)), 15000); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
 function args(argv) {
   const result = { site: '_site', output: '.smoke/version-browser', 'timeout-ms': '180000' };
   let checksOnly = false;
@@ -454,7 +463,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     page.on('response', response => {
       const url = new URL(response.url()); if (!url.href.startsWith(hosted.url) || response.status() !== 200 || !/\.(js|json|bin|wasm|png|jpg|webp|tif)$/.test(url.pathname)) return;
       const file = decodeURIComponent(url.pathname.slice(prefix.length));
-      pending.push(response.body().catch(async () => { const r = await fetch(response.url(), { signal: AbortSignal.timeout(15000) }); assert.ok(r.ok); return Buffer.from(await r.arrayBuffer()); }).then(bytes => { assert.equal(hash(bytes), audit.outputHashes.get(file), `served runtime bytes differ: ${file}`); loaded.set(file, hash(bytes)); }).catch(error => report.errors.push({ type: 'identity', file, text: error.message })));
+      pending.push(boundedResponseBody(response).catch(async () => { const r = await fetch(response.url(), { signal: AbortSignal.timeout(15000) }); assert.ok(r.ok); return Buffer.from(await r.arrayBuffer()); }).then(bytes => { assert.equal(hash(bytes), audit.outputHashes.get(file), `served runtime bytes differ: ${file}`); loaded.set(file, hash(bytes)); }).catch(error => report.errors.push({ type: 'identity', file, text: error.message })));
     });
     await page.goto(hosted.url); await page.locator('#versionPrevious').waitFor();
     const desktop = await page.locator('#versionPrevious').boundingBox(); assert.ok(desktop.width >= 64 && desktop.height >= 64, 'desktop arrow target');
