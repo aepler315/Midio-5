@@ -438,6 +438,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     await page.locator('#recordBtn').click();
     await page.waitForFunction(() => /record/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''));
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
+    await page.waitForFunction(() => document.getElementById('recordBtn')?.title === 'Stop recording and save the video', null, { timeout: options.timeout });
     await page.waitForTimeout(1800);
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 }); await page.locator('#recordBtn').click();
     const download = await downloadPromise; await download.saveAs(path.join(output, `recording-${path.basename(download.suggestedFilename())}`));
@@ -445,6 +446,33 @@ async function runPrefix(options, audit, prefix, wavs) {
     assert.ok(captures.length && captures.every(c => c.id === 'stage'), 'recorder captures only canvas pixels; DOM version chrome stays outside output');
     await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
     await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true)); report.checks.push('real recording and calibration block arrows; saved canvas recording excludes DOM chrome');
+
+    // Reach Complete through the real transport, then start the application's
+    // full-song export UI. Its existing HUD stop button ends the actual export
+    // early and saves a sample, bounding this check without mutating recorder
+    // state or waiting for all thirty seconds of this pilot.
+    console.log('Version-browser smoke: actual full-song export start/stop');
+    await page.evaluate(async () => {
+      const adapter = window.__MIDIO_VERSION_ADAPTER;
+      await adapter.seek(Math.max(0, adapter.getState().durationMs - 1000)); await adapter.setPaused(false);
+    });
+    await page.locator('#completePanel:not(.hidden)').waitFor({ state: 'visible', timeout: 30000 });
+    await page.locator('#exportPreset').selectOption('car');
+    await page.locator('#exportBtn').click();
+    await page.waitForFunction(() => /record|export/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''), null, { timeout: options.timeout });
+    assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
+    await page.waitForFunction(() => document.getElementById('recordBtn')?.title === 'Stop recording and save the video', null, { timeout: options.timeout });
+    const exporting = await state(page);
+    assert.ok(exporting.positionMs < 10000, 'full-song export restarted actual playback near the beginning');
+    await page.waitForTimeout(1200);
+    const exportDownloadPromise = page.waitForEvent('download', { timeout: 30000 }); await page.locator('#recordBtn').click();
+    const exportDownload = await exportDownloadPromise;
+    await exportDownload.saveAs(path.join(output, `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}`));
+    assert.ok(await page.evaluate(() => window.__VERSION_SMOKE.captureSources.every(c => c.id === 'stage')), 'actual export captures stage pixels and excludes DOM version controls');
+    await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
+    await page.evaluate(async () => { await window.__MIDIO_VERSION_ADAPTER.setPaused(true); await window.__MIDIO_VERSION_ADAPTER.seek(6200); });
+    report.export = { startedThrough: 'exportBtn', stoppedThrough: 'recordBtn', blockedReason: exporting.blockedReason, sampleFile: `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}` };
+    report.checks.push('actual full-song export blocks both arrows and excludes DOM chrome; real stop UI saves bounded sample');
 
     // Failure before departure must preserve both current song and pause.
     await wake(page); const beforeFailure = await state(page), beforeUrl = page.url();
@@ -570,7 +598,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-y', '-framerate', '2', '-i', path.join(screencastDir, '%05d.jpg'), '-vf', 'scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', path.join(output, 'click-through.mp4')], { timeout: 60000, stdio: 'pipe' });
     report.video = { path: 'click-through.mp4', frames: frameCount, samplingMs: 2000, playbackFps: 2, speed: 4 };
     report.limitations.push('Chromium only; no real iOS audio policy, physical safe-area device or deployment duration measured.',
-      'Full-song export blocker needs separate browser evidence; this harness does not claim it passed. Pending duplication uses a matching injected IDB record while the original owner remains alive.',
+      'The full-song export check starts the real export and stops it early through the HUD; it does not verify a complete thirty-second exported file. Pending duplication uses a matching injected IDB record while the original owner remains alive.',
       'Audio source-start offsets and one AudioContext are observed; acoustic output and process-wide audio exclusivity require a real device check.');
     report.passed = true;
   } catch (error) {
