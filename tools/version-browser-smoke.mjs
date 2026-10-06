@@ -143,8 +143,9 @@ function installProbe() {
   const originalStart = AudioBufferSourceNode.prototype.start;
   AudioBufferSourceNode.prototype.start = function (...a) {
     const context = this.context, OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const offline = !!OfflineContext && context instanceof OfflineContext;
     probe.audioStarts.push({ when: a[0] || 0, offset: a[1] || 0, atMs: performance.now(),
-      contextKind: context.constructor.name, offline: !!OfflineContext && context instanceof OfflineContext, contextState: context.state,
+      contextKind: offline ? 'OfflineAudioContext' : (OriginalContext && context instanceof OriginalContext ? 'AudioContext' : context.constructor.name), offline, contextState: context.state,
       sampleRate: context.sampleRate, bufferDuration: this.buffer?.duration ?? null, bufferChannels: this.buffer?.numberOfChannels ?? null });
     return originalStart.apply(this, a);
   };
