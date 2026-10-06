@@ -43,12 +43,21 @@ export const FIRMAMENT_GLSL=/* glsl */`
   uniform vec2 uFirmamentWeather;
   float skyHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uFirmamentSeed)*43758.5453);}
   float skySegment(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;return length(p-a-ab*clamp(dot(p-a,ab)/max(dot(ab,ab),.000001),0.0,1.0));}
+  vec2 skyAngularWidth(vec2 angles){
+    // atan crosses +pi/-pi in a camera facing -z. Its screen derivative
+    // must take the short arc, or antialiasing blooms into a white seam
+    // through stars and their rippled reflection.
+    vec2 dx=dFdx(angles),dy=dFdy(angles);
+    dx.x=mod(dx.x+3.141592654,6.283185307)-3.141592654;
+    dy.x=mod(dy.x+3.141592654,6.283185307)-3.141592654;
+    return abs(dx)+abs(dy);
+  }
   vec3 starLayer(vec2 angles,vec2 grid,float salt,float density){
     vec2 uv=vec2((angles.x+3.141592654)/6.283185307,(angles.y+1.570796327)/3.141592654)*grid;
     vec2 cell=floor(uv),q=fract(uv);
     float h=skyHash(cell+salt);
     vec2 center=.22+.56*vec2(skyHash(cell+salt+5.7),skyHash(cell+salt+17.3));
-    vec2 pixel=max(fwidth(uv),vec2(.01));
+    vec2 pixel=max(skyAngularWidth(angles)*grid/vec2(6.283185307,3.141592654),vec2(.01));
     float distancePx=length((q-center)/pixel);
     float bright=pow(skyHash(cell+salt+29.1),9.0);
     float radius=.48+.43*bright;
@@ -102,7 +111,7 @@ export const FIRMAMENT_GLSL=/* glsl */`
     vec3 base=mix(horizon,zenith,smoothstep(-.025,.22,d.y));
     float galaxy=exp(-pow((angles.y-.30-.09*sin(angles.x*2.0))/.10,2.0));
     base+=vec3(.004,.005,.009)*galaxy*night;
-    float aa=max(.00035,length(fwidth(angles))*.5);
+    float aa=max(.00035,length(skyAngularWidth(angles))*.5);
     vec3 stars=firmamentStars(angles)*uFirmamentLayers.x;
     vec3 art=constellationArt(angles,aa)*uFirmamentLayers.y;
     vec3 aurora=auroraCurtains(angles)*uFirmamentLayers.z;

@@ -102,6 +102,21 @@ test('v2 draws its partitions at the retained pass boundaries, legacy scenery no
   m.dispose();
 });
 
+test('journey owns both ranges and its lake in one scene without geographic overlays', () => {
+  const { m, calls } = manager();
+  const pres = fakePresentation();
+  pres.journey = true;
+  pres.captionViewFor = () => ({ id: 'moonlit-journey' });
+  m.rangePresentation = pres;
+  m.rangePerformance = true;
+  m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
+  assert.deepEqual(pres.passes, ['far']);
+  for (const pass of ['_drawSpectrumMassif', '_drawOcean', '_drawCrestLight', '_drawFarVignettes', '_drawMidDepthLife']) {
+    assert.ok(!calls.includes(pass), pass);
+  }
+  m.dispose();
+});
+
 test('when v2 is not ready the legacy stack draws, with the ridge in its original place', () => {
   const { m, calls } = manager();
   m.rangePresentation = fakePresentation({ ready: false });

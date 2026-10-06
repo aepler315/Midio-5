@@ -28,6 +28,10 @@ export const COVE_VERT = /* glsl */`
   uniform float uHead;
   uniform float uTail;
   uniform float uJaw;
+  uniform float uWalking;
+  uniform vec3 uFrontFoot;
+  uniform vec3 uRearFoot;
+  uniform float uBodyLift;
   uniform vec2 uTailPivot;
   uniform vec2 uJawPivot;
   in float aEdge;
@@ -55,9 +59,23 @@ export const COVE_VERT = /* glsl */`
       p.xy = headPivot + rotate2(p.xy - headPivot, uHead);
       n.xy = rotate2(n.xy, uHead);
     }
-    // Broshi leans around his planted feet, rather than bouncing a root.
-    p.xy = rotate2(p.xy, uLean);
-    n.xy = rotate2(n.xy, uLean);
+    if (uWalking > 0.5) {
+      // The retained Broshi glyph's two ground spikes act as feet. Only the
+      // lower body bends; planted tips stay on the bank while the torso
+      // transfers its weight. Color and both depth passes use this block.
+      float footWeight = (1.0 - smoothstep(0.02, 0.36, position.y))
+        * (1.0 - step(0.5, aJoint));
+      float front = smoothstep(-0.14, 0.06, position.x);
+      p += mix(uRearFoot, uFrontFoot, front) * footWeight / uSize;
+      p.y += uBodyLift * (1.0 - footWeight) / uSize;
+      vec2 hip = vec2(-3.0 / 34.0, 0.32);
+      p.xy = mix(p.xy, hip + rotate2(p.xy - hip, uLean), 1.0 - footWeight);
+      n.xy = rotate2(n.xy, uLean * (1.0 - footWeight));
+    } else {
+      // Existing cove poses keep their original root-pivot articulation.
+      p.xy = rotate2(p.xy, uLean);
+      n.xy = rotate2(n.xy, uLean);
+    }
     p.xz = rotate2(p.xz, uTurn);
     n.xz = rotate2(n.xz, uTurn);
     vec3 root = uRoot;
@@ -349,6 +367,8 @@ export class CoveGL {
       uRight: { value: new THREE.Vector3(...this.layout.right) }, uForward: { value: new THREE.Vector3(...this.layout.forward) },
       uSize: { value: size }, uLean: { value: 0 }, uTurn: { value: 0 }, uGrounded: { value: grounded ? 1 : 0 },
       uHead: { value: 0 }, uTail: { value: 0 }, uJaw: { value: 0 }, uTailPivot: { value: new THREE.Vector2(-26 / 34, 16 / 34) },
+      uWalking: { value: 0 }, uFrontFoot: { value: new THREE.Vector3() }, uRearFoot: { value: new THREE.Vector3() },
+      uBodyLift: { value: 0 },
       uJawPivot: { value: new THREE.Vector2(10 / 34, 13 / 34) }, uGlow: { value: 0 }, uShadow: { value: shadow ? 1 : 0 },
       uBodyColor: { value: new THREE.Color(colors[0]) }, uEdgeColor: { value: new THREE.Color(colors[1]) },
     };
@@ -401,6 +421,12 @@ export class CoveGL {
       u.uTail.value = finite(actor.tailAngle);
       u.uJaw.value = unit(actor.jawOpen);
       u.uGlow.value = unit(actor.glow);
+      u.uWalking.value = id === 'broshi' && actor.footOffsetsM?.length === 2 ? 1 : 0;
+      for (const [index, name] of ['uFrontFoot', 'uRearFoot'].entries()) {
+        const foot = actor.footOffsetsM?.[index];
+        u[name].value.set(finite(foot?.[0]), finite(foot?.[1]), finite(foot?.[2]));
+      }
+      u.uBodyLift.value = finite(actor.bodyLiftM);
       record.babies.forEach((baby, i) => {
         const at = actor.babies?.[i];
         const valid = at?.positionM?.length === 3 && at.positionM.every(Number.isFinite);
@@ -411,6 +437,13 @@ export class CoveGL {
         baby.uniforms.uLean.value = finite(at.rotationRad);
         baby.uniforms.uGlow.value = unit(actor.glow) * .7;
       });
+    }
+    const walker = this.actors.broshi;
+    this._visible(this.contact, walker.mesh.visible);
+    if (walker.mesh.visible) {
+      this.contact.uniforms.uRoot.value.copy(walker.uniforms.uRoot.value);
+      this.contact.uniforms.uTurn.value = walker.uniforms.uTurn.value;
+      this.contact.uniforms.uSize.value = walker.uniforms.uSize.value / this.layout.heights.broshi;
     }
   }
 

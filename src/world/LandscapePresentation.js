@@ -12,7 +12,13 @@ export function resolveLandscapePresentation(world, { rangeExperience = 'perform
   return alpine && rangeExperience !== 'landscape' ? performance : landscape;
 }
 
-/** One lake-view pilot for Auto; deliberate range/biome choices still win. */
-export function rangePerformanceViewId(choice = {}, experience = 'performance') {
-  return choice.viewId || (experience === 'performance' && !choice.biome ? 'muncho-lake-south' : null);
+/** Only deliberate places force a geographic view; Auto belongs to Journey. */
+export function rangePerformanceViewId(choice = {}) {
+  return choice.viewId || null;
+}
+
+/** Auto performance travels through an imagined valley. Deliberate places
+ * and the landscape experience keep their geographic renderer. */
+export function rangeJourneyEnabled(choice = {}, experience = 'performance') {
+  return experience === 'performance' && !choice.viewId && !choice.biome;
 }

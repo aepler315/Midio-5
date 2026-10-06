@@ -24,7 +24,7 @@ test('performance is the Range default and explicit scenery/view choices remain 
   assert.equal(resolveRangeExperience(''), 'performance');
   assert.equal(resolveRangeExperience('?rangeExperience=landscape'), 'landscape');
   assert.equal(resolveRangeExperience('?rangeExperience=unknown'), 'performance');
-  assert.equal(rangePerformanceViewId({}, 'performance'), 'muncho-lake-south');
+  assert.equal(rangePerformanceViewId({}, 'performance'), null);
   assert.equal(rangePerformanceViewId({}, 'landscape'), null);
   assert.equal(rangePerformanceViewId({ viewId: 'teton-jackson-lake' }, 'performance'), 'teton-jackson-lake');
   assert.equal(rangePerformanceViewId({ biome: 'DESERT' }, 'performance'), null);
