@@ -192,9 +192,9 @@ test('URL folder and failed URL replacement leave explicit error rather than a p
  }
 });
 test('title-state adapter reads position zero before any AudioEngine exists',()=>{
- const ctx=vm.createContext({versionSession:{phase:'title',source:null,sourceId:null},songRecorder:null,pendingCapturePresetId:null,pendingExportPresetId:null,bulkExportArmed:false,recalibration:{active:false},running:false,conductor:{durationMs:0},sim:null,lastSongSeed:null,paused:false,lastWorldId:'range',sceneChoice:{viewId:null},reducedFlash:false,reducedMotion:false,stageResEl:null,stageFpsEl:null,audioEngine:null,choreographyOutputLatencyMs(){throw new Error('No AudioEngine exists');}});
+ const ctx=vm.createContext({loadGen:3,versionSession:{phase:'title',source:null,sourceId:null},songRecorder:null,pendingCapturePresetId:null,pendingExportPresetId:null,bulkExportArmed:false,recalibration:{active:false},running:false,conductor:{durationMs:0},sim:null,lastSongSeed:null,paused:false,lastWorldId:'range',sceneChoice:{viewId:null},reducedFlash:false,reducedMotion:false,stageResEl:null,stageFpsEl:null,audioEngine:null,choreographyOutputLatencyMs(){throw new Error('No AudioEngine exists');}});
  vm.runInContext(mainFunctions(['versionAdapterState']),ctx);
- const state=ctx.versionAdapterState();assert.equal(state.phase,'title');assert.equal(state.positionMs,0);assert.equal(state.source,null);
+ const state=ctx.versionAdapterState();assert.equal(state.phase,'title');assert.equal(state.positionMs,0);assert.equal(state.source,null);assert.equal(state.generation,3);
 });
 test('persisted pageshow waits for the outgoing document release instead of rotating its tab',async()=>{
  const h=fixture();await h.store.tabId();

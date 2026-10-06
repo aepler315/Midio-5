@@ -5345,7 +5345,7 @@ function versionAdapterState() {
   else if (versionSession.phase === 'loading') blockedReason = 'The selected song is still loading.';
   else if (running && !versionSession.source) blockedReason = 'This source cannot be carried to another version.';
   const durationMs = conductor?.durationMs || 0;
-  return { phase: versionSession.phase, sourceId: versionSession.sourceId, source: versionSession.source,
+  return { phase: versionSession.phase, generation: loadGen, sourceId: versionSession.sourceId, source: versionSession.source,
     positionMs: Math.max(0, Math.min(paused && versionSession.heldPositionMs != null ? versionSession.heldPositionMs : (audioEngine ? audioEngine.nowMs - choreographyOutputLatencyMs() : 0), durationMs)), durationMs,
     seed: sim?.songSeed ?? lastSongSeed, paused, worldId: sim?.worldId || lastWorldId,
     rangeViewId: sceneChoice?.viewId ?? null, settings: { reducedFlash, reducedMotion, stageRes: stageResEl?.value, stageFps: stageFpsEl?.value }, blockedReason };
