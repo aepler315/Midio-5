@@ -361,10 +361,36 @@ async function mobileChecks(page, output, report) {
   const initialPaused = (await state(page)).paused;
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' }); await wake(page);
-  const geometry = await page.evaluate(() => {
+  const readLayout = () => page.evaluate(() => {
     const ids = ['versionPrevious', 'versionNext', 'pauseBtn', 'recordBtn', 'fullscreenBtn', 'btLatencyBtn', 'displaySettingsBtn', 'calibrateBtn'];
-    return ids.map(id => { const el = document.getElementById(id); if (!el || !el.getClientRects().length) return null; const r = el.getBoundingClientRect(); return { id, x: r.x, y: r.y, width: r.width, height: r.height }; }).filter(Boolean);
+    const bounds = el => {
+      if (!el?.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return null;
+      const r = el.getBoundingClientRect();
+      return { id: el.id || el.className, x: r.x, y: r.y, width: r.width, height: r.height };
+    };
+    const label = document.querySelector('.version-label');
+    return {
+      currentId: JSON.parse(document.getElementById('midio-version-metadata').textContent).currentId,
+      label: { text: label?.textContent.trim() || '', bounds: bounds(label) },
+      landscapeHint: bounds(document.getElementById('landscapeHint')),
+      controls: ids.map(id => bounds(document.getElementById(id))).filter(Boolean),
+    };
   });
+  const separated = (a, b) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+  const assertLabel = layout => {
+    const checkpoint = CHECKPOINTS.find(entry => entry.id === layout.currentId);
+    assert.ok(checkpoint, 'mobile label belongs to a catalog checkpoint');
+    assert.equal(layout.label.text, `${checkpoint.label}${checkpoint.id === LIVE_ID ? ' · Live' : ''}`, 'mobile label identifies the current checkpoint');
+    const label = layout.label.bounds;
+    assert.ok(label && label.width > 0 && label.height > 0 && label.x >= 0 && label.x + label.width <= 390, 'mobile checkpoint label is visible inside the viewport');
+    if (layout.landscapeHint) assert.ok(separated(label, layout.landscapeHint), 'mobile checkpoint label overlaps visible landscape hint');
+    for (const control of layout.controls) assert.ok(separated(label, control), `mobile checkpoint label overlaps ${control.id}`);
+  };
+  const layout = await readLayout(), geometry = layout.controls;
+  // Persist real bounds before assertions so a failed portrait layout is
+  // reviewable even when the rest of the mobile lifecycle cannot continue.
+  report.mobile = { geometry, layout, reducedMotion: true, timeoutMeasuredDuring: 'running playback' };
+  assertLabel(layout);
   for (const b of geometry.filter(b => b.id.startsWith('version'))) {
     assert.ok(b.width >= 52 && b.height >= 52 && b.x >= 0 && b.x + b.width <= 390, `${b.id}: mobile touch target`);
     for (const other of geometry.filter(o => !o.id.startsWith('version'))) assert.ok(b.x + b.width <= other.x || other.x + other.width <= b.x || b.y + b.height <= other.y || other.y + other.height <= b.y, `${b.id} overlaps ${other.id}`);
@@ -381,8 +407,10 @@ async function mobileChecks(page, output, report) {
   const oldUrl = page.url(), rect = geometry.find(g => g.id === 'versionPrevious');
   await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
   await page.waitForTimeout(250); assert.equal(page.url(), oldUrl, 'first tap on faded arrow location only wakes HUD');
-  await wake(page); await page.screenshot({ path: path.join(output, 'portrait.png') });
-  report.mobile = { geometry, hidden, reducedMotion: true, timeoutMeasuredDuring: 'running playback' };
+  await wake(page);
+  report.mobile.hidden = hidden; report.mobile.portraitLayout = await readLayout();
+  await page.screenshot({ path: path.join(output, 'portrait.png') });
+  assertLabel(report.mobile.portraitLayout);
   await page.evaluate(paused => window.__MIDIO_VERSION_ADAPTER.setPaused(paused), initialPaused);
   await page.setViewportSize({ width: 1280, height: 720 });
 }
