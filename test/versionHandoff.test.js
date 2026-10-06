@@ -180,3 +180,14 @@ test('lifecycle snapshots current position only for the matching saved generatio
  await assert.rejects(next.updateLatest({...h.state,sourceId:'new-selection'},'b'));
  await store.dispose();await next.dispose();
 });
+test('URL folder and failed URL replacement leave explicit error rather than a permanent loading phase',async()=>{
+ for(const listing of [true,false]) {
+  const ctx=generationHarness();const first=ctx.claimSelection({kind:'file'});ctx.versionSourceStarted(first,{kind:'audio-files',files:['old']});
+  Object.assign(ctx,{beginUrlLoadOperation:()=>new AbortController().signal,AbortController,location:{href:'http://localhost/'},renderUrlListing(){},endUrlLoadOperation(){},urlLoadInputEl:null,urlLoadStatusEl:null,UrlAudioError:Error,
+    openAudioUrl:async()=>{if(!listing)throw new Error('Unavailable URL');return {kind:'listing',entries:[],url:'http://localhost/folder/'};},
+  });
+  vm.runInContext(mainFunctions(['openUrlTarget','setUrlLoadStatus']),ctx);
+  await ctx.openUrlTarget('http://localhost/folder/');
+  assert.equal(ctx.versionSession.phase,'error');assert.equal(ctx.versionSession.source,null);
+ }
+});

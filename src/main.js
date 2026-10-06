@@ -3088,6 +3088,7 @@ function revealUrlLoad(why = '', { focus = false } = {}) {
 }
 
 function setUrlLoadStatus(text, isError = false) {
+  if (isError && text && typeof versionLoadFailed === 'function') versionLoadFailed(text);
   if (!urlLoadStatusEl) return;
   urlLoadStatusEl.textContent = text || '';
   urlLoadStatusEl.classList.toggle('isError', Boolean(isError) && Boolean(text));
@@ -3282,6 +3283,7 @@ async function openUrlTarget(raw) {
     const result = await openAudioUrl(raw, { pageUrl: location.href, signal });
     if (signal.aborted) return;
     if (result.kind === 'listing') {
+      if (typeof versionLoadFailed === 'function') versionLoadFailed('Choose a song from this folder before changing versions.');
       renderUrlListing(result);
       const count = result.entries.length;
       setUrlLoadStatus(count
