@@ -234,3 +234,13 @@ test('missing-manifest recovery replaces stale pending data with the actual read
   const boot = await unavailableBootstrap(f); click(f.button('versionReturnLive')); await flush();
   const sent = f.calls.find(c => c[0] === 'handoff')[1]; assert.equal(sent.sourceId, 'source-1'); assert.equal(sent.positionMs, 1200); assert.equal(sent.paused, false); assert.equal(f.calls.filter(c => c === 'discard').length, 1); boot.dispose();
 });
+test('custom-world switches retain the registered base-world setting for normal destination regeneration', async () => {
+  const f = fixture(); f.setState({ worldId: 'custom', settings: { worldBaseId: 'range', reducedMotion: true, export: true } });
+  const nav = await mount(f); click(f.button('versionNext')); await flush();
+  const sent = f.calls.find(c => c[0] === 'handoff')[1]; assert.equal(sent.worldId, 'custom'); assert.deepEqual(sent.settings, { reducedMotion: true, worldBaseId: 'range' }); nav.dispose();
+});
+test('base-world compatibility accepts bounded plain IDs and drops arbitrary values', async () => {
+  const { compatibleVersionSettings } = await import('../src/ui/VersionNavigation.js');
+  assert.deepEqual(compatibleVersionSettings({ worldBaseId: 'farside' }), { worldBaseId: 'farside' });
+  for (const value of [true, 42, null, 'custom', '../range', 'https://example.test/', '__proto__', 'range:variant', ' range ', 'a'.repeat(65)]) assert.deepEqual(compatibleVersionSettings({ worldBaseId: value }), {});
+});

@@ -3,7 +3,14 @@ import { validateVersionManifest, getVersionNeighbors, resolveVersionUrl } from 
 // Transport flags, debug/export query parameters and analysis objects are never
 // passed to another engine. Adapters apply only preferences they support.
 const SETTINGS = ['reducedFlash', 'reducedMotion', 'stageRes', 'stageFps'];
-export const compatibleVersionSettings = settings => Object.fromEntries(SETTINGS.filter(key => typeof settings?.[key] === 'boolean' || typeof settings?.[key] === 'number' || typeof settings?.[key] === 'string').map(key => [key, settings[key]]));
+export function compatibleVersionSettings(settings) {
+  const compatible = Object.fromEntries(SETTINGS.filter(key => typeof settings?.[key] === 'boolean' || typeof settings?.[key] === 'number' || typeof settings?.[key] === 'string').map(key => [key, settings[key]]));
+  // This is a registered-world descriptor, never a variant, path or URL.
+  // The destination adapter still checks membership in its own world registry.
+  const base = settings?.worldBaseId;
+  if (typeof base === 'string' && base.length <= 64 && base !== 'custom' && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(base)) compatible.worldBaseId = base;
+  return compatible;
+}
 const blocked = state => state.blockedReason || (state.phase === 'loading' ? 'Wait for the song to finish loading.' : state.phase === 'error' ? 'Load a song successfully before switching.' : null);
 const supported = source => source?.kind === 'demo' || (source?.kind === 'audio-files' && source.files?.length > 0);
 
