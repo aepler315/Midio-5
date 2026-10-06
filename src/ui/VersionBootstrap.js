@@ -107,6 +107,7 @@ export function bootstrapVersionNavigation({ document, fetch: suppliedFetch, cre
     if (disposed || fetching) return;
     fetching = true; if (fallback) { fallback.retry.disabled = true; fallback.live.disabled = true; }
     try {
+      if (metadata.archivesAvailable === false) throw new Error('Version archives are unavailable in this build.');
       const response = await fetch(new URL('versions/manifest.json', siteRoot).href, { cache: 'no-cache', redirect: 'error' });
       if (!response.ok) throw new Error('Version archives are unavailable in this build.');
       const manifest = validateVersionManifest(await response.json());

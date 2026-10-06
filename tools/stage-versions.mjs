@@ -76,6 +76,17 @@ export async function stageVersions({ sourceDir, outputDir, checkpoints, liveId,
   const staged=path.join(workspace,'site');
   try {
     await stageSite(source,staged);
+    // Only a complete archive build enables manifest requests. Source-only
+    // builds intentionally have no versions/ directory (including CI smoke).
+    const liveIndex = path.join(staged, 'index.html');
+    const liveHtml = await fs.readFile(liveIndex, 'utf8');
+    const metadataPattern = /(<script id="midio-version-metadata" type="application\/json">)(.*?)(<\/script>)/;
+    if (!metadataPattern.test(liveHtml)) throw new Error('Live version metadata is missing');
+    await fs.writeFile(liveIndex, liveHtml.replace(metadataPattern, (_, start, json, end) => {
+      const metadata = JSON.parse(json);
+      if (metadata.currentId !== liveId || metadata.liveId !== liveId || metadata.siteRootRelative !== './') throw new Error('Live version metadata does not match staging');
+      return start + JSON.stringify({ ...metadata, archivesAvailable: true }) + end;
+    }));
     const shared=new Map();
     for(const file of sharedFiles) {
       if(!safePath(file)||!publicPath(file)) throw new Error('Unsafe shared navigation path');

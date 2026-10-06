@@ -19,7 +19,7 @@ async function fixture(t) {
   const git = (...args) => execFileSync('git', ['-C', source, ...args], { encoding: 'utf8' }).trim();
   git('init', '-q'); git('add', '.'); git('-c','user.email=fixture@example.test','-c','user.name=Fixture','commit','-qm','source');
   const sha = git('rev-parse', 'HEAD');
-  await fs.writeFile(path.join(source, 'index.html'), '<html><body>working tree</body></html>');
+  await fs.writeFile(path.join(source, 'index.html'), '<html><body>working tree<script id="midio-version-metadata" type="application/json">{"currentId":"live","liveId":"live","siteRootRelative":"./","archivesAvailable":false}</script></body></html>');
   const checkpoints = [{ id:'old', label:'Old', sourceSha:sha, sourcePr:1 }, { id:'live', label:'Live', sourceSha:sha, sourcePr:2 }];
   const profile = defineAdapterProfile({ sourceSha:sha, expectedHashes:{'index.html':hash('<html><body></body></html>'),'src/main.js':hash('export const boot = true;\n')}, patches:[] });
   return { root, source, output:path.join(root,'site'), sha, checkpoints, profiles:new Map([[sha,profile]]) };
@@ -35,6 +35,13 @@ test('pinned extraction publishes allowlisted original files and trusted subpath
   assert.equal(manifest.entries[0].entryPath,'versions/old/');
   assert.equal(manifest.entries[1].entryPath,'./');
   assert.match(await fs.readFile(path.join(f.output,'versions/old/index.html'),'utf8'), /siteRootRelative.*\.\.\/\.\.\//);
+  for (const entry of manifest.entries) {
+    const html = await fs.readFile(path.join(f.output, entry.entryPath, 'index.html'), 'utf8');
+    const metadata = JSON.parse(html.match(/<script id="midio-version-metadata" type="application\/json">(.*?)<\/script>/)[1]);
+    assert.equal(metadata.archivesAvailable, true, `${entry.id} can load the staged manifest`);
+    const recorded = report.entries.find(e => e.id === entry.id).files.find(e => e.path === 'index.html');
+    assert.equal(recorded.outputHash, hash(html));
+  }
   const liveHtml=report.entries[1].files.find(x=>x.path==='index.html');
   assert.notEqual(liveHtml.sourceHash,liveHtml.outputHash);
   const unchanged=report.entries[0].files.find(x=>x.path==='soundfonts/tone.bin');

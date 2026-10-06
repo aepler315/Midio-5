@@ -432,6 +432,9 @@ async function runPrefix(options, audit, prefix, wavs) {
   const expectedHttpFailures = new Set();
   const addPage = async () => {
     const page = await context.newPage(); page.setDefaultTimeout(15000);
+    // Historical modules and terrain can take longer than an ordinary control
+    // interaction on CI software GL. Keep navigation within the restore budget.
+    page.setDefaultNavigationTimeout(options.timeout);
     page.on('pageerror', e => report.errors.push({ type: 'pageerror', url: page.url(), text: e.message }));
     page.on('console', message => { if (message.type() === 'error' && !/Failed to load resource/.test(message.text())) report.errors.push({ type: 'console', url: page.url(), text: message.text() }); });
     page.on('response', response => {
