@@ -269,16 +269,27 @@ async function wake(page) {
   assert.ok(bounds, 'stage must be present for a real wake tap');
   await stage.click({ position: { x: bounds.width / 2, y: bounds.height / 3 } });
 }
+async function focusVisibleNavigation(locator) {
+  await locator.evaluate(button => {
+    const nav = button.closest('[data-version-navigation]');
+    if (!button.getClientRects().length || getComputedStyle(button).visibility === 'hidden' || nav?.inert || button.disabled) throw new Error('Navigation control must be visible and enabled before focus.');
+    button.focus();
+    if (document.activeElement !== button) throw new Error('Visible navigation control did not receive native focus.');
+  });
+}
+async function clickHudButton(page, selector) {
+  await wake(page);
+  const available = page.locator('[data-version-navigation] .version-arrow:not(:disabled)');
+  if (await available.count()) await focusVisibleNavigation(available.first());
+  // The real target click moves focus normally. Active recording/calibration
+  // holds the existing HUD when all navigation controls are disabled.
+  await page.locator(selector).click();
+}
 async function switchVersion(page, direction, expected, timeout) {
   console.log(`Version-browser smoke: ${direction} to ${expected.id}`);
   await wake(page);
   const selector = direction === 'previous' ? '#versionPrevious' : '#versionNext';
-  await page.locator(selector).evaluate(button => {
-    const nav = button.closest('[data-version-navigation]');
-    if (!button.getClientRects().length || getComputedStyle(button).visibility === 'hidden' || nav?.inert || button.disabled) throw new Error('Target version arrow must be visible and enabled before focus.');
-    button.focus();
-    if (document.activeElement !== button) throw new Error('Visible version arrow did not receive native focus.');
-  });
+  await focusVisibleNavigation(page.locator(selector));
   await page.evaluate(selector => {
     const nav = document.querySelector('[data-version-navigation]'), button = document.querySelector(selector), adapter = window.__MIDIO_VERSION_ADAPTER?.getState();
     const attempt = { url: location.href, selector, atMs: performance.now(), idleMs: performance.now() - (window.__SMW?.carMode?.lastInputMs || 0),
@@ -329,7 +340,7 @@ async function readRecords(page) {
 }
 
 async function configureRunningDisplay(page, report) {
-  // The all-checkpoint portrait/desktop scene captures keep their default
+  // The all-checkpoint desktop scene captures keep their default
   // resolution. Running software-GL checks use the app's actual controls to
   // reduce frame pressure while keeping native Range/Journey rendering.
   await wake(page); await page.locator('#displaySettingsBtn').click();
@@ -347,6 +358,7 @@ async function configureRunningDisplay(page, report) {
 }
 
 async function mobileChecks(page, output, report) {
+  const initialPaused = (await state(page)).paused;
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' }); await wake(page);
   const geometry = await page.evaluate(() => {
@@ -357,7 +369,9 @@ async function mobileChecks(page, output, report) {
     assert.ok(b.width >= 52 && b.height >= 52 && b.x >= 0 && b.x + b.width <= 390, `${b.id}: mobile touch target`);
     for (const other of geometry.filter(o => !o.id.startsWith('version'))) assert.ok(b.x + b.width <= other.x || other.x + other.width <= b.x || b.y + b.height <= other.y || other.y + other.height <= b.y, `${b.id} overlaps ${other.id}`);
   }
-  await page.locator('#versionPrevious').focus(); await page.waitForTimeout(3300);
+  await focusVisibleNavigation(page.locator('#versionPrevious'));
+  await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(false));
+  await page.waitForTimeout(3300);
   assert.ok(await page.locator('#versionPrevious').isVisible(), 'focused arrow holds HUD visible');
   assert.equal(await page.locator('#versionPrevious').evaluate(el => getComputedStyle(el).opacity), '1');
   await page.locator('#versionPrevious').evaluate(el => el.blur());
@@ -368,7 +382,8 @@ async function mobileChecks(page, output, report) {
   await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
   await page.waitForTimeout(250); assert.equal(page.url(), oldUrl, 'first tap on faded arrow location only wakes HUD');
   await wake(page); await page.screenshot({ path: path.join(output, 'portrait.png') });
-  report.mobile = { geometry, hidden, reducedMotion: true };
+  report.mobile = { geometry, hidden, reducedMotion: true, timeoutMeasuredDuring: 'running playback' };
+  await page.evaluate(paused => window.__MIDIO_VERSION_ADAPTER.setPaused(paused), initialPaused);
   await page.setViewportSize({ width: 1280, height: 720 });
 }
 
@@ -466,7 +481,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     }
     await configureRunningDisplay(page, report);
     const beforeRun = await state(page);
-    await page.locator('#pauseBtn').click();
+    await clickHudButton(page, '#pauseBtn');
     await page.waitForFunction(p => window.__MIDIO_VERSION_ADAPTER.getState().positionMs > p + 250, beforeRun.positionMs);
     song = await state(page); assert.equal(song.paused, false);
     await switchVersion(page, 'next', audit.manifest.entries[liveIndex + 1], options.timeout);
@@ -482,17 +497,17 @@ async function runPrefix(options, audit, prefix, wavs) {
     await mobileChecks(page, output, report);
     // The real calibration/recording UI must block departure. Recording is
     // saved so the evidence includes the actual output, not just a flag.
-    await wake(page); await page.locator('#calibrateBtn').click();
+    await clickHudButton(page, '#calibrateBtn');
     await page.waitForFunction(() => /calibr/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''));
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
-    await page.locator('#calibrateBtn').click();
-    await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(false)); await wake(page);
-    await page.locator('#recordBtn').click();
+    await clickHudButton(page, '#calibrateBtn');
+    await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(false));
+    await clickHudButton(page, '#recordBtn');
     await page.waitForFunction(() => /record/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || ''));
     assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
     await page.waitForFunction(() => document.getElementById('recordBtn')?.title === 'Stop recording and save the video', null, { timeout: options.timeout });
     await page.waitForTimeout(1800);
-    const downloadPromise = page.waitForEvent('download', { timeout: 30000 }); await page.locator('#recordBtn').click();
+    const downloadPromise = page.waitForEvent('download', { timeout: 30000 }); await clickHudButton(page, '#recordBtn');
     const download = await downloadPromise; await download.saveAs(path.join(output, `recording-${path.basename(download.suggestedFilename())}`));
     const captures = await page.evaluate(() => window.__VERSION_SMOKE.captureSources);
     assert.ok(captures.length && captures.every(c => c.detached && c.frames.length > 0 && c.frames.every(f => f.sourceIsStage && f.sourceIsCanvas)), 'recorder captures detached compositor frames drawn only from stage pixels; DOM version chrome stays outside output');
@@ -518,7 +533,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     const exporting = await state(page);
     assert.ok(exporting.positionMs < 10000, 'full-song export restarted actual playback near the beginning');
     await page.waitForTimeout(1200);
-    const exportDownloadPromise = page.waitForEvent('download', { timeout: 30000 }); await page.locator('#recordBtn').click();
+    const exportDownloadPromise = page.waitForEvent('download', { timeout: 30000 }); await clickHudButton(page, '#recordBtn');
     const exportDownload = await exportDownloadPromise;
     await exportDownload.saveAs(path.join(output, `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}`));
     const exportCaptures = await page.evaluate(() => window.__VERSION_SMOKE.captureSources);
@@ -652,7 +667,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-y', '-framerate', '2', '-i', path.join(screencastDir, '%05d.jpg'), '-vf', 'scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', path.join(output, 'click-through.mp4')], { timeout: 60000, stdio: 'pipe' });
     report.video = { path: 'click-through.mp4', frames: frameCount, samplingMs: 2000, playbackFps: 2, speed: 4 };
     report.limitations.push('Chromium only; no real iOS audio policy, physical safe-area device or deployment duration measured.',
-      'The full-song export check starts the real export and stops it early through the HUD; it does not verify a complete thirty-second exported file. Pending duplication uses a matching injected IDB record while the original owner remains alive.',
+      'The full-song export check starts the real export and stops it early through the HUD; it does not verify a complete exported pilot file. Pending duplication uses a matching injected IDB record while the original owner remains alive.',
       'Audio source-start offsets and one AudioContext are observed; acoustic output and process-wide audio exclusivity require a real device check.');
     report.passed = true;
   } catch (error) {
@@ -703,7 +718,7 @@ try {
   const audit = await auditArtifact(options.site);
   report.artifact = { buildSha: audit.build.buildSha, bytes: audit.bytes, budgetBytes: MAX_SITE_BYTES, checkpoints: audit.identity };
   const wavs = ['pilot.wav', '01-drum-stem.wav', '02-melody-stem.wav'].map(file => path.join(options.output, file));
-  for (let i = 0; i < wavs.length; i++) execFileSync(process.execPath, [path.join(root, 'tools/gen-test-wav.mjs'), wavs[i], String(120 + i * 6), '30']);
+  for (let i = 0; i < wavs.length; i++) execFileSync(process.execPath, [path.join(root, 'tools/gen-test-wav.mjs'), wavs[i], String(120 + i * 6), i === 0 ? '90' : '30']);
   for (const prefix of ['/', '/Midio-5/']) {
     console.log(`Version-browser smoke: ${prefix}`);
     const result = await runPrefix(options, audit, prefix, wavs);
