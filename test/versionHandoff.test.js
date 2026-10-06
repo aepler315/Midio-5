@@ -94,7 +94,7 @@ test('confirmed restore suspends before any source starts and applies seed and n
   const ctx=vm.createContext({
     resolveWorldId:x=>x, stopWorldPreview(){},closeWorldChooser(){}, lastWorldId:null,
     sourceSelection:{isCurrent:s=>s===selection},loadGen:1,
-    readBulkExportFromUrl:()=>false, running:true,sim:{},canvas:{focus(){}},
+    readBulkExportFromUrl:()=>false, rangePresentation:null,renderer:{draw(){}},running:true,sim:{},canvas:{focus(){}},
     muteTimelineSynth:false,lastAudioBuffer:null,
     audioEngine:{ctx:{state:'running',suspend:async()=>{calls.push('suspend');ctx.audioEngine.ctx.state='suspended';}},resume:()=>calls.push('resume'),playBuffer:(_b,t)=>calls.push(['play',t])},
     startTimeline:(_d,extra)=>calls.push(['timeline',extra]),
@@ -264,4 +264,18 @@ test('a transient IndexedDB open failure can retry without reloading the page',a
 test('a connection arriving after a blocked open is rejected closes instead of leaking',async()=>{
  let closed=0;const indexedDB={open(){const request={result:{close(){closed++;}}};queueMicrotask(()=>{request.onblocked?.();queueMicrotask(()=>request.onsuccess?.());});return request;}};
  const store=createVersionHandoffStore({indexedDB,sessionStorage:storage(),locks:null,lifecycle:null,heartbeat:false});await assert.rejects(store.tabId(),/blocked/);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(closed,1);await store.dispose();
+});
+test('paused restore waits for its own scene then redraws before successful ownership publication',async()=>{
+ for(const replaced of [false,true]) {
+  const calls=[];let ready;const waiting=new Promise(resolve=>{ready=resolve;});const selection={id:1};let current=true;
+  const ctx=vm.createContext({loadGen:1,sourceSelection:{isCurrent:()=>current},resolveWorldId:x=>x,stopWorldPreview(){},closeWorldChooser(){},lastWorldId:null,readBulkExportFromUrl:()=>false,running:true,sim:{},canvas:{focus(){}},muteTimelineSynth:false,lastAudioBuffer:null,
+   audioEngine:{ctx:{state:'running',async suspend(){this.state='suspended';calls.push('suspend');}},resume(){throw new Error('audible restore');},playBuffer(){assert.equal(ctx.audioEngine.ctx.state,'suspended');}},
+   rangePresentation:{whenReady(){calls.push('wait');return waiting;}},renderer:{draw(){assert.equal(ctx.audioEngine.ctx.state,'suspended');calls.push('draw');}},startTimeline(){calls.push('timeline');},versionSourceStarted(){calls.push('ready');},
+  });
+  vm.runInContext(mainFunctions(['startConfirmedWorld']),ctx);
+  const starting=ctx.startConfirmedWorld({data:{durationMs:20000},extra:{versionSelection:selection,versionSource:{kind:'demo'},restoreIntent:{positionMs:8000,seed:123,paused:true}}},'range');
+  await new Promise(resolve=>setTimeout(resolve,0));assert.ok(calls.includes('wait'));assert.equal(calls.includes('ready'),false);
+  if(replaced)current=false;ready();await starting;
+  assert.deepEqual(calls.filter(x=>x==='draw'||x==='ready'),replaced?[]:['draw','ready']);
+ }
 });

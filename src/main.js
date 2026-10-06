@@ -1916,6 +1916,15 @@ async function startConfirmedWorld(pending, id) {
     lastAudioBuffer = extra.playBuffer;
     if (!exporting) audioEngine.playBuffer(extra.playBuffer, (extra.startAtMs || 0) / 1000);
   }
+  if (restore && running && sim) {
+    const generation = loadGen;
+    // A paused frame cannot advance the renderer's asynchronous preparation.
+    // Wait for this version's own presentation, then paint it at the held
+    // transport offset before advertising readiness to the navigator.
+    if (rangePresentation) await rangePresentation.whenReady();
+    if (generation !== loadGen || (selection && !sourceSelection.isCurrent(selection)) || !running || !sim) return;
+    renderer.draw(sim, 1);
+  }
   if (selection && running && sim) versionSourceStarted(selection, extra.versionSource, restore);
 }
 
