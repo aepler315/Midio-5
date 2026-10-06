@@ -16,11 +16,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 function args(argv) {
   const result = { site: '_site', output: '.smoke/version-browser', 'timeout-ms': '180000' };
-  for (let i = 0; i < argv.length; i += 2) {
+  let checksOnly = false;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--checks-only') { checksOnly = true; continue; }
     const name = argv[i].slice(2), value = argv[i + 1];
     if (!argv[i].startsWith('--') || !Object.hasOwn(result, name) || !value) throw new Error(`Invalid option: ${argv[i]}`);
-    result[name] = value;
+    result[name] = value; i++;
   }
+  result.checksOnly = checksOnly;
   result.site = path.resolve(root, result.site); result.output = path.resolve(root, result.output);
   result.timeout = Number(result['timeout-ms']);
   assert.ok(result.timeout >= 10000 && result.timeout <= 600000, 'timeout must be 10000–600000ms');
@@ -270,10 +273,16 @@ async function switchVersion(page, direction, expected, timeout) {
   console.log(`Version-browser smoke: ${direction} to ${expected.id}`);
   await wake(page);
   const selector = direction === 'previous' ? '#versionPrevious' : '#versionNext';
+  await page.locator(selector).evaluate(button => {
+    const nav = button.closest('[data-version-navigation]');
+    if (!button.getClientRects().length || getComputedStyle(button).visibility === 'hidden' || nav?.inert || button.disabled) throw new Error('Target version arrow must be visible and enabled before focus.');
+    button.focus();
+    if (document.activeElement !== button) throw new Error('Visible version arrow did not receive native focus.');
+  });
   await page.evaluate(selector => {
     const nav = document.querySelector('[data-version-navigation]'), button = document.querySelector(selector), adapter = window.__MIDIO_VERSION_ADAPTER?.getState();
     const attempt = { url: location.href, selector, atMs: performance.now(), idleMs: performance.now() - (window.__SMW?.carMode?.lastInputMs || 0),
-      navigation: { state: nav?.getAttribute('data-state'), inert: nav?.inert, className: nav?.className, hudClass: document.getElementById('hudRight')?.className, disabled: button?.disabled },
+      navigation: { state: nav?.getAttribute('data-state'), inert: nav?.inert, className: nav?.className, hudClass: document.getElementById('hudRight')?.className, disabled: button?.disabled, focused: document.activeElement === button },
       adapter: { phase: adapter?.phase, sourceId: adapter?.sourceId, positionMs: adapter?.positionMs, paused: adapter?.paused, blockedReason: adapter?.blockedReason } };
     window.__VERSION_SMOKE.lastSwitchClick = attempt;
     sessionStorage.setItem('midio:smoke-last-switch-click', JSON.stringify(attempt));
@@ -366,7 +375,7 @@ async function mobileChecks(page, output, report) {
 async function runPrefix(options, audit, prefix, wavs) {
   const hosted = await serve(options.site, prefix), output = path.join(options.output, prefix === '/' ? 'root' : 'project-subpath');
   await fs.mkdir(output, { recursive: true });
-  const report = { prefix, passed: false, traversal: [], restores: [], checks: [], errors: [], limitations: [] };
+  const report = { prefix, passed: false, traversalSkipped: options.checksOnly, traversal: [], restores: [], checks: [], errors: [], limitations: options.checksOnly ? ['Diagnostic checks-only mode skips catalog traversal and cannot establish full eight-checkpoint browser proof.'] : [] };
   let browser, context;
   const expectedHttpFailures = new Set();
   const addPage = async () => {
@@ -439,20 +448,22 @@ async function runPrefix(options, audit, prefix, wavs) {
       assert.ok(frame.workers.every(url => url.startsWith(new URL(entry.entryPath, hosted.url).href)), `${entry.id}: workers escaped selected build`);
       console.log(`Version-browser smoke: captured ${entry.id} (${frame.sceneClass}, active=${frame.range.active}, colors=${frame.pixels.colors})`);
     };
-    await captureCheckpoint('initial');
-    // First reach oldest, then cover every scene forward and backward.
-    for (const [direction, end] of [['previous', 0], ['next', 7], ['previous', 0]]) {
-      while (index !== end) {
-        const before = await state(page); index += direction === 'next' ? 1 : -1;
-        await switchVersion(page, direction, audit.manifest.entries[index], options.timeout);
-        await verifyRestore(page, before, report.restores); await captureCheckpoint(direction);
+    if (!options.checksOnly) {
+      await captureCheckpoint('initial');
+      // First reach oldest, then cover every scene forward and backward.
+      for (const [direction, end] of [['previous', 0], ['next', 7], ['previous', 0]]) {
+        while (index !== end) {
+          const before = await state(page); index += direction === 'next' ? 1 : -1;
+          await switchVersion(page, direction, audit.manifest.entries[index], options.timeout);
+          await verifyRestore(page, before, report.restores); await captureCheckpoint(direction);
+        }
+        await wake(page); assert.equal(await page.locator(direction === 'next' ? '#versionNext' : '#versionPrevious').isDisabled(), true, 'endpoint does not wrap');
       }
-      await wake(page); assert.equal(await page.locator(direction === 'next' ? '#versionNext' : '#versionPrevious').isDisabled(), true, 'endpoint does not wrap');
+      const pictures = ['natural-valley', 'circular-world', 'spherical-world'].map(id => report.traversal.find(e => e.id === id).frame.pixelHash);
+      assert.equal(new Set(pictures).size, 3, 'live and rejected circular experiments must produce different rendered frames');
+      await wake(page); await page.locator('#versionReturnLive').click();
+      await page.waitForURL(hosted.url + '*', { timeout: options.timeout }); await waitReady(page, options.timeout);
     }
-    const pictures = ['natural-valley', 'circular-world', 'spherical-world'].map(id => report.traversal.find(e => e.id === id).frame.pixelHash);
-    assert.equal(new Set(pictures).size, 3, 'live and rejected circular experiments must produce different rendered frames');
-    await wake(page); await page.locator('#versionReturnLive').click();
-    await page.waitForURL(hosted.url + '*', { timeout: options.timeout }); await waitReady(page, options.timeout);
     await configureRunningDisplay(page, report);
     const beforeRun = await state(page);
     await page.locator('#pauseBtn').click();
@@ -687,7 +698,7 @@ async function runPrefix(options, audit, prefix, wavs) {
 
 const options = args(process.argv.slice(2));
 await fs.mkdir(options.output, { recursive: true });
-const report = { schema: 1, startedAt: new Date().toISOString(), passed: false, prefixes: [] };
+const report = { schema: 1, startedAt: new Date().toISOString(), passed: false, traversalSkipped: options.checksOnly, prefixes: [] };
 try {
   const audit = await auditArtifact(options.site);
   report.artifact = { buildSha: audit.build.buildSha, bytes: audit.bytes, budgetBytes: MAX_SITE_BYTES, checkpoints: audit.identity };
@@ -699,6 +710,6 @@ try {
     report.prefixes.push({ prefix, passed: result.passed, traversals: result.traversal.length, checks: result.checks, limitations: result.limitations });
   }
   report.passed = true;
-  console.log(`Version-browser smoke passed both prefixes; report: ${path.join(options.output, 'report.json')}`);
+  console.log(`Version-browser ${options.checksOnly ? 'diagnostic checks passed; full catalog traversal skipped' : 'smoke passed both prefixes'}; report: ${path.join(options.output, 'report.json')}`);
 } catch (error) { report.failure = { message: error.message, stack: error.stack }; console.error(error.stack); process.exitCode = 1; }
 finally { report.finishedAt = new Date().toISOString(); await fs.writeFile(path.join(options.output, 'report.json'), JSON.stringify(report, null, 2)); }
