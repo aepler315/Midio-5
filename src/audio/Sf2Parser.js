@@ -60,7 +60,6 @@ function fourcc(dv, off) {
 function u16(dv, off) { return dv.getUint16(off, true); }
 function u32(dv, off) { return dv.getUint32(off, true); }
 function i16(dv, off) { return dv.getInt16(off, true); }
-function i32(dv, off) { return dv.getInt32(off, true); }
 
 function readName(u8, off, len) {
   // Null-terminated ASCII, padded to field length

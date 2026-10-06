@@ -49,10 +49,6 @@ import { clamp01 } from '../utils/math.js';
 
 const WINDOW = 16;              // kicks per verdict
 const MIN_KICKS = 10;           // don't judge on a handful
-// Circular variance above this = the kicks aren't on the grid. 0 is perfect
-// lock, 1 is uniform scatter. 0.55 sits well clear of "human-loose but
-// locked" (a live drummer lands ~0.15-0.3) without needing pure chaos.
-const SCATTER_THRESHOLD = 0.55;
 // The anchor's own confidence is the other half: if the player has already
 // tapped a good pass in, the grid is being steered and there is nothing to
 // ask for, however scattered the CHART's kicks look.

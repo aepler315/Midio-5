@@ -189,7 +189,6 @@ function baseFeat(overrides = {}) {
   };
 }
 
-function topId(feat) { return scoreWorlds(feat)[0].id; }
 function rankOf(feat, id) { return scoreWorlds(feat).findIndex((r) => r.id === id); }
 
 const WORLD_CASES = {

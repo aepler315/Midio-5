@@ -24,7 +24,6 @@ import { resolveRendererMode } from './render/WebGLRenderer.js';
 import { hitTestComposerStrip } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
-import { designSynthPatches } from './audio/SynthPatchDesigner.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
@@ -845,15 +844,6 @@ async function bootAudioOnce() {
     canvasEl: auditionCanvasEl, textEl: auditionTextEl, barFillEl: auditionBarFillEl,
     audioEngine,
   });
-}
-
-/** MIDI/demo loads start immediately -- no more waiting on a loading
- *  screen for font ratings to land. FontRecommender still auditions every
- *  loaded font against this song in the background and steers the library
- *  to the best fit as verdicts arrive, same as fonts dropped mid-song. */
-function startImmediately(data) {
-  offerWorldsThenStart(data);
-  fontRecommender?.auditionForTimeline(data);
 }
 
 function applySynthMutePolicy() {
@@ -2298,28 +2288,9 @@ function startTimeline(timelineData, extra = {}) {
   };
 }
 
-/**
- * A MIDI and audio file dropped TOGETHER: the recording is what you hear,
- * the score is what you see -- an exact description of the visuals for a
- * song the engine would otherwise have to guess at from raw spectra.
- *
- * The two are assumed to share a t=0 origin, which is what exporting them
- * from one project gives you. Nothing here tries to detect or correct an
- * offset: a silently "corrected" sync that guessed wrong would be far worse
- * to author against than one that is always literal.
- *
- * Analysis is skipped entirely (that's the raw-audio path's job) -- the MIDI
- * already states every onset, so energy curves are synthesized from it just
- * as they are for a MIDI-only load. That also makes this path near-instant
- * where a raw-audio drop of the same song takes its separation/pitch pass.
- */
 function showProgress(text) {
   progressEl.textContent = text;
   progressEl.classList.remove('hidden');
-}
-
-async function loadAudioFile(file) {
-  return loadAudioFiles([file]);
 }
 
 /** Sums N decoded stems into one stereo mix buffer -- the mix is both the
@@ -2954,11 +2925,6 @@ async function loadAudioFiles(files, { selection = null } = {}) {
     loaderEl.classList.remove('hidden');
     showErrorBanner('Could not load audio file: ' + (err?.message || err));
   }
-}
-
-function handleFile(file) {
-  if (!file) return;
-  handleFiles([file]);
 }
 
 /** One file plays as itself. Several files dropped together are stems of one
@@ -3770,13 +3736,6 @@ function frame(tRaf) {
   }
 
   rafHandle = requestAnimationFrame(frame);
-}
-
-function formatClock(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, '0')}`;
 }
 
 function formatDuration(ms) {

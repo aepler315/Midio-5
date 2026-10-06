@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   flankProfile, flankQs, summitMass, apronMass, blurWrap, massingEnvelope,
   crenellation, couloirCarve, flankness, shapeDials,
-  FLANK_Q_STEEP, FLANK_Q_SHALLOW, STEEP_WIDTH_MUL, SHALLOW_WIDTH_MUL,
+  STEEP_WIDTH_MUL, SHALLOW_WIDTH_MUL,
 } from '../src/world/RidgeShape.js';
 import { ValueNoise1D } from '../src/utils/noise.js';
 import { lithologyFromShares } from '../src/world/RidgePortrait.js';

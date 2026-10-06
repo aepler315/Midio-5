@@ -88,10 +88,6 @@ export function setStoredGroove(profile) {
   try { localStorage.setItem(GROOVE_KEY, JSON.stringify(profile.toJSON())); } catch { /* no persistent storage available */ }
 }
 
-export function clearStoredGroove() {
-  try { localStorage.removeItem(GROOVE_KEY); } catch { /* no persistent storage available */ }
-}
-
 // Manual Bluetooth latency correction. ChoreoClock's outputLatencyMs already
 // compensates automatically from AudioContext.baseLatency/outputLatency --
 // but most Bluetooth stacks never report a real number there (0, or a wired-

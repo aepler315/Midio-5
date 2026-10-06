@@ -15,13 +15,13 @@ import {
 import { SourceSelection } from '../src/audio/SourceSelection.js';
 import { buildSongProfile, PROFILE_VERSION } from '../src/audio/SongProfile.js';
 import { resolveSongSeed } from '../src/utils/seed.js';
-import { mainFunctions } from './helpers/mainSource.js';
+import { mainFunctions, mainFunctionSource } from './helpers/mainSource.js';
 
 // Execute the real upload orchestrator with browser/audio boundaries replaced.
 // Analysis/cache identity remain real; no browser is needed to test ownership.
 const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 const loadSource = main.slice(main.indexOf('function claimSelection('), main.indexOf('\n// Retained so "Replay seed"'))
-  + main.slice(main.indexOf('async function loadAudioFiles('), main.indexOf('\nfunction handleFile('));
+  + '\n' + mainFunctionSource('loadAudioFiles', main);
 const element = () => ({ classList: { add() {}, remove() {} }, textContent: '' });
 function recording(hz = 440) {
   const samples = Float32Array.from({ length: 16000 }, (_, i) => Math.sin(i * hz * Math.PI / 4000) * (0.4 + 0.1 * Math.sin(i / 100)));

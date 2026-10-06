@@ -5,7 +5,7 @@
       "name": "midio",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
-      "port": 5173
+      "port": 8080
     }
   ]
 }

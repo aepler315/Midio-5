@@ -5,7 +5,6 @@
 // SynthRouter: drop-in replacement for SimpleSynth that routes noteOn to the
 // active SF2 engine when a font is loaded, otherwise to the fallback synth.
 import { parseSf2 } from './Sf2Parser.js';
-import { Sf2Synth } from './Sf2Synth.js';
 import { extractZip } from '../utils/zip.js';
 
 export class SoundfontLibrary {

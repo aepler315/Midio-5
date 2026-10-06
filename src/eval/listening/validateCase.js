@@ -17,7 +17,6 @@
 // or calibration for held-out cases.
 
 export const LISTENING_SPLITS = Object.freeze(['development', 'validation', 'test']);
-export const HELD_OUT = Object.freeze(['validation', 'test']);
 const HEX64 = /^[0-9a-f]{64}$/;
 
 /** Validate an annotation (from parseAnnotation) against its case manifest. */

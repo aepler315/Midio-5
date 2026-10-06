@@ -115,7 +115,6 @@ export class WebGLRenderer {
       glCanvas.height = this.canvas.height;
 
       // Match Stage model CSS sizing so the overlay letterboxes with #stage.
-      const cs = getComputedStyle(this.canvas);
       glCanvas.style.cssText = [
         'position:absolute',
         'inset:0',
@@ -210,8 +209,8 @@ export class WebGLRenderer {
         const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
         const d = max - min;
-        let h = 0;
         if (d > 1e-6) {
+          let h;
           if (max === r) h = ((g - b) / d) % 6;
           else if (max === g) h = (b - r) / d + 2;
           else h = (r - g) / d + 4;

@@ -16,7 +16,7 @@ import { resolveLandscapePresentation } from './LandscapePresentation.js';
 // depends on which biome is showing when the sector first comes into view
 // -- captured once and cached forever, so a later biome change never
 // retroactively reskins something already placed.
-import { mulberry32, hashSeed, clamp01 } from '../utils/math.js';
+import { mulberry32, hashSeed } from '../utils/math.js';
 import { hexLerp } from '../utils/color.js';
 import { LANDMARKS } from './Landmarks.js';
 import { identityFor } from './WorldIdentity.js';

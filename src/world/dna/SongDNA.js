@@ -120,10 +120,12 @@ export function buildSongDNA(data = {}) {
     : buildSongProfile(data);
   const watch = profile.watch;
 
-  let tonicPc = 0, isMajor = true, keyConfidence = 0.3;
-  let meanPitch01 = 0.5, registerSpread = 0.3, noteDensity = 0.3, velocityRange = 0.3;
-  let harmonicComplexity = 0.3, percussionDensity = 0.2, registerTrend = 0;
-  let familyShare = { organic: 0.34, geometric: 0.33, distorted: 0.33 };
+  // Every branch below assigns each of these; only the two defaults that a
+  // branch may leave untouched are given values here.
+  let tonicPc, isMajor, keyConfidence;
+  let meanPitch01, registerSpread, noteDensity, velocityRange;
+  let harmonicComplexity = 0.3, percussionDensity, registerTrend = 0;
+  let familyShare;
 
   // The tonal fields (key, register, harmony) may only be read off events
   // that actually carry a pitch -- see isPitched. A drum-only timeline has a

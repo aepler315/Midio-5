@@ -54,7 +54,7 @@ export function oklchToHex(L, C, H) {
     for (let i = 0; i < 20; i++) {
       const mid = (lo + hi) / 2;
       const cand = oklabToLinear(L, mid * Math.cos(hRad), mid * Math.sin(hRad));
-      if (inGamut(cand)) { lo = mid; rgbLin = cand; } else { hi = mid; }
+      if (inGamut(cand)) lo = mid; else hi = mid;
     }
     rgbLin = oklabToLinear(L, lo * Math.cos(hRad), lo * Math.sin(hRad));
   }
@@ -72,19 +72,6 @@ export function hexToOklab(hex) {
   return linearToOklab(r, g, b);
 }
 
-export function hslToOklab(h, s, l) {
-  // s,l in 0..1
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-  let r = 0, g = 0, b = 0;
-  const hh = ((h % 360) + 360) % 360;
-  if (hh < 60) { r = c; g = x; } else if (hh < 120) { r = x; g = c; }
-  else if (hh < 180) { g = c; b = x; } else if (hh < 240) { g = x; b = c; }
-  else if (hh < 300) { r = x; b = c; } else { r = c; b = x; }
-  return linearToOklab(srgbToLinear(r + m), srgbToLinear(g + m), srgbToLinear(b + m));
-}
-
 /** Perceptual distance between two OKLab triples (Euclidean — this is what
  *  "ΔE" means in OKLab; no further weighting needed, unlike CIELAB). */
 export function oklabDelta(a, b) {
@@ -92,7 +79,3 @@ export function oklabDelta(a, b) {
   return Math.sqrt(dl * dl + da * da + db * db);
 }
 
-export function oklabOf(L, C, H) {
-  const hRad = (H * Math.PI) / 180;
-  return [L, C * Math.cos(hRad), C * Math.sin(hRad)];
-}

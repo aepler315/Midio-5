@@ -114,7 +114,7 @@ test('a single over-budget frame does not reset recovery progress unnecessarily,
   assert.equal(gov.level, 1);
 
   // Push past the 10s clean threshold.
-  t = feedFrames(gov, 20, 5, t, 90); // another ~1.8s
+  feedFrames(gov, 20, 5, t, 90); // another ~1.8s
   assert.equal(gov.level, 0);
 });
 
@@ -242,7 +242,7 @@ test('an over-budget frame during a clean streak resets the recovery timer', () 
 
   gov.sample(20, t); // one bad frame resets the clean-streak clock
   t += 90;
-  t = feedFrames(gov, 100, 5, t, 90); // another ~9s clean — still shy of 10s since reset
+  feedFrames(gov, 100, 5, t, 90); // another ~9s clean — still shy of 10s since reset
   assert.equal(gov.level, 1, 'recovery timer should have restarted after the interruption');
 });
 

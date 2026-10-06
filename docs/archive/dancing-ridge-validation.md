@@ -4,7 +4,7 @@ The reported frame shows a bright upper SpaceRidge and a barely legible Dancing 
 
 `BiomeManager._drawHorizonEQ` now gives the contour a clear, narrow crest and a contained halo. The crest keeps its presence through low-budget moments; the halo breathes with the seven smoothed audio bands. Reduced-flash mode suppresses the animated halo while retaining a readable contour. The existing opening fade and visual-style horizon dial still control the whole effect. No ridge points, mountain layers, ground, or SpaceRidge paint changed.
 
-![Matched day and night captures, before and after](evidence/dancing-ridge-20260926/before-after.jpg)
+![Matched day and night captures, before and after](../evidence/dancing-ridge-20260926/before-after.jpg)
 
 The comparison uses the same deterministic generated 96-second audio fixture, seed 315, DESERT range, 1280 × 720 viewport, and captures at 20 seconds (day) and 68 seconds (night). The baseline is `main` at `5b6a567`; the improved renders use this branch's working source. Only the horizon-painter source hash differs in the browser capture reports. Pixel differences above a tolerance of 5 lie in the sky around the musical contour (day y=247–363, night y=213–342); the ground region from y=560 down is pixel-identical. In both versions, sampled horizon and L2 visibility fractions are 1.0, confirming this is a paint contrast repair rather than a geometry or occlusion change.
 

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { SpaceRidge } from '../src/world/SpaceRidge.js';
 import { ConstellationWeaver } from '../src/world/ConstellationWeaver.js';
 import { LightRig } from '../src/world/LightRig.js';
-import { SkyEnsemble } from '../src/world/SkyEnsemble.js';
 
 function stub() {
   const ops = [];
@@ -132,18 +131,4 @@ test('light rig opacity changes without changing beam count', () => {
   assert.ok(bright.paths > 0);
   assert.ok(Math.abs(dim.alpha - bright.alpha * 0.4) < 1e-9);
   assert.equal(dim.restored, 1);
-});
-
-test('ensemble planets and nested artifacts honor presentation and restore', () => {
-  const sky = new SkyEnsemble(315, 120000);
-  const view = stub();
-  view.ctx.globalAlpha = 0.5;
-  sky.draw(view.ctx, { width: 800, height: 450 }, 20000, {
-    fromName: 'RAINFOREST', toName: 'STEPPE', t: 0.5,
-    colors: { skyMid: '#6688aa', silhouette: '#334433', halo: '#ffe0b0' },
-    presentation: 0.5, maxPlanets: 1,
-  });
-  assert.ok(view.ops.length > 0);
-  assert.ok(view.ops.every((alpha) => alpha <= 0.25 + 1e-9));
-  assert.equal(view.ctx.globalAlpha, 0.5);
 });

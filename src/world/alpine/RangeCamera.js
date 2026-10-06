@@ -24,7 +24,6 @@
 import { cameraBasis } from '../terrain/SceneTravel.js';
 import { hashSeed, mulberry32 } from '../../utils/math.js';
 
-export const MOVE_KINDS = Object.freeze(['establish', 'push', 'pullback', 'orbit', 'drift']);
 export const NEUTRAL_MOVE = Object.freeze({ dolly: 0, yaw: 0, crane: 0, truck: 0, kind: 'rest' });
 // Moves start only at the song's big structural turns, at least this far
 // apart. Sections in between ride along: a new move every few seconds

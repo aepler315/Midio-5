@@ -23,7 +23,6 @@ import { HighlightReel } from '../render/HighlightReel.js';
 import { hashSeed } from '../utils/math.js';
 import { resolveSongSeed } from '../utils/seed.js';
 import { ParallelUniverseDirector } from './ParallelUniverseDirector.js';
-import { LatencyCalibrator } from './LatencyCalibrator.js';
 import { SyncMonitor } from './SyncMonitor.js';
 import { GrooveFingerprint } from './GrooveFingerprint.js';
 import { OpeningDirector, MAX_HOLD_MS } from './OpeningDirector.js';
@@ -44,7 +43,7 @@ const WORLD_SPEED_PX_S = 220;
 export class Simulation {
   constructor(conductor, paramBus, {
     bpm = 120, energyCurves = null, canvasWidth = 1280, canvasHeight = 720,
-    customBiome = null, inputOffsetMs = 0, outputLatencyMs = null, visualLeadMs = 0, lyricSections = null, syncedLyrics = null, structure = null, tonalityTimeline = null,
+    customBiome = null, outputLatencyMs = null, visualLeadMs = 0, lyricSections = null, syncedLyrics = null, structure = null, tonalityTimeline = null,
     groove = null,
     songSeed: pinnedSeed = null,
     conductorCues = null,
@@ -106,7 +105,6 @@ export class Simulation {
     this.songSeed = songSeed;
     this.parallelUniverse = new ParallelUniverseDirector();
 
-    this.latency = new LatencyCalibrator(inputOffsetMs);
 
     this.syncMonitor = new SyncMonitor();
 
