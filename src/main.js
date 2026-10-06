@@ -1602,10 +1602,12 @@ function offerWorldsThenStart(data, extra = {}) {
     });
     if (extra.restoreIntent) {
       const mine = pendingWorldStart;
+      const generation = loadGen;
+      const isCurrent = () => generation === loadGen && (!extra.versionSelection || sourceSelection.isCurrent(extra.versionSelection));
       mine.terrainReady.then(() => {
-        if (pendingWorldStart !== mine) return;
+        if (pendingWorldStart !== mine || !isCurrent()) return;
         confirmWorld(versionRestoreWorldId(mine, extra.restoreIntent));
-      }).catch(err => showErrorBanner(err?.message || String(err)));
+      }).catch(err => { if (isCurrent()) showErrorBanner(err?.message || String(err)); });
       return;
     }
     lastFitDiagnostic = recordFitDiagnostic(features, profile);

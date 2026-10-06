@@ -301,3 +301,14 @@ test('live custom-world adapter accepts valid registered metadata before invokin
  assert.ok(loaded);assert.equal(result.worldId,'custom');
  await assert.rejects(ctx.versionLoadSource({kind:'audio-files',files:['original']},{worldId:'custom',settings:{}}),/cannot restore/);
 });
+test('a restored terrain failure reports only while its source generation is still current',async()=>{
+ for(const stale of [false,true]) {
+  const errors=[];let rejectTerrain;const terrain=new Promise((_resolve,reject)=>{rejectTerrain=reject;});let current=true;
+  const profile=buildSongProfile({timeline:[],durationMs:20000,bpm:120});const selection={id:1};
+  const ctx=vm.createContext({clearCustomWorld(){},PROFILE_VERSION:profile.version,pendingWorldStart:null,sceneChoice:{},prepareSongTerrain:()=>terrain,readPinnedSeed:()=>null,sourceSelection:{isCurrent:()=>current},loadGen:1,showErrorBanner:message=>errors.push(message)});
+  vm.runInContext(mainFunctions(['offerWorldsThenStart']),ctx);
+  ctx.offerWorldsThenStart({songIdentity:{seed:123,songProfile:profile},durationMs:20000},{versionSelection:selection,restoreIntent:{worldId:'custom',seed:123,settings:{worldBaseId:'alpine'}}});
+  if(stale){current=false;ctx.loadGen++;}rejectTerrain(new Error('Terrain failed'));
+  await new Promise(resolve=>setTimeout(resolve,0));assert.deepEqual(errors,stale?[]:['Terrain failed']);
+ }
+});
