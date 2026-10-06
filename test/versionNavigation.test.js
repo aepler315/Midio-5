@@ -244,3 +244,21 @@ test('base-world compatibility accepts bounded plain IDs and drops arbitrary val
   assert.deepEqual(compatibleVersionSettings({ worldBaseId: 'farside' }), { worldBaseId: 'farside' });
   for (const value of [true, 42, null, 'custom', '../range', 'https://example.test/', '__proto__', 'range:variant', ' range ', 'a'.repeat(65)]) assert.deepEqual(compatibleVersionSettings({ worldBaseId: value }), {});
 });
+
+// Source-only builds have no archives; attempting the optional GET creates a browser error.
+test('source-only bootstrap does not request an archive manifest, including Retry', async () => {
+  const f = fixture(); const view = f.options.document.defaultView;
+  view.__MIDIO_VERSION_ADAPTER = f.adapter;
+  const metadata = new Element('script');
+  metadata.textContent = JSON.stringify({ currentId: 'live', liveId: 'live', siteRootRelative: './', archivesAvailable: false });
+  const get = f.options.document.getElementById;
+  f.options.document.getElementById = id => id === 'midio-version-metadata' ? metadata : get(id);
+  let requests = 0;
+  const { bootstrapVersionNavigation } = await import('../src/ui/VersionBootstrap.js');
+  const boot = bootstrapVersionNavigation({ document: f.options.document, fetch: async () => { requests++; return { ok: false }; }, createStore: () => f.store });
+  await boot.ready; click(f.button('versionRetry')); await flush();
+  assert.equal(requests, 0);
+  assert.equal(f.button('versionPrevious').disabled, true);
+  assert.equal(f.calls.includes('pause'), false);
+  boot.dispose();
+});

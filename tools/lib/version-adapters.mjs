@@ -38,7 +38,7 @@ export function adaptVersion({ sourceSha, files, checkpointId, siteRootRelative 
   if (!html) throw new Error('Historical index.html is missing');
   const anchor = html.includes('</body>') ? '</body>' : null;
   if (!anchor) throw new Error('Historical index.html has no exact closing body anchor');
-  const metadata = JSON.stringify({ currentId:checkpointId, liveId, siteRootRelative });
+  const metadata = JSON.stringify({ currentId:checkpointId, liveId, siteRootRelative, archivesAvailable:true });
   replace({ path:'index.html',name:'trusted navigation bootstrap',anchor,count:1,replacement:`<link rel="stylesheet" href="./src/ui/version-navigation.css">\n<script id="midio-version-metadata" type="application/json">${metadata}</script>\n<script type="module" src="./src/ui/VersionBootstrap.js"></script>\n${anchor}` });
   return { files:output, transformations };
 }
