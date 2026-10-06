@@ -156,10 +156,21 @@ function installProbe() {
     if (probe.failQuota && this.name === 'records' && a[0]?.source) throw new DOMException('Injected audio quota error', 'QuotaExceededError');
     return put.apply(this, a);
   };
+  const capturedCanvases = new WeakMap();
   const captureStream = HTMLCanvasElement.prototype.captureStream;
   HTMLCanvasElement.prototype.captureStream = function (...a) {
-    probe.captureSources.push({ id: this.id, width: this.width, height: this.height });
+    const frames = capturedCanvases.get(this) || [];
+    capturedCanvases.set(this, frames);
+    probe.captureSources.push({ id: this.id, detached: !this.isConnected, width: this.width, height: this.height, frames });
     return captureStream.apply(this, a);
+  };
+  const drawImage = CanvasRenderingContext2D.prototype.drawImage;
+  CanvasRenderingContext2D.prototype.drawImage = function (source, ...a) {
+    const frames = capturedCanvases.get(this.canvas);
+    if (frames) frames.push({ sourceId: source?.id || '', sourceTag: source?.tagName || source?.constructor?.name,
+      sourceIsStage: source === document.getElementById('stage'), sourceIsCanvas: source instanceof HTMLCanvasElement,
+      width: source?.width, height: source?.height, atMs: performance.now() });
+    return drawImage.call(this, source, ...a);
   };
 }
 
@@ -452,7 +463,8 @@ async function runPrefix(options, audit, prefix, wavs) {
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 }); await page.locator('#recordBtn').click();
     const download = await downloadPromise; await download.saveAs(path.join(output, `recording-${path.basename(download.suggestedFilename())}`));
     const captures = await page.evaluate(() => window.__VERSION_SMOKE.captureSources);
-    assert.ok(captures.length && captures.every(c => c.id === 'stage'), 'recorder captures only canvas pixels; DOM version chrome stays outside output');
+    assert.ok(captures.length && captures.every(c => c.detached && c.frames.length > 0 && c.frames.every(f => f.sourceIsStage && f.sourceIsCanvas)), 'recorder captures detached compositor frames drawn only from stage pixels; DOM version chrome stays outside output');
+    report.recordingCaptureSources = captures;
     await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
     await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true)); report.checks.push('real recording and calibration block arrows; saved canvas recording excludes DOM chrome');
 
@@ -477,10 +489,11 @@ async function runPrefix(options, audit, prefix, wavs) {
     const exportDownloadPromise = page.waitForEvent('download', { timeout: 30000 }); await page.locator('#recordBtn').click();
     const exportDownload = await exportDownloadPromise;
     await exportDownload.saveAs(path.join(output, `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}`));
-    assert.ok(await page.evaluate(() => window.__VERSION_SMOKE.captureSources.every(c => c.id === 'stage')), 'actual export captures stage pixels and excludes DOM version controls');
+    const exportCaptures = await page.evaluate(() => window.__VERSION_SMOKE.captureSources);
+    assert.ok(exportCaptures.length > captures.length && exportCaptures.every(c => c.detached && c.frames.length > 0 && c.frames.every(f => f.sourceIsStage && f.sourceIsCanvas)), 'actual export compositor draws only stage pixels and excludes DOM version controls');
     await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
     await page.evaluate(async () => { await window.__MIDIO_VERSION_ADAPTER.setPaused(true); await window.__MIDIO_VERSION_ADAPTER.seek(6200); });
-    report.export = { startedThrough: 'exportBtn', stoppedThrough: 'recordBtn', blockedReason: exporting.blockedReason, sampleFile: `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}` };
+    report.export = { startedThrough: 'exportBtn', stoppedThrough: 'recordBtn', blockedReason: exporting.blockedReason, sampleFile: `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}`, captureSources: exportCaptures.slice(captures.length) };
     report.checks.push('actual full-song export blocks both arrows and excludes DOM chrome; real stop UI saves bounded sample');
 
     // Failure before departure must preserve both current song and pause.
