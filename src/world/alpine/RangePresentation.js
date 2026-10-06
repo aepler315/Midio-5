@@ -607,6 +607,15 @@ export class RangePresentation {
     this._scratchBytes = 0;
   }
 
+  drawFirmament(ctx, stage) {
+    if (!this.active || !this.frame?.performance) return false;
+    const image = this.scene.renderFirmament(this.frame, this.viewId);
+    if (!image) return false;
+    ctx.save(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(image, 0, 0, stage.width, stage.height); ctx.restore();
+    return true;
+  }
+
   drawSkyGiants(ctx, stage) {
     if (!this.active || !this.frame) return false;
     const cols = this.incomingViewId ? this._travelBandColumns(stage.width) : null;

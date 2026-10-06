@@ -37,6 +37,7 @@ const report = { browser: browser.version(), limitation: 'Synthetic audio and so
 const identityFiles = ['src/main.js', 'src/render/Renderer.js', 'src/sim/Simulation.js',
   'src/world/LandscapePresentation.js', 'src/world/BiomeManager.js', 'src/world/RidgeMotionHistory.js',
   'src/world/alpine/RangeNarrative.js', 'src/world/alpine/RangePerformance.js',
+  'src/world/alpine/RangeFirmament.js', 'src/world/alpine/FirmamentGL.js',
   'src/world/alpine/RangeHabitat.js', 'src/world/alpine/CoveGL.js',
   'src/world/alpine/RangeCamera.js', 'src/world/alpine/RangeFrame.js', 'src/world/alpine/RangeScene.js',
   'src/world/alpine/RangePresentation.js', 'src/world/alpine/TerrainMaterial.js', 'src/world/alpine/WaterMirror.js',
@@ -54,34 +55,74 @@ async function sourceIdentity() {
   return hashes;
 }
 
-async function skyVisibility(page) {
-  return page.evaluate(() => {
+async function skyVisibility(page, layer = 'x') {
+  return page.evaluate(layer => {
     const app = window.__SMW, mgr = app.sim.biomes;
     const canvas = document.querySelector('#stage'), ctx = canvas.getContext('2d');
     const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const painter = mgr._drawStarfield;
+    const scene = mgr.rangePresentation.scene;
+    const layers = scene.prepared.get(app.rangeState.viewId).uniforms.uFirmamentLayers.value;
     try {
-      mgr._drawStarfield = () => {};
+      layers[layer] = 0;
       app.renderExportFrame(app.sim.timeMs);
       const without = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
       const scale = Math.min(canvas.width / app.sim.stageW, canvas.height / app.sim.stageH);
       const width = app.sim.stageW * scale, height = app.sim.stageH * scale;
       const x0 = (canvas.width - width) / 2, y0 = (canvas.height - height) / 2;
       const columns = [0, 0, 0, 0];
-      let visible = 0, strong = 0;
-      for (let y = Math.ceil(y0); y < y0 + height * .25; y++) {
+      let visible = 0, strong = 0, lake = 0, beyondFrame = 0;
+      for (let y = Math.ceil(y0); y < y0 + height; y++) {
         for (let x = Math.ceil(x0); x < x0 + width; x++) {
           const i = (y * canvas.width + x) * 4;
           const delta = Math.max(before[i] - without[i], before[i + 1] - without[i + 1], before[i + 2] - without[i + 2]);
-          if (delta >= 6) { visible++; columns[Math.min(3, Math.floor((x - x0) / width * 4))]++; }
-          if (delta >= 16) strong++;
+          if (y < y0 + height * .25) {
+            if (delta >= 6) { visible++; columns[Math.min(3, Math.floor((x - x0) / width * 4))]++; }
+            if (delta >= 16) strong++;
+          }
+          // The lower quarter of the cove is open water. A reflected ray that
+          // projects above NDC +1 explicitly needs sky outside the screen.
+          if (delta >= 3 && y > y0 + height * .75) {
+            lake++;
+            const ray = new scene.THREE.Vector3((x-x0)/width*2-1, 1-(y-y0)/height*2, .5)
+              .unproject(scene.camera).sub(scene.camera.position).normalize();
+            ray.y = Math.abs(ray.y);
+            const projected = ray.multiplyScalar(60000).add(scene.camera.position).project(scene.camera);
+            if (projected.y > 1) beyondFrame++;
+          }
         }
       }
-      return { visible, strong, columns, criterion: 'positive star-on/off channel difference in the upper quarter of the final fitted picture' };
-    } finally {
-      mgr._drawStarfield = painter;
-      app.renderExportFrame(app.sim.timeMs);
-    }
+      return { visible, strong, columns, lake, beyondFrame,
+        criterion: 'layer-on/off pixels: upper sky, lower lake, and water rays reflecting above the viewport' };
+    } finally { layers[layer] = 1; app.renderExportFrame(app.sim.timeMs); }
+  }, layer);
+}
+
+async function motionVisibility(page) {
+  return page.evaluate(async () => {
+    const app = window.__SMW, pres = app.sim.biomes.rangePresentation;
+    const prepared = pres.scene.prepared.get(app.rangeState.viewId), habitat = prepared.habitat;
+    const { sampleRangePerformance } = await import('/src/world/alpine/RangePerformance.js');
+    const canvas = document.querySelector('#stage'), ctx = canvas.getContext('2d');
+    const original = habitat.snapshot, update = habitat.update;
+    const later = sampleRangePerformance({ layout: prepared.habitatLayout, timeMs: original.timeMs + 4000, music: pres.frame.habitatMusic });
+    const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const result = {};
+    try {
+      for (const id of ['midio', 'broshi', 'midasus']) {
+        const pose = { ...original, actors: original.actors.map(a => a.id === id ? later.actors.find(b => b.id === id) : a) };
+        habitat.update = () => update.call(habitat, pose);
+        app.renderExportFrame(app.sim.timeMs);
+        const after = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let changed = 0, maximum = 0;
+        for (let i = 0; i < before.length; i += 4) {
+          const delta = Math.max(...[0,1,2].map(c => Math.abs(before[i+c]-after[i+c])));
+          if (delta >= 6) changed++;
+          maximum = Math.max(maximum, delta);
+        }
+        result[id] = { changed, maximum };
+      }
+      return result;
+    } finally { habitat.update = update; app.renderExportFrame(app.sim.timeMs); }
   });
 }
 
@@ -105,6 +146,8 @@ async function facts(page) {
       projections: habitat?.snapshot?.actors.map(a => ({ id: a.id,
         ...project([a.positionM[0], a.positionM[1] + a.heightM * .5, a.positionM[2]]),
         anchor: project(prepared.habitatLayout.anchors[a.id]) })),
+      sky: prepared && { full: prepared.uniforms.uFullSky.value, time: prepared.uniforms.uFirmamentTime.value,
+        aurora: prepared.uniforms.uFirmamentBands.value.x, capture: !!pres.scene.backdrop },
       ownership: habitat && { color: prepared.scenes[prepared.habitatLayout.band].children.includes(habitat.group),
         depth: prepared.depthScene.children.includes(habitat.depthGroup),
         bandDepth: prepared.depthScenes[prepared.habitatLayout.band].children.includes(habitat.bandDepthGroup),
@@ -162,6 +205,9 @@ async function habitatVisibility(page) {
 
 function checkHabitat(state) {
   assert.equal(state.performance.active, true);
+  assert.equal(state.sky.full, 1);
+  assert.equal(state.sky.capture, false);
+  assert.ok(state.sky.aurora >= .36);
   assert.deepEqual(state.performance.actors.map(a => a.id), ['midio', 'broshi', 'midasus']);
   assert.equal(state.layout.id, 'muncho-cove');
   assert.equal(state.policy.trioHabitat, true);
@@ -220,8 +266,17 @@ try {
       report.habitatVisibility = await habitatVisibility(opened.page);
       assert.ok(report.habitatVisibility.changed > 30, JSON.stringify(report.habitatVisibility));
       report.skyVisibility = await skyVisibility(opened.page);
-      assert.ok(report.skyVisibility.visible > 100, JSON.stringify(report.skyVisibility));
+      assert.ok(report.skyVisibility.visible > 500, JSON.stringify(report.skyVisibility));
       assert.ok(report.skyVisibility.columns.every(n => n > 10), 'stars span the final upper sky');
+      assert.ok(report.skyVisibility.lake > 100 && report.skyVisibility.beyondFrame > 100, JSON.stringify(report.skyVisibility));
+      report.constellations = await skyVisibility(opened.page, 'y');
+      assert.ok(report.constellations.visible > 100 && report.constellations.lake > 30, JSON.stringify(report.constellations));
+      report.aurora = await skyVisibility(opened.page, 'z');
+      assert.ok(report.aurora.visible > 500, JSON.stringify(report.aurora));
+      report.motion = await motionVisibility(opened.page);
+      console.log('Pixel checks:', JSON.stringify({stars:report.skyVisibility,art:report.constellations,aurora:report.aurora,motion:report.motion}));
+      for (const [id, diff] of Object.entries(report.motion)) assert.ok(diff.changed > 20, `${id}: ${JSON.stringify(diff)}`);
+
     }
     console.log(`${label}: ${state.performance.actors.length} cove inhabitants, ${state.celestial.activeBody}, ${frame.range.viewId}`);
   }
@@ -244,6 +299,18 @@ try {
   assert.ok(bassActivity(report.frames[1]) > bassActivity(report.frames[0]) + .25, 'real recording analysis distinguishes the stronger bass passage');
   assert.ok(report.frames[1].lake.hits.some(hit => hit[1] > 0), 'heard contacts reach the real lake shader');
 
+  await opened.page.evaluate(async () => {
+    window.__SMW.seek(30000);
+    await window.__SMW.rangeReady({ timeoutMs: 600000 });
+  });
+  await fs.mkdir(path.join(out, 'animation'), { recursive: true });
+  for (let i = 0; i < 20; i++) {
+    const animated = await captureFrame(opened.page, 30000 + i * 400);
+    await fs.writeFile(path.join(out, 'animation', `${String(i).padStart(3, '0')}.png`), Buffer.from(animated.png, 'base64'));
+  }
+  execFileSync('ffmpeg', ['-y', '-framerate', '2.5', '-i', path.join(out, 'animation', '%03d.png'),
+    '-vf', 'split[a][b];[a]palettegen[p];[b][p]paletteuse', '-loop', '0', path.join(out, 'living-sky.gif')], { stdio: 'ignore' });
+
   // Reconstruct an earlier instant through the actual seek entry point.
   await opened.page.evaluate(async () => {
     window.__SMW.seek(30000);
@@ -265,7 +332,7 @@ try {
   const reducedB = await facts(opened.page);
   assert.deepEqual(reducedA.camera, reducedB.camera);
   const spatial = a => ({ positionM: a.positionM, heightM: a.heightM, leanRad: a.leanRad,
-    turnRad: a.turnRad, tailAngle: a.tailAngle, jawOpen: a.jawOpen,
+    turnRad: a.turnRad, tailAngle: a.tailAngle, jawOpen: a.jawOpen, headAngle: a.headAngle,
     babies: a.babies?.map(b => ({ positionM: b.positionM, heightM: b.heightM })) });
   assert.deepEqual(reducedA.performance.actors.map(spatial), reducedB.performance.actors.map(spatial));
   assert.equal(reducedB.performance.reducedFlash, true);

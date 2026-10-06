@@ -12,15 +12,15 @@ const make = (timeline, options = {}) => new RidgeMotionHistory({ timeline, dura
 const frame = (history = make([]), timeMs = 1100, options = {}) =>
   sampleRangePerformance({ timeMs, music: history.sample(timeMs), layout, ...options });
 const actor = (snapshot, id) => snapshot.actors.find(value => value.id === id);
-const poses = snapshot => snapshot.actors.map(({ id, positionM, heightM, leanRad, turnRad, tailAngle, jawOpen, babies }) =>
-  ({ id, positionM, heightM, leanRad, turnRad, tailAngle, jawOpen, babies }));
+const poses = snapshot => snapshot.actors.map(({ id, positionM, heightM, leanRad, turnRad, tailAngle, jawOpen, headAngle, babies }) =>
+  ({ id, positionM, heightM, leanRad, turnRad, tailAngle, jawOpen, headAngle, babies }));
 
 test('habitat requires authored world anchors and returns immutable world poses', () => {
   assert.deepEqual(sampleRangePerformance().actors, []);
   assert.equal(sampleRangePerformance({ layout: { ...layout, anchors: {} } }).active, false);
   const snapshot = frame();
   assert.equal(snapshot.active, true);
-  assert.deepEqual(snapshot.actors.map(value => value.positionM), Object.values(layout.anchors));
+  assert.deepEqual(actor(snapshot, 'broshi').positionM, layout.anchors.broshi);
   assert.ok(Object.isFrozen(snapshot) && Object.isFrozen(snapshot.actors[0].positionM));
   assert.equal(Object.isFrozen(layout.anchors.midio), false, 'sampling must not freeze caller-owned layout');
   assert.ok(!('platform' in snapshot) && !('transform' in snapshot.actors[0]) && !('reflection' in snapshot.actors[0]));
@@ -72,18 +72,19 @@ test('physical silence overrides detected notes and residual motion or bass enve
   curves.rmsBands = curves.bands.map(band => new Float32Array(band.length).fill(1e-6));
   const history = make([note('MELODY', { src: 'audio' }), note('BASS', { src: 'audio' })], { energyCurves: curves });
   const first = frame(history), later = frame(history, 2200);
-  assert.deepEqual(poses(first), poses(later));
+  assert.notDeepEqual(poses(first), poses(later));
+  assert.deepEqual(poses(first), poses(frame(make([]), 1100)));
   assert.deepEqual(first.waterResponse, { bass: 0, rhythm: 0, melody: 0, wake: 0 });
   const stale = sampleRangePerformance({ layout, timeMs: 2000,
     music: { ...make([note('MELODY'), note('BASS')]).sample(1100), activity01: 0, motionPresence01: 1, bassPressure01: 1 } });
-  assert.deepEqual(poses(stale), poses(first));
+  assert.deepEqual(poses(stale), poses(frame(make([]), 2000)));
   assert.ok(stale.actors.every(value => value.glow === .14 && value.activity === 0));
 });
 
-test('future notes do not animate inhabitants and all figures rest in silence', () => {
+test('future notes do not change idle gestures', () => {
   const history = make([note('MELODY'), note('BASS'), note('RHYTHM', { kick: true })]);
   assert.deepEqual(poses(frame(history, 999)), poses(frame(make([]), 999)));
-  assert.deepEqual(poses(frame(history, 6000)), poses(frame(make([]), 5000)));
+  assert.deepEqual(poses(frame(history, 6000)), poses(frame(make([]), 6000)));
 });
 
 test('forward, backward, held and analysis-handoff sampling reconstruct exactly the same world poses', () => {
@@ -104,7 +105,7 @@ test('reduced motion freezes every root, articulation and firefly while retainin
   const first = frame(history, 1080, { reducedMotion: true });
   const later = frame(history, 2200, { reducedMotion: true });
   assert.deepEqual(poses(first), poses(later));
-  assert.deepEqual(poses(first), poses(frame(make([]))));
+  assert.deepEqual(poses(first), poses(frame(make([]), 1100, { reducedMotion: true })));
   assert.deepEqual(first.waterResponse, { bass: 0, rhythm: 0, melody: 0, wake: 0 });
   assert.ok(first.actors.every(value => value.glow > .14));
 });
@@ -127,8 +128,8 @@ test('sustained music keeps fixed sizes, grounded contact, small drift and slow 
     const snapshot = sampleRangePerformance({ layout, music, timeMs });
     for (const value of snapshot.actors) {
       assert.equal(value.heightM, layout.heights[value.id]);
-      if (value.id !== 'midasus') assert.deepEqual(value.positionM, layout.anchors[value.id]);
-      else assert.ok(Math.hypot(...value.positionM.map((v, axis) => v - layout.anchors.midasus[axis])) < 8);
+      if (value.id === 'broshi') assert.deepEqual(value.positionM, layout.anchors.broshi);
+      else assert.ok(Math.hypot(...value.positionM.map((v, axis) => v - layout.anchors[value.id][axis])) < (value.id === 'midio' ? 8 : 30));
       if (previous) {
         const old = actor(previous, value.id);
         for (const angle of ['leanRad', 'turnRad', 'tailAngle']) assert.ok(Math.abs(value[angle] - old[angle]) / .1 < .3);

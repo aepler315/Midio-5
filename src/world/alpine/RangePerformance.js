@@ -24,7 +24,7 @@ function offset(position, layout, right, up, forward) {
 
 /** A passive, immutable snapshot, reconstructed from heard time and canonical
  * music only. Quick musical changes live in the water and local light; body
- * gestures are small, slow changes around a fixed-size resting silhouette. */
+ * gestures combine a visible idle motion with musical emphasis at fixed size. */
 export function sampleRangePerformance({ timeMs = 0, music = null, layout = null,
   reducedMotion = false, reducedFlash = false } = {}) {
   timeMs = Math.max(0, Number.isFinite(timeMs) ? timeMs : 0);
@@ -36,10 +36,10 @@ export function sampleRangePerformance({ timeMs = 0, music = null, layout = null
 
   const t = timeMs / 1000;
   // Raw audibility outranks residual envelopes and detected notes. Silence
-  // cannot keep a stale bass estimate, synthetic note or orbit moving.
+  // cannot keep stale bass or synthetic notes driving musical responses.
   const audible = unit(music?.activity01) > 0 ? 1 : 0;
   const presence = audible * unit(music?.motionPresence01 ?? music?.activity01);
-  const motion = reducedMotion ? 0 : presence;
+  const motion = reducedMotion ? 0 : 1;
   const flash = reducedFlash ? .22 : 1;
   const readings = music?.trioSources || {};
   const rhythm = audible * Math.max(unit(music?.kick01), unit(music?.rhythmAccent01));
@@ -52,10 +52,10 @@ export function sampleRangePerformance({ timeMs = 0, music = null, layout = null
     const pitchActivity = Math.min(activity, audible * unit(reading.pitchActivity));
     const pitch01 = pitchActivity > 0 ? unit(reading.pitch01) : .5;
     const pitch = (pitch01 - .5) * pitchActivity;
-    const movement = motion * activity;
+    const movement = motion * (.5 + .5 * presence * activity);
     const localResponse = id === 'broshi' ? bass : id === 'midio' ? rhythm : melody;
     const actor = { id, positionM: [...layout.anchors[id]], heightM: layout.heights[id],
-      leanRad: 0, turnRad: 0, tailAngle: 0, jawOpen: 0,
+      leanRad: 0, turnRad: 0, tailAngle: 0, jawOpen: 0, headAngle: 0,
       glow: .14 + flash * (.24 * activity + .065 * localResponse),
       activity, pitchActivity, pitch01, source: reading.source ?? null,
       contributors: (reading.contributors || []).map(contributor => ({
@@ -70,34 +70,37 @@ export function sampleRangePerformance({ timeMs = 0, music = null, layout = null
     if (id === 'broshi') {
       // All articulation pivots around the grounded root. Bass pressure must
       // never raise his feet, shrink his body or turn each beat into a jump.
-      actor.leanRad = movement * .028 * Math.sin(t * .16 + .4);
-      actor.turnRad = movement * .035 * Math.sin(t * .11 - .8);
-      actor.tailAngle = movement * .055 * Math.sin(t * .19 + 1.1);
-      actor.jawOpen = movement * .055 * (.5 + .5 * Math.sin(t * .14 - .6));
+      actor.leanRad = movement * .045 * Math.sin(t * .43 + .4);
+      actor.turnRad = movement * .07 * Math.sin(t * .29 - .8);
+      actor.tailAngle = movement * .55 * Math.sin(t * .48 + 1.1);
+      actor.jawOpen = movement * .22 * (.5 + .5 * Math.sin(t * .42 - .6));
+      actor.headAngle = movement * .28 * Math.sin(t * .55 - .6);
     } else if (id === 'midio') {
-      // The root stays exactly at the authored waterline; the renderer places
-      // the lower body below it. Measured melody gives only a subtle gaze.
-      actor.leanRad = movement * .025 * Math.sin(t * .17 + .7);
-      actor.turnRad = motion * (activity * .028 * Math.sin(t * .12 - 1.3) + .018 * pitch);
-    } else {
-      // Midasus occupies treetop depth, with a few metres of wandering rather
-      // than a large orbit. Pitch is confidence weighted before it can steer.
+      // Buoyancy and a short swim stay within the authored wet cove.
       actor.positionM = offset(actor.positionM, layout,
-        movement * 3.2 * Math.sin(t * .11),
-        movement * 2.4 * Math.sin(t * .14 + .4) + motion * pitch,
-        movement * 1.8 * Math.sin(t * .073 + 1.2));
-      actor.leanRad = motion * (activity * .03 * Math.sin(t * .13 + 2) + .018 * pitch);
-      actor.turnRad = movement * .03 * Math.sin(t * .095 + 2);
+        motion * 7 * Math.sin(t * .36), motion * 1.6 * Math.sin(t * .71),
+        motion * 3 * Math.sin(t * .23));
+      actor.leanRad = movement * .2 * Math.sin(t * .53 + .7);
+      actor.turnRad = motion * ((.4 + .6 * activity) * .14 * Math.sin(t * .34 - 1.3) + .018 * pitch);
+    } else {
+      // Midasus wanders within the treetop clearing. Pitch is confidence
+      // weighted before it can steer the path.
+      actor.positionM = offset(actor.positionM, layout,
+        movement * 24 * Math.sin(t * .28),
+        movement * 13 * Math.sin(t * .36 + .4) + motion * pitch,
+        movement * 5 * Math.sin(t * .19 + 1.2));
+      actor.leanRad = motion * ((.5 + .5 * activity) * .18 * Math.sin(t * .43 + 2) + .018 * pitch);
+      actor.turnRad = movement * .14 * Math.sin(t * .31 + 2);
       const scatter = [[-11, 5, -7, 2.5], [14, -3, 5, 3.2], [6, 12, 13, 2.1]];
       actor.babies = scatter.map(([right, up, forward, heightM], index) => ({
         positionM: offset(actor.positionM, layout,
-          right + movement * 1.7 * Math.sin(t * .15 + index * 2.1),
-          up + movement * 1.2 * Math.sin(t * .12 + index * 1.8),
-          forward + movement * .9 * Math.sin(t * .09 - index)),
+          right + movement * 7 * Math.sin(t * .62 + index * 2.1),
+          up + movement * 5 * Math.sin(t * .51 + index * 1.8),
+          forward + movement * 3 * Math.sin(t * .39 - index)),
         heightM, rotationRad: movement * .04 * Math.sin(t * .12 + index) || 0,
       }));
     }
-    if (!movement) actor.leanRad = actor.turnRad = actor.tailAngle = actor.jawOpen = 0;
+    if (!movement) actor.leanRad = actor.turnRad = actor.tailAngle = actor.jawOpen = actor.headAngle = 0;
     return actor;
   });
 

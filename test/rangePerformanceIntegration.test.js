@@ -127,7 +127,7 @@ test('RangeScene binds cove poses and music to world light and water, and clears
   assert.equal(habitat.bandDepthGroup.visible, true);
   assert.ok(uniforms.uActorColor.value.every(c => c.length() > 0), 'the terrain receives local cove light');
   assert.ok(uniforms.uWakeAmt.value > 0, 'Midio has a music-driven physical wake');
-  assert.deepEqual(uniforms.uWake.value.toArray().slice(0, 2), [-700, -6220]);
+  assert.deepEqual(uniforms.uWake.value.toArray().slice(0, 2), habitat.snapshot.actors[0].positionM.filter((_, i) => i !== 1));
   assert.deepEqual(uniforms.uCovePressure.value.toArray().slice(0, 2), [-520, -6080]);
   assert.ok(uniforms.uCovePressure.value.z > 0, 'bass pressure originates at Broshi’s shore');
   bind({ ...frame, reducedMotion: true });

@@ -1,3 +1,4 @@
+import { firmamentUniforms, FIRMAMENT_GLSL } from './FirmamentGL.js';
 import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { GUST_FRONTS, GUST_IDLE_SEC, GUST_SWEEP_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
@@ -98,6 +99,7 @@ export const SCENE_VERT = /* glsl */`
 
 export const SCENE_FRAG = /* glsl */`
   precision highp float;
+  ${FIRMAMENT_GLSL}
   uniform sampler2D uSurface;
   ${DEFORM_GLSL}
   uniform vec3 uLightDir;
@@ -479,7 +481,7 @@ export const SCENE_FRAG = /* glsl */`
     // the air along its own (longer) path, so it replaces the water's colour
     // by the water's reflectance, as the sky reflection did in lit. Groove
     // and kicks shiver it in horizontal bands; a cat's paw breaks it up.
-    if (water && uMirrorAmount > 0.0) {
+    if (water && (uMirrorAmount > 0.0 || uFullSky > .5)) {
       float band = gl_FragCoord.y / max(uViewportPx.y, 1.0) * 260.0 + vnoise12(vWorld.xz / 240.0) * 6.2832;
       vec2 shiver = vec2(0.3 * sin(band * 0.37 - uTime * 1.7), sin(band + uTime * 2.3)) * uMirrorRipple * (1.0 + 3.0 * paw);
       // The backdrop, met by the view ray reflected off flat water (it is far
@@ -489,6 +491,14 @@ export const SCENE_FRAG = /* glsl */`
       // ray (MIRROR_LIFT, as the mirror camera does) so the water holds them.
       vec3 ray = normalize(vRenderedWorld - uCameraPos);
       vec3 up = normalize(vec3(ray.x, abs(ray.y) * uMirrorLift, ray.z));
+      vec3 mirrored;
+      float have;
+      if (uFullSky > .5) {
+        vec3 rippleNormal = normalize(vec3(waterN.x * .35, waterN.y, waterN.z * .35));
+        up = reflect(ray, rippleNormal);
+        mirrored = firmamentRadiance(up, uSkyZenith, uSkyHorizon, true);
+        have = 1.0;
+      } else {
       vec4 bc = uViewProj * vec4(uCameraPos + up * 60000.0, 1.0);
       vec2 backdropUv = bc.xy / max(bc.w, 0.00001) * 0.5 + 0.5 + shiver;
       vec4 captured = texture(uBackdrop, clamp(backdropUv, vec2(0.001), vec2(0.999)));
@@ -499,10 +509,11 @@ export const SCENE_FRAG = /* glsl */`
       // and opaque letterboxing must continue into sky, never black borders.
       vec3 reflectedSky = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.45, up.y));
       vec3 capturedSky = srgbToLinear(clamp(captured.rgb / max(captured.a, 0.00001), 0.0, 1.0));
-      vec3 mirrored = mix(reflectedSky, capturedSky, capturedWeight);
-      float have = uBackdropAmount;
+      mirrored = mix(reflectedSky, capturedSky, capturedWeight);
+      have = uBackdropAmount;
+      }
       vec4 mc = uMirrorMatrix * vec4(vRenderedWorld, 1.0);
-      if (mc.w > 0.0 && abs(vWorld.y - uMirrorLevel) < 3.0) {
+      if (uMirrorAmount > 0.0 && mc.w > 0.0 && abs(vWorld.y - uMirrorLevel) < 3.0) {
         vec4 m = texture(uMirror, clamp(mc.xy / mc.w + shiver, vec2(0.001), vec2(0.999)));
         if (m.a > 0.004) mirrored = mix(mirrored, srgbToLinear(m.rgb / m.a), have > 0.0 ? m.a : 1.0);
         have = max(have, m.a);
@@ -557,6 +568,7 @@ export function sceneUniforms(THREE, base) {
   return {
     ...base,
     ...actorUniforms(THREE),
+    ...firmamentUniforms(THREE),
     uGlacierEnabled: { value: 0 }, uGlacierStart: { value: new THREE.Vector2() }, uGlacierEnd: { value: new THREE.Vector2(0, -100) },
     uGlacierWidth: { value: 1 }, uGlacierSurface: { value: new THREE.Vector2() }, uGlacierMaxThickness: { value: 0 }, uGlacierRetreat: { value: 0 },
     uDeformAmp: { value: 0 }, uDeformKick: { value: 0 }, uDeformK: { value: 0 },

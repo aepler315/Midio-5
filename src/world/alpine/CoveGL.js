@@ -25,6 +25,7 @@ export const COVE_VERT = /* glsl */`
   uniform float uLean;
   uniform float uTurn;
   uniform float uGrounded;
+  uniform float uHead;
   uniform float uTail;
   uniform float uJaw;
   uniform vec2 uTailPivot;
@@ -42,12 +43,17 @@ export const COVE_VERT = /* glsl */`
   }
   void main() {
     vec3 p = position, n = normal;
-    if (aJoint > 0.5) {
+    if (aJoint > 0.5 && aJoint < 2.5) {
       bool tail = aJoint < 1.5;
       vec2 pivot = tail ? uTailPivot : uJawPivot;
       float a = tail ? uTail : -uJaw * 0.22;
       p.xy = pivot + rotate2(p.xy - pivot, a);
       n.xy = rotate2(n.xy, a);
+    }
+    if (aJoint > 1.5) {
+      vec2 headPivot = vec2(8.0 / 34.0, 14.0 / 34.0);
+      p.xy = headPivot + rotate2(p.xy - headPivot, uHead);
+      n.xy = rotate2(n.xy, uHead);
     }
     // Broshi leans around his planted feet, rather than bouncing a root.
     p.xy = rotate2(p.xy, uLean);
@@ -183,14 +189,14 @@ function glyph(out, mesh, { height, offsetY = 0, depth = .07, solid = true, star
     const triangles = star ? [[1, 2, 3], [4, 5, 6]]
       : points.slice(1).map((_, i) => [0, i + 1, (i + 1) % (points.length - 1) + 1]);
     for (const [i, j, k] of triangles) {
-      out.triangle(points[k], points[j], points[i], { tint: .82 + (j % 4) * .09 });
-      out.triangle(...[points[i], points[j], points[k]].map(p => [p[0], p[1], depth]), { tint: .68 });
+      out.triangle(points[k], points[j], points[i], { tint: .82 + (j % 4) * .09, part });
+      out.triangle(...[points[i], points[j], points[k]].map(p => [p[0], p[1], depth]), { tint: .68, part });
     }
     const rim = star ? [[1, 2], [2, 3], [3, 1], [4, 5], [5, 6], [6, 4]]
       : points.slice(1).map((_, i) => [i + 1, (i + 1) % (points.length - 1) + 1]);
     for (const [i, j] of rim) {
       const a = points[i], b = points[j], c = [b[0], b[1], depth], d = [a[0], a[1], depth];
-      out.triangle(a, b, c, { tint: .6 }); out.triangle(a, c, d, { tint: .6 });
+      out.triangle(a, b, c, { tint: .6, part }); out.triangle(a, c, d, { tint: .6, part });
     }
   }
   for (const [i, j] of mesh.edges) {
@@ -207,8 +213,9 @@ function actorGeometry(THREE, id) {
     // A small iris rests toward the lake rather than watching the camera.
     glyph(out, midioEyeMesh(2.5, -.3), { height: 62, offsetY: -.24, depth: .089, solid: false, width: .045 });
   } else if (id === 'broshi') {
-    for (const mesh of [BROSHI_BODY, BROSHI_HEAD]) glyph(out, mesh, { height: 34, depth: .09, width: .014 });
-    glyph(out, BROSHI_EYE, { height: 34, depth: .106, solid: false, width: .014 });
+    glyph(out, BROSHI_BODY, { height: 34, depth: .09, width: .014 });
+    glyph(out, BROSHI_HEAD, { height: 34, depth: .09, width: .014, part: 3 });
+    glyph(out, BROSHI_EYE, { height: 34, depth: .106, solid: false, width: .014, part: 3 });
     glyph(out, BROSHI_TAIL, { height: 34, depth: .02, solid: false, part: 1, width: .02 });
     glyph(out, BROSHI_JAW, { height: 34, depth: .09, solid: false, part: 2, width: .017 });
   } else {
@@ -341,7 +348,7 @@ export class CoveGL {
       uRoot: { value: new THREE.Vector3(...root) },
       uRight: { value: new THREE.Vector3(...this.layout.right) }, uForward: { value: new THREE.Vector3(...this.layout.forward) },
       uSize: { value: size }, uLean: { value: 0 }, uTurn: { value: 0 }, uGrounded: { value: grounded ? 1 : 0 },
-      uTail: { value: 0 }, uJaw: { value: 0 }, uTailPivot: { value: new THREE.Vector2(-26 / 34, 16 / 34) },
+      uHead: { value: 0 }, uTail: { value: 0 }, uJaw: { value: 0 }, uTailPivot: { value: new THREE.Vector2(-26 / 34, 16 / 34) },
       uJawPivot: { value: new THREE.Vector2(10 / 34, 13 / 34) }, uGlow: { value: 0 }, uShadow: { value: shadow ? 1 : 0 },
       uBodyColor: { value: new THREE.Color(colors[0]) }, uEdgeColor: { value: new THREE.Color(colors[1]) },
     };
@@ -390,6 +397,7 @@ export class CoveGL {
       u.uSize.value = Math.max(.1, finite(actor.heightM, this.layout.heights[id]));
       u.uLean.value = finite(actor.leanRad);
       u.uTurn.value = finite(actor.turnRad);
+      u.uHead.value = finite(actor.headAngle);
       u.uTail.value = finite(actor.tailAngle);
       u.uJaw.value = unit(actor.jawOpen);
       u.uGlow.value = unit(actor.glow);

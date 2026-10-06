@@ -1,3 +1,4 @@
+import { FirmamentGL, FIRMAMENT_BYTES } from './FirmamentGL.js';
 import { giantLayout, giantAmounts, mirrorGiantSpan, aheadOfEye } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
@@ -295,6 +296,7 @@ export class RangeScene {
    * is released.
    */
   captureBackdrop(ctx, stage, frame) {
+    if (frame?.performance) { this.releaseBackdrop(); return false; }
     const wanted = !this.contextLost && rangeQuality(frame?.qualityLevel).waterMirror
       && [...this.prepared.values()].some((p) => Number.isFinite(p.mirrorLevelM));
     if (!wanted || !ctx?.canvas || !(stage?.width > 0)) { this.releaseBackdrop(); return false; }
@@ -381,7 +383,7 @@ export class RangeScene {
     if (m.frame !== frame.frameId || m.view !== viewId) {
       const r = this.renderer;
       const THREE = this.THREE;
-      mirrorCameraFor(THREE, this.camera, level, this.mirrorCamera, frame.performance && p.habitat ? 1 : MIRROR_LIFT);
+      mirrorCameraFor(THREE, this.camera, level, this.mirrorCamera, frame.performance ? 1 : MIRROR_LIFT);
       mirrorTextureMatrix(THREE, this.mirrorCamera, m.matrix);
       for (const fm of p.fringeMeshes || []) fm.visible = false;
       u.uMirrorAmount.value = 0;
@@ -457,7 +459,7 @@ export class RangeScene {
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
-      let surface, geos, material, depthMaterial, forest, stageGL, featureMaterial, actors, habitat;
+      let surface, geos, material, depthMaterial, forest, stageGL, featureMaterial, actors, habitat, firmament;
       const featureGeometries = {};
       const stale = () => {
         if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
@@ -494,7 +496,7 @@ export class RangeScene {
         // that cannot fit is denied before the mesh is built.
         const habitatLayout = buildRangeHabitat(cpu.data, view);
         const fringeBytes = terrainFringeBytes(cpu.data, { budget: this.budget });
-        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes() + (habitatLayout ? COVE_GPU_BYTES : 0);
+        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes() + FIRMAMENT_BYTES + (habitatLayout ? COVE_GPU_BYTES : 0);
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
@@ -509,6 +511,7 @@ export class RangeScene {
         await yieldToMain();
         const base = terrainUniforms(THREE, cpu.data, surface);
         const uniforms = sceneUniforms(THREE, base);
+        firmament = new FirmamentGL(THREE, uniforms);
         applyMaterial(uniforms, mat.pack, mat.textures, view.materialRules || {});
         material = createSceneMaterial(THREE, uniforms);
         featureMaterial = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms,
@@ -594,7 +597,7 @@ export class RangeScene {
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
-          forest, stageGL, featureGeometries, featureMaterial, habitat, habitatLayout,
+          forest, stageGL, featureGeometries, featureMaterial, habitat, habitatLayout, firmament,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
           giantLayout: layout, lakeMusicOriginM: lakeMusicOrigin(cpu.data, layout, waterLevelM),
           rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key, actors, actorRoutes: routes,
@@ -618,6 +621,7 @@ export class RangeScene {
           forest?.dispose();
           actors?.dispose();
           habitat?.dispose();
+          firmament?.dispose();
           depthMaterial?.dispose();
           stageGL?.dispose();
           material?.dispose();
@@ -755,6 +759,7 @@ export class RangeScene {
     p.forest?.dispose();
     p.actors?.dispose();
     p.habitat?.dispose();
+    p.firmament?.dispose();
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
     for (const g of Object.values(p.fringes || {})) g.dispose();
@@ -837,7 +842,7 @@ export class RangeScene {
     const THREE = this.THREE;
     const u = p.uniforms;
     const n = frame.narrative;
-    u.uMirrorLift.value = frame.performance && p.habitat ? 1 : MIRROR_LIFT;
+    u.uMirrorLift.value = frame.performance ? 1 : MIRROR_LIFT;
     // The anchor is a real hydroflattened lake sample chosen once at view
     // preparation, so a hit stays on the water as the camera travels.
     bindLakeMusic(u, frame, { originM: frame.performance && p.habitatLayout ? p.habitatLayout.anchors.midio : p.lakeMusicOriginM });
@@ -961,6 +966,18 @@ export class RangeScene {
     u.uMistColor.value.r = Math.min(0.9, u.uMistColor.value.r);
     u.uMistColor.value.g = Math.min(0.9, u.uMistColor.value.g);
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
+    u.uFullSky.value = frame.performance ? 1 : 0;
+    u.uFirmamentTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
+    u.uFirmamentSeed.value = ((frame.seed || 0) % 9973) * .01;
+    u.uFirmamentNight.value = night;
+    u.uFirmamentFlash.value = frame.reducedFlash ? .18 : 1;
+    u.uFirmamentBands.value.set(frame.skyMusic?.aurora01 ?? .36, frame.skyMusic?.melody01 ?? 0, frame.skyMusic?.bass01 ?? 0);
+    const radius = (c.radiusFrac || .0175) * this.camera.aspect * 2 * Math.tan(this.camera.fov * Math.PI / 360);
+    u.uFirmamentBody.value.set(dir.x, dir.y, dir.z, radius);
+    hexToLinear(THREE, c.colorHex, u.uFirmamentBodyColor.value).multiplyScalar(c.body ? .8 * (c.visibility ?? 1) : 0);
+    u.uFirmamentWeather.value.set(storm.amount, storm.flash);
+    u.uSkyProjectionInverse.value.copy(this.camera.projectionMatrixInverse);
+    u.uSkyCameraWorld.value.copy(this.camera.matrixWorld);
     u.uCameraPos.value.copy(this.camera.position);
     this._setActors(p, frame);
     this._setHabitat(p, frame);
@@ -1077,7 +1094,7 @@ export class RangeScene {
       u.uActorColor.value[i].set(color.r * gain, color.g * gain, color.b * gain);
       u.uActorRadius.value[i] = actor.id === 'midasus' ? 24 : 18;
     });
-    const midio = p.habitatLayout.anchors.midio, broshi = p.habitatLayout.anchors.broshi;
+    const midio = pose.actors.find(a => a.id === 'midio').positionM, broshi = p.habitatLayout.anchors.broshi;
     const f = p.habitatLayout.forward;
     u.uWake.value.set(midio[0], midio[2], midio[0] - f[0] * 35, midio[2] - f[2] * 35);
     const flash = frame.reducedFlash ? .35 : 1;
@@ -1090,6 +1107,19 @@ export class RangeScene {
     const ix = Math.floor((x - grid.originM[0]) / grid.cellSizeM / cells);
     const iz = Math.floor((z - grid.originM[1]) / grid.cellSizeM / cells);
     return data.byIndex.get(`${ix},${iz}`) || null;
+  }
+
+  renderFirmament(frame, viewId) {
+    const p = this.prepared.get(viewId);
+    if (!frame.performance || !p?.firmament || this.contextLost) return null;
+    this._setCamera(p.view, frame, p);
+    this._setUniforms(p, frame, 'A', viewId);
+    this._setCanvasSize(this.size.width, this.size.height);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, false);
+    this.renderer.render(p.firmament.scene, this.camera);
+    return this.canvas;
   }
 
   // Atmosphere has its own copy boundary. It must never enter the terrain

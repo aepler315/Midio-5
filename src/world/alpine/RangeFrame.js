@@ -1,3 +1,4 @@
+import { sampleFirmamentMusic } from './RangeFirmament.js';
 import { stormAt } from './RangeStorm.js';
 import { resolveRangeComposition } from './RangeComposition.js';
 import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
@@ -265,6 +266,8 @@ export const RANGE_DAYLIGHT = Object.freeze({ top: '#3a6fb8', mid: '#78a8d8', ho
 export const RANGE_DAYLIGHT_MIX = 0.6;
 /** How far a moonless night pulls every sky stop (and the air) toward space. */
 export const RANGE_MOONLESS_PULL = 0.85;
+// Cool moonlight remains visible when a biome supplies a pale warm sky.
+const RANGE_MOONLIGHT = ['#101b31', '#182742', '#2b3d58'];
 
 /** Sky colours the scene's atmosphere must agree with (same stops and
  *  night pull as BiomeManager._drawSky's three-stop case). */
@@ -276,7 +279,10 @@ export function rangeSkyState(mgr, A, B, t, night, narrative = null) {
   const stop = (i, k) => {
     const c = mgr._rotated(mgr.lerpCache.get(A.sky[i], B.sky[i], t));
     const amount = Math.min(0.97, pull * k + RANGE_MOONLESS_PULL * darkness);
-    return amount > 0.02 ? mgr.lerpCache.get(c, NIGHT_SKY, amount) : c;
+    const base = amount > 0.02 ? mgr.lerpCache.get(c, NIGHT_SKY, amount) : c;
+    if (mgr._dayNightCycleMs?.body !== 'night') return base;
+    const moonlight = hexLerp(RANGE_MOONLIGHT[i], NIGHT_SKY, .8 * darkness);
+    return hexLerp(base, moonlight, .9);
   };
   if (!narrative) return { top: stop(0, 1), mid: stop(1, .75), horizon: stop(2, .45), air: mgr._airColor || stop(2, .45) };
   const dark = narrative.skyDark;
@@ -295,7 +301,7 @@ export function rangeSkyState(mgr, A, B, t, night, narrative = null) {
   // Sunrise and sunset colour the whole sky, horizon most, and the air
   // with it, so distant ranges glow in the same light.
   const tw = mgr._twilight;
-  if (tw?.amount01 > 0.01) {
+  if (tw?.amount01 > 0) {
     const a = tw.amount01;
     top = hexLerp(top, tw.colors.top, 0.35 * a);
     mid = hexLerp(mid, tw.colors.mid, 0.6 * a);
@@ -429,7 +435,8 @@ export function buildRangeFrame({
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
     userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
-    light: lightState, music: land, habitatMusic: performance ? ridgeSample || null : null, ridges, narrative, groundBars, emitters,
+    light: lightState, music: land, habitatMusic: performance ? ridgeSample || null : null,
+    skyMusic: performance ? sampleFirmamentMusic(mgr.ridgeMusicSession, timeMs) : null, ridges, narrative, groundBars, emitters,
     waterHits,
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,
