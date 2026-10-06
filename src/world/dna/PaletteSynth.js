@@ -14,10 +14,10 @@ import {
 
 const N_CANDIDATES = 400;
 
-// Midio renders at HSL lightness ~65-78% (src/sim/Midasus.js:469,480,507)
+// The original cast rendered at HSL lightness ~65-78%
 // across a hue that cycles with every note's pitch class — full hue
 // coverage, so hue-only separation can't work. What holds for every hue is
-// keeping the silhouette she's staged against well below that band.
+// keeping the silhouette behind it well below that band.
 const SILHOUETTE_MAX_L = 0.44;
 const SILHOUETTE_MIN_L = 0.12;
 const SKY_STOP_MIN_DELTA = 0.035;

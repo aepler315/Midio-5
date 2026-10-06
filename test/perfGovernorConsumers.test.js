@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ParticleField } from '../src/world/ParticleField.js';
-import { OrbitalDebris } from '../src/sim/OrbitalDebris.js';
 
 function fakeCtx() {
   let arcs = 0, lines = 0, strokes = 0;
@@ -25,32 +24,6 @@ test('ParticleField.draw draws fewer particles at a lower particleMul', () => {
   full.draw(ctxShed, 0.6);
   assert.equal(ctxFull.arcCount, 20);
   assert.equal(ctxShed.arcCount, 12);
-});
-
-test('OrbitalDebris.draw draws fewer shards at a lower particleMul', () => {
-  const d = new OrbitalDebris(1);
-  const ctxFull = fakeCtx(), ctxShed = fakeCtx();
-  d.draw(ctxFull, 200, 0, 1);
-  d.draw(ctxShed, 200, 0, 0.6);
-  assert.equal(ctxFull.strokeCount, 13);
-  assert.equal(ctxShed.strokeCount, 8);
-  assert.equal(ctxFull.lineCount, 39); // closed triangles
-  assert.equal(ctxShed.lineCount, 24);
-});
-
-for (const mul of [0, -0.5, 2]) {
-  test(`fixed-size particle consumers bound emitted geometry for multiplier ${mul}`, () => {
-    const d = new OrbitalDebris(1);
-    const debris = fakeCtx();
-    d.draw(debris, 200, 0, mul);
-    assert.equal(debris.strokeCount, mul <= 0 ? 0 : 13);
-  });
-}
-
-test('empty particle collections emit no geometry', () => {
-  const debris = fakeCtx();
-  new OrbitalDebris(1, { n: 0 }).draw(debris, 200, 0, 1);
-  assert.equal(debris.strokeCount, 0);
 });
 
 // Range v2 Task 1: an explicit fixture pin outranks export's full-quality hold.

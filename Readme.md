@@ -186,13 +186,11 @@ lands on a note's onset. The visual clock compensates for reported audio
 output latency, with the optional Bluetooth trim above. Simulation runs at
 a fixed 120 Hz and rendering interpolates between steps.
 
-Musical casting sorts the notes into three lanes named for the cast:
-clean melodic material to **Midasus**, bass to **Broshi**, and lead
-material to **Midio**, with fallbacks when parts cannot be identified. The
-current presentation does not draw the three characters; the landscape
-reads each lane as its own source; the character code is kept in
-`src/sim/`. With uploaded stems, filenames and each stem's activity help
-assign the notes.
+Musical casting sorts the notes into three lanes: clean melodic material,
+bass, and lead. The lanes keep the names of the original on-screen cast
+(`MIDASUS`, `BROSHI`, `MIDIO`); the landscape reads each one as its own
+source. Fallbacks apply when parts cannot be identified. With uploaded
+stems, filenames and each stem's activity help assign the notes.
 
 The world registry contains eight landscape styles. Cathode has been retired; old playback IDs resolve to The Range.
 
@@ -256,7 +254,7 @@ src/
   core/      NoteEvent timeline, Conductor, ParamBus, MIDI utilities
   audio/     Filtering, onset/tempo/pitch analysis, song profile, caching, playback
   lyrics/    Song identity, lyric lookup, alignment, and section interpretation
-  sim/       Fixed-step simulation, world directors, character performers, calibration, effects
+  sim/       Fixed-step simulation, world directors, calibration, and effects
   world/     World registry, adaptation, private fit, palettes, terrain, scenery
   eval/      Private world-quality corpus (no audio, no public scores)
   render/    Canvas compositor, optional WebGL overlay, performance governor

@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Conductor } from '../src/core/Conductor.js';
 import { DisasterDirector } from '../src/sim/DisasterDirector.js';
-import { RainbowBrush } from '../src/render/RainbowBrush.js';
 
 test('fresh seek primes upcoming anticipation without dispatching past audio notes', () => {
   const c = new Conductor();
@@ -24,14 +23,4 @@ test('fresh disaster seek skips past slots and retains future slots', () => {
   const at = d._schedule[0].tMs;
   d.seekTo(at + 1); assert.equal(d._nextIdx, 1);
   d.seekTo(1000); assert.equal(d._nextIdx, 0);
-});
-
-test('a future rainbow dab never paints invalid alpha or oversized geometry', () => {
-  const brush = new RainbowBrush();
-  brush.update(60000, true, 100, 300);
-  let paints = 0;
-  const ctx = { save() {}, restore() {}, fillRect() { paints++; },
-    set globalAlpha(a) { assert.ok(a >= 0 && a <= 1); } };
-  brush.draw(ctx, 0, 0, 1000);
-  assert.equal(paints, 0);
 });

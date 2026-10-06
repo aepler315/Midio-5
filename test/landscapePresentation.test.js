@@ -3,9 +3,6 @@ import assert from 'node:assert/strict';
 import { Simulation } from '../src/sim/Simulation.js';
 import { Conductor } from '../src/core/Conductor.js';
 import { ParamBus } from '../src/core/ParamBus.js';
-import { Midio } from '../src/sim/Midio.js';
-import { Broshi } from '../src/sim/Broshi.js';
-import { Midasus } from '../src/sim/Midasus.js';
 import { Renderer } from '../src/render/Renderer.js';
 import { makeNoteEvent, Role } from '../src/core/NoteEvent.js';
 
@@ -25,9 +22,10 @@ for (const world of ['alpine', 'fathom', 'farside']) {
     test(`${world} ${mode} keeps transport without constructing or updating the trio`, () => {
       const sim = scene(world, mode === 'silence');
       try {
-        assert.ok(!(sim.midio instanceof Midio), 'default listener must not construct Midio');
-        assert.ok(!(sim.broshi instanceof Broshi), 'default listener must not construct Broshi');
-        assert.ok(!(sim.midasus instanceof Midasus), 'default listener must not construct Midasus');
+        // The actor classes are gone; the stage anchor is a plain record.
+        assert.equal(Object.getPrototypeOf(sim.midio), Object.prototype, 'midio is a stage record, not an actor');
+        assert.equal(sim.broshi, undefined, 'no Broshi actor');
+        assert.equal(sim.midasus, undefined, 'no Midasus actor');
         assert.equal(sim.performer, undefined);
         assert.equal(sim.ensemble, undefined);
         assert.equal(sim.focus, undefined);

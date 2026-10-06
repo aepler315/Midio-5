@@ -4,8 +4,6 @@ import {
   ComposerStrip, iconFor, popBump, stratifyCap, STAFF_ROWS, diatonicIndex, estimateTonicPc,
   buildSongMountain, formLetter,
 } from '../src/render/ComposerStrip.js';
-import { RainbowBrush } from '../src/render/RainbowBrush.js';
-import { ImpactFX } from '../src/sim/ImpactFX.js';
 import { Role } from '../src/core/NoteEvent.js';
 
 function note(tMs, role, pitch = 60, vel = 0.7, kick = false) {
@@ -167,34 +165,6 @@ test('popBump peaks right at the onset and dies away outside the pop window', ()
   assert.ok(popBump(30) > popBump(120));
   assert.equal(popBump(-200), 0);
   assert.equal(popBump(400), 0);
-});
-
-test('RainbowBrush paints only while airborne, respects stroke spacing, caps and expires dabs', () => {
-  const brush = new RainbowBrush();
-  brush.update(0, false, 0, 400);
-  assert.equal(brush.dabs.length, 0);
-
-  for (let i = 0; i <= 90; i++) brush.update(i * 10, true, i * 3, 400 - i);
-  const afterSweep = brush.dabs.length;
-  assert.ok(afterSweep > 10 && afterSweep < 91, `spacing should thin the stroke, got ${afterSweep}`);
-
-  for (let i = 0; i < 50; i++) brush.update(1000 + i, true, 270, 310);
-  assert.equal(brush.dabs.length, afterSweep);
-
-  for (let i = 0; i < 5000; i++) brush.update(2000 + i, true, 300 + i * 10, 400);
-  assert.ok(brush.dabs.length <= 320);
-});
-
-test('paint splats spawn chunky blobs and age out through the pool', () => {
-  const fx = new ImpactFX(3);
-  fx.splat(1000, 480);
-  assert.equal(fx.splats.active.length, 1);
-  const splat = fx.splats.active[0];
-  assert.ok(splat.blobs.length >= 6);
-  for (const b of splat.blobs) assert.ok(Number.isFinite(b.dx + b.dy + b.s));
-
-  for (let i = 0; i < 400; i++) fx.step(1 / 120);
-  assert.equal(fx.splats.active.length, 0);
 });
 
 // Keep STAFF_ROWS exported for any remaining consumers.

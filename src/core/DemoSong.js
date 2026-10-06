@@ -1,11 +1,6 @@
-// The authored demo song — a choreography oracle, not a random timeline.
-//
-// Because we wrote the notes, we know exactly when Midio should jump, when
-// a lead stab should pop a double-jump, when the trio should spin into a
-// disc, when the drop hits, and when everyone should stand still. The test
-// harness (ChoreoHarness) steps the same jump / disc / hype / performer
-// path Simulation uses and diffs the log against expectedChoreography().
-// When they disagree, the song is right and the logic is what we refine.
+// The authored demo song ("Play a sample"): a fixed score with named
+// sections, a drop, a rest and a coda, so the app has a known, repeatable
+// song to show without a file.
 import { Role, GM_DRUM, makeNoteEvent, sortNoteEvents } from './NoteEvent.js';
 import { Lane } from './Casting.js';
 import { CueKind, splitCues } from './ConductorTrack.js';
@@ -236,60 +231,6 @@ export function buildDemoSong() {
       scheduleCues,
       liveCues,
     },
-  };
-}
-
-/** Section covering a song time. */
-export function sectionAtMs(tMs) {
-  const bar = Math.max(0, Math.min(DEMO_BARS - 1, Math.floor(tMs / BAR_MS)));
-  return sectionAtBar(bar);
-}
-
-/**
- * Ground-truth choreography derived from the score, not from running the
- * sim. The harness log is compared against this. Times are exact onsets;
- * tests allow one sim step (~8ms) of dispatch slack.
- */
-export function expectedChoreography(song = buildDemoSong()) {
-  const kicks = song.timeline.filter((e) => e.kick).map((e) => ({ tMs: e.tMs, vel: e.vel }));
-  const leadStabs = song.timeline.filter((e) => e.lane === Lane.MIDIO).map((e) => e.tMs);
-  const bassNotes = song.timeline.filter((e) => e.lane === Lane.BROSHI).map((e) => e.tMs);
-  const melodyNotes = song.timeline.filter((e) => e.lane === Lane.MIDASUS).map((e) => e.tMs);
-
-  const restWindows = SECTIONS
-    .filter((s) => s.density === 'rest')
-    .map((s) => ({ fromMs: s.bar0 * BAR_MS, toMs: (s.bar0 + s.bars) * BAR_MS, id: s.id }));
-
-  const hotWindows = SECTIONS
-    .filter((s) => s.energy >= 0.85)
-    .map((s) => ({ fromMs: s.bar0 * BAR_MS, toMs: (s.bar0 + s.bars) * BAR_MS, id: s.id }));
-
-  const discs = song.conductor.liveCues
-    .filter((c) => c.kind === CueKind.DROP || c.kind === CueKind.FLOURISH)
-    .map((c) => ({ tMs: c.tMs, kind: c.kind }));
-
-  const drops = song.conductor.liveCues
-    .filter((c) => c.kind === CueKind.DROP)
-    .map((c) => c.tMs);
-
-  const calms = song.conductor.liveCues
-    .filter((c) => c.kind === CueKind.CALM)
-    .map((c) => c.tMs);
-
-  return {
-    bpm: song.bpm,
-    durationMs: song.durationMs,
-    kicks,
-    jumpOnsets: kicks.map((k) => k.tMs), // every kick is a takeoff or a landing-tie relaunch
-    airJumpOnsets: leadStabs,
-    leadStabs,
-    bassNotes,
-    melodyNotes,
-    restWindows,
-    hotWindows,
-    discs,
-    drops,
-    calms,
   };
 }
 
