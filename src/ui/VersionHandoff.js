@@ -1,0 +1,167 @@
+// Raw visitor files stay local. Transactions include ownership so a copied
+// sessionStorage token cannot read or consume another document's handoff.
+const DAY_MS = 86400000;
+const LEASE_MS = 15000;
+const TOKEN_KEY = 'midio:version-tab';
+const randomId = () => globalThis.crypto.randomUUID();
+
+function idbStorage(indexedDB) {
+  let opened;
+  function open() {
+    if (!opened) opened = new Promise((resolve, reject) => {
+      if (!indexedDB) { reject(new Error('Browser storage is unavailable.')); return; }
+      const request = indexedDB.open('midio-version-handoff-v1', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('records');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('Version storage is blocked.'));
+    });
+    return opened;
+  }
+  return { async atomic(fn) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('records', 'readwrite');
+      const store = tx.objectStore('records');
+      const request = r => new Promise((yes, no) => { r.onsuccess = () => yes(r.result); r.onerror = () => no(r.error); });
+      let result;
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = tx.onabort = () => reject(tx.error || new Error('Version storage transaction failed.'));
+      Promise.resolve(fn({
+        get: k => request(store.get(k)), put: (k,v) => request(store.put(v,k)), delete: k => request(store.delete(k)),
+        entries: async () => {
+          const [keys, values] = await Promise.all([request(store.getAllKeys()), request(store.getAll())]);
+          return keys.map((k,i) => [k,values[i]]);
+        },
+      })).then(value => { result = value; }).catch(error => { try { tx.abort(); } catch { /* completed */ } reject(error); });
+    });
+  } };
+}
+
+export function createVersionHandoffStore({ indexedDB = globalThis.indexedDB, sessionStorage = globalThis.sessionStorage,
+  now = Date.now, storage = null, locks = globalThis.navigator?.locks, lifecycle = globalThis.window,
+  heartbeat = true } = {}) {
+  const db = storage || idbStorage(indexedDB);
+  const documentId = randomId();
+  let token, claimed = false, acquiring, releaseLock, lockCompletion, timer, snapshotProvider, disposed = false;
+  const key = name => `${token}:${name}`;
+  function storedToken() {
+    try { return sessionStorage?.getItem(TOKEN_KEY) || randomId(); }
+    catch { throw new Error('Session storage is unavailable.'); }
+  }
+  async function lockToken() {
+    if (!locks?.request) return true;
+    return new Promise((resolve,reject) => {
+      lockCompletion = locks.request(`midio-version:${token}`, { ifAvailable: true }, async lock => {
+        if (!lock) { resolve(false); return; }
+        await new Promise(release => { releaseLock = release; resolve(true); });
+      }).catch(reject);
+    });
+  }
+  async function acquire() {
+    if (disposed) throw new Error('Version storage has been disposed.');
+    if (claimed) return;
+    if (acquiring) return acquiring;
+    acquiring = (async () => {
+      token = storedToken();
+      for (;;) {
+        if (!await lockToken()) { token = randomId(); continue; }
+        const won = await db.atomic(async tx => {
+          const owner = await tx.get(key('owner'));
+          if (owner && owner.documentId !== documentId && owner.expiresAtMs > now()) return false;
+          await tx.put(key('owner'), { documentId, expiresAtMs: now() + LEASE_MS }); return true;
+        });
+        if (won) break;
+        releaseLock?.(); await lockCompletion; releaseLock = null; token = randomId();
+      }
+      sessionStorage?.setItem(TOKEN_KEY, token);
+      claimed = true;
+      if (heartbeat) timer = setInterval(() => owned(async () => {}).catch(() => {}), LEASE_MS / 3);
+    })();
+    try { await acquiring; } catch (error) { releaseLock?.(); await lockCompletion; releaseLock = null; throw error; } finally { acquiring = null; }
+  }
+  async function owned(fn) {
+    await acquire();
+    return db.atomic(async tx => {
+      const owner = await tx.get(key('owner'));
+      if (!owner || owner.documentId !== documentId) throw new Error('This session belongs to another tab.');
+      await tx.put(key('owner'), { documentId, expiresAtMs: now() + LEASE_MS });
+      return fn(tx);
+    });
+  }
+  const valid = value => value && now() - value.createdAtMs < DAY_MS;
+  async function release() {
+    if (acquiring) await acquiring;
+    clearInterval(timer); timer = null;
+    if (claimed) await db.atomic(async tx => {
+      if ((await tx.get(key('owner')))?.documentId === documentId) await tx.delete(key('owner'));
+    });
+    claimed = false; releaseLock?.(); await lockCompletion; releaseLock = null;
+  }
+  async function updateLatest(state, currentId) {
+    if (state.phase !== 'ready' || state.blockedReason || !state.sourceId) throw new Error('The selected song is not ready.');
+    return owned(async tx => {
+      const source = await tx.get(key('source'));
+      if (!valid(source) || source.sourceId !== state.sourceId) throw new Error('The selected song has changed.');
+      const latest = await tx.get(key('latest'));
+      await tx.put(key('latest'), { schema: 1, tabId: token, switchId: latest?.switchId || randomId(), fromId: currentId, toId: currentId,
+        sourceId: state.sourceId, createdAtMs: now(), positionMs: state.positionMs, seed: state.seed, paused: !!state.paused,
+        worldId: state.worldId ?? null, rangeViewId: state.rangeViewId ?? null, settings: { ...(state.settings || {}) } });
+    });
+  }
+  const pagehide = async () => {
+    try {
+      if (claimed && snapshotProvider) {
+        const snapshot = snapshotProvider();
+        if (snapshot?.state?.phase === 'ready') await updateLatest(snapshot.state, snapshot.currentId);
+      }
+    } catch { /* An unsaved or replaced source cannot overwrite the last successful session. */ }
+    finally { await release().catch(() => {}); }
+  };
+  const pageshow = () => { acquire().catch(() => {}); };
+  lifecycle?.addEventListener('pagehide', pagehide);
+  lifecycle?.addEventListener('pageshow', pageshow);
+  return {
+    tabId: async () => { await acquire(); return token; }, release, updateLatest,
+    setSnapshotProvider(provider) { snapshotProvider = provider; },
+    async saveSource(state) {
+      if (state.phase !== 'ready' || state.blockedReason || !state.sourceId || !['audio-files','demo'].includes(state.source?.kind)) throw new Error(state.blockedReason || 'The selected song is not ready to carry.');
+      if (state.source.kind === 'audio-files' && !state.source.files?.length) throw new Error('Original audio files are unavailable.');
+      return owned(async tx => {
+        const existing = await tx.get(key('source'));
+        if (valid(existing) && existing.sourceId === state.sourceId) return state.sourceId;
+        await tx.put(key('source'), { sourceId: state.sourceId, source: state.source.kind === 'demo' ? {kind:'demo'} : {kind:'audio-files',files:[...state.source.files]}, createdAtMs: now() });
+        await tx.delete(key('pending')); await tx.delete(key('latest'));
+        return state.sourceId;
+      });
+    },
+    async readSource(sourceId) { return owned(async tx => { const row=await tx.get(key('source')); return valid(row) && row.sourceId===sourceId ? row.source : null; }); },
+    async prepareSwitch(state) {
+      if (state.phase !== 'ready' || state.blockedReason) throw new Error(state.blockedReason || 'The song is not ready.');
+      return owned(async tx => {
+        const source = await tx.get(key('source'));
+        if (!valid(source) || source.sourceId!==state.sourceId) throw new Error('The selected song has changed.');
+        const previous = await tx.get(key('pending'));
+        if (valid(previous) && (previous.switchId !== state.replaceSwitchId || previous.sourceId !== state.sourceId)) throw new Error('A version switch is already pending.');
+        const handoff={schema:1,tabId:token,switchId:randomId(),fromId:state.fromId,toId:state.toId,sourceId:state.sourceId,createdAtMs:now(),positionMs:Math.max(0,Number(state.positionMs)||0),seed:state.seed,paused:!!state.paused,worldId:state.worldId??null,rangeViewId:state.rangeViewId??null,settings:{...(state.settings||{})}};
+        await tx.put(key('pending'),handoff); return handoff;
+      });
+    },
+    async readPending(toId, switchId) { return owned(async tx => { const row=await tx.get(key('pending')); return valid(row) && row.tabId===token && row.toId===toId && (!switchId || row.switchId===switchId) ? row : null; }); },
+    async readLatest(toId) { return owned(async tx => { const row=await tx.get(key('latest')); return valid(row) ? { ...row, toId } : null; }); },
+    async completeSwitch(handoff) { return owned(async tx => {
+      const pending=await tx.get(key('pending'));
+      if (!pending) {
+        const latest = await tx.get(key('latest'));
+        if (valid(latest) && latest.tabId === token && latest.switchId === handoff.switchId && latest.sourceId === handoff.sourceId) return;
+      }
+      if (!valid(pending) || pending.tabId!==token || pending.switchId!==handoff.switchId || pending.toId!==handoff.toId || pending.sourceId!==handoff.sourceId) throw new Error('This handoff does not match the destination.');
+      await tx.put(key('latest'),pending); await tx.delete(key('pending'));
+    }); },
+    async discardSource() { return owned(async tx => { for(const name of ['source','pending','latest']) await tx.delete(key(name)); }); },
+    async pruneExpired() { return owned(async tx => {
+      for(const [k,v] of await tx.entries()) if(k.endsWith(':owner') ? v.expiresAtMs<=now() : !valid(v)) await tx.delete(k);
+    }); },
+    async dispose() { lifecycle?.removeEventListener('pagehide',pagehide); lifecycle?.removeEventListener('pageshow',pageshow); await release(); disposed=true; },
+  };
+}
