@@ -1,5 +1,6 @@
 import { sampleFirmamentMusic } from './RangeFirmament.js';
 import { stormAt } from './RangeStorm.js';
+import { sampleJourneyDirection } from './JourneyDirection.js';
 import { resolveRangeComposition } from './RangeComposition.js';
 import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
 import { ridgeAdvectionPxAt } from '../RidgeMotionHistory.js';
@@ -434,6 +435,8 @@ export function buildRangeFrame({
     // How much of the Forest Service map under the land shows (quiet passages).
     cloudSea01: cloudSeaAt(mgr, timeMs),
     storm: stormAt(mgr, timeMs),
+    journeyDirection: sampleJourneyDirection({timeMs,sections:mgr.sections,durationMs:mgr.durationMs,
+      music:ridgeSample?.journey,reducedMotion:reducedMotion||!!mgr.terrainPreview}),
     // The cast as lights in the land: brightness, travel and peaks per lane.
     actors: performance ? null : rangeActorsAt(sim, timeMs),
     // Camera: this section's slow cinematic move, and the listener's zoom.

@@ -21,6 +21,14 @@ export const JOURNEY_VIEW = Object.freeze({
 
 const finite = value => Number.isFinite(value) ? value : 0;
 const unit = value => Math.max(0, Math.min(1, finite(value)));
+const smooth = (a, b, value) => {
+  const t = unit((value - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+const cove = (q, center, width) => {
+  const support = Math.max(0, 1 - ((q - center) / width) ** 2);
+  return support * support;
+};
 /** Heard time is the entire travel clock. Live controls only affect height,
  * never the rate/phase of the world, including after a large seek. */
 export function sampleJourneyState({ timeMs = 0, seed = 0, music = null, reducedMotion = false } = {}) {
@@ -49,34 +57,35 @@ function noise(x, z) {
     + .2 * Math.sin(3.11 * x + 2.17 * z + 4.4);
 }
 
-/** A bounded lake has its own evolving center, breadth and coves. The
- * mountain field still advects through it, so its margins discover new
- * foothills while the whole basin stays in the traveling composition. */
+/** The broad basin evolves on a kilometre-scale travel clock. Its two banks
+ * discover independent coves and headlands rather than inflating with music.
+ * The rounded closing envelope is shared with every terrain/contact receiver. */
 export function journeyLakeShape(state = STILL) {
   const t = state.timeSec, phase = state.seed * .013;
   return {
-    centerX: 62 * Math.sin(t * .055 + phase * .8) + 18 * Math.sin(t * .13 + phase * .17),
-    halfWidthM: 550 + 55 * Math.sin(t * .071 + phase * .27) + 35 * Math.sin(t * .113 + phase * .41) + 15 * state.energy,
-    centerZ: -290 + 48 * Math.sin(t * .062 + phase * .5) + 22 * noise(state.travelM * .002, 5),
+    centerX: 45 * Math.sin(t * .006 + phase * .8) + 12 * noise(state.travelM * .0001, phase * .2),
+    halfWidthM: 550 + 35 * Math.sin(t * .009 + phase * .27) + 15 * noise(state.travelM * .0001, phase * .4),
+    centerZ: -310 + 25 * Math.sin(t * .006 + phase * .5) + 12 * noise(state.travelM * .00015, phase * .3),
   };
 }
 
 export function journeyShorePair(x, state = STILL) {
-  const lake = journeyLakeShape(state), t = state.timeSec, phase = state.seed * .013;
+  const lake = journeyLakeShape(state), phase = state.seed * .013;
   const q = (finite(x) - lake.centerX) / lake.halfWidthM;
   const envelope = Math.max(0, 1 - q * q);
-  // Rounded ends with a finite derivative, so a moving tip never snaps.
+  // Retain finite rounded tips and their exact dense-grid vertices.
   const round = (Math.sqrt(envelope + .045) - Math.sqrt(.045)) / (Math.sqrt(1.045) - Math.sqrt(.045));
-  const worldX = finite(x) + state.travelM;
-  const bend = lake.centerZ + 60 * Math.sin(q * 2.7 + t * .08 + phase * .7) * round;
-  const nearCove = Math.max(0, 1 - ((q - .30 - .12 * Math.sin(t * .11)) / .29) ** 2) ** 2;
-  const farCove = Math.max(0, 1 - ((q + .28 - .10 * Math.sin(t * .09 + 1)) / .32) ** 2) ** 2;
-  const nearDepth = (450 + 35 * Math.sin(t * .049 + phase * .39))
-    * (.94 + .10 * Math.sin(q * 4.3 + phase + t * .085));
-  const farDepth = (470 + 45 * Math.sin(t * .045 + phase * 1.1))
-    * (.96 + .12 * Math.sin(q * 4.8 - phase * .4 - t * .063));
-  return [bend + round * (nearDepth - 145 * nearCove + 26 * noise(worldX * .005, t * .025)),
-    bend - round * (farDepth - 135 * farCove + 30 * noise(worldX * .004, t * .02 + 3))];
+  const worldX = finite(x) + state.travelM, geology = state.travelM * .00018;
+  const bend = lake.centerZ + 45 * Math.sin(q * 2.1 + phase * .7) * round;
+  const nearCoves = 160 * cove(q, -.47 + .09 * Math.sin(geology + phase), .22)
+    + 150 * cove(q, .33 + .09 * Math.sin(geology * .7 + phase * .4), .27);
+  const farCoves = 135 * cove(q, -.24 + .08 * Math.sin(geology * .8 + phase * .6), .25)
+    + 165 * cove(q, .55 + .06 * Math.sin(geology * .6 + phase), .22);
+  const nearDepth = 420 + 30 * Math.sin(q * 3.7 + phase * .39)
+    + 18 * noise(worldX * .0007, phase * .3);
+  const farDepth = 470 + 38 * Math.sin(q * 3.1 - phase * .4)
+    + 22 * noise(worldX * .0006, phase * .5 + 3);
+  return [bend + round * (nearDepth - nearCoves), bend - round * (farDepth - farCoves)];
 }
 
 export function journeyNearShore(x, state = STILL) { return journeyShorePair(x, state)[0]; }
@@ -89,14 +98,23 @@ export function journeyLakeDistance(x, z, state = STILL) {
 export function journeyGroundHeight(x, z, state = STILL) {
   const worldX = finite(x) + state.travelM, phase = state.seed * .013;
   const inland = Math.max(0, finite(z) - journeyNearShore(x, state));
-  return inland / (inland + 225)
-    * (30 + 6 * noise(worldX * .0032 + phase, finite(z) * .00018));
+  // A shallow contact shelf, then crossed low foreland shoulders. The apron
+  // has its own depth relief instead of lifting a single flat strip.
+  const shelf = 4 * smooth(0, 90, inland) + 8 * smooth(80, 240, inland);
+  const rise = 23 * smooth(210, 650, inland);
+  const shoulder = (3 + 3 * noise(worldX * .003 + phase, inland * .008))
+    * smooth(70, 230, inland) * (1 - .3 * smooth(350, 650, inland));
+  return shelf + rise + shoulder;
 }
 
 export function journeySurface(x, v, layer, state = STILL) {
   x = finite(x); v = unit(v);
   if (layer < .5) {
-    const z = journeyNearShore(x, state) + 650 * v;
+    // Preserve the dense contact shelf, then fan the same bounded grid out
+    // behind every framed camera. A cubic tail joins with two continuous
+    // derivatives and avoids exposing the old finite-apron edge on retreat.
+    const tail = Math.max(0, (v - .3) / .7);
+    const z = journeyNearShore(x, state) + 650 * v + 6000 * tail * tail * tail;
     return [x, journeyGroundHeight(x, z, state), z];
   }
   const z = layer < 1.5 ? journeyFarShore(x, state) - MOUNTAIN_DIMENSIONS.firstDepth * v
@@ -111,26 +129,31 @@ export const JOURNEY_SURFACE_GLSL = /* glsl */`
   float journeyNoise(float x, float z) {
     return .5*sin(.89*x+.61*z)+.3*sin(1.71*x-1.37*z+1.8)+.2*sin(3.11*x+2.17*z+4.4);
   }
+  float journeyCove(float q, float center, float width) {
+    float offset=(q-center)/width;
+    float support=max(0.0,1.0-offset*offset);
+    return support*support;
+  }
   vec3 journeyLakeShape() {
     float t=uJourneyTime, phase=uJourneySeed*.013;
-    return vec3(62.0*sin(t*.055+phase*.8)+18.0*sin(t*.13+phase*.17),
-      550.0+55.0*sin(t*.071+phase*.27)+35.0*sin(t*.113+phase*.41)+15.0*uJourneyEnergy,
-      -290.0+48.0*sin(t*.062+phase*.5)+22.0*journeyNoise(uJourneyTravel*.002,5.0));
+    return vec3(45.0*sin(t*.006+phase*.8)+12.0*journeyNoise(uJourneyTravel*.0001,phase*.2),
+      550.0+35.0*sin(t*.009+phase*.27)+15.0*journeyNoise(uJourneyTravel*.0001,phase*.4),
+      -310.0+25.0*sin(t*.006+phase*.5)+12.0*journeyNoise(uJourneyTravel*.00015,phase*.3));
   }
   vec2 journeyShorePair(float x) {
     vec3 lake=journeyLakeShape();
-    float t=uJourneyTime, phase=uJourneySeed*.013, q=(x-lake.x)/lake.y;
+    float phase=uJourneySeed*.013, q=(x-lake.x)/lake.y;
     float envelope=max(0.0,1.0-q*q);
     float round=(sqrt(envelope+.045)-sqrt(.045))/(sqrt(1.045)-sqrt(.045));
-    float worldX=x+uJourneyTravel;
-    float bend=lake.z+60.0*sin(q*2.7+t*.08+phase*.7)*round;
-    float nq=(q-.30-.12*sin(t*.11))/.29,fq=(q+.28-.10*sin(t*.09+1.0))/.32;
-    float ns=max(0.0,1.0-nq*nq),fs=max(0.0,1.0-fq*fq);
-    float nearCove=ns*ns,farCove=fs*fs;
-    float nearDepth=(450.0+35.0*sin(t*.049+phase*.39))*(.94+.10*sin(q*4.3+phase+t*.085));
-    float farDepth=(470.0+45.0*sin(t*.045+phase*1.1))*(.96+.12*sin(q*4.8-phase*.4-t*.063));
-    return vec2(bend+round*(nearDepth-145.0*nearCove+26.0*journeyNoise(worldX*.005,t*.025)),
-      bend-round*(farDepth-135.0*farCove+30.0*journeyNoise(worldX*.004,t*.02+3.0)));
+    float worldX=x+uJourneyTravel, geology=uJourneyTravel*.00018;
+    float bend=lake.z+45.0*sin(q*2.1+phase*.7)*round;
+    float nearCoves=160.0*journeyCove(q,-.47+.09*sin(geology+phase),.22)
+      +150.0*journeyCove(q,.33+.09*sin(geology*.7+phase*.4),.27);
+    float farCoves=135.0*journeyCove(q,-.24+.08*sin(geology*.8+phase*.6),.25)
+      +165.0*journeyCove(q,.55+.06*sin(geology*.6+phase),.22);
+    float nearDepth=420.0+30.0*sin(q*3.7+phase*.39)+18.0*journeyNoise(worldX*.0007,phase*.3);
+    float farDepth=470.0+38.0*sin(q*3.1-phase*.4)+22.0*journeyNoise(worldX*.0006,phase*.5+3.0);
+    return vec2(bend+round*(nearDepth-nearCoves),bend-round*(farDepth-farCoves));
   }
   float journeyNearShore(float x) { return journeyShorePair(x).x; }
   float journeyFarShore(float x) { return journeyShorePair(x).y; }
@@ -141,12 +164,20 @@ export const JOURNEY_SURFACE_GLSL = /* glsl */`
   float journeyGroundHeight(vec2 xz) {
     float worldX=xz.x+uJourneyTravel, phase=uJourneySeed*.013;
     float inland=max(0.0,xz.y-journeyNearShore(xz.x));
-    return inland/(inland+225.0)*(30.0+6.0*journeyNoise(worldX*.0032+phase,xz.y*.00018));
+    float shelf=4.0*smoothstep(0.0,90.0,inland)+8.0*smoothstep(80.0,240.0,inland);
+    float rise=23.0*smoothstep(210.0,650.0,inland);
+    float shoulder=(3.0+3.0*journeyNoise(worldX*.003+phase,inland*.008))
+      *smoothstep(70.0,230.0,inland)*(1.0-.3*smoothstep(350.0,650.0,inland));
+    return shelf+rise+shoulder;
   }
   ${JOURNEY_MOUNTAIN_GLSL}
   vec3 journeySurface(vec2 grid, float layer) {
     float x=grid.x,v=clamp(grid.y,0.0,1.0);
-    if(layer<.5){float z=journeyNearShore(x)+650.0*v;return vec3(x,journeyGroundHeight(vec2(x,z)),z);}
+    if(layer<.5){
+      float tail=max(0.0,(v-.3)/.7);
+      float z=journeyNearShore(x)+650.0*v+6000.0*tail*tail*tail;
+      return vec3(x,journeyGroundHeight(vec2(x,z)),z);
+    }
     float z=layer<1.5?journeyFarShore(x)-${MOUNTAIN_DIMENSIONS.firstDepth.toFixed(1)}*v
       :${MOUNTAIN_DIMENSIONS.rearStart.toFixed(1)}-${MOUNTAIN_DIMENSIONS.rearDepth.toFixed(1)}*v;
     return vec3(x,journeyMountainHeight(vec2(x,v),layer),z);

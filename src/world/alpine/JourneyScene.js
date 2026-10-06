@@ -3,6 +3,7 @@
 import { JOURNEY_VIEW, sampleJourneyState, journeyGroundHeight, journeySurface, journeyLakeShape } from './JourneyWorld.js';
 import { JOURNEY_CAST_LAYOUT, sampleJourneyCast } from './JourneyCast.js';
 import { journeyUniforms, journeyMaterial, journeyGrid, journeyForest, journeyWaterGeometry } from './JourneyMaterial.js';
+import * as journeyMaterials from './JourneyMaterial.js';
 import { sceneUniforms, setLinearFromHex, createMaterialTextures, applyMaterial } from './TerrainMaterial.js';
 import { loadMaterialPack, materialGpuBytes } from './MaterialPackage.js';
 import { sampleJourneySky } from './JourneySky.js';
@@ -11,9 +12,32 @@ import { FirmamentGL } from './FirmamentGL.js';
 import { mirrorCameraFor, mirrorTextureMatrix } from './WaterMirror.js';
 import { scenicProjection } from './RangeFrame.js';
 import { applyCameraMoves, rangeUserCamera, NEUTRAL_MOVE } from './RangeCamera.js';
+import { cameraBasis } from '../terrain/SceneTravel.js';
 
 let nextSceneId=0;
 const GEOMETRY_BYTES=7*1024*1024, SHADOW_SIZE=1024;
+// All path excursions plus articulated full silhouettes and companions.
+// Fit these fixed bounds once per aspect/phrase, never sampled stride roots.
+const CAST_BOUNDS=[
+  // Broshi: grounded spikes/head/tail, all bank excursions and foot swings.
+  [[-350,-15],[-15,85],[-260,340]],
+  // Midio: a low swimmer; its deepest silhouette never occupies the bank.
+  [[-195,195],[-42,65],[-300,-160]],
+  // Midasus and companions: high but farther back, with bounded full rolls.
+  [[-5,305],[55,210],[-140,0]],
+];
+function fitCastEnvelope(rail,tanX,tanY,margin=.88){
+  const {forward,right,up}=cameraBasis(rail);
+  let retreat=0;
+  for(const bounds of CAST_BOUNDS)for(const x of bounds[0])for(const y of bounds[1])for(const z of bounds[2]){
+    const v=[x-rail.eyeM[0],y-rail.eyeM[1],z-rail.eyeM[2]];
+    const dot=a=>v.reduce((n,value,i)=>n+value*a[i],0);
+    const depth=dot(forward);
+    retreat=Math.max(retreat,Math.abs(dot(right))/(tanX*margin)-depth,Math.abs(dot(up))/(tanY*margin)-depth);
+  }
+  return {...rail,eyeM:rail.eyeM.map((v,i)=>v-forward[i]*retreat)};
+}
+const unit=v=>Number.isFinite(v)?Math.max(0,Math.min(1,v)):0;
 const MATERIAL_URL=new URL('../../assets/range/v2/materials/wet-conifer.json',import.meta.url).href;
 const refused=message=>Object.assign(new Error(message),{reason:'budget'});
 
@@ -111,11 +135,15 @@ export class JourneyScene {
       p.water.frustumCulled=false;p.meshes.push(p.water);p.scene.add(p.water);
       const forest=journeyForest(THREE,p.uniforms);
       forest.frustumCulled=false;p.meshes.push(forest);p.scene.add(forest);
+      if(journeyMaterials.journeyDressing){
+        p.dressing=journeyMaterials.journeyDressing(THREE,p.uniforms);
+        p.dressing.frustumCulled=false;p.meshes.push(p.dressing);p.scene.add(p.dressing);
+      }
       p.cast=new CoveGL(THREE,p.uniforms,JOURNEY_CAST_LAYOUT);
       p.cast.group.traverse(node=>{
         if(node.material && !node.material.transparent)node.material.depthWrite=true;
       });
-      p.scene.add(p.cast.group);
+      p.scene.add(p.cast.group);p.shadowScene.add(p.cast.depthGroup);
       p.firmament=new FirmamentGL(THREE,p.uniforms);
       if(reservation&&!this.residency.commit(reservation,p,dispose))return;
       this.prepared.set(view.id,p);
@@ -172,7 +200,7 @@ export class JourneyScene {
 
   movedPose(view,frame){
     const c=view.camera;
-    const rail={eyeM:c.eyeStartM,targetM:c.targetStartM,fovYDeg:c.fovYDeg,up:[0,1,0]};
+    const authored={eyeM:c.eyeStartM,targetM:[c.targetStartM[0],50,c.targetStartM[2]],fovYDeg:c.fovYDeg,up:[0,1,0]};
     const vp=frame.scenicViewport,proj=scenicProjection(c.fovYDeg,vp),margin=vp.overscanPx||0;
     const width=Math.max(1,vp.logicalWidth-2*margin),height=Math.max(1,vp.logicalHeight-2*margin);
     const tanY=Math.tan(proj.fovYDeg*Math.PI/360)*height/vp.logicalHeight,tanX=tanY*width/height;
@@ -186,7 +214,11 @@ export class JourneyScene {
       }
       return y;
     };
-    const pose=applyCameraMoves(rail,NEUTRAL_MOVE,frame.userCamera,{heightAt,waterLevelM:0,
+    const rail=fitCastEnvelope(authored,tanX,tanY);
+    const move=frame.reducedMotion?NEUTRAL_MOVE:frame.journeyDirection?.cameraMove||NEUTRAL_MOVE;
+    const staged=applyCameraMoves(rail,move,null,{heightAt,waterLevelM:0,heightRangeM:[0,2300]});
+    const safe=fitCastEnvelope(staged,tanX,tanY,.95);
+    const pose=applyCameraMoves(safe,NEUTRAL_MOVE,frame.userCamera,{heightAt,waterLevelM:0,
       sampleStepM:24,cone:{tanX,tanY},heightRangeM:[0,2300]});
     return {rail,pose,proj,tanX,tanY};
   }
@@ -206,6 +238,13 @@ export class JourneyScene {
     u.uJourneyBands.value.set(state.bands);
     const lake=journeyLakeShape(state);u.uJourneyLake.value.set(lake.centerX,lake.halfWidthM);
     u.uCameraPos.value.copy(camera.position);u.uTime.value=state.timeSec;
+    const storm={amount:unit(frame.storm?.amount),flash:frame.reducedFlash?0:unit(frame.storm?.flash),
+      break01:unit(frame.storm?.break01),wet01:unit(frame.storm?.wet01)};
+    u.uStorm.value.set(storm.amount,storm.flash,storm.break01,storm.wet01);
+    u.uFirmamentWeather.value.set(storm.amount,storm.flash);
+    if(u.uJourneyWeatherEnable)u.uJourneyWeatherEnable.value=1;
+    if(u.uJourneyClearing)u.uJourneyClearing.value=storm.break01;
+    const focus=frame.reducedMotion?0:unit(frame.journeyDirection?.focusStrength01);
     const sky=frame.light.sky;
     setLinearFromHex(u.uSkyZenith.value,sky.top);
     setLinearFromHex(u.uSkyHorizon.value,sky.horizon);
@@ -214,12 +253,12 @@ export class JourneyScene {
     const direction=new this.THREE.Vector3(celestial.xFrac*2-1,1-celestial.yFrac*2,.5)
       .unproject(camera).sub(camera.position).normalize();
     u.uLightDir.value.copy(direction);
-    setLinearFromHex(u.uLightColor.value,celestial.colorHex||'#c6d7ff').multiplyScalar(celestial.intensity??.5);
-    u.uAmbientScale.value=3;u.uAirDensity.value=.00008;u.uExposure.value=2.3;
+    setLinearFromHex(u.uLightColor.value,celestial.colorHex||'#c6d7ff').multiplyScalar((celestial.intensity??.5)*(1-.62*storm.amount+.18*storm.break01+.9*storm.flash));
+    u.uAmbientScale.value=3*(1-.42*storm.amount+.08*storm.break01+.3*storm.flash);u.uAirDensity.value=.00008;u.uExposure.value=2.3;
     u.uFullSky.value=1;u.uFirmamentTime.value=state.timeSec;
     p.sky=sampleJourneySky({timeMs:frame.timeMs,durationMs:frame.durationMs,light:frame.light,reducedMotion:frame.reducedMotion});
     u.uFirmamentSeed.value=state.seed*.01;u.uFirmamentNight.value=p.sky.night01;
-    u.uFirmamentLayers.value.set(p.sky.stars01,p.sky.constellations01,p.sky.aurora01);
+    u.uFirmamentLayers.value.set(p.sky.stars01,p.sky.constellations01,p.sky.aurora01*(1-.48*focus));
     u.uFirmamentFlash.value=frame.reducedFlash?.18:1;
     u.uFirmamentBands.value.set(.45+.55*state.energy,state.melody,state.bass);
     u.uFirmamentMotion.value.set(state.pulse,state.bass,state.melody,frame.reducedMotion?0:1);
@@ -228,8 +267,22 @@ export class JourneyScene {
     u.uFirmamentBody.value.set(direction.x,direction.y,direction.z,radius);
     const body=setLinearFromHex(u.uLightColor.value.clone(),celestial.colorHex||'#c6d7ff').multiplyScalar(.8*(celestial.visibility??1));
     u.uFirmamentBodyColor.value.set(body.r,body.g,body.b);
-    p.pose=sampleJourneyCast({timeMs:frame.timeMs,state,music,reducedMotion:frame.reducedMotion,reducedFlash:frame.reducedFlash});
+    p.pose=sampleJourneyCast({timeMs:frame.timeMs,state,music,reducedMotion:frame.reducedMotion,reducedFlash:frame.reducedFlash,direction:frame.journeyDirection});
     p.cast.update(p.pose);
+    // Dim competing companions through the same continuous evidence as the
+    // aurora. Keep every silhouette present and restore its authored colors
+    // on each held/seek-reconstructed frame, so emphasis cannot accumulate.
+    const babies=p.cast.actors?.midasus?.babies||[];
+    if(!p.companionColors)p.companionColors=babies.map(baby=>({
+      body:baby.uniforms.uBodyColor.value.clone(),edge:baby.uniforms.uEdgeColor.value.clone()}));
+    const companionFocus=frame.reducedMotion?0:unit((frame.journeyDirection?.focusById?.midio||0)
+      +(frame.journeyDirection?.focusById?.broshi||0));
+    babies.forEach((baby,index)=>{
+      const gain=1-companionFocus*(index===0?.25:.7),base=p.companionColors[index];
+      baby.uniforms.uBodyColor.value.copy(base.body).multiplyScalar(gain);
+      baby.uniforms.uEdgeColor.value.copy(base.edge).multiplyScalar(gain);
+      baby.uniforms.uGlow.value*=gain;
+    });
     const swimmer=p.pose.swimmer;
     if(swimmer){
       u.uSwimmer.value.set(swimmer.positionM[0],swimmer.positionM[2],swimmer.strength,swimmer.speedMps);

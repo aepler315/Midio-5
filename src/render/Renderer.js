@@ -232,8 +232,14 @@ export class Renderer {
     // Logical stage (sim anchors) vs physical buffer (may be 720p–4K).
     // All world drawing uses logical dimensions; the transform scales into
     // the backing store so composition stays correct at every preset.
-    const nominalW = sim.stageW || sim.canvasWidth || 1280;
     const nominalH = sim.stageH || sim.canvasHeight || 720;
+    // Natural Journey exports author a camera for their requested aspect.
+    // Normal display and Pixel/Palette retain their existing stage fitting;
+    // simulation anchors/physics continue using the original logical stage.
+    const journeyAspect = this.rangePresentation?.enabled && this.rangePresentation.journey
+      && this.rangePresentation.exportMode && !this.presentationPixelated;
+    const nominalW = journeyAspect ? nominalH * canvas.width / canvas.height
+      : sim.stageW || sim.canvasWidth || 1280;
     // Off-frame camera pull-back (CameraDirector.zoom, 1 = normal, down to
     // ZOOM_MIN when pulled back): NOT a ctx.scale on the physical transform
     // -- that would shrink the world inside a fixed frame and leave empty

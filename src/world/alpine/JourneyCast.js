@@ -4,19 +4,12 @@ import { sampleJourneyState, journeyNearShore, journeyFarShore, journeyGroundHei
 
 const IDS = ['midio', 'broshi', 'midasus'];
 const TAU = Math.PI * 2;
-const STEP_SEC = .76, STANCE = .36;
+const STEP_SEC = .76, STANCE = .56;
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const unit = value => Math.max(0, Math.min(1, finite(value)));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = t => t * t * (3 - 2 * t);
 const phaseAt = (t, period) => ((t / period) % 1 + 1) % 1;
-
-// Each foot releases before the other lands. The same C1 flight envelope
-// lifts the body and feet and softens the ground contact during a skip.
-function runningFlight(t) {
-  const phase = phaseAt(t, STEP_SEC / 2) * .5;
-  return phase > STANCE ? Math.sin(Math.PI * (phase - STANCE) / (.5 - STANCE)) ** 2 : 0;
-}
 
 function swimArc(t, start, duration) {
   const phase = phaseAt(t, 8.4) * 8.4;
@@ -46,21 +39,39 @@ function travelAt(t) {
 }
 
 function walkerRoot(t, state) {
-  const x = -174 + 112 * Math.sin(.3 * t - .14);
-  const z = journeyNearShore(x, state) + 48 + 9 * Math.sin(.59 * t + .8);
+  const x = -174 + 82 * Math.sin(.13 * t - .14) + 12 * Math.sin(.047 * t + .4);
+  const z = journeyNearShore(x, state) + 48 + 7 * Math.sin(.17 * t + .8);
   return [x, journeyGroundHeight(x, z, state), z];
 }
 
-function swimmerRoot(t, state, activity = 0, pulse = 0) {
-  const x = 168 * Math.sin(.42 * t - .48) + 12 * Math.sin(1.32 * t + .2);
-  const desiredZ = -235 + 38 * Math.sin(.43 * t + .4);
-  // The normal path is far from both bounds; the margins remain explicit
-  // because the same shore field evolves as the camera crosses the valley.
+function swimmerX(t) {
+  return 132 * Math.sin(.19 * t - .48) + 18 * Math.sin(.061 * t + .2);
+}
+
+// Stroke phase follows distance through the world, never time multiplied by
+// a changing musical value. Faster portions of the curved path stroke faster.
+function swimPhase(t) {
+  return (travelAt(t) + swimmerX(t)) / 52 * TAU;
+}
+
+function swimmerRoot(t, state, gesture = 0) {
+  const x = swimmerX(t), desiredZ = -235 + 30 * Math.sin(.14 * t + .4);
   const z = Math.max(journeyFarShore(x, state) + 45,
     Math.min(journeyNearShore(x, state) - 45, desiredZ));
   const leap = swimArc(t, 1.4, 2.2), dive = swimArc(t, 3.6, 2.3);
-  return [x, -1.8 + (1.55 + .7 * activity) * Math.sin(4.8 * t)
-    + (14 + 3 * activity) * leap - (8 + 2 * activity) * dive - .9 * activity * pulse, z];
+  return [x, -1.2 + .48 * Math.sin(swimPhase(t)) + 16 * gesture * leap - 8 * gesture * dive, z];
+}
+
+// Source envelopes carry causal inertia upstream. Phrase evidence controls
+// the size of exceptional action; it cannot manufacture activity in silence.
+function musicalGesture(activity, direction) {
+  const evidence = smooth(unit((activity - .45) / .5));
+  if (!direction) return evidence;
+  const intensity = unit(direction.intensity01), accent = unit(direction.accent01);
+  // The director encodes build/arrival/sustain/recovery in continuous
+  // intensity and accent envelopes. Switching an enum must never interrupt
+  // an in-progress leap or roll at a section boundary.
+  return evidence * unit(smooth(intensity) + .2 * accent);
 }
 
 function sourceReading(id, music) {
@@ -81,7 +92,7 @@ function sourceReading(id, music) {
 /** A foot stays at the same world x/z during stance. During swing it travels
  * between the previous and next plant with zero velocity at both endpoints.
  * Ground height is evaluated at each actual foot, not just the body root. */
-function walkingFeet(t, root, turn, state, stateAt, headingAt, activity, flight) {
+function walkingFeet(t, root, turn, state, stateAt, headingAt, activity) {
   const height = JOURNEY_CAST_LAYOUT.heights.broshi;
   const c = Math.cos(turn), s = Math.sin(turn);
   return [9, -13].map((base, index) => {
@@ -100,8 +111,7 @@ function walkingFeet(t, root, turn, state, stateAt, headingAt, activity, flight)
       const swing = (phase - STANCE) / (1 - STANCE);
       const next = place(start + STEP_SEC * (1 + STANCE * .5));
       target = first.map((value, axis) => mix(value, next[axis], smooth(swing)));
-      lift = (11.5 + 3 * activity) * Math.sin(Math.PI * swing) ** 2
-        + (3.2 + 1.4 * activity) * flight;
+      lift = (5.5 + 3 * activity) * Math.sin(Math.PI * swing) ** 2;
     }
     const x = target[0] - state.travelM, z = target[1];
     const dx = x - root[0], dz = z - root[2];
@@ -114,7 +124,7 @@ function walkingFeet(t, root, turn, state, stateAt, headingAt, activity, flight)
  * have causal inertia: no physical-audibility gate or live-value phase is
  * applied here. Reduced flash changes only emission. */
 export function sampleJourneyCast({ timeMs = 0, state = null, music = null,
-  reducedMotion = false, reducedFlash = false } = {}) {
+  reducedMotion = false, reducedFlash = false, direction = null } = {}) {
   timeMs = Math.max(0, finite(timeMs));
   reducedMotion = !!reducedMotion;
   reducedFlash = !!reducedFlash;
@@ -142,50 +152,54 @@ export function sampleJourneyCast({ timeMs = 0, state = null, music = null,
     const reading = sourceReading(id, music);
     const activity = reducedMotion ? 0 : reading.activity;
     const pitch = reducedMotion ? 0 : (reading.pitch01 - .5) * reading.pitchActivity;
+    const gesture = reducedMotion ? 0 : musicalGesture(activity, direction);
+    const focus = .15 * unit(direction?.focusById?.[id]);
+    const accent = activity * unit(unit(direction?.accent01) + focus);
     const local = id === 'broshi' ? bass : id === 'midio' ? pulse : melody;
     const actor = { id, heightM: JOURNEY_CAST_LAYOUT.heights[id],
       leanRad: 0, turnRad: 0, tailAngle: 0, jawOpen: 0, headAngle: 0, strokeAngle: 0,
       glow: .14 + flash * (.24 * reading.activity + .04 * local + .025 * energy), ...reading };
     if (id === 'broshi') {
-      const flight = reducedMotion ? 0 : runningFlight(t);
       actor.positionM = walkerRoot(t, state);
       actor.stridePhase = reducedMotion ? 0 : t / STEP_SEC * TAU;
       actor.turnRad = reducedMotion ? 0 : headingAt(t);
-      actor.leanRad = .12 * Math.sin(actor.stridePhase * 2) + .08 * activity * Math.sin(1.8 * t);
-      actor.bodyLiftM = reducedMotion ? 0 : 1.4 + 1.9 * Math.sin(actor.stridePhase) ** 2 + (6 + 2 * activity) * flight;
-      actor.tailAngle = .48 * Math.sin(actor.stridePhase + .7) + .1 * Math.sin(2 * actor.stridePhase - .4)
-        + activity * (.3 * Math.sin(2.4 * t) - .26 * pulse);
-      actor.jawOpen = reducedMotion ? 0 : .06 + .1 * Math.sin(actor.stridePhase) ** 2 + activity * (.22 + .4 * bass + .18 * pulse);
-      actor.headAngle = .17 * Math.sin(actor.stridePhase - .4) + activity * (.18 * Math.sin(2.2 * t) - .24 * pulse) + .2 * pitch;
-      actor.contactOpacity = 1 - .65 * flight;
-      actor.contactScale = 1 + .24 * flight;
+      actor.leanRad = .04 * Math.sin(actor.stridePhase * 2) + .09 * activity * Math.sin(1.8 * t) - .04 * accent;
+      actor.bodyLiftM = reducedMotion ? 0 : .6 + (1.2 + 1.5 * activity) * Math.sin(actor.stridePhase) ** 2;
+      actor.tailAngle = .18 * Math.sin(actor.stridePhase + .7) + .04 * Math.sin(2 * actor.stridePhase - .4)
+        + activity * (.36 * Math.sin(2.4 * t) - .18 * pulse) - .12 * accent;
+      actor.jawOpen = reducedMotion ? 0 : .03 + .025 * Math.sin(actor.stridePhase) ** 2 + activity * (.14 + .3 * bass + .18 * pulse) + .1 * accent;
+      actor.headAngle = .065 * Math.sin(actor.stridePhase - .4) + activity * (.18 * Math.sin(2.2 * t) - .24 * pulse) + .2 * pitch;
+      actor.contactOpacity = 1;
+      actor.contactScale = 1;
       if (reducedMotion) {
         actor.footOffsetsM = [9, -13].map(base => [0,
           journeyGroundHeight(actor.positionM[0] + base / 34 * actor.heightM, actor.positionM[2], state) - actor.positionM[1], 0]);
-      } else actor.footOffsetsM = walkingFeet(t, actor.positionM, actor.turnRad, state, stateAt, headingAt, activity, flight);
+      } else actor.footOffsetsM = walkingFeet(t, actor.positionM, actor.turnRad, state, stateAt, headingAt, activity);
     } else if (id === 'midio') {
-      actor.positionM = swimmerRoot(t, state, activity, reducedMotion ? 0 : pulse);
-      const velocity = 168 * .42 * Math.cos(.42 * t - .48) + 12 * 1.32 * Math.cos(1.32 * t + .2);
-      actor.leanRad = -.5 * Math.tanh(velocity / 38) + (.27 + .12 * activity) * Math.sin(4.8 * t - .4)
-        - .2 * swimArc(t, 3.6, 2.3) + .15 * pitch;
-      actor.turnRad = .38 * Math.sin(.42 * t + .02) + .12 * Math.sin(2.4 * t) + .12 * pitch;
-      actor.strokeAngle = (.46 + .24 * activity) * Math.sin(4.8 * t);
+      actor.positionM = swimmerRoot(t, state, gesture);
+      const velocity = 132 * .19 * Math.cos(.19 * t - .48) + 18 * .061 * Math.cos(.061 * t + .2);
+      const stroke = swimPhase(t);
+      actor.leanRad = -.19 * Math.tanh(velocity / 26) + (.065 + .14 * activity) * Math.sin(stroke - .4)
+        + gesture * (.28 * swimArc(t, 1.4, 2.2) - .3 * swimArc(t, 3.6, 2.3)) + .1 * pitch;
+      actor.turnRad = .2 * Math.sin(.19 * t + .02) + .08 * pitch;
+      actor.strokeAngle = (.24 + .24 * activity + .08 * accent) * Math.sin(stroke);
     } else {
-      actor.positionM = [145 + 154 * Math.sin(.47 * t + .35) + 14 * Math.sin(1.12 * t)
-          + activity * 8 * Math.sin(1.23 * t),
-        130 + 43 * Math.sin(.66 * t - .3) + 19 * Math.sin(.27 * t)
-          + activity * 8 * Math.sin(1.8 * t) + 16 * pitch,
-        -70 + 60 * Math.cos(.38 * t + 1.3) + 12 * Math.sin(.91 * t)];
-      actor.leanRad = -.58 * Math.sin(.47 * t + .35) + 1.05 * Math.sin(.82 * t + .1)
-        + .23 * activity * Math.sin(1.7 * t) + .18 * pitch;
-      actor.turnRad = .46 * Math.sin(.41 * t + .8) + .18 * activity * Math.sin(1.3 * t);
+      actor.positionM = [145 + 100 * Math.sin(.16 * t + .35) + 12 * Math.sin(.043 * t),
+        128 + 16 * Math.sin(.21 * t - .3) + 7 * Math.sin(.071 * t)
+          + gesture * 14 * Math.sin(.63 * t) + 16 * pitch,
+        -70 + 26 * Math.cos(.13 * t + 1.3) + 6 * Math.sin(.047 * t)];
+      // Banking tracks the long curve. Large rolling motion is earned by
+      // a sustained active source or a measured phrase arrival.
+      actor.leanRad = -.24 * Math.sin(.16 * t + .35) + .08 * Math.sin(.21 * t)
+        + .82 * gesture * Math.sin(.64 * t + .1) + .12 * pitch;
+      actor.turnRad = .23 * Math.sin(.14 * t + .8) + .08 * activity * Math.sin(.4 * t);
       actor.babies = [5.8, 6.9, 5.2].map((heightM, index) => {
-        const phase = 1.7 * t + index * TAU / 3, radius = 30 + 6 * activity;
+        const phase = .46 * t + index * TAU / 3, radius = 25 + 6 * activity;
         return { heightM,
           positionM: [actor.positionM[0] + radius * Math.cos(phase),
-            actor.positionM[1] + 23 * Math.sin(phase) + 9 * Math.sin(.7 * t + index),
-            actor.positionM[2] + 20 * Math.sin(phase + .7)],
-          rotationRad: reducedMotion ? 0 : 1.1 * Math.sin(phase + .3) + .25 * activity * Math.sin(2.3 * t + index),
+            actor.positionM[1] + 13 * Math.sin(phase) + 6 * Math.sin(.17 * t + index),
+            actor.positionM[2] + 18 * Math.sin(phase + .7)],
+          rotationRad: reducedMotion ? 0 : .25 * Math.sin(phase + .3) + .6 * gesture * Math.sin(.64 * t + index),
         };
       });
     }
@@ -194,11 +208,12 @@ export function sampleJourneyCast({ timeMs = 0, state = null, music = null,
   });
 
   const midio = actors[0];
-  const before = swimmerRoot(t - .025, stateAt(t - .025)), after = swimmerRoot(t + .025, stateAt(t + .025));
+  const before = swimmerRoot(t - .025, stateAt(t - .025));
+  const after = swimmerRoot(t + .025, stateAt(t + .025));
   const dx = (after[0] - before[0] + travelAt(t + .025) - travelAt(t - .025)) / .05;
   const dz = (after[2] - before[2]) / .05, speedMps = Math.hypot(dx, dz);
   const contact = 1 - smooth(unit((Math.abs(midio.positionM[1]) - 1) / 10));
-  const wake = reducedMotion ? 0 : contact * unit(.32 + .34 * midio.activity + .2 * pulse + .16 * (.5 + .5 * Math.sin(4.8 * t)));
+  const wake = reducedMotion ? 0 : contact * unit(.32 + .34 * midio.activity + .2 * pulse + .16 * (.5 + .5 * Math.sin(swimPhase(t))));
   return freeze({ active: true, timeMs, actors, reducedMotion, reducedFlash,
     waterResponse: reducedMotion ? { bass: 0, rhythm: 0, melody: 0, wake: 0 } : { bass, rhythm: pulse, melody, wake },
     swimmer: { positionM: [...midio.positionM], directionXZ: speedMps > 1e-6 ? [dx / speedMps, dz / speedMps] : [1, 0],

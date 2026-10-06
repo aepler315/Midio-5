@@ -39,33 +39,57 @@ test('the three roots visibly travel at normal output size while fixed glyph siz
   assert.deepEqual(JOURNEY_CAST_LAYOUT.right, [1, 0, 0]);
   assert.deepEqual(JOURNEY_CAST_LAYOUT.forward, [0, 0, -1]);
   for (const id of ids) {
-    assert.ok(distance(project(actor(start, id).positionM), project(actor(one, id).positionM)) > 6, `${id} moves >6px in a second`);
-    assert.ok(distance(project(actor(start, id).positionM), project(actor(four, id).positionM)) > 20, `${id} moves >20px in four seconds`);
+    assert.ok(distance(project(actor(start, id).positionM), project(actor(one, id).positionM)) > 2, `${id} moves visibly in a second`);
+    assert.ok(distance(project(actor(start, id).positionM), project(actor(four, id).positionM)) > 10, `${id} follows a visible path over four seconds`);
     assert.equal(actor(start, id).heightM, JOURNEY_CAST_LAYOUT.heights[id]);
     assert.equal(actor(four, id).heightM, actor(start, id).heightM);
     assert.ok(Object.isFrozen(actor(start, id).positionM));
   }
 });
 
-test('silence retains energetic bounds, swimming strokes, low leaps, dives, and broad aerial rolls', () => {
+test('silence keeps continuous locomotion without automatic leaps, dives or broad rolls', () => {
   const samples = Array.from({ length: 1441 }, (_, i) => frame(i * 1000 / 60));
   const broshi = samples.map(snapshot => actor(snapshot, 'broshi'));
   const midio = samples.map(snapshot => actor(snapshot, 'midio'));
   const midasus = samples.map(snapshot => actor(snapshot, 'midasus'));
-  assert.ok(range(broshi.map(value => value.bodyLiftM)) > 5.5, 'runner has a visible spring in every stride');
-  assert.ok(range(broshi.map(value => value.tailAngle)) > .9, 'tail sweeps emphatically without music');
-  assert.ok(range(broshi.map(value => value.headAngle)) > .3, 'head counters the running gait');
-  assert.ok(Math.max(...midio.map(value => value.positionM[1])) > 11, 'a low leap clears the surface');
-  assert.ok(Math.min(...midio.map(value => value.positionM[1])) < -7, 'the swimmer dives between leaps');
-  assert.ok(range(midio.map(value => value.strokeAngle)) > .85, 'the body flexes through a strong swimming stroke');
-  assert.ok(range(midio.map(value => value.leanRad)) > 1.3, 'swimming tilts follow the action');
-  assert.ok(range(midasus.map(value => value.positionM[0])) > 275, 'flight makes a broad horizontal sweep');
-  assert.ok(range(midasus.map(value => value.positionM[1])) > 95, 'flight rises and swoops');
-  assert.ok(range(midasus.map(value => value.leanRad)) > 2, 'aerial rolls remain lively without music');
-  for (const snapshot of samples) {
-    const midio = actor(snapshot, 'midio');
-    if (midio.positionM[1] > 11) assert.ok(snapshot.swimmer.strength < .1, 'airborne swimmer does not emit a surface wake');
+  assert.ok(range(broshi.map(value => value.bodyLiftM)) > .5, 'weight still transfers each stride');
+  assert.ok(range(broshi.map(value => value.bodyLiftM)) < 3, 'quiet stride has restrained lift');
+  assert.ok(range(broshi.map(value => value.tailAngle)) > .2, 'tail still counters locomotion');
+  assert.ok(range(broshi.map(value => value.tailAngle)) < .7, 'quiet tail does not thrash');
+  assert.ok(Math.max(...midio.map(value => value.positionM[1])) < 2, 'quiet swimmer stays at the surface');
+  assert.ok(Math.min(...midio.map(value => value.positionM[1])) > -3, 'silence does not trigger dives');
+  assert.ok(range(midio.map(value => value.strokeAngle)) > .35, 'strokes remain visible');
+  assert.ok(range(midasus.map(value => value.positionM[0])) > 80, 'gliding remains visibly alive');
+  assert.ok(range(midasus.map(value => value.leanRad)) < .9, 'quiet flight banks without broad rolls');
+});
+
+test('strong source activity earns substantially stronger gestures and believable water contact', () => {
+  const quiet = [], loud = [];
+  for (let timeMs = 0; timeMs < 24000; timeMs += 1000 / 60) {
+    quiet.push(frame(timeMs)); loud.push(frame(timeMs, { music: song() }));
   }
+  const extent = (snapshots, id, key) => range(snapshots.map(snapshot => actor(snapshot, id)[key]));
+  assert.ok(extent(loud, 'broshi', 'tailAngle') > 1.7 * extent(quiet, 'broshi', 'tailAngle'));
+  assert.ok(extent(loud, 'midasus', 'leanRad') > 2 * extent(quiet, 'midasus', 'leanRad'));
+  const swimmers = loud.map(snapshot => actor(snapshot, 'midio'));
+  assert.ok(Math.max(...swimmers.map(value => value.positionM[1])) > 10, 'earned leap clears the surface');
+  assert.ok(Math.min(...swimmers.map(value => value.positionM[1])) < -6, 'earned dive submerges the swimmer');
+  for (const snapshot of loud) if (actor(snapshot, 'midio').positionM[1] > 10)
+    assert.ok(snapshot.swimmer.strength < .1, 'airborne swimmer has no substantial wake');
+  assert.ok(quiet.every(snapshot => snapshot.swimmer.strength > .05), 'surface travel keeps a quiet wake');
+});
+
+test('phrase staging restrains recovery and reserves arrival accents for active musical sources', () => {
+  const direction = { phase: 'arrival', intensity01: 1, accent01: 1, focusId: 'midio' };
+  const recovery = { ...direction, phase: 'recovery', intensity01: .12, accent01: 0 };
+  const idle = frame(2500), stagedIdle = frame(2500, { direction });
+  assert.deepEqual(poses(stagedIdle), poses(idle), 'phrase labels alone cannot fabricate activity');
+  const arrival = frame(2500, { direction, music: song() });
+  const recovering = frame(2500, { direction: recovery, music: song() });
+  assert.ok(actor(arrival, 'midio').positionM[1] > actor(recovering, 'midio').positionM[1] + 6);
+  assert.ok(actor(recovering, 'midio').positionM[1] < 4, 'recovery returns to surface locomotion');
+  const accented = frame(2500, { direction: { ...direction, accent01: 0 }, music: song() });
+  assert.ok(actor(arrival, 'midio').strokeAngle !== actor(accented, 'midio').strokeAngle, 'arrival accent reaches articulation');
 });
 
 test('moving shores contain the swimmer and support the walker throughout full valley travel', () => {
@@ -90,30 +114,21 @@ test('moving shores contain the swimmer and support the walker throughout full v
   }
 });
 
-test('the running gait plants both feet in turn with brief bounded airborne skips', () => {
-  let frontLift = 0, rearLift = 0, airborneSamples = 0, plantedSamples = 0, fadedSamples = 0;
+test('routine locomotion transfers weight with grounded alternating foot swings', () => {
+  let frontLift = 0, rearLift = 0, plantedSamples = 0;
   for (let timeMs = 3000; timeMs <= 6000; timeMs += 1000 / 60) {
     const state = sampleJourneyState({ timeMs });
     const broshi = actor(frame(timeMs, { state }), 'broshi');
     const lifts = feetAt(broshi, state).map(foot => foot.lift);
     assert.ok(lifts.every(lift => lift > -1e-7), 'feet never penetrate the bank');
-    assert.ok(lifts.every(lift => lift < 22), 'running feet stay close to the bank');
-    if (Math.min(...lifts) > 1e-7) {
-      airborneSamples++;
-      if (Math.min(...lifts) > 2) {
-        assert.ok(broshi.contactOpacity < .85, 'contact shadow softens during flight');
-        assert.ok(broshi.contactScale > 1, 'shadow spreads while the runner is airborne');
-        fadedSamples++;
-      }
-    } else {
-      assert.equal(broshi.contactOpacity, 1, 'planted steps keep a firm contact shadow');
-      plantedSamples++;
-    }
+    assert.ok(lifts.every(lift => lift < 12), 'feet do not kick above the torso');
+    assert.ok(Math.min(...lifts) < 1e-7, 'routine walking always retains ground support');
+    assert.equal(broshi.contactOpacity, 1, 'supported weight keeps a firm contact shadow');
+    plantedSamples++;
     frontLift = Math.max(frontLift, lifts[0]); rearLift = Math.max(rearLift, lifts[1]);
   }
-  assert.ok(frontLift > 10 && rearLift > 10, 'both feet make a strong running swing');
-  assert.ok(airborneSamples > 30 && airborneSamples < 65, 'short flight phases punctuate grounded steps');
-  assert.ok(plantedSamples > 100 && fadedSamples > 20, 'both stance and airborne contact are exercised');
+  assert.ok(frontLift > 4 && rearLift > 4, 'both feet visibly clear the bank');
+  assert.ok(plantedSamples > 175);
 });
 
 test('supporting feet stay fixed in world space while the bank scrolls past the camera', () => {
@@ -164,21 +179,25 @@ test('source pitch confidence steers distinct gestures without muting inertial e
 });
 
 test('held time and reverse seeks reconstruct roots, articulation, companions, and wakes exactly', () => {
-  const music = song(.7), expected = frame(7350, { music });
-  frame(98000, { music }); frame(700, { music });
-  assert.deepEqual(frame(7350, { music }), expected);
-  assert.deepEqual(frame(7350, { music }), expected);
+  const music = song(.7), direction = { phase: 'arrival', intensity01: .8, accent01: .6, focusId: 'midio' };
+  const expected = frame(7350, { music, direction });
+  frame(98000, { music, direction }); frame(700, { music, direction });
+  assert.deepEqual(frame(7350, { music, direction }), expected);
+  assert.deepEqual(frame(7350, { music, direction }), expected);
   assert.ok(Object.isFrozen(expected) && Object.isFrozen(expected.swimmer.directionXZ));
 });
 
 test('reduced motion freezes roots and gait through changing music and terrain while reduced flash changes light only', () => {
   const early = frame(2700, { music: song(.2), reducedMotion: true });
-  const late = frame(80000, { music: song(.9), reducedMotion: true });
+  const late = frame(80000, { music: song(.9), reducedMotion: true,
+    direction: { phase: 'arrival', intensity01: 1, accent01: 1, focusId: 'broshi' } });
   assert.deepEqual(poses(early), poses(late));
   assert.equal(early.swimmer.strength, 0);
   assert.deepEqual(early.waterResponse, { bass: 0, rhythm: 0, melody: 0, wake: 0 });
   assert.ok(actor(late, 'midio').glow > actor(early, 'midio').glow);
-  const ordinary = frame(9600, { music: song() }), lowFlash = frame(9600, { music: song(), reducedFlash: true });
+  const direction = { phase: 'sustain', intensity01: 1, accent01: .7, focusId: 'midasus' };
+  const ordinary = frame(9600, { music: song(), direction });
+  const lowFlash = frame(9600, { music: song(), direction, reducedFlash: true });
   assert.deepEqual(poses(ordinary), poses(lowFlash));
   assert.deepEqual(ordinary.swimmer, lowFlash.swimmer);
   for (const id of ids) assert.ok(actor(lowFlash, id).glow < actor(ordinary, id).glow);
@@ -262,4 +281,36 @@ test('localized foot articulation reaches color and both depth passes and resets
     assert.deepEqual(uniforms.uRearFoot.value.toArray(), [0, 0, 0]);
     assert.equal(uniforms.uBodyLift.value, 0);
   } finally { cove.dispose(); }
+});
+
+test('curved paths have bounded acceleration independent of live musical clock changes', () => {
+  for (const startMs of [10000, 3500000]) {
+    let last, velocity;
+    for (let i = 0; i < 300; i++) {
+      const timeMs = startMs + i * 1000 / 60;
+      const current = frame(timeMs);
+      if (last) for (const id of ids) {
+        const a = actor(current, id).positionM, b = actor(last, id).positionM;
+        const v = a.map((value, axis) => (value - b[axis]) * 60);
+        if (velocity?.[id]) assert.ok(distance(v, velocity[id]) * 60 < (id === 'broshi' ? 65 : 40), `${id} purposeful acceleration`);
+        (velocity ??= {})[id] = v;
+      }
+      last = current;
+    }
+    const state = sampleJourneyState({ timeMs: startMs });
+    const quiet = frame(startMs, { state }), active = frame(startMs, { state, music: song() });
+    for (const id of ids) {
+      assert.equal(actor(quiet, id).positionM[0], actor(active, id).positionM[0], 'activity cannot reset spatial phase');
+      assert.equal(actor(quiet, id).positionM[2], actor(active, id).positionM[2]);
+    }
+  }
+});
+
+test('phrase enum boundaries do not interrupt ongoing physical gestures', () => {
+  const direction = { intensity01: .8, accent01: .15, focusId: 'midio' };
+  for (const [before, after] of [['build', 'arrival'], ['arrival', 'sustain'], ['sustain', 'recovery']]) {
+    const a = frame(2500, { music: song(), direction: { ...direction, phase: before } });
+    const b = frame(2500, { music: song(), direction: { ...direction, phase: after } });
+    assert.deepEqual(poses(a), poses(b), 'continuous numeric envelopes carry phrase preparation and recovery');
+  }
 });
