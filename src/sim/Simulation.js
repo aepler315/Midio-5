@@ -53,6 +53,7 @@ export class Simulation {
     residency = null,
     chapterState = null,
     rangeListening = true,
+    rangeExperience = 'performance',
     ridgeMusicSession = null,
   } = {}) {
     this.conductor = conductor;
@@ -83,7 +84,8 @@ export class Simulation {
       counts: lanes,
     };
     this.rangeListening = !!rangeListening;
-    this.presentation = resolveLandscapePresentation(getWorld(this.worldId));
+    this.rangeExperience = rangeExperience;
+    this.presentation = resolveLandscapePresentation(getWorld(this.worldId), { rangeExperience });
     this.stageAnchor = { x: 220, groundY: 625 };
 
     // Deprecated inert pose alias; stageAnchor owns the world origin.
@@ -148,6 +150,7 @@ export class Simulation {
     });
     this.rangeNarrative = compileLandscapeSources({ durationMs: conductor.durationMs,
       timeline: conductor.timeline, casting: this.casting });
+    this.biomes.rangePerformance = this.presentation.trioStage;
     this.reducedFlash = false;
     this.visualStyle = 'rendered';
     this.biomes.reducedFlash = this.reducedFlash;

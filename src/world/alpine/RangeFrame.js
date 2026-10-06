@@ -24,7 +24,7 @@ import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
 import { cloudSeaAt } from './CloudSea.js';
 import { rangeActorsAt } from './RangeActors.js';
-import { rangeCameraMoveAt, rangeUserCamera } from './RangeCamera.js';
+import { rangeCameraMoveAt, rangeUserCamera, NEUTRAL_MOVE } from './RangeCamera.js';
 import { hexLerp } from '../../utils/color.js';
 
 const NIGHT_SKY = '#05060d';
@@ -325,6 +325,7 @@ export function buildRangeFrame({
   const narrative = sim.rangeNarrativeAt?.(timeMs) || null;
   const reducedFlash = !!mgr.reducedFlash;
   const reducedMotion = !!(sim.reducedMotion || mgr.reducedMotion);
+  const performance = !!sim.presentation?.trioStage;
   const progress01 = mgr.terrainPreview ? SCENE_PREVIEW_PROGRESS : sceneProgressAt({
     timeMs, curves: mgr.energyCurves, durationMs: mgr.durationMs, reducedFlash: reducedMotion, response: mgr.world?.response,
   });
@@ -401,6 +402,13 @@ export function buildRangeFrame({
     e.presence = narrative?.cast[e.id] ?? 1;
     e.visible = e.visible && e.presence > .001;
   }
+  const waterTimeline = mgr.conductor?.timeline || sim.conductor?.timeline || [];
+  // Read the recorded canonical handoff at the onset, not today's
+  // activity, so a legitimate ring releases into silence. Authored MIDI's
+  // zero-attack onset retains its velocity. Other consumers keep their policy.
+  const waterHits = recentConductorHits(waterTimeline, timeMs, performance && mgr.ridgeMusicSession ? {
+    onsetGain: event => event.src === 'midi' ? 1 : unit(mgr.ridgeMusicSession.sample(event.tMs).activity01),
+  } : undefined);
   return freezeDeep({
     frameId, generation, timeMs, seed: sim.songSeed ?? 0,
     beatTransport: mgr.beatTransport ? { ...mgr.beatTransport } : null,
@@ -410,19 +418,19 @@ export function buildRangeFrame({
     compositions: Object.fromEntries((renderedViews || [from?.view, to?.view]).filter(Boolean).map(v => [v.id, resolveRangeComposition(v)])),
     viewFromId: from?.view?.id ?? null, viewToId: to?.view?.id ?? null,
     forcedCandidate: !!forcedView?.forcedCandidate,
-    progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
+    progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion, performance,
     // How much of the Forest Service map under the land shows (quiet passages).
     cloudSea01: cloudSeaAt(mgr, timeMs),
     storm: stormAt(mgr, timeMs),
     // The cast as lights in the land: brightness, travel and peaks per lane.
-    actors: rangeActorsAt(sim, timeMs),
+    actors: performance ? null : rangeActorsAt(sim, timeMs),
     // Camera: this section's slow cinematic move, and the listener's zoom.
-    cameraMove: rangeCameraMoveAt({ timeMs, sections: mgr.sections, durationMs: mgr.durationMs,
+    cameraMove: performance ? NEUTRAL_MOVE : rangeCameraMoveAt({ timeMs, sections: mgr.sections, durationMs: mgr.durationMs,
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
     userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
     light: lightState, music: land, ridges, narrative, groundBars, emitters,
-    waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
+    waterHits,
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,
   });

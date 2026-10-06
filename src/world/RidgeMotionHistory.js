@@ -1,7 +1,7 @@
 // Song-owned, causal filters. Rendering queries immutable analysis rather than
 // advancing envelopes; only seven states per filter are checkpointed.
 import { VisualMusicHistory } from './VisualMusicHistory.js';
-import { compileLandscapeSources } from './alpine/RangeNarrative.js';
+import { compileLandscapeSources, compileTrioSources } from './alpine/RangeNarrative.js';
 import { ridgeKickEnv } from './MountainChoreo.js';
 import { EnergyCurves } from '../audio/EnergyCurves.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
@@ -19,7 +19,7 @@ export function ridgeAdvectionPxAt(heardTimeMs, reducedMotion = false) {
 }
 
 export class RidgeMotionHistory {
-  #curves; #events; #visual; #sources; #checkpoints; #floor; #cal; #cues; #midi; #ends; #cache = new Map();
+  #curves; #events; #visual; #sources; #trioSources; #checkpoints; #floor; #cal; #cues; #midi; #ends; #cache = new Map();
   constructor({ energyCurves = null, timeline = [], response = null, durationMs = 0, generation = 'analysis', stepMs = 20, casting, conductorCues = [] } = {}) {
     if (stepMs !== 20) throw new RangeError('Ridge history uses the canonical 20 ms clock');
     this.generation = generation;
@@ -33,6 +33,7 @@ export class RidgeMotionHistory {
     casting ??= Object.fromEntries([['midio', 'MIDIO', 'bass'], ['broshi', 'BROSHI', 'melody'], ['midasus', 'MIDASUS', 'melody']]
       .map(([id, lane, fallback]) => [id, this.#events.some(e => e.lane === lane) ? 'source-lane' : fallback]));
     this.#sources = compileLandscapeSources({ timeline: this.#events, durationMs: this.durationMs, casting });
+    this.#trioSources = compileTrioSources({ timeline: this.#events, durationMs: this.durationMs });
     this.#cues = conductorCues.filter(e => e.type === 'calm' || e.kind === 'calm').map(e => freeze({ ...e })).sort((a, b) => a.tMs - b.tMs);
     if (energyCurves?.bands) {
       const c = new EnergyCurves(this.durationMs, energyCurves.rateHz || 50);
@@ -161,10 +162,13 @@ export class RidgeMotionHistory {
     const sources = this.#sources.sample(at).sources;
     const gatedSources = raw.activity01 > 0 ? sources : freeze(Object.fromEntries(Object.entries(sources)
       .map(([id, s]) => [id, freeze({ ...s, activity: 0, pitchActivity: 0, pitch01: .5 })])));
+    const trio = this.#trioSources.sample(at);
+    const trioSources = raw.activity01 > 0 ? trio : freeze(Object.fromEntries(Object.entries(trio)
+      .map(([id, s]) => [id, freeze({ ...s, activity: 0, pitchActivity: 0, pitch01: .5 })])));
     const sample = freeze({ generation: this.generation, pressureEnergy01, bassPressure01, rhythmAccent01, spaceFlash01: freeze(state.flashMs.map(ms => Math.max(0, 1 - (at - ms) / 300))), bands: freeze(state.bands), spaceLevels: freeze(state.levels), spaceDepths: freeze(state.depths),
       kickMs: kick.kickMs, kickAmp: kick.kickAmp, kick01: this.#kick01(at),
       activity01: raw.activity01, motionPresence01: state.motionPresence01,
-      motionMelody: freeze({ activity: state.melodyActivity, pitch01: state.melodyActivity ? clamp01(state.melodyPitchWeight / state.melodyActivity) : .5 }), sources: gatedSources });
+      motionMelody: freeze({ activity: state.melodyActivity, pitch01: state.melodyActivity ? clamp01(state.melodyPitchWeight / state.melodyActivity) : .5 }), sources: gatedSources, trioSources });
     // Small query memo only; checkpoints remain the musical authority.
     if (this.#cache.size >= 64) this.#cache.delete(this.#cache.keys().next().value);
     this.#cache.set(at, sample);
@@ -198,6 +202,23 @@ export function createRidgeMusicSampler({ primary, previous = null, handoffStart
       return [id, freeze({ source: x.source === y.source ? x.source : null, activity, pitchActivity, pitch01, contributors })];
     })));
     const sourceContributions = freeze(contributionIndex);
+    const trioContributionIndex = {};
+    const trioSources = freeze(Object.fromEntries(Object.keys(b.trioSources).map(id => {
+      const x = a.trioSources[id], y = b.trioSources[id];
+      const activity = lerp(x.activity, y.activity), pitchActivity = lerp(x.pitchActivity, y.pitchActivity);
+      const pitch01 = pitchActivity > 0
+        ? lerp(x.pitchActivity * x.pitch01, y.pitchActivity * y.pitch01) / pitchActivity : .5;
+      const contributors = freeze(x.source === y.source
+        ? [freeze({ source: x.source, activity, pitchActivity, pitch01 })]
+        : [freeze({ ...x, activity: x.activity * (1 - mix), pitchActivity: x.pitchActivity * (1 - mix) }),
+          freeze({ ...y, activity: y.activity * mix, pitchActivity: y.pitchActivity * mix })]);
+      for (const contributor of contributors) {
+        const retained = trioContributionIndex[contributor.source];
+        if (!retained || contributor.activity > retained.activity) trioContributionIndex[contributor.source] = contributor;
+      }
+      return [id, freeze({ source: x.source === y.source ? x.source : null, activity, pitchActivity, pitch01, contributors })];
+    })));
+    const trioSourceContributions = freeze(trioContributionIndex);
     const melodyActivity = lerp(a.motionMelody.activity, b.motionMelody.activity);
     const motionMelody = freeze({ activity: melodyActivity, pitch01: melodyActivity
       ? lerp(a.motionMelody.activity * a.motionMelody.pitch01, b.motionMelody.activity * b.motionMelody.pitch01) / melodyActivity : .5 });
@@ -207,7 +228,7 @@ export function createRidgeMusicSampler({ primary, previous = null, handoffStart
       pressureEnergy01: lerp(a.pressureEnergy01, b.pressureEnergy01), bassPressure01: lerp(a.bassPressure01, b.bassPressure01),
       motionPresence01: lerp(a.motionPresence01, b.motionPresence01),
       rhythmAccent01: lerp(a.rhythmAccent01, b.rhythmAccent01), activity01: lerp(a.activity01, b.activity01), kick01: lerp(a.kick01, b.kick01), kickAmp: lerp(a.kickAmp, b.kickAmp),
-      kickMs: mix < 1 ? a.kickMs : b.kickMs, sources, sourceContributions });
+      kickMs: mix < 1 ? a.kickMs : b.kickMs, sources, sourceContributions, trioSources, trioSourceContributions });
   } });
 }
 

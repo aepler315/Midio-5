@@ -2622,7 +2622,7 @@ export class BiomeManager {
       })
       : null;
     this._rangeSky = this.world?.kind === 'alpine'
-      ? createRangeSkyComposition(this.spaceRidge, canvas, { voyageActive: (skyVoyage?.depth ?? 0) > 0 })
+      ? createRangeSkyComposition(this.spaceRidge, canvas, { voyageActive: (skyVoyage?.depth ?? 0) > 0, performance: !!this.rangePerformance })
       : null;
 
     // The horizon color, and from it the air color every range body and the
@@ -2834,7 +2834,8 @@ export class BiomeManager {
       if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     }
     const glacialInland = v2 && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.glacier);
-    if (!glacialInland) withNarrativeAlpha(ctx, this.rangeNarrative?.features ?? 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
+    const performanceLake = v2 && this.rangePerformance && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.id === 'muncho-lake-south');
+    if (!glacialInland && !performanceLake) withNarrativeAlpha(ctx, this.rangeNarrative?.features ?? 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
     if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     // The horizon EQ belongs to the v2 sequence (between far and mid)
     // whenever v2 draws, arriving or not.
@@ -4029,6 +4030,13 @@ export class BiomeManager {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const starBuckets = this._starBuckets;
+    // The stage is authored at 1280px, then fitted into phones and exports.
+    // A one-logical-pixel star lost most of its area in that downscale.
+    // Retain a one-output-pixel core without adding stars, halos or flashes.
+    const starTransform = this.rangePerformance ? ctx.getTransform?.() : null;
+    const starScale = starTransform
+      ? Math.min(Math.hypot(starTransform.a, starTransform.b), Math.hypot(starTransform.c, starTransform.d)) : 1;
+    const starSize = starScale > 0 ? Math.min(4, Math.max(1, 1 / starScale)) : 1;
     // Cheap dots for the field; soft glow only for hero stars (layer 2).
     for (let starIndex = 0; starIndex < this.stars.length; starIndex++) {
       const s = this.stars[starIndex];
@@ -4068,7 +4076,7 @@ export class BiomeManager {
       const y = s.yFrac * skyH;
       if (this._rangeSky) a *= this._rangeSky.starBrightnessAt(x, y);
       if (a < 0.004) continue;
-      const sz = 1;
+      const sz = starSize;
 
       // The same air path that dimmed it also scatters its blue out first,
       // so what survives is warmer. Pull the star's own spectral hue toward
@@ -4080,10 +4088,10 @@ export class BiomeManager {
       if (s.layer === 2) {
         ctx.globalAlpha = a;
         ctx.fillStyle = useHue ? `hsl(${hue},55%,88%)` : '#ffffff';
-        ctx.fillRect(x - 0.5, y - 0.5, sz, sz);
+        ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
         if (s.companion) {
           ctx.globalAlpha = a * 0.45;
-          ctx.fillRect(x + s.companion.dx - 0.5, y + s.companion.dy - 0.5, 1, 1);
+          ctx.fillRect(x + s.companion.dx - sz / 2, y + s.companion.dy - sz / 2, sz, sz);
         }
       } else {
         // Deferred into a bucket instead of drawn here. Setting fillStyle per
@@ -4112,7 +4120,7 @@ export class BiomeManager {
             : (s.layer === 1 ? '#f0f4ff' : '#d8e0f5');
           starBuckets.set(key, bucket);
         }
-        bucket.rects.push(x - 0.5, y - 0.5, sz);
+        bucket.rects.push(x - sz / 2, y - sz / 2, sz);
       }
     }
 

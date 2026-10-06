@@ -30,6 +30,19 @@ test('authored voyage has priority over the incidental Range constellation', () 
   assert.equal(createRangeSkyComposition(ridge, canvas, { voyageActive: true }).showWeaver, false);
 });
 
+test('the performance sky retains star contrast through the translucent aurora', () => {
+  const canvas = { width: 1280, height: 720 }, ridge = new SpaceRidge(315);
+  const retained = createRangeSkyComposition(ridge, canvas, { performance: true });
+  const previous = createRangeSkyComposition(ridge, canvas);
+  for (const x of [0, 320, 640, 960, 1280]) {
+    const { top, bottom } = ridge.corridor(canvas)(x), center = (top + bottom) / 2;
+    assert.ok(retained.starBrightnessAt(x, center) > previous.starBrightnessAt(x, center) * 4);
+    assert.ok(retained.starBrightnessAt(x, center) < 1, 'the curtain remains translucent');
+    assert.equal(retained.starBrightnessAt(x, top - 40), previous.starBrightnessAt(x, top - 40));
+    assert.equal(retained.starBrightnessAt(x, bottom + 40), 1, 'clear sky keeps its full contrast');
+  }
+});
+
 test('Range excludes permanent celestial shaft fans and biome ray fans', () => {
   const plan = createRangeSkyComposition(new SpaceRidge(315), { width: 1280, height: 720 });
   assert.equal(plan.celestialShafts, false);

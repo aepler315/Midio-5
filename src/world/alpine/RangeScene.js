@@ -16,7 +16,7 @@ import { resolveRangeComposition, compositionBars } from './RangeComposition.js'
 // reserved here before creation and released through dispose().
 import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
-import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
+import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, bindLakeMusic, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
 import { terrainFeatureSegments } from './TerrainFeatures.js';
 import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { placeForestAsync } from './ForestCover.js';
@@ -26,11 +26,10 @@ import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
 import { RockStageGL } from './RockStageGL.js';
-import { cameraPoseAt } from '../terrain/SceneTravel.js';
-import { applyCameraMoves, rangeUserCamera } from './RangeCamera.js';
+import { applyCameraMoves, rangeUserCamera, rangeRailPose, NEUTRAL_MOVE } from './RangeCamera.js';
 import { BANDS, terrainFringeBytes, terrainHeightAt } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
-import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT } from './WaterMirror.js';
+import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT, MIRROR_LEVEL_TOLERANCE_M } from './WaterMirror.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors, glacierSample } from './GlacierField.js';
 import { ActorsGL } from './ActorsGL.js';
@@ -73,6 +72,28 @@ function waterLevel(data) {
   if (!hs.length) return null;
   hs.sort((a, b) => a - b);
   return hs[hs.length >> 1];
+}
+
+/** The giant's reflection source stands beyond the shore and can be dry.
+ * Musical contacts instead use a stored hydroflattened sample nearest that
+ * layout. A bounded lattice scan runs once at preparation, never per frame. */
+export function lakeMusicOrigin(data, layout, levelM) {
+  if (!layout?.hasLake || !Number.isFinite(levelM)) return null;
+  const center = layout.centers[0], { originM, cellSizeM } = data.grid;
+  let nearest = null, best = Infinity;
+  for (const tile of data.tiles.values()) {
+    if (!tile.visible || !tile.flowBytes) continue;
+    const n = tile.samples, step = Math.max(1, Math.floor(n / 16));
+    for (let z = 0; z < n; z += step) for (let x = 0; x < n; x += step) {
+      const i = z * n + x, height = tile.heightsM[i];
+      if (tile.flowBytes[i] !== 255 || !Number.isFinite(height) || Math.abs(height - levelM) >= MIRROR_LEVEL_TOLERANCE_M) continue;
+      const px = originM[0] + (tile.ix * data.cells + x * tile.stride) * cellSizeM;
+      const pz = originM[1] + (tile.iz * data.cells + z * tile.stride) * cellSizeM;
+      const distance = (px - center[0]) ** 2 + (pz - center[2]) ** 2;
+      if (distance < best) { best = distance; nearest = [px, height, pz]; }
+    }
+  }
+  return nearest;
 }
 
 /** Midio's mirrored sheet keeps this far ahead of a zoomed-in eye. */
@@ -554,12 +575,13 @@ export class RangeScene {
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
+        const layout = giantLayout(cpu.data, view, [uniforms.uHeightRange.value.x, uniforms.uHeightRange.value.y], waterLevelM);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
           forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
-          giantLayout: giantLayout(cpu.data, view, [uniforms.uHeightRange.value.x, uniforms.uHeightRange.value.y], waterLevelM),
+          giantLayout: layout, lakeMusicOriginM: lakeMusicOrigin(cpu.data, layout, waterLevelM),
           rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key, actors, actorRoutes: routes,
         };
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
@@ -754,7 +776,7 @@ export class RangeScene {
    *  rendered ground. Computed once per frame and view and shared by the
    *  partition passes and the sky (RangePresentation._skyPan). */
   movedPose(view, frame, p = this.prepared.get(view.id) || null) {
-    const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+    const rail = rangeRailPose(view, frame);
     const proj = scenicProjection(rail.fovYDeg, frame.scenicViewport);
     // This view's VISIBLE frustum (the overscan margin excluded): the
     // pointer is normalised against the visible stage, and the zoom must
@@ -768,7 +790,7 @@ export class RangeScene {
     if (!poses) this._movedPoses.set(frame, poses = new Map());
     let pose = poses.get(view.id);
     if (!pose) {
-      pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
+      pose = applyCameraMoves(rail, frame.performance ? NEUTRAL_MOVE : frame.cameraMove, frame.userCamera, {
         heightAt: p?.data ? this._renderedGround(view, frame, p.data) : null, waterLevelM: p?.waterLevelM,
         sampleStepM: p?.data?.grid?.cellSizeM, cone: { tanX, tanY },
         heightRangeM: p?.uniforms ? [p.uniforms.uHeightRange.value.x, p.uniforms.uHeightRange.value.y] : null });
@@ -797,6 +819,9 @@ export class RangeScene {
     const THREE = this.THREE;
     const u = p.uniforms;
     const n = frame.narrative;
+    // The anchor is a real hydroflattened lake sample chosen once at view
+    // preparation, so a hit stays on the water as the camera travels.
+    bindLakeMusic(u, frame, { originM: p.lakeMusicOriginM });
     u.uNarrative.value.set(n?.relief ?? 1, n?.atmosphere ?? 1, n?.materials ?? 1, n?.features ?? 1);
     u.uNarrativeInk.value = n ? (1 - n.materials) * (1 - n.skyDark) : 0;
     applyGlacierUniforms(u, p.view.glacier, frame.glacier);

@@ -1,7 +1,7 @@
 import { cameraBasis } from '../terrain/SceneTravel.js';
 /** One frame's Range-specific upper-sky ownership. Keep faint star depth
  * behind the live ridge while reserving its body for incidental figures. */
-export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = false } = {}) {
+export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = false, performance = false } = {}) {
   const corridorAt = spaceRidge.corridor(canvas);
   const allowPoint = (x, y) => {
     const { top, bottom } = corridorAt(x);
@@ -12,7 +12,10 @@ export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = f
     const feather = Math.max(1, canvas.height * 0.025);
     const distance = Math.max(top - y, y - bottom, 0);
     const u = Math.min(1, distance / feather);
-    return 0.12 + 0.88 * u * u * (3 - 2 * u);
+    // The passive stage keeps a dense night sky behind the aurora. Its
+    // translucent curtain still dims stars, without erasing their cores.
+    const floor = performance ? 0.55 : 0.12;
+    return floor + (1 - floor) * u * u * (3 - 2 * u);
   };
   return {
     allowPoint,

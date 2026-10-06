@@ -1,0 +1,844 @@
+{
+  "passed": true,
+  "browser": "151.0.7922.173",
+  "limitation": "Synthetic audio and software WebGL; hardware performance is unmeasured.",
+  "validation": {
+    "testsPassed": 3784,
+    "failures": 0,
+    "lint": "passed",
+    "independentReviews": "music, camera, lake fixes, final sky: no remaining blockers"
+  },
+  "sourceHashes": {
+    "src/main.js": "11f0eeec93d3db3393ac7e02f61380c9221c6bf50de94115da18815949631c2d",
+    "src/render/Renderer.js": "ae45d55982f751ad6f068cd1d4fc365b44a00d97d042141c539c611ae0f51d7e",
+    "src/sim/Simulation.js": "cfaac6fcfafb71fbb30f8a5e6cc7b159c5daadcca03cf20dca02dc2534e09ba1",
+    "src/world/LandscapePresentation.js": "5c71b8454361816f07c8f7d3e65b1e728b3ab88251d0902f79c9b9aebdde81b5",
+    "src/world/BiomeManager.js": "74afe95f84c5e33ae0c687e5b8181d0dd8c590699dd28a115158b61bd049812d",
+    "src/world/RidgeMotionHistory.js": "666e1fecb238d8b56eec57cfd26c3cdc19d4a613e9c55a175f89727c64172c56",
+    "src/world/alpine/RangeNarrative.js": "4c5a5397a6b9cf79a93bf7cab589eb9159167e70b0ac1facc95060fe2479402e",
+    "src/world/alpine/RangePerformance.js": "97f3d79f14caf2045a9bcf805d51f17f33da9f50a8f1610c7ab094af41551d69",
+    "src/world/alpine/RangeCamera.js": "e79039673b8b6c6f555d83c4b7a446e05c4eae9b34e71c475a808aa13a0f93fc",
+    "src/world/alpine/RangeFrame.js": "38a4410af4937309e12ccf0fe123a9dbee03c518801e948ea25b21baa8fce01c",
+    "src/world/alpine/RangeScene.js": "1be92ec7378b660c019b63a6fbcc55c85f2aecdefa125f98614161b1663eec2a",
+    "src/world/alpine/RangePresentation.js": "9ab30364a44e9c2a149ace6d2dfb739f9020d153c2a9eee1172e7de8233d9d35",
+    "src/world/alpine/TerrainMaterial.js": "71df5ca1ce89c991cd172b7bae4ea30c01eaafaccd06029e18d08581d179cc10",
+    "src/world/alpine/GroundResponse.js": "4e2bd8bf678b60416d9a10b001a23ab63b357eaeae060b26ee50c72c9fc75455",
+    "src/world/alpine/RangeSkyComposition.js": "f9b1b07c15a7b648551ea8cea979bab83ac454c2c0b32bac2ddac2c140f5f652"
+  },
+  "skyVisibility": {
+    "visible": 1049,
+    "strong": 127,
+    "columns": [
+      257,
+      395,
+      159,
+      238
+    ],
+    "criterion": "positive star-on/off channel difference in the upper quarter of the final fitted picture"
+  },
+  "checks": {
+    "defaultApprovedLake": true,
+    "steadyLateralCamera": true,
+    "sunsetMoonlightSunrise": true,
+    "contrastingBassResponse": true,
+    "realLakeHits": true,
+    "backwardSeek": true,
+    "heldStageRepeat": true,
+    "reducedMotion": true,
+    "reducedFlash": true,
+    "portraitFit": true,
+    "noPageOrShaderErrors": true,
+    "sourceIdentityStable": true
+  },
+  "frames": [
+    {
+      "label": "sunset",
+      "timeMs": 1000,
+      "clock": {
+        "width": 640,
+        "height": 360,
+        "timeMs": 1000.0000000000017,
+        "draws": 1
+      },
+      "camera": {
+        "eyeM": [
+          -2287.7533997047435,
+          1700.4,
+          -9764.892719550011
+        ],
+        "targetM": [
+          -279.7533997047433,
+          866.7,
+          -192.09271955001168
+        ],
+        "fovYDeg": 31.4,
+        "userScale": 1
+      },
+      "lake": {
+        "originM": [
+          -640,
+          825,
+          -1440
+        ],
+        "gain": 1,
+        "count": 0,
+        "hits": [
+          [
+            -1,
+            0
+          ],
+          [
+            -1,
+            0
+          ],
+          [
+            -1,
+            0
+          ],
+          [
+            -1,
+            0
+          ]
+        ]
+      },
+      "pngHash": "bc4d5325df9ea0b2d552184ce6d6f4f1b2b8ed71bfd51e8c2716e03243f6da18",
+      "renderer": {
+        "mode": "v2",
+        "active": true,
+        "viewId": "muncho-lake-south",
+        "reason": null,
+        "qualityLevel": null
+      },
+      "loadedIdentity": {
+        "loadedDigest": "20312618c2509bb4ff089660438999df2ac1645703fa7624f1940a26609211a7",
+        "loadedFiles": 318
+      },
+      "celestial": {
+        "activeBody": "sun",
+        "night01": 0.9814930584219349,
+        "sun": {
+          "xFrac": 0.10665777439024383,
+          "yFrac": 0.3523466871753856,
+          "radiusFrac": 0.017718612839434718,
+          "scale": 1.0124921622534124,
+          "altitude01": 0.09953475476639138,
+          "visibility": 1,
+          "directGain": 1.6,
+          "colorHex": "#ff854f"
+        },
+        "moon": {
+          "xFrac": 0.92,
+          "yFrac": 0.3781,
+          "radiusFrac": 0.017718612839434718,
+          "scale": 1.0124921622534124,
+          "altitude01": 0,
+          "visibility": 0,
+          "directGain": 0,
+          "colorHex": "#c8d8ff"
+        }
+      },
+      "performance": {
+        "timeMs": 1000.0000000000017,
+        "bounds": {
+          "x": 382,
+          "y": 470.00000000000006,
+          "width": 400.79999999999995,
+          "height": 196.24400000000009
+        },
+        "platformBounds": {
+          "x": 382,
+          "y": 563.2,
+          "width": 400.79999999999995,
+          "height": 40
+        },
+        "actors": [
+          {
+            "id": "midio",
+            "source": "lane:MIDIO",
+            "activity": 0,
+            "pitchActivity": 0,
+            "pitch01": 0.5,
+            "hopPx": 0,
+            "glow": 0.1822481851973285,
+            "transform": {
+              "tx": 451.456,
+              "ty": 578.2,
+              "rot": 0,
+              "scaleX": 1.6,
+              "scaleY": 1.6
+            }
+          },
+          {
+            "id": "broshi",
+            "source": "lane:BROSHI",
+            "activity": 0.2084725936862079,
+            "pitchActivity": 0.2072036454942769,
+            "pitch01": 0,
+            "hopPx": 0.08738552302547035,
+            "glow": 0.248959415176915,
+            "transform": {
+              "tx": 586.368,
+              "ty": 580.1126144769746,
+              "rot": -0.016613841579393145,
+              "scaleX": 1.3352318683329694,
+              "scaleY": 1.2823840658335155
+            }
+          },
+          {
+            "id": "midasus",
+            "source": "lane:MIDASUS",
+            "activity": 0.15071556576897582,
+            "pitchActivity": 0.04885565009890603,
+            "pitch01": 0.39462125906787826,
+            "hopPx": -0.10296693789686012,
+            "glow": 0.23047716624340076,
+            "transform": {
+              "tx": 718.6329659699453,
+              "ty": 506.5223724094675,
+              "rot": 0.028070921464089616,
+              "scaleX": 2.6470232565199203,
+              "scaleY": 2.6470232565199203
+            }
+          }
+        ]
+      },
+      "ownership": {
+        "policy": {
+          "performers": false,
+          "decorativeActors": false,
+          "artificialNearProps": false,
+          "inhabitants": false,
+          "trioStage": true
+        },
+        "oldSimulation": [],
+        "capture": false
+      }
+    },
+    {
+      "label": "moonlight",
+      "timeMs": 30000,
+      "clock": {
+        "width": 640,
+        "height": 360,
+        "timeMs": 29999.999999998498,
+        "draws": 1
+      },
+      "camera": {
+        "eyeM": [
+          -2378.161356668776,
+          1700.4,
+          -9758.90917594475
+        ],
+        "targetM": [
+          -370.16135666877585,
+          866.7,
+          -186.10917594474995
+        ],
+        "fovYDeg": 31.4,
+        "userScale": 1
+      },
+      "lake": {
+        "originM": [
+          -640,
+          825,
+          -1440
+        ],
+        "gain": 1,
+        "count": 4,
+        "hits": [
+          [
+            0.04625850339985846,
+            0.055492284365244504
+          ],
+          [
+            0.17396825396675195,
+            0.6977771589420477
+          ],
+          [
+            0.2668480725608533,
+            0.03796351202950807
+          ],
+          [
+            0.35972789115496195,
+            0.04439455090073352
+          ]
+        ]
+      },
+      "pngHash": "2e388c0d655129609c3eb75b4cdd9fa2140fb2d3a9967ba4692bbc0055cb367f",
+      "renderer": {
+        "mode": "v2",
+        "active": true,
+        "viewId": "muncho-lake-south",
+        "reason": null,
+        "qualityLevel": null
+      },
+      "loadedIdentity": {
+        "loadedDigest": "20312618c2509bb4ff089660438999df2ac1645703fa7624f1940a26609211a7",
+        "loadedFiles": 318
+      },
+      "celestial": {
+        "activeBody": "moon",
+        "night01": 1,
+        "sun": {
+          "xFrac": 0.07999999999999996,
+          "yFrac": 0.3781,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 1.5876569354106325,
+          "altitude01": 0,
+          "visibility": 0,
+          "directGain": 0,
+          "colorHex": "#ff6e35"
+        },
+        "moon": {
+          "xFrac": 0.49999177609769885,
+          "yFrac": 0.10026362915288621,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 1.5876569354106325,
+          "altitude01": 0.9999990638924335,
+          "visibility": 1,
+          "directGain": 0.25,
+          "colorHex": "#c8d8ff"
+        }
+      },
+      "performance": {
+        "timeMs": 29999.999999998498,
+        "bounds": {
+          "x": 382,
+          "y": 445.752503189497,
+          "width": 400.79999999999995,
+          "height": 230.67544547091427
+        },
+        "platformBounds": {
+          "x": 382,
+          "y": 563.2,
+          "width": 400.79999999999995,
+          "height": 40
+        },
+        "actors": [
+          {
+            "id": "midio",
+            "source": "lane:MIDIO",
+            "activity": 0,
+            "pitchActivity": 0,
+            "pitch01": 0.5,
+            "hopPx": 17.359319022410492,
+            "glow": 0.33771202684948687,
+            "transform": {
+              "tx": 451.456,
+              "ty": 560.8406809775895,
+              "rot": 0,
+              "scaleX": 1.6777697492203991,
+              "scaleY": 1.7110996417434272
+            }
+          },
+          {
+            "id": "broshi",
+            "source": "lane:BROSHI",
+            "activity": 1,
+            "pitchActivity": 0.6198090135286864,
+            "pitch01": 0,
+            "hopPx": 13.059478931492901,
+            "glow": 0.6577120268494868,
+            "transform": {
+              "tx": 586.368,
+              "ty": 567.1405210685072,
+              "rot": -0.05121247349292018,
+              "scaleX": 1.4689999999999999,
+              "scaleY": 1.3057684589165348
+            }
+          },
+          {
+            "id": "midasus",
+            "source": "lane:MIDASUS",
+            "activity": 0.12378190621452721,
+            "pitchActivity": 0.09341678729278491,
+            "pitch01": 0.669130121050009,
+            "hopPx": 5.87097393802999,
+            "glow": 0.3773222368381356,
+            "transform": {
+              "tx": 716.6894882372546,
+              "ty": 501.20473241637626,
+              "rot": -0.012699368270157175,
+              "scaleX": 2.638619954738933,
+              "scaleY": 2.638619954738933
+            }
+          }
+        ]
+      },
+      "ownership": {
+        "policy": {
+          "performers": false,
+          "decorativeActors": false,
+          "artificialNearProps": false,
+          "inhabitants": false,
+          "trioStage": true
+        },
+        "oldSimulation": [],
+        "capture": false
+      }
+    },
+    {
+      "label": "sunrise",
+      "timeMs": 59500,
+      "clock": {
+        "width": 640,
+        "height": 360,
+        "timeMs": 59500.00000000587,
+        "draws": 1
+      },
+      "camera": {
+        "eyeM": [
+          -2468.971125201904,
+          1700.4,
+          -9752.899038916457
+        ],
+        "targetM": [
+          -460.971125201904,
+          866.7,
+          -180.09903891645808
+        ],
+        "fovYDeg": 31.4,
+        "userScale": 1
+      },
+      "lake": {
+        "originM": [
+          -640,
+          825,
+          -1440
+        ],
+        "gain": 1,
+        "count": 4,
+        "hits": [
+          [
+            0.4052154195070034,
+            0.0021243452099848196
+          ],
+          [
+            0.5213151927496364,
+            0.0017339275332937233
+          ],
+          [
+            0.6606349206407903,
+            0.003400261978619441
+          ],
+          [
+            0.7767346938834234,
+            0.0034084153580170905
+          ]
+        ]
+      },
+      "pngHash": "539eb8712a779a9893e842fccd64400e1139ba8a790ef9a16554c90ac63a9c53",
+      "renderer": {
+        "mode": "v2",
+        "active": true,
+        "viewId": "muncho-lake-south",
+        "reason": null,
+        "qualityLevel": null
+      },
+      "loadedIdentity": {
+        "loadedDigest": "20312618c2509bb4ff089660438999df2ac1645703fa7624f1940a26609211a7",
+        "loadedFiles": 318
+      },
+      "celestial": {
+        "activeBody": "sun",
+        "night01": 0.75,
+        "sun": {
+          "xFrac": 0.8811375762193753,
+          "yFrac": 0.33522989517831825,
+          "radiusFrac": 0.021875000000000002,
+          "scale": 3.4,
+          "altitude01": 0.1448339243829563,
+          "visibility": 1,
+          "directGain": 1.6,
+          "colorHex": "#ff9966"
+        },
+        "moon": {
+          "xFrac": 0.92,
+          "yFrac": 0.3781,
+          "radiusFrac": 0.021875,
+          "scale": 3.4,
+          "altitude01": 0,
+          "visibility": 0,
+          "directGain": 0,
+          "colorHex": "#c8d8ff"
+        }
+      },
+      "performance": {
+        "timeMs": 59500.00000000587,
+        "bounds": {
+          "x": 382,
+          "y": 464.4920718129326,
+          "width": 400.79999999999995,
+          "height": 204.06525802563573
+        },
+        "platformBounds": {
+          "x": 382,
+          "y": 563.2,
+          "width": 400.79999999999995,
+          "height": 40
+        },
+        "actors": [
+          {
+            "id": "midio",
+            "source": "lane:MIDIO",
+            "activity": 0,
+            "pitchActivity": 0,
+            "pitch01": 0.5,
+            "hopPx": 3.943247556606183,
+            "glow": 0.21499743995462584,
+            "transform": {
+              "tx": 451.456,
+              "ty": 574.2567524433939,
+              "rot": 0,
+              "scaleX": 1.6176657490535957,
+              "scaleY": 1.6252367843622797
+            }
+          },
+          {
+            "id": "broshi",
+            "source": "lane:BROSHI",
+            "activity": 0.31644983671958676,
+            "pitchActivity": 0.314017860103316,
+            "pitch01": 0,
+            "hopPx": 2.0789031588154043,
+            "glow": 0.31626138770489365,
+            "transform": {
+              "tx": 586.368,
+              "ty": 578.1210968411847,
+              "rot": -0.024107728956316337,
+              "scaleX": 1.3534800224056103,
+              "scaleY": 1.2937648760915472
+            }
+          },
+          {
+            "id": "midasus",
+            "source": "lane:MIDASUS",
+            "activity": 0.2171023080542524,
+            "pitchActivity": 0.06907351498030684,
+            "pitch01": 0.4003009177350412,
+            "hopPx": 1.1241078970669491,
+            "glow": 0.2844701785319866,
+            "transform": {
+              "tx": 717.8629526069412,
+              "ty": 506.928635084049,
+              "rot": 0.03262024350267531,
+              "scaleX": 2.667735920112927,
+              "scaleY": 2.667735920112927
+            }
+          }
+        ]
+      },
+      "ownership": {
+        "policy": {
+          "performers": false,
+          "decorativeActors": false,
+          "artificialNearProps": false,
+          "inhabitants": false,
+          "trioStage": true
+        },
+        "oldSimulation": [],
+        "capture": false
+      }
+    }
+  ],
+  "seek": {
+    "clock": {
+      "width": 640,
+      "height": 360,
+      "timeMs": 30000,
+      "draws": 1
+    },
+    "camera": {
+      "eyeM": [
+        -2378.16135666878,
+        1700.4,
+        -9758.909175944747
+      ],
+      "targetM": [
+        -370.16135666877994,
+        866.7,
+        -186.10917594474813
+      ],
+      "fovYDeg": 31.4,
+      "userScale": 1
+    },
+    "performance": {
+      "timeMs": 30000,
+      "bounds": {
+        "x": 382,
+        "y": 445.75250318960417,
+        "width": 400.79999999999995,
+        "height": 230.6754454707621
+      },
+      "platformBounds": {
+        "x": 382,
+        "y": 563.2,
+        "width": 400.79999999999995,
+        "height": 40
+      },
+      "actors": [
+        {
+          "id": "midio",
+          "source": "lane:MIDIO",
+          "activity": 0,
+          "pitchActivity": 0,
+          "pitch01": 0.5,
+          "hopPx": 17.35931902233378,
+          "glow": 0.3377120268487442,
+          "transform": {
+            "tx": 451.456,
+            "ty": 560.8406809776662,
+            "rot": 0,
+            "scaleX": 1.6777697492200554,
+            "scaleY": 1.7110996417429363
+          }
+        },
+        {
+          "id": "broshi",
+          "source": "lane:BROSHI",
+          "activity": 1,
+          "pitchActivity": 0.6198090135286864,
+          "pitch01": 0,
+          "hopPx": 13.059478931421221,
+          "glow": 0.6577120268487442,
+          "transform": {
+            "tx": 586.368,
+            "ty": 567.1405210685788,
+            "rot": -0.05121247349331845,
+            "scaleX": 1.4689999999999999,
+            "scaleY": 1.3057684589161358
+          }
+        },
+        {
+          "id": "midasus",
+          "source": "lane:MIDASUS",
+          "activity": 0.12378190621104218,
+          "pitchActivity": 0.09341678729006017,
+          "pitch01": 0.6691301210498551,
+          "hopPx": 5.870973937995938,
+          "glow": 0.3773222368362777,
+          "transform": {
+            "tx": 716.6894882372696,
+            "ty": 501.2047324164115,
+            "rot": -0.012699368269849845,
+            "scaleX": 2.638619954737845,
+            "scaleY": 2.638619954737845
+          }
+        }
+      ]
+    }
+  },
+  "accessibility": {
+    "reducedMotion": true,
+    "reducedFlash": true,
+    "camera": {
+      "eyeM": [
+        -2378.3,
+        1700.4,
+        -9758.9
+      ],
+      "targetM": [
+        -370.29999999999995,
+        866.7,
+        -186.10000000000036
+      ],
+      "fovYDeg": 31.4,
+      "userScale": 1
+    },
+    "lake": {
+      "originM": [
+        -640,
+        825,
+        -1440
+      ],
+      "gain": 0,
+      "count": 0,
+      "hits": [
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          0
+        ]
+      ]
+    },
+    "performance": {
+      "timeMs": 30199.99999999997,
+      "bounds": {
+        "x": 382,
+        "y": 470.00000000000006,
+        "width": 400.79999999999995,
+        "height": 196.24400000000009
+      },
+      "platformBounds": {
+        "x": 382,
+        "y": 563.2,
+        "width": 400.79999999999995,
+        "height": 40
+      },
+      "actors": [
+        {
+          "id": "midio",
+          "source": "lane:MIDIO",
+          "activity": 0,
+          "pitchActivity": 0,
+          "pitch01": 0.5,
+          "hopPx": 0,
+          "glow": 0.21624050267267972,
+          "transform": {
+            "tx": 451.456,
+            "ty": 578.2,
+            "rot": 0,
+            "scaleX": 1.6,
+            "scaleY": 1.6
+          }
+        },
+        {
+          "id": "broshi",
+          "source": "lane:BROSHI",
+          "activity": 0.7551258315116549,
+          "pitchActivity": 0.23540944627148222,
+          "pitch01": 0,
+          "hopPx": 0,
+          "glow": 0.2790669718544494,
+          "transform": {
+            "tx": 586.368,
+            "ty": 580.2,
+            "rot": 0,
+            "scaleX": 1.3,
+            "scaleY": 1.3
+          }
+        },
+        {
+          "id": "midasus",
+          "source": "lane:MIDASUS",
+          "activity": 0.26029979232283856,
+          "pitchActivity": 0.19890849223031215,
+          "pitch01": 0.6666666666666665,
+          "hopPx": 0,
+          "glow": 0.2378974453939399,
+          "transform": {
+            "tx": 717.312,
+            "ty": 507.20000000000005,
+            "rot": 0,
+            "scaleX": 2.6,
+            "scaleY": 2.6
+          }
+        }
+      ]
+    }
+  },
+  "portrait": {
+    "clock": {
+      "width": 360,
+      "height": 640,
+      "timeMs": 29999.999999998498,
+      "draws": 1
+    },
+    "skyVisibility": {
+      "visible": 1257,
+      "strong": 178,
+      "columns": [
+        325,
+        449,
+        196,
+        287
+      ],
+      "criterion": "positive star-on/off channel difference in the upper quarter of the final fitted picture"
+    },
+    "pngHash": "3abb68be9284572775986306480bd0b3393f30890918812327c93c25d9b34d79",
+    "renderer": {
+      "mode": "v2",
+      "active": true,
+      "viewId": "muncho-lake-south",
+      "reason": null,
+      "qualityLevel": null
+    },
+    "performance": {
+      "timeMs": 29999.999999998498,
+      "bounds": {
+        "x": 382,
+        "y": 445.752503189497,
+        "width": 400.79999999999995,
+        "height": 230.67544547091427
+      },
+      "platformBounds": {
+        "x": 382,
+        "y": 563.2,
+        "width": 400.79999999999995,
+        "height": 40
+      },
+      "actors": [
+        {
+          "id": "midio",
+          "source": "lane:MIDIO",
+          "activity": 0,
+          "pitchActivity": 0,
+          "pitch01": 0.5,
+          "hopPx": 17.359319022410492,
+          "glow": 0.33771202684948687,
+          "transform": {
+            "tx": 451.456,
+            "ty": 560.8406809775895,
+            "rot": 0,
+            "scaleX": 1.6777697492203991,
+            "scaleY": 1.7110996417434272
+          }
+        },
+        {
+          "id": "broshi",
+          "source": "lane:BROSHI",
+          "activity": 1,
+          "pitchActivity": 0.6198090135286864,
+          "pitch01": 0,
+          "hopPx": 13.059478931492901,
+          "glow": 0.6577120268494868,
+          "transform": {
+            "tx": 586.368,
+            "ty": 567.1405210685072,
+            "rot": -0.05121247349292018,
+            "scaleX": 1.4689999999999999,
+            "scaleY": 1.3057684589165348
+          }
+        },
+        {
+          "id": "midasus",
+          "source": "lane:MIDASUS",
+          "activity": 0.12378190621452721,
+          "pitchActivity": 0.09341678729278491,
+          "pitch01": 0.669130121050009,
+          "hopPx": 5.87097393802999,
+          "glow": 0.3773222368381356,
+          "transform": {
+            "tx": 716.6894882372546,
+            "ty": 501.20473241637626,
+            "rot": -0.012699368270157175,
+            "scaleX": 2.638619954738933,
+            "scaleY": 2.638619954738933
+          }
+        }
+      ]
+    },
+    "ownership": {
+      "policy": {
+        "performers": false,
+        "decorativeActors": false,
+        "artificialNearProps": false,
+        "inhabitants": false,
+        "trioStage": true
+      },
+      "oldSimulation": [],
+      "capture": false
+    }
+  }
+}

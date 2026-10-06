@@ -13,8 +13,8 @@
 // reason; the cast and music never wait on the GPU.
 import { travelSpans } from '../TravelSeam.js';
 import { buildRangeFrame, viewportState, scenicProjection } from './RangeFrame.js';
-import { cameraPoseAt, cameraBasis } from '../terrain/SceneTravel.js';
-import { applyCameraMoves } from './RangeCamera.js';
+import { cameraBasis } from '../terrain/SceneTravel.js';
+import { applyCameraMoves, rangeRailPose, NEUTRAL_MOVE } from './RangeCamera.js';
 import { skyTurn } from './RangeSkyComposition.js';
 import { forcedSceneChoice } from '../terrain/SceneCatalog.js';
 import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
@@ -528,15 +528,15 @@ export class RangePresentation {
    *  handoff between views never jumps the clouds. */
   _skyPan(view, incoming, frame) {
     const still = { x: 0, y: 0 };
-    if (!frame?.cameraMove || !frame.scenicViewport) return still;
+    if (!frame?.scenicViewport || (!frame.cameraMove && !frame.performance)) return still;
     const vp = frame.scenicViewport;
     const one = (v) => {
       let rail, proj, pose;
       if (typeof this.scene.movedPose === 'function') ({ rail, proj, pose } = this.scene.movedPose(v, frame));
       else {
-        rail = cameraPoseAt(v, v.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+        rail = rangeRailPose(v, frame);
         proj = scenicProjection(rail.fovYDeg, vp);
-        pose = applyCameraMoves(rail, frame.cameraMove, null);
+        pose = applyCameraMoves(rail, frame.performance ? NEUTRAL_MOVE : frame.cameraMove, frame.userCamera);
       }
       const turn = skyTurn(pose, cameraBasis(rail).forward);
       return { ...turn, tanY: Math.tan((proj.fovYDeg * Math.PI) / 360), aspect: proj.aspect };
