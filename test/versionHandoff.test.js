@@ -281,3 +281,23 @@ test('paused restore waits for its own scene then redraws before successful owne
   assert.deepEqual(calls.filter(x=>x==='draw'||x==='ready'),replaced?[]:['draw','ready']);
  }
 });
+import { buildWorldVariant } from '../src/world/WorldScore.js';
+import { getCustomWorld, setCustomWorld, clearCustomWorld, listWorlds } from '../src/world/Worlds.js';
+import { buildSongProfile } from '../src/audio/SongProfile.js';
+test('normal custom world handoff regenerates its registered base from destination song profile',()=>{
+ const data={timeline:[],durationMs:20000,bpm:120};const profile=buildSongProfile(data);const ctx=vm.createContext({buildWorldVariant,listWorlds,setCustomWorld,getCustomWorld,lastWorldId:'alpine',DEFAULT_WORLD_ID:'alpine'});
+ vm.runInContext(mainFunctions(['versionRestoreWorldId']),ctx);
+ const id=ctx.versionRestoreWorldId({data,features:profile.watch,profile},{worldId:'custom',settings:{worldBaseId:'alpine'}});
+ assert.equal(id,'custom');assert.equal(getCustomWorld().baseId,'alpine');assert.equal(getCustomWorld().registeredId,'alpine');clearCustomWorld();
+ assert.throws(()=>ctx.versionRestoreWorldId({data,features:profile.watch,profile},{worldId:'custom',settings:{}}),/cannot restore/);
+ assert.throws(()=>ctx.versionRestoreWorldId({data,features:profile.watch,profile},{worldId:'custom',settings:{worldBaseId:'unknown'}}),/cannot restore/);
+ ctx.buildWorldVariant=()=>({world:{id:'alpine',baseId:'alpine'}});
+ assert.throws(()=>ctx.versionRestoreWorldId({data,features:profile.watch,profile},{worldId:'custom',settings:{worldBaseId:'alpine'}}),/regenerate/);
+});
+test('live custom-world adapter accepts valid registered metadata before invoking the original file loader',async()=>{
+ let loaded=false;const ctx=vm.createContext({stageResEl:null,stageFpsEl:null,listWorlds:()=>[{id:'alpine'}],readFpsCap:()=>60,fpsCapMs:0,versionSession:{phase:'loading',completion:Promise.resolve({worldId:'custom'})},loadAudioFiles(_files,{restoreIntent}){assert.equal(restoreIntent.settings.worldBaseId,'alpine');loaded=true;return Promise.resolve();}});
+ vm.runInContext(mainFunctions(['versionLoadSource']),ctx);
+ const result=await ctx.versionLoadSource({kind:'audio-files',files:['original']},{worldId:'custom',settings:{worldBaseId:'alpine'}});
+ assert.ok(loaded);assert.equal(result.worldId,'custom');
+ await assert.rejects(ctx.versionLoadSource({kind:'audio-files',files:['original']},{worldId:'custom',settings:{}}),/cannot restore/);
+});

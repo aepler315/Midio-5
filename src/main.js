@@ -1604,7 +1604,7 @@ function offerWorldsThenStart(data, extra = {}) {
       const mine = pendingWorldStart;
       mine.terrainReady.then(() => {
         if (pendingWorldStart !== mine) return;
-        confirmWorld(extra.restoreIntent.worldId || data.worldId || lastWorldId || DEFAULT_WORLD_ID);
+        confirmWorld(versionRestoreWorldId(mine, extra.restoreIntent));
       }).catch(err => showErrorBanner(err?.message || String(err)));
       return;
     }
@@ -1652,6 +1652,7 @@ function offerWorldsThenStart(data, extra = {}) {
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
     console.error('[world chooser]', err);
+    if (extra.restoreIntent) { showErrorBanner('This version could not restore the selected song world: ' + (err?.message || err)); return; }
     pendingWorldStart = { data, extra };
     lastFitDiagnostic = null;
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
@@ -1880,6 +1881,20 @@ function confirmWorld(id) {
     return;
   }
   startConfirmedWorld(pending, id).catch(err => showErrorBanner(err?.message || String(err)));
+}
+
+function versionRestoreWorldId(pending, restoreIntent) {
+  const requested = restoreIntent.worldId;
+  if (requested !== 'custom') {
+    if (requested && !listWorlds().some(world => world.id === requested)) throw new Error('This version cannot restore the selected world.');
+    return requested || pending.data.worldId || lastWorldId || DEFAULT_WORLD_ID;
+  }
+  const baseId = restoreIntent.settings?.worldBaseId;
+  if (!baseId || !listWorlds().some(world => world.id === baseId)) throw new Error('This version cannot restore the selected song world.');
+  const { world } = buildWorldVariant(baseId, pending.features, { ...pending.data, profile: pending.profile });
+  if (world?.id !== 'custom' || (world.registeredId || world.baseId) !== baseId) throw new Error('This version could not regenerate the selected song world.');
+  setCustomWorld(world);
+  return world.id;
 }
 
 async function startConfirmedWorld(pending, id) {
@@ -5362,7 +5377,7 @@ function versionAdapterState() {
   return { phase: versionSession.phase, generation: loadGen, sourceId: versionSession.sourceId, source: versionSession.source,
     positionMs: Math.max(0, Math.min(paused && versionSession.heldPositionMs != null ? versionSession.heldPositionMs : (audioEngine ? audioEngine.nowMs - choreographyOutputLatencyMs() : 0), durationMs)), durationMs,
     seed: sim?.songSeed ?? lastSongSeed, paused, worldId: sim?.worldId || lastWorldId,
-    rangeViewId: sceneChoice?.viewId ?? null, settings: { reducedFlash, reducedMotion, stageRes: stageResEl?.value, stageFps: stageFpsEl?.value }, blockedReason };
+    rangeViewId: sceneChoice?.viewId ?? null, settings: { reducedFlash, reducedMotion, stageRes: stageResEl?.value, stageFps: stageFpsEl?.value, worldBaseId: sim?.worldId === 'custom' ? (getCustomWorld()?.registeredId || getCustomWorld()?.baseId || null) : null }, blockedReason };
 }
 
 async function versionSetPaused(value) {
@@ -5390,7 +5405,8 @@ function versionLoadSource(source, restoreIntent = {}) {
   for (const [control, value] of [[stageResEl, settings.stageRes], [stageFpsEl, settings.stageFps]]) {
     if (control && value != null && [...control.options].some(option => option.value === String(value))) control.value = String(value);
   }
-  if (restoreIntent.worldId && !listWorlds().some(world => world.id === restoreIntent.worldId)) return Promise.reject(new Error('This version cannot restore the selected world.'));
+  const restoreBaseId = restoreIntent.worldId === 'custom' ? settings.worldBaseId : restoreIntent.worldId;
+  if (restoreIntent.worldId && (!restoreBaseId || !listWorlds().some(world => world.id === restoreBaseId))) return Promise.reject(new Error('This version cannot restore the selected world.'));
   if (restoreIntent.rangeViewId) {
     const restoredChoice = resolveSceneChoice({ search: searchWithSceneChoice('', { viewId: restoreIntent.rangeViewId }), catalog: SCENE_CATALOG, biomeNames: PICKABLE_BIOMES.map(b => b.name) });
     if (restoredChoice.viewId !== restoreIntent.rangeViewId) return Promise.reject(new Error('This version cannot restore the selected range view.'));
