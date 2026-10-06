@@ -50,6 +50,7 @@ export function sampleJourneyState({ timeMs = 0, seed = 0, music = null, reduced
 }
 
 const STILL = sampleJourneyState();
+const NEAR_POLE_Z = JOURNEY_ORBIT.radiusM * Math.PI / (2 * JOURNEY_ORBIT.depthScale);
 
 // Bounded, analytic two-dimensional noise. Three incommensurate waves keep
 // both positions and slopes continuous without a float-sensitive hash/fract.
@@ -124,18 +125,20 @@ export function journeyGroundHeight(x, z, state = STILL) {
       + .2 * Math.sin(19 * angle + 2.17 * inland * .008 + 4.4 + phase * 3.11)
     : noise(worldX * .003 + phase, inland * .008);
   const shoulder = (3 + 3 * detail)
-    * smooth(70, 230, inland) * (1 - .3 * smooth(350, 650, inland));
+    * smooth(70, 230, inland) * (1 - .3 * smooth(350, 650, inland))
+    * (state.circular ? 1 - smooth(NEAR_POLE_Z - 1600, NEAR_POLE_Z, finite(z)) : 1);
   return shelf + rise + shoulder;
 }
 
 export function journeySurface(x, v, layer, state = STILL) {
   x = finite(x); v = unit(v);
   if (layer < .5) {
-    // Preserve the dense contact shelf, then fan the same bounded grid out
-    // behind every framed camera. A cubic tail joins with two continuous
-    // derivatives and avoids exposing the old finite-apron edge on retreat.
+    // Preserve the dense contact shelf, then close the spherical foreground
+    // at its near pole. The cubic tail keeps two continuous derivatives at
+    // the shelf; the flat presentation retains its previous finite apron.
     const tail = Math.max(0, (v - .3) / .7);
-    const z = journeyNearShore(x, state) + 650 * v + (state.circular ? 450 : 6000) * tail * tail * tail;
+    const near = journeyNearShore(x, state);
+    const z = near + 650 * v + (state.circular ? NEAR_POLE_Z - near - 650 : 6000) * tail * tail * tail;
     return [x, journeyGroundHeight(x, z, state), z];
   }
   const z = layer < 1.5 ? journeyFarShore(x, state) - MOUNTAIN_DIMENSIONS.firstDepth * v
@@ -206,7 +209,8 @@ export const JOURNEY_SURFACE_GLSL = /* glsl */`
         +.2*sin(19.0*angle+2.17*inland*.008+4.4+phase*3.11)
       :journeyNoise(worldX*.003+phase,inland*.008);
     float shoulder=(3.0+3.0*detail)
-      *smoothstep(70.0,230.0,inland)*(1.0-.3*smoothstep(350.0,650.0,inland));
+      *smoothstep(70.0,230.0,inland)*(1.0-.3*smoothstep(350.0,650.0,inland))
+      *(uJourneyOrbit>.5?1.0-smoothstep(${(NEAR_POLE_Z - 1600).toFixed(12)},${NEAR_POLE_Z.toFixed(12)},xz.y):1.0);
     return shelf+rise+shoulder;
   }
   ${JOURNEY_MOUNTAIN_GLSL}
@@ -214,7 +218,8 @@ export const JOURNEY_SURFACE_GLSL = /* glsl */`
     float x=grid.x,v=clamp(grid.y,0.0,1.0);
     if(layer<.5){
       float tail=max(0.0,(v-.3)/.7);
-      float z=journeyNearShore(x)+650.0*v+(uJourneyOrbit>.5?450.0:6000.0)*tail*tail*tail;
+      float near=journeyNearShore(x);
+      float z=near+650.0*v+(uJourneyOrbit>.5?${NEAR_POLE_Z.toFixed(12)}-near-650.0:6000.0)*tail*tail*tail;
       return vec3(x,journeyGroundHeight(vec2(x,z)),z);
     }
     float z=layer<1.5?journeyFarShore(x)-${MOUNTAIN_DIMENSIONS.firstDepth.toFixed(1)}*v

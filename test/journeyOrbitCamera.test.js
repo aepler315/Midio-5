@@ -29,3 +29,14 @@ test('a detected arrival reveals the orbit briefly without following pulses',()=
   assert.equal(at(40000).orbitReveal01,0,'sustained choruses return to the cast');
   assert.deepEqual(at(22000).orbitReveal01,sampleJourneyDirection({...input,timeMs:22000,music:{pulse01:1}}).orbitReveal01);
 });
+
+test('follow view looks over the lake and musical arrivals retain the inhabited surface',()=>{
+  const follow=camera.journeyOrbitCamera({...view,timeMs:9000});
+  const inclination=(follow.eyeM[1]-follow.targetM[1])/(follow.eyeM[2]-follow.targetM[2]);
+  assert.ok(inclination>=.6,'water needs depth in the picture, not an edge-on stripe');
+  const arrival=camera.journeyOrbitCamera({...view,timeMs:22000,direction:{orbitReveal01:1}});
+  assert.ok(arrival.reveal01<=.15,'a musical accent must not shrink the trio to planetary scale');
+  assert.deepEqual(arrival.targetM,follow.targetM,'arrivals stay centered on the route, not the empty planet interior');
+  assert.ok(arrival.eyeM[2]-arrival.targetM[2] <= 1.25*(follow.eyeM[2]-follow.targetM[2]),'ordinary pullbacks stay close');
+  assert.equal(camera.journeyOrbitCamera({...view,timeMs:4500}).reveal01,0,'opening settles promptly into the route');
+});

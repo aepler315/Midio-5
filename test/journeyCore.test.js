@@ -12,28 +12,28 @@ function coreFor(t){
   return mesh;
 }
 
-test('the opaque core stays below sea level, closes the range depth and fits its memory budget',t=>{
+test('the opaque core follows a sphere eight metres below sea level within its memory budget',t=>{
   const mesh=coreFor(t),geometry=mesh.geometry;
   const position=geometry.getAttribute('position'),normal=geometry.getAttribute('normal');
   const radius=JOURNEY_ORBIT.radiusM;
-  let near=-Infinity,far=Infinity,maximumRadius=0;
+  let near=-Infinity,far=Infinity;
   for(let i=0;i<position.count;i++){
     const x=position.getX(i),y=position.getY(i),z=position.getZ(i);
-    assert.ok([x,y,z,normal.getX(i),normal.getY(i),normal.getZ(i)].every(Number.isFinite));
-    assert.ok(Math.abs(Math.hypot(normal.getX(i),normal.getY(i),normal.getZ(i))-1)<1e-5,
+    const nx=normal.getX(i),ny=normal.getY(i),nz=normal.getZ(i);
+    assert.ok([x,y,z,nx,ny,nz].every(Number.isFinite));
+    assert.ok(Math.abs(Math.hypot(nx,ny,nz)-1)<1e-5,
       'every shading normal must remain defined');
-    const r=Math.hypot(x,y+radius);
-    assert.ok(r<radius,'the interior cannot protrude through the water surface');
-    if(z>=JOURNEY_CORE_BOUNDS.nearZ){
-      const ceiling=JOURNEY_CORE_BOUNDS.nearZ+JOURNEY_CORE_BOUNDS.frontBulgeM
-        *Math.sqrt(Math.max(0,1-r*r/(radius*radius)));
-      assert.ok(z<=ceiling+.001,'the visible dome must stay inside its listener clearance envelope');
-    }
-    maximumRadius=Math.max(maximumRadius,r);near=Math.max(near,z);far=Math.min(far,z);
+    const r=Math.hypot(x,y+radius,z);
+    assert.ok(Math.abs(r-(radius-8))<.001,
+      `the entire core must lie on the submerged sphere, got radius ${r}`);
+    assert.ok(x*nx+(y+radius)*ny+z*nz>radius-9,'shading normals point away from the planet centre');
+    near=Math.max(near,z);far=Math.min(far,z);
   }
-  assert.ok(maximumRadius>radius-15,'the core must reach the bases of the range shells');
-  assert.ok(near>=1216&&near<1516,'the front rock face forms a deep dome inside the camera clearance bound');
-  assert.ok(far<=-1586&&far>-1986,'the back cap has bounded depth relief and closes the rear range');
+  assert.equal(near,1792,'the front pole reaches the spherical radius');
+  assert.equal(far,-1792,'the rear pole reaches the spherical radius');
+  assert.equal(JOURNEY_CORE_BOUNDS.nearZ,near);
+  assert.equal(JOURNEY_CORE_BOUNDS.farZ,far);
+  assert.equal(JOURNEY_CORE_BOUNDS.frontBulgeM,0);
   assert.equal(mesh.material.transparent,false);
   assert.equal(mesh.material.depthTest,true);
   assert.equal(mesh.material.depthWrite,true,'the core must occlude stars and rear geometry');
@@ -42,34 +42,24 @@ test('the opaque core stays below sea level, closes the range depth and fits its
   assert.ok(bytes<1024*1024,`core GPU allocation ${bytes} bytes`);
 });
 
-test('every core edge joins two oppositely wound faces, including both caps and the angular seam',t=>{
+test('every spherical core edge joins two outward faces without degenerate poles or an open longitude seam',t=>{
   const geometry=coreFor(t).geometry,position=geometry.getAttribute('position'),edges=new Map();
-  // Caps intentionally split normal vertices from their side walls. Weld
-  // positions to submillimetre precision before checking the actual surface.
-  const keys=Array.from({length:position.count},(_,i)=>
-    [position.getX(i),position.getY(i),position.getZ(i)].map(v=>Math.round(v*1000)).join(','));
   const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
-  const ab=new THREE.Vector3(),ac=new THREE.Vector3();
-  let frontFaces=0,backFaces=0;
+  const ab=new THREE.Vector3(),ac=new THREE.Vector3(),centroid=new THREE.Vector3();
   for(let i=0;i<geometry.index.count;i+=3){
     const ids=[geometry.index.getX(i),geometry.index.getX(i+1),geometry.index.getX(i+2)];
     a.fromBufferAttribute(position,ids[0]);b.fromBufferAttribute(position,ids[1]);c.fromBufferAttribute(position,ids[2]);
     const face=ab.subVectors(b,a).cross(ac.subVectors(c,a));
     assert.ok(face.length()>1e-6,'a collapsed triangle can leave an uncovered seam');
-    if(ids.every(id=>position.getZ(id)>=216)){
-      assert.ok(face.z>0,'front cap normals face the camera side');frontFaces++;
-    }
-    if(ids.every(id=>position.getZ(id)<=-1386)){
-      assert.ok(face.z<0,'back cap normals face away from the front cap');backFaces++;
-    }
+    centroid.copy(a).add(b).add(c).multiplyScalar(1/3);centroid.y+=1800;
+    assert.ok(face.dot(centroid)>0,'each triangle must face away from the planet centre');
     for(let edge=0;edge<3;edge++){
-      const from=keys[ids[edge]],to=keys[ids[(edge+1)%3]],forward=from<to;
+      const from=ids[edge],to=ids[(edge+1)%3],forward=from<to;
       const key=forward?`${from}|${to}`:`${to}|${from}`;
       const entry=edges.get(key)||{count:0,winding:0};
       entry.count++;entry.winding+=forward?1:-1;edges.set(key,entry);
     }
   }
-  assert.ok(frontFaces>0&&backFaces>0,'both end caps must exist');
   for(const [edge,{count,winding}] of edges){
     assert.equal(count,2,`open or overlapping edge: ${edge}`);
     assert.equal(winding,0,`inconsistent winding at edge: ${edge}`);
@@ -109,9 +99,14 @@ test('core triangles occlude the interior from front, rear and side without cove
     assert.ok(rayIntersects(geometry,[x,y,2500],[0,0,-1]),`front interior hole at ${radius}, ${angle}`);
     assert.ok(rayIntersects(geometry,[x,y,-2000],[0,0,1]),`rear interior hole at ${radius}, ${angle}`);
   }
-  for(const z of [100,-500,-1300]){
-    assert.ok(rayIntersects(geometry,[2500,-1800,z],[-1,0,0]),`open side wall at depth ${z}`);
+  for(const z of [100,-500,-1300,1750,-1750]){
+    assert.ok(rayIntersects(geometry,[2500,-1800,z],[-1,0,0]),`open sphere at depth ${z}`);
   }
+  assert.equal(rayIntersects(geometry,[1750,-1800,1750],[-1,0,0]),true);
+  assert.equal(rayIntersects(geometry,[1750,-1800,1800],[-1,0,0]),false,
+    'the core must taper to the pole rather than extend a cylinder through the surrounding sky');
+  assert.equal(rayIntersects(geometry,[2500,-50,1000],[-1,0,0]),false,
+    'a ray outside the spherical limb must remain clear');
   assert.equal(rayIntersects(geometry,[1900,-1800,1000],[0,0,-1]),false);
   assert.equal(rayIntersects(geometry,[0,100,1000],[0,0,-1]),false);
 });

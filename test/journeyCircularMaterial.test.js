@@ -16,6 +16,12 @@ test('circular water closes at every depth without visible straight chords',()=>
       xs.push(positions.getX(i));rows.set(depth,xs);
     }
     assert.ok(rows.size>2,'depth subdivisions support curved shoreline rasterization');
+    const depths=[...rows.keys()].sort((a,b)=>a-b);
+    for(let i=1;i<depths.length;i++){
+      const latitudeStep=(depths[i]-depths[i-1])*.30/1800;
+      assert.ok(1800*(1-Math.cos(latitudeStep/2))<.02,
+        'latitude chords must not sink the water away from surface contacts');
+    }
     for(const [depth,xs] of rows){
       xs.sort((a,b)=>a-b);
       assert.ok(Math.abs(xs[0]+circumference/2)<.001);

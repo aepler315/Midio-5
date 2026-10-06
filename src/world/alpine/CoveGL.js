@@ -128,7 +128,7 @@ export const COVE_FRAG = /* glsl */`
   }
   void main() {
     if (uOrbitRadius > 0.0) {
-      if (length(vWorld.xy + vec2(0.0, uOrbitRadius)) - uOrbitRadius < uClipBelow) discard;
+      if (length(vWorld + vec3(0.0, uOrbitRadius, 0.0)) - uOrbitRadius < uClipBelow) discard;
     } else if (vWorld.y < uClipBelow) discard;
     if (uShadow > 0.5) {
       outColor = vec4(0.025, 0.04, 0.045, 0.28 * uShadowOpacity * pow(max(0.0, 1.0 - vShade), 2.0));
@@ -141,8 +141,18 @@ export const COVE_FRAG = /* glsl */`
     vec3 albedo = uBodyColor * vShade;
     vec3 lit = albedo * (hemi + uLightColor * key);
     lit += albedo * actorLight(vWorld, n);
+    float edgeScale = 1.0;
+    if (uOrbitRadius > 0.0) {
+      // Broad moonlit sky keeps the modeled facets legible even when the
+      // shared night environment is too dim to illuminate their albedo.
+      vec3 radialUp = normalize(vWorld + vec3(0.0, uOrbitRadius, 0.0));
+      vec3 fillDirection = normalize(radialUp + vec3(-0.35, 0.2, 0.8));
+      float skyFill = 0.20 + 0.15 * max(dot(n, fillDirection), 0.0);
+      lit += albedo * vec3(0.84, 0.91, 1.0) * skyFill;
+      edgeScale = 0.5;
+    }
     // The body catches moonlight; emission is concentrated in fine seams.
-    lit += uEdgeColor * (vEdge * (0.07 + 0.30 * uGlow) + 0.009 * uGlow);
+    lit += uEdgeColor * (vEdge * (0.07 + 0.30 * uGlow) + 0.009 * uGlow) * edgeScale;
     vec3 color = tonemap(lit * uExposure);
     color = mix(color, mistColorAt(uCameraPos, vWorld), mistAmount(uCameraPos, vWorld));
     float dist = length(vWorld - uCameraPos);
@@ -161,7 +171,7 @@ export const COVE_DEPTH_FRAG = /* glsl */`
   out vec4 outColor;
   void main() {
     if (uOrbitRadius > 0.0) {
-      if (length(vWorld.xy + vec2(0.0, uOrbitRadius)) - uOrbitRadius < uClipBelow) discard;
+      if (length(vWorld + vec3(0.0, uOrbitRadius, 0.0)) - uOrbitRadius < uClipBelow) discard;
     } else if (vWorld.y < uClipBelow) discard;
     outColor = vec4(0.0);
   }
