@@ -182,9 +182,12 @@ async function waitReady(page, timeout, allowNavigationError = false) {
     const label = await retry.textContent();
     // A real click is required after browsers deny audio activation.
     if (/Resume/.test(label)) await retry.click();
+    else if (/Retry/.test(label) && !allowNavigationError) throw new Error(await page.locator('#versionStatus').textContent() || 'Version restore failed.');
   }
   await page.waitForFunction(allowError => {
     const nav = document.querySelector('[data-version-navigation]');
+    const retry = document.getElementById('versionRetry');
+    if (!allowError && retry && !retry.hidden && /Retry/i.test(retry.textContent)) throw new Error(document.getElementById('versionStatus')?.textContent || 'Version restore failed.');
     return window.__MIDIO_VERSION_ADAPTER?.getState().phase === 'ready'
       && (!nav || nav.getAttribute('data-state') === 'idle' || (allowError && nav.getAttribute('data-state') === 'error'));
   }, allowNavigationError, { timeout });
@@ -544,7 +547,36 @@ async function runPrefix(options, audit, prefix, wavs) {
       'Full-song export blocker needs separate browser evidence; this harness does not claim it passed. Pending duplication uses a matching injected IDB record while the original owner remains alive.',
       'Audio source-start offsets and one AudioContext are observed; acoustic output and process-wide audio exclusivity require a real device check.');
     report.passed = true;
-  } catch (error) { report.failure = { message: error.message, stack: error.stack }; throw error; }
+  } catch (error) {
+    report.failure = { message: error.message, stack: error.stack };
+    report.failurePages = [];
+    for (const [index, page] of (context?.pages() || []).entries()) {
+      if (page.isClosed()) continue;
+      const diagnostic = { url: page.url() }; report.failurePages.push(diagnostic);
+      let diagnosticTimeout;
+      try {
+        diagnostic.state = await Promise.race([
+          page.evaluate(() => {
+            const adapter = window.__MIDIO_VERSION_ADAPTER;
+            const state = adapter?.getState(), source = state?.source;
+            const { source: omitted, ...safeState } = state || {};
+            void omitted;
+            const nav = document.querySelector('[data-version-navigation]'), metadata = document.getElementById('midio-version-metadata')?.textContent;
+            return { adapter: { ...safeState, sourceKind: source?.kind, files: source?.files?.map(file => ({ name: file.name, size: file.size, type: file.type, lastModified: file.lastModified })) || [] },
+              navigation: { state: nav?.getAttribute('data-state'), status: document.getElementById('versionStatus')?.textContent, retry: document.getElementById('versionRetry')?.textContent },
+              metadata: metadata ? JSON.parse(metadata) : null, range: window.__SMW?.rangeState,
+              sceneClass: window.__SMW?.sim?.biomes?.rangePresentation?.scene?.constructor.name,
+              probe: { restores: window.__VERSION_SMOKE?.restores, resumes: window.__VERSION_SMOKE?.resumes } };
+          }),
+          new Promise((resolve, reject) => { diagnosticTimeout = setTimeout(() => reject(new Error('Diagnostic evaluation timed out')), 5000); }),
+        ]);
+      } catch (diagnosticError) { diagnostic.error = diagnosticError.message; }
+      finally { clearTimeout(diagnosticTimeout); }
+      try { await page.screenshot({ path: path.join(output, `failure-page-${index}.png`), timeout: 5000 }); diagnostic.screenshot = `failure-page-${index}.png`; }
+      catch (screenshotError) { diagnostic.screenshotError = screenshotError.message; }
+    }
+    throw error;
+  }
   finally {
     await context?.tracing.stop({ path: path.join(output, 'trace.zip') }).catch(() => {});
     await context?.close(); await browser?.close();
