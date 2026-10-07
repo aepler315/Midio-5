@@ -87,19 +87,21 @@ const shadowLineElevation = (h) => -Math.sqrt((2 * Math.max(0, h)) / EARTH_RADIU
 export function lightPlacement(id, ctx) {
   const { lat, heading } = ctx;
   const front = heading + 180; // the sun behind the viewer lights the face we see
-  const line = (ctx.ground ?? 1500) + 0.55 * Math.max(300, (ctx.summit ?? 3000) - (ctx.ground ?? 1500));
+  const line = (ctx.ground ?? 1500) + 0.38 * Math.max(300, (ctx.summit ?? 3000) - (ctx.ground ?? 1500));
   switch (id) {
-    case 'alpenglow': return { sunAz: feasibleAzimuth(front + 25, lat), sunEl: shadowLineElevation(line) + 0.15, moonEl: -20, moonAz: 0, exposure: 0.75 };
+    // Just below the horizon: high summits clear the ranges between them and
+    // the sun while those ranges (and the Earth's curve) shade the valleys.
+    case 'alpenglow': return { sunAz: feasibleAzimuth(front + 25, lat), sunEl: Math.max(shadowLineElevation(line), -0.5), moonEl: -20, moonAz: 0, exposure: 1.0 };
     case 'golden': return { sunAz: feasibleAzimuth(front + 35, lat), sunEl: 5.5, moonEl: -20, moonAz: 0, exposure: 1.0 };
     case 'midday': return { sunAz: lat >= 0 ? 180 : 0, sunEl: clamp(90 - Math.abs(lat - 20), 25, 75), moonEl: -20, moonAz: 0, exposure: 1.35 };
     case 'raking': {
       const a = feasibleAzimuth(heading + 90, lat), b = feasibleAzimuth(heading - 90, lat);
       const off = (x) => Math.abs(((x - heading + 540) % 360) - 180);
-      return { sunAz: Math.abs(off(a) - 90) <= Math.abs(off(b) - 90) ? a : b, sunEl: 14, moonEl: -20, moonAz: 0, exposure: 1.0 };
+      return { sunAz: Math.abs(off(a) - 90) <= Math.abs(off(b) - 90) ? a : b, sunEl: 14, moonEl: -20, moonAz: 0, exposure: 1.3 };
     }
     case 'backlit': return { sunAz: feasibleAzimuth(heading + 12, lat), sunEl: 3.5, moonEl: -20, moonAz: 0, exposure: 0.85 };
-    case 'bluehour': return { sunAz: feasibleAzimuth(front + 20, lat), sunEl: -6.5, moonEl: 12, moonAz: heading - 35, exposure: 0.75, satMul: 0.9, tint: [0.88, 0.95, 1.12] };
-    case 'moonlight': return { sunAz: feasibleAzimuth(front, lat), sunEl: -28, moonEl: 32, moonAz: front + 25, exposure: 0.45, satMul: 0.5, tint: [0.78, 0.9, 1.18] };
+    case 'bluehour': return { sunAz: feasibleAzimuth(front + 20, lat), sunEl: -6.5, moonEl: 12, moonAz: heading - 35, exposure: 2.2, satMul: 0.9, tint: [0.88, 0.95, 1.12] };
+    case 'moonlight': return { sunAz: feasibleAzimuth(front, lat), sunEl: -28, moonEl: 32, moonAz: front + 25, exposure: 1.4, satMul: 0.5, tint: [0.78, 0.9, 1.18] };
     default: return lightPlacement('golden', ctx);
   }
 }

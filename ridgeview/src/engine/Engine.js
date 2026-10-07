@@ -136,6 +136,8 @@ export class Engine {
     cu.uCoverage.value = L.deckCoverage;
     cu.uDark.value = L.deckDark;
     this.deckH = L.deckH;
+    const ctx = this.looks.ctx;
+    g.uHypso.value.set((ctx.ground ?? 0) - 300, ctx.summit ?? 4000);
     g.uDeckOn.value = L.deckOn;
     g.uDeckH.value = L.deckH;
     g.uDeckDark.value = L.deckDark;

@@ -25,9 +25,9 @@ test('golden hour lights the face you look at; backlight puts the sun ahead', ()
   const b = lightPlacement('backlit', ctx);
   const offB = Math.abs(((b.sunAz - ctx.heading + 540) % 360) - 180);
   assert.ok(offB < 40, `backlit sun should be ahead, off ${offB}`);
-  // Alpenglow: sun below the horizon by the Earth-shadow angle of mid-face.
+  // Alpenglow: sun just below the horizon.
   const a = lightPlacement('alpenglow', ctx);
-  assert.ok(a.sunEl < -1 && a.sunEl > -2.5, `alpenglow el ${a.sunEl}`);
+  assert.ok(a.sunEl < 0 && a.sunEl >= -2.5, `alpenglow el ${a.sunEl}`);
 });
 
 test('looks animate toward their targets and the sun takes the short way', () => {

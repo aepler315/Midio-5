@@ -27,7 +27,7 @@ export function createGlobals() {
     uForestCol: c('#1d3a24'), uGrassCol: c('#5d7a3a'), uDryCol: c('#9a8a5c'), uRockCol: c('#77726c'), uRockCol2: c('#5d5853'),
     uSoilCol: c('#6b5a48'), uSnowCol: c('#eef3fa'), uWaterCol: c('#1b4656'), uAutumnCol: c('#b0602a'),
     uCloudOn: { value: 0 }, uCloudTop: { value: 2200 }, uCloudThick: { value: 500 }, uCloudCol: v3(),
-    uDeckOn: { value: 0 }, uDeckH: { value: 3000 }, uDeckDark: { value: 0 },
+    uDeckOn: { value: 0 }, uDeckH: { value: 3000 }, uDeckDark: { value: 0 }, uHypso: { value: new THREE.Vector2(0, 4000) },
     uStormDark: { value: 0 },
     uTime: { value: 0 },
     uShadow0: { value: null }, uShadow1: { value: null }, uShadowM0: { value: new THREE.Matrix4() }, uShadowM1: { value: new THREE.Matrix4() },
@@ -80,6 +80,7 @@ uniform float uAutumn, uWetness, uPlaya;
 uniform vec3 uForestCol, uGrassCol, uDryCol, uRockCol, uRockCol2, uSoilCol, uSnowCol, uWaterCol, uAutumnCol;
 uniform float uCloudOn, uCloudTop, uCloudThick;
 uniform float uDeckOn;
+uniform vec2 uHypso; // elevation range for the atlas tint
 uniform vec3 uCloudCol;
 uniform float uStormDark, uTime, uMicro;
 uniform float uClipOn, uReflOn, uReflH;
@@ -121,6 +122,9 @@ vec3 hsv2rgb(vec3 c) {
   vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
   return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
 }
+
+// The rim of a lake or the sea, from the filtered water mask (lakes are 0.5).
+float shoreBand(float w) { return smoothstep(0.08, 0.2, w) * (1.0 - smoothstep(0.25, 0.4, w)); }
 
 // Lines every 'interval' metres of height, ~w px wide. 1 on the line.
 float isoLine(float h, float interval, float w) {
@@ -320,7 +324,7 @@ void main() {
     vec3 ink = vec3(0.55, 0.35, 0.20);
     base = mix(base, ink, cl.x * 0.55 * (1.0 - water));
     base = mix(base, ink * 0.8, cl.y * 0.85 * (1.0 - water));
-    float shore = isoLine(tx.z, 0.25, 1.4) * smoothstep(0.0, 0.1, tx.z);
+    float shore = shoreBand(tx.z);
     base = mix(base, vec3(0.2, 0.45, 0.65), shore);
     col = base * 0.9;
   } else if (uStyle == 2) {
@@ -342,12 +346,13 @@ void main() {
     col = c * 0.9;
   } else if (uStyle == 3) {
     // Atlas hypsometric tint with hillshade.
-    float e = vH;
-    vec3 hc = e < 500.0 ? mix(vec3(0.33, 0.55, 0.36), vec3(0.55, 0.70, 0.42), e / 500.0)
-            : e < 1500.0 ? mix(vec3(0.55, 0.70, 0.42), vec3(0.88, 0.82, 0.52), (e - 500.0) / 1000.0)
-            : e < 2800.0 ? mix(vec3(0.88, 0.82, 0.52), vec3(0.66, 0.46, 0.30), (e - 1500.0) / 1300.0)
-            : e < 4200.0 ? mix(vec3(0.66, 0.46, 0.30), vec3(0.62, 0.58, 0.58), (e - 2800.0) / 1400.0)
-            : mix(vec3(0.62, 0.58, 0.58), vec3(0.97), clamp((e - 4200.0) / 1500.0, 0.0, 1.0));
+    // Scaled to this range's relief, so its own belts read as colour bands.
+    float e = clamp((vH - uHypso.x) / max(uHypso.y - uHypso.x, 100.0), 0.0, 1.0);
+    vec3 hc = e < 0.2 ? mix(vec3(0.30, 0.52, 0.33), vec3(0.52, 0.68, 0.40), e / 0.2)
+            : e < 0.45 ? mix(vec3(0.52, 0.68, 0.40), vec3(0.88, 0.82, 0.50), (e - 0.2) / 0.25)
+            : e < 0.7 ? mix(vec3(0.88, 0.82, 0.50), vec3(0.70, 0.48, 0.30), (e - 0.45) / 0.25)
+            : e < 0.9 ? mix(vec3(0.70, 0.48, 0.30), vec3(0.60, 0.55, 0.55), (e - 0.7) / 0.2)
+            : mix(vec3(0.60, 0.55, 0.55), vec3(0.97), (e - 0.9) / 0.1);
     hc = mix(hc, vec3(0.45, 0.65, 0.85), water);
     float shade = clamp(dot(n, normalize(-0.6 * east + 0.6 * north + 0.8 * up)), 0.0, 1.0);
     vec3 lit = hc * (0.35 + 0.85 * shade);
@@ -368,7 +373,7 @@ void main() {
     vec3 glow = mix(cyan, mag, hgt);
     vec3 c = vec3(0.0, 0.015, 0.03) + glow * (cl.x * 0.6 + cl.y * 1.6) + cyan * grid * 0.35 + glow * rim * 0.5;
     c += glow * 0.05 * max(dot(n, uSunDir), 0.0);
-    c = mix(c, vec3(0.0, 0.03, 0.06) + cyan * isoLine(tx.z, 0.25, 1.5) * 1.2, water);
+    c = mix(c, vec3(0.0, 0.03, 0.06) + cyan * shoreBand(tx.z) * 1.2, water);
     col = c;
   }
 
