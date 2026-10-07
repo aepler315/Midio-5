@@ -42,6 +42,7 @@ tiles. Add `?proxy=1` to route tiles through the dev server's disk cache
 | 1 – 7 | Light: alpenglow, golden hour, midday, raking, backlit, blue hour, moonlight |
 | Shift + 1 – 5 | Weather: summer, autumn, winter, storm, cloud sea |
 | T · O · L | Next style · next overlay · peak labels |
+| C | Copy a link to this exact view and look (also the Share button) |
 | F · ? | Fullscreen · help |
 
 Touch: one finger looks, pinch flies toward the pinch point, two-finger
@@ -49,7 +50,7 @@ twist/drag orbits.
 
 URL parameters: `range=<id>`, `view=<0..2>`, `light`, `weather`, `style`,
 `overlay`, `quality=low|medium|high|ultra`, `labels=0`, `instant` (skip the
-dive from orbit).
+dive from orbit), `at=lon,lat,height,heading,pitch[,fov]` (an exact pose).
 
 ## How viewpoints are calculated
 
@@ -118,6 +119,13 @@ Grand Teton.
   stars at night.
 - **Water.** Lakes in view are found by ray sampling; a half-resolution
   mirrored pass reflects the mountains in them, broken by ripples.
+- **Trees.** Within ~1-2 km (by quality) instanced 3D conifers or
+  broadleaf crowns stand on a world-locked jittered grid; the vertex
+  shader runs the same land-cover function as the ground shader, so trees
+  grow exactly where the ground is painted forest, shrink toward the
+  treeline, and carry snow in winter.
+- **Sky.** High cloud at ~8 km catches dawn and dusk colour; storms bring a
+  low dark deck that swallows the summits, and falling snow.
 - **Looks.** Light presets are aimed at the current viewpoint (golden
   hour lights the face you are looking at; backlit puts the sun behind
   the crest) and kept to azimuths the sun can reach at that latitude.
@@ -140,7 +148,8 @@ Grand Teton.
 ## Development
 
 ```sh
-npm test                       # unit tests (geo, PNG, tile builder, viewpoints)
+npm test                       # unit tests (geo, PNG, tile builder, viewpoints, looks, flights)
+npm run smoke                  # headless interaction test (scroll, drag, keys, jumps, search)
 node tools/compute-viewpoints.mjs [--only tetons,sawtooth]
 node tools/build-peaks.mjs
 node tools/shot.mjs "range=tetons&view=0" out.png     # headless render

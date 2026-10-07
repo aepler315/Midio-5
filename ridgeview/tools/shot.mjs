@@ -30,15 +30,18 @@ export async function shoot({ query, out, W = 1280, H = 720, waitS = 90, script 
   const url = `http://127.0.0.1:${port}/?proxy=1&test=1&${query}`;
   await page.goto(url);
   const t0 = Date.now();
-  let stable = 0, info = null;
+  let stable = 0, info = null, lastFrame = -1;
   while (Date.now() - t0 < waitS * 1000) {
     await page.waitForTimeout(1000);
     info = await page.evaluate(() => {
       const e = window.__rv?.engine;
       if (!e) return null;
-      return { wanted: e.tiles.stats.wanted, drawn: e.tiles.stats.drawn, built: e.tiles.stats.built, building: e.tiles.jobs.size, queue: e.tiles.queue.length, dem: e.dem.queue.size + e.dem.inFlight, maxZ: e.tiles.stats.maxZ, exposure: e.exposure };
+      return { frame: e.frameNo, wanted: e.tiles.stats.wanted, drawn: e.tiles.stats.drawn, built: e.tiles.stats.built, building: e.tiles.jobs.size, queue: e.tiles.queue.length, dem: e.dem.queue.size + e.dem.inFlight, maxZ: e.tiles.stats.maxZ, exposure: e.exposure };
     }).catch(() => null);
-    if (info && info.wanted === 0 && info.building === 0 && info.queue === 0 && info.dem === 0 && info.drawn > 0) stable++; else stable = 0;
+    const idle = info && info.wanted === 0 && info.building === 0 && info.queue === 0 && info.dem === 0 && info.drawn > 0;
+    // Only count checks that saw new frames: slow software GL can sit between frames.
+    if (!idle) stable = 0;
+    else if (info.frame > lastFrame) { stable++; lastFrame = info.frame; }
     if (stable >= 3) break;
   }
   if (script) await page.evaluate(script);

@@ -354,6 +354,9 @@ function loop(now) {
         engine.rig.set(lon, lat, h + (g + v.eye.agl - h) * Math.min(1, dt * 3), hp.heading, hp.pitch);
       }
     }
+    // Trees near a low viewpoint would hide the view it was chosen for.
+    const vv = ranges[state.index].views[state.view];
+    engine.trees.uniforms.uClearR.value = !state.free && vv.eye.agl < 50 ? 140 : 0;
     controls.update(dt);
   }
   engine.frame(dt);

@@ -23,7 +23,7 @@ attribute vec2 aUv;
 attribute float aH;
 attribute float aSeed;
 uniform sampler2D uTex;
-uniform float uTexSize, uS, uTileSizeM, uTreeFar, uBroadleaf, uTreeScale;
+uniform float uTexSize, uS, uTileSizeM, uTreeFar, uBroadleaf, uTreeScale, uClearR;
 uniform vec2 uTileOrigin;
 uniform vec3 uTileCenter;
 uniform mat4 uShadowM0, uShadowM1, uMirror;
@@ -48,7 +48,8 @@ void main() {
   vec4 base = modelMatrix * vec4(aOffset, 1.0);
   float dist = length(base.xyz);
   vFade = smoothstep(uTreeFar, uTreeFar * 0.7, dist);
-  if (c.forest * (1.0 - c.water) < r * 0.9 + 0.08 || vFade <= 0.0) {
+  // A clearing around a low viewpoint: the calculated view has no trees in it.
+  if (c.forest * (1.0 - c.water) < r * 0.9 + 0.08 || vFade <= 0.0 || dist < uClearR) {
     gl_Position = vec4(0.0, 0.0, -2.0, 1.0); // not a tree: clipped away
     return;
   }
@@ -196,7 +197,7 @@ export class Trees {
     this.far = 1400;
     this.enabled = true;
     this.uniforms = {
-      uTreeFar: { value: this.far }, uBroadleaf: { value: 0 }, uTreeScale: { value: 1 },
+      uTreeFar: { value: this.far }, uBroadleaf: { value: 0 }, uTreeScale: { value: 1 }, uClearR: { value: 0 },
     };
     this.count = 0;
     tiles.onDispose = (t) => this._drop(t);
