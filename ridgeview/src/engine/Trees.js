@@ -49,21 +49,23 @@ void main() {
   float dist = length(base.xyz);
   vFade = smoothstep(uTreeFar, uTreeFar * 0.7, dist);
   // A clearing around a low viewpoint: the calculated view has no trees in it.
-  if (c.forest * (1.0 - c.water) < r * 0.9 + 0.08 || vFade <= 0.0 || dist < uClearR) {
+  if (c.forest * (1.0 - c.water) * (0.8 + 0.4 * c.fS) < r * 0.85 + 0.15 || vFade <= 0.0 || dist < uClearR) {
     gl_Position = vec4(0.0, 0.0, -2.0, 1.0); // not a tree: clipped away
     return;
   }
   vec3 east = normalize(cross(vec3(0.0, 0.0, 1.0), up));
   vec3 north = cross(up, east);
   float yaw = h1(aSeed + 3.1) * 6.2831;
-  vec3 ax = east * cos(yaw) + north * sin(yaw), ay = -east * sin(yaw) + north * cos(yaw);
+  // Model x, y, z -> ax, up, az must stay right-handed (az = ax x up), or every
+  // triangle turns inside out and the boughs are lit from within.
+  vec3 ax = east * cos(yaw) + north * sin(yaw), az = cross(ax, up);
   // Smaller, wind-stunted trees toward the treeline.
   float tall = mix(14.0, 30.0, h1(aSeed + 7.7)) * (1.0 - 0.65 * c.alpine) * uTreeScale;
   float wide = tall * mix(0.26, 0.36, h1(aSeed + 9.1)) * mix(1.0, 1.9, uBroadleaf);
   vec3 p = position;
-  vec3 local = ax * p.x * wide + ay * p.z * wide + up * p.y * tall;
+  vec3 local = ax * p.x * wide + az * p.z * wide + up * p.y * tall;
   vec4 wp = base + vec4(local, 0.0);
-  vN = normalize(ax * normal.x + ay * normal.z + up * normal.y * (wide / tall));
+  vN = normalize((ax * normal.x + az * normal.z) * tall / wide + up * normal.y);
   vRel = wp.xyz;
   vH = aH + p.y * tall;
   vSnow = c.snow;
