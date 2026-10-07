@@ -276,7 +276,9 @@ async function wake(page) {
   // the next button tap even though its HUD was programmatically revealed.
   const stage = page.locator('#stage'), bounds = await stage.boundingBox();
   assert.ok(bounds, 'stage must be present for a real wake tap');
-  await stage.click({ position: { x: bounds.width / 2, y: bounds.height / 3 } });
+  // Canvas pixels redraw continuously on software GL. A real pointer tap
+  // needs its on-screen bounds, not Playwright's animation-frame stability wait.
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 3);
 }
 async function focusVisibleNavigation(locator) {
   await locator.evaluate(button => {
@@ -417,8 +419,11 @@ async function mobileChecks(page, output, report) {
   await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
   await page.waitForTimeout(250); assert.equal(page.url(), oldUrl, 'first tap on faded arrow location only wakes HUD');
   await wake(page);
+  // Running playback has already proved the focus/fade/wake lifecycle. Pause
+  // only for its evidence image so software GL can finish the screenshot.
+  await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true));
   report.mobile.hidden = hidden; report.mobile.portraitLayout = await readLayout();
-  await page.screenshot({ path: path.join(output, 'portrait.png') });
+  await page.screenshot({ path: path.join(output, 'portrait.png'), timeout: 60000 });
   assertLabel(report.mobile.portraitLayout);
   await page.evaluate(paused => window.__MIDIO_VERSION_ADAPTER.setPaused(paused), initialPaused);
   await page.setViewportSize({ width: 1280, height: 720 });
