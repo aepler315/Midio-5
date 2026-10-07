@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Browser music visualizer: drop a song, pick a world, watch it play itself.",
   "scripts": {
-    "start": "node tools/start-history.mjs",
-    "dev": "node tools/start-history.mjs 8080",
+    "start": "node tools/serve.js",
+    "dev": "node tools/serve.js 8080",
+    "archive": "node tools/archive-serve.mjs --open",
     "lint": "eslint src tools test",
     "test": "node --test test/*.js test/*.mjs",
     "test:all": "node --test",
