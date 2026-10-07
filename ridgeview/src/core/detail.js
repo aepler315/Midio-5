@@ -45,10 +45,11 @@ export function detailHeight(mx, my, rough, texelM) {
     const w = (lam / texelM - 2.5) / 1.5; // fade in between 2.5 and 4 samples per wavelength
     if (w <= 0) break;
     const n = gradNoise(mx / lam + lam * 17.13, my / lam - lam * 7.71);
-    // Ridged on rough ground: sharp crests read as rock ribs.
-    const ridged = 0.5 - Math.abs(n);
+    // Ridged on rough ground reads as rock ribs; the crest is rounded (smooth
+    // |n|), since a razor crease lights up as a thin line, like wood grain.
+    const ridged = 0.5 - Math.sqrt(n * n + 0.03);
     const amp = lam * (0.05 + 0.11 * rough) * Math.min(1, w);
-    h += amp * (n * (1 - rough * 0.6) + ridged * rough * 0.9);
+    h += amp * (n * (1 - rough * 0.5) + ridged * rough * 0.6);
   }
   return h * rough;
 }

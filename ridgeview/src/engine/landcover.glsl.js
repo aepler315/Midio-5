@@ -62,10 +62,8 @@ Cover landCover(vec4 tx, vec2 gp, float h, vec3 up) {
   float pot = band * (1.0 - smoothstep(40.0, 50.0, c.sdeg)) * (1.0 - c.rock) * (1.0 - c.water);
   // Dry valley floors stay open (sage, grass); wetter climates forest them.
   pot *= mix(1.0, smoothstep(2.0, 7.0, c.sdeg + c.fM * 4.0), clamp(uDryness * 4.0, 0.0, 1.0));
-  // Avalanche paths: open strips down the fall line on steep forested slopes.
-  vec2 fall = c.slope > 1e-3 ? tx.xy / c.slope : vec2(1.0, 0.0);
-  float across = dot(gp, vec2(-fall.y, fall.x));
-  float chute = smoothstep(0.55, 0.8, vnoise(vec2(across / 48.0, dot(gp, fall) / 900.0) + c.warp * 0.4, 1024.0) * 0.5 + 0.5)
+  // Avalanche paths and slide scars: open patches in steep hollows.
+  float chute = smoothstep(0.2, 0.55, vnoise(gp / 64.0 + c.warp * 0.8, 32.0))
               * smoothstep(24.0, 32.0, c.sdeg) * smoothstep(-0.2, -0.8, c.cvx + c.fM * 0.4);
   float cover = c.moist + c.fM * 0.32 + c.fS * 0.14 + (uForestDensity - 0.65) * 0.9 - (1.0 - band) * 0.6 - chute * 0.7;
   c.forest = smoothstep(0.36, 0.56, cover) * smoothstep(0.02, 0.25, pot);

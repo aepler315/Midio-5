@@ -80,12 +80,14 @@ export class Shadows {
       c.matrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       c.frustum.setFromProjectionMatrix(c.matrix);
       // Bias in depth units: a few texels of slope tolerance, in metres.
-      c.bias = (texel * 2.5 + 1.5) / (cam.far - cam.near);
+      c.texelM = texel;
+      c.bias = (texel * 0.6 + 0.5) / (cam.far - cam.near);
       frusta.push(c.frustum);
     });
     this.globals.uShadowM0.value.copy(this.cascades[0].matrix);
     this.globals.uShadowM1.value.copy(this.cascades[1].matrix);
     this.globals.uShadowBias.value.set(this.cascades[0].bias, this.cascades[1].bias);
+    this.globals.uShadowTexelM.value.set(this.cascades[0].texelM, this.cascades[1].texelM);
     return frusta;
   }
 

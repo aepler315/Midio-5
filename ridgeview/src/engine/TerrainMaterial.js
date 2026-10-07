@@ -31,7 +31,7 @@ export function createGlobals() {
     uStormDark: { value: 0 },
     uTime: { value: 0 },
     uShadow0: { value: null }, uShadow1: { value: null }, uShadowM0: { value: new THREE.Matrix4() }, uShadowM1: { value: new THREE.Matrix4() },
-    uShadowOn: { value: 0 }, uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) }, uShadowBias: { value: new THREE.Vector2(1e-4, 1e-4) },
+    uShadowOn: { value: 0 }, uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) }, uShadowBias: { value: new THREE.Vector2(1e-4, 1e-4) }, uShadowTexelM: { value: new THREE.Vector2(4, 40) },
     uMicro: { value: 1 },
     // Planar reflection of a lake: the mirrored pass and the texture it makes.
     uMirror: { value: new THREE.Matrix4() }, uClipOn: { value: 0 },
@@ -90,6 +90,8 @@ uniform sampler2D uShadow0, uShadow1;
 uniform float uShadowOn;
 uniform vec2 uShadowTexel;
 uniform vec2 uShadowBias;
+uniform vec2 uShadowTexelM;
+uniform mat4 uShadowM0, uShadowM1;
 varying vec2 vUv;
 varying float vH;
 varying vec3 vRel;
@@ -110,11 +112,17 @@ float shadowPCF(sampler2D m, vec4 sc, float rad, float bias) {
   for (int i = 0; i < 8; i++) s += shadowTap(m, vec3(c.xy + R * K[i] * uShadowTexel * rad, c.z), bias);
   return s / 8.0;
 }
-float terrainShadow() {
+// Normal-offset lookups: move the sample point off the surface by about a
+// shadow texel (more where the light grazes), so slopes do not shadow
+// themselves into contour-like stripes at low sun.
+float terrainShadow(vec3 nGeo) {
   if (uShadowOn < 0.5) return 1.0;
-  float s = shadowPCF(uShadow0, vS0, 1.6, uShadowBias.x);
+  float graze = 1.0 - clamp(dot(nGeo, uSunDir), 0.0, 1.0);
+  vec3 off0 = nGeo * uShadowTexelM.x * (1.0 + 2.0 * graze) + uSunDir * uShadowTexelM.x * 0.5;
+  float s = shadowPCF(uShadow0, uShadowM0 * vec4(vRel + off0, 1.0), 1.6, uShadowBias.x);
   if (s >= 0.0) return s;
-  s = shadowPCF(uShadow1, vS1, 1.3, uShadowBias.y);
+  vec3 off1 = nGeo * uShadowTexelM.y * (1.0 + 2.0 * graze) + uSunDir * uShadowTexelM.y * 0.5;
+  s = shadowPCF(uShadow1, uShadowM1 * vec4(vRel + off1, 1.0), 1.3, uShadowBias.y);
   return s >= 0.0 ? s : 1.0;
 }
 
@@ -196,7 +204,7 @@ void main() {
         if (vis <= 0.0) continue;
         vec3 cl = cellular(gp / B + warp * 0.5, 2048.0 / B);
         float a = cl.z * 6.2831;
-        slopeEN += vec2(cos(a), sin(a)) * (0.35 + 0.5 * fract(cl.z * 7.0)) * rockVis * vis * (s == 0 ? 0.9 : 0.6);
+        slopeEN += vec2(cos(a), sin(a)) * (0.35 + 0.5 * fract(cl.z * 7.0)) * rockVis * vis * (s == 0 ? 0.45 : 0.6);
       }
     }
   }
@@ -214,14 +222,13 @@ void main() {
   float strata = (sin(vH / 9.0 + fM * 2.0 + fS * 4.0) * 0.5 + 0.5) * smoothstep(0.4, 0.8, uDryness);
   vec3 blk = cellular(gp / 16.0 + warp * 0.5, 128.0);
   vec3 blk2 = cellular(gp / 4.0 + warp * 0.5, 512.0);
-  float crack = (1.0 - smoothstep(0.0, 0.12, blk.y - blk.x)) * smoothstep(10.0, 3.0, footM)
-              + (1.0 - smoothstep(0.0, 0.15, blk2.y - blk2.x)) * smoothstep(3.0, 0.8, footM) * 0.7;
+  // Joints show only once a block spans many pixels, and not every joint is open.
+  float crack = (1.0 - smoothstep(0.0, 0.06, blk.y - blk.x)) * smoothstep(1.6, 0.6, footM) * step(0.35, fract(blk.z * 13.0))
+              + (1.0 - smoothstep(0.0, 0.08, blk2.y - blk2.x)) * smoothstep(0.4, 0.15, footM) * 0.7;
   vec3 rockC = mix(uRockCol, uRockCol2, clamp(0.5 + 0.6 * fL + 0.25 * strata - 0.1 + (blk.z - 0.5) * 0.35 * smoothstep(12.0, 4.0, footM), 0.0, 1.0));
-  // Water staining and lichen streaks running down the fall line of cliffs.
-  vec2 fall2 = slope > 1e-3 ? tx.xy / slope : vec2(1.0, 0.0);
-  float streak = vnoise(vec2(dot(gp, vec2(-fall2.y, fall2.x)) / 6.0, dot(gp, fall2) / 160.0) + warp * 0.3, 2048.0);
-  rockC *= 1.0 - 0.32 * smoothstep(0.1, 0.7, streak) * smoothstep(30.0, 50.0, sdeg);
-  rockC *= (0.92 + 0.16 * strata) * (1.0 - 0.5 * clamp(crack, 0.0, 1.0)) * (1.0 + 0.2 * nS * near) * (1.0 - 0.15 * smoothstep(0.0, -1.5, cvx));
+  // Dark weathering patches on steep faces (world-locked mottling).
+  rockC *= 1.0 - 0.25 * smoothstep(0.15, 0.7, vnoise(gp / 32.0 + warp * 1.5, 64.0)) * smoothstep(30.0, 50.0, sdeg);
+  rockC *= (0.92 + 0.16 * strata) * (1.0 - 0.35 * clamp(crack, 0.0, 1.0)) * (1.0 + 0.2 * nS * near) * (1.0 - 0.15 * smoothstep(0.0, -1.5, cvx));
   rockC = mix(rockC, vec3(0.11, 0.12, 0.07), 0.18 * smoothstep(0.15, 0.5, fS) * (1.0 - alpine * 0.6) * (1.0 - uDryness));
   // Low outcrops among the trees are weathered dark and half overgrown.
   rockC = mix(rockC * 0.72, rockC, alpine);
@@ -254,7 +261,8 @@ void main() {
   float hKm = max(vH, 0.0) / 1000.0;
   vec3 sunT = lightTransmittance(hKm, dot(up, uSunDir));
   vec3 moonT = lightTransmittance(hKm, dot(up, uMoonDir));
-  float sh = terrainShadow();
+  vec3 nGeo = normalize(-tx.x * east - tx.y * north + up);
+  float sh = terrainShadow(nGeo);
   float ndl = dot(n, uSunDir);
   // Canopies scatter light around (wrap), meadows and rock are near-Lambertian.
   float diffuse = mix(max(ndl, 0.0), clamp((ndl + 0.3) / 1.3, 0.0, 1.0) * 0.85, forest * 0.7);
