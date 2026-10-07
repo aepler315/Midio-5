@@ -98,11 +98,15 @@ export function lightPlacement(id, ctx) {
       return { sunAz: Math.abs(off(a) - 90) <= Math.abs(off(b) - 90) ? a : b, sunEl: 14, moonEl: -20, moonAz: 0, exposure: 1.0 };
     }
     case 'backlit': return { sunAz: feasibleAzimuth(heading + 12, lat), sunEl: 3.5, moonEl: -20, moonAz: 0, exposure: 0.85 };
-    case 'bluehour': return { sunAz: feasibleAzimuth(front + 20, lat), sunEl: -6.5, moonEl: 12, moonAz: heading - 35, exposure: 0.5 };
-    case 'moonlight': return { sunAz: feasibleAzimuth(front, lat), sunEl: -28, moonEl: 32, moonAz: front + 25, exposure: 0.4 };
+    case 'bluehour': return { sunAz: feasibleAzimuth(front + 20, lat), sunEl: -6.5, moonEl: 12, moonAz: heading - 35, exposure: 0.4, satMul: 0.9, tint: [0.88, 0.95, 1.12] };
+    case 'moonlight': return { sunAz: feasibleAzimuth(front, lat), sunEl: -28, moonEl: 32, moonAz: front + 25, exposure: 0.22, satMul: 0.5, tint: [0.78, 0.9, 1.18] };
     default: return lightPlacement('golden', ctx);
   }
 }
+
+// High cloud cover by light: a little texture in the sky catches the colour
+// of dawn and dusk; midday stays mostly clear.
+const HIGH_CLOUDS = { alpenglow: 0.45, golden: 0.4, midday: 0.18, raking: 0.28, backlit: 0.5, bluehour: 0.35, moonlight: 0.25 };
 
 function weatherParams(id, ctx) {
   const base = { snowShift: 0, autumn: 0, wetness: 0, mieMul: 1, rayMul: 1, cloudOn: 0, deckOn: 0, deckCoverage: 0.6, deckDark: 0, stormDark: 0, sunMul: 1, sat: 1.04, contrast: 1.02, exposureMul: 1 };
@@ -110,7 +114,8 @@ function weatherParams(id, ctx) {
   switch (id) {
     case 'autumn': return { ...base, snowShift: -300, autumn: 1, sat: 1.08 };
     case 'winter': return { ...base, snowShift: -3300, mieMul: 0.7, sat: 0.94, contrast: 1.05 };
-    case 'storm': return { ...base, snowShift: -1000, wetness: 0.8, mieMul: 7, rayMul: 1.3, deckOn: 1, deckCoverage: 0.97, deckDark: 0.6, stormDark: 0.3, sunMul: 0.3, sat: 0.72, contrast: 1.12, exposureMul: 1.5, deckH: summit + 450 };
+    // Summits vanish into a dark deck; snow falls.
+    case 'storm': return { ...base, highCloudMul: 0, snowShift: -1100, wetness: 0.8, mieMul: 9, rayMul: 1.3, deckOn: 1, deckCoverage: 0.9, deckDark: 0.75, stormDark: 0.45, sunMul: 0.2, sat: 0.62, contrast: 1.15, exposureMul: 1.5, deckH: ground + 0.62 * (summit - ground), precip: 1, tintMul: [0.88, 0.94, 1.04] };
     case 'cloudsea': {
       const top = clamp(ground + 0.33 * (summit - ground), ground + 150, summit - 500);
       return { ...base, cloudOn: 1, deckOn: 1, deckCoverage: 0.86, cloudTop: top, deckH: top, mieMul: 0.8, sat: 1.06 };
@@ -139,10 +144,12 @@ export class Looks {
     const B = BIOMES[this.biome] ?? BIOMES.conifer;
     return {
       sunAz: L.sunAz, sunEl: L.sunEl, moonAz: L.moonAz, moonEl: L.moonEl, exposure: L.exposure * W.exposureMul,
-      ...W, cloudTop: W.cloudTop ?? this.cur?.cloudTop ?? 2000, deckH: W.deckH ?? this.cur?.deckH ?? 3000,
+      ...W, sat: W.sat * (L.satMul ?? 1), precip: W.precip ?? 0,
+      tint: (L.tint ?? [1, 1, 1]).map((v, i) => v * (W.tintMul?.[i] ?? 1)), cloudTop: W.cloudTop ?? this.cur?.cloudTop ?? 2000, deckH: W.deckH ?? this.cur?.deckH ?? 3000,
       forest: hexLin(B.forest), grass: hexLin(B.grass), dry: hexLin(B.dry), rock: hexLin(B.rock), rock2: hexLin(B.rock2),
       soil: hexLin(B.soil), autumnCol: hexLin(B.autumn), density: B.density, dryness: B.dryness, floor: B.floor, playa: B.playa,
       overlayMix: this.overlay === 'none' ? 0 : 1,
+      highClouds: (HIGH_CLOUDS[this.light] ?? 0.3) * (W.highCloudMul ?? 1),
     };
   }
 

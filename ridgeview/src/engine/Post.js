@@ -13,7 +13,7 @@ const FS = /* glsl */ `
 precision highp float;
 uniform sampler2D uScene, uDepth, uSnap;
 uniform vec2 uRes;
-uniform float uExposure, uTime, uSpeed, uFlash, uTrans, uPixel, uVignette, uSat, uContrast;
+uniform float uExposure, uTime, uSpeed, uFlash, uTrans, uPixel, uVignette, uSat, uContrast, uPrecip;
 uniform int uStyle, uTransKind, uHasSnap;
 uniform vec3 uTint;
 varying vec2 vUv;
@@ -92,15 +92,33 @@ vec3 styled(vec2 uv) {
       vec2 o = vec2(cos(a), sin(a)) * (6.0 + 6.0 * float(i % 2)) / uRes;
       glow += max(grade(sceneAt(uv + o)) - 0.25, 0.0);
     }
-    c += glow / 12.0 * 1.4;
+    c += glow / 12.0 * 0.6;
     float scan = 0.85 + 0.15 * sin(uv.y * uRes.y * 1.6 + uTime * 8.0);
     c *= scan * (0.97 + 0.03 * sin(uTime * 37.0));
   }
   return c;
 }
 
+// Falling snow: three layers of flakes at different depths, drifting.
+float flakes(vec2 uv) {
+  float s = 0.0;
+  vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+  for (int i = 0; i < 3; i++) {
+    float k = float(i);
+    float scale = 14.0 + k * 16.0;
+    vec2 p = uv * asp * scale + vec2(sin(uTime * 0.7 + k) * 0.6 + uTime * (0.25 + k * 0.1), uTime * (1.6 + k * 0.9));
+    vec2 cell = floor(p), f = fract(p) - 0.5;
+    float h = hash12(cell + k * 17.0);
+    vec2 o = vec2(hash12(cell + 3.1), hash12(cell + 7.7)) - 0.5;
+    float r = length(f - o * 0.6);
+    s += step(0.55, h) * smoothstep(0.09 - k * 0.02, 0.0, r) * (0.9 - k * 0.25);
+  }
+  return s;
+}
+
 void main() {
   vec3 c = styled(vUv);
+  if (uPrecip > 0.001 && uStyle == 0) c = mix(c, vec3(0.85, 0.88, 0.92), clamp(flakes(vUv), 0.0, 1.0) * 0.75 * uPrecip);
   if (uStyle != 1 && uStyle != 2) {
     float v = smoothstep(1.25, 0.35, length((vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0)));
     c *= mix(1.0, v, uVignette);
@@ -134,7 +152,7 @@ export class Post {
       uScene: { value: null }, uDepth: { value: null }, uSnap: { value: null },
       uRes: { value: new THREE.Vector2(1, 1) }, uExposure: { value: 1 }, uTime: { value: 0 }, uSpeed: { value: 0 },
       uFlash: { value: 0 }, uTrans: { value: -1 }, uTransKind: { value: 0 }, uHasSnap: { value: 0 }, uPixel: { value: 4 },
-      uVignette: { value: 0.6 }, uSat: { value: 1 }, uContrast: { value: 1 }, uTint: { value: new THREE.Vector3(1, 1, 1) },
+      uVignette: { value: 0.6 }, uSat: { value: 1 }, uPrecip: { value: 0 }, uContrast: { value: 1 }, uTint: { value: new THREE.Vector3(1, 1, 1) },
       uStyle: { value: 0 },
     };
     this.material = new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: FS, uniforms: this.uniforms, depthTest: false, depthWrite: false });

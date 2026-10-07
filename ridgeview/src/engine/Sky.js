@@ -15,7 +15,8 @@ ${NOISE}
 ${ATMOS}
 uniform mat4 uInvViewProj;
 uniform int uStyle;
-uniform float uTime, uStars;
+uniform float uTime, uStars, uHighClouds;
+uniform vec3 uSkyIrr;
 uniform vec3 uSkyOrigin; // camera position in the mirrored pass (else 0)
 varying vec2 vNdc;
 
@@ -60,6 +61,30 @@ void main() {
       float maria = 0.8 + 0.2 * vnoise(q * 3.0 + 7.0, 64.0);
       col += trans * lit * maria * 1.2 * smoothstep(1.0, 0.96, length(q));
     }
+    // High cloud (altocumulus / cirrus) at ~8 km, lit by sunlight that has
+    // crossed the atmosphere to that height: it catches colour before
+    // sunrise and after sunset, and glows around a sun behind it.
+    if (uHighClouds > 0.001) {
+      vec2 tc = raySphere(uCamKm, d, RP + 8.0);
+      float t = tc.x > 0.0 ? tc.x : tc.y;
+      if (t > 0.0 && t < 420.0) {
+        vec3 p = uCamKm + d * t;
+        vec3 drift = vec3(uTime * 0.003, uTime * 0.001, 0.0);
+        float big = fbm3(p * 0.045 + drift);
+        float streak = fbm3(vec3(p.xy * 0.18, p.z * 0.05) + drift * 3.0);
+        float puff = fbm3(p * 0.6 + drift * 6.0);
+        float dens = smoothstep(1.0 - uHighClouds * 0.85, 1.15 - uHighClouds * 0.6, big * 0.75 + streak * 0.35 + puff * 0.18);
+        float fade = smoothstep(420.0, 180.0, t);
+        vec3 upc = normalize(p);
+        vec3 sunT = lightTransmittance(8.0, dot(upc, uSunDir));
+        vec3 moonT = lightTransmittance(8.0, dot(upc, uMoonDir));
+        float fwd = phaseM(dot(d, uSunDir), 0.6) * 4.0 + 0.35;
+        vec3 lit = (sunT * uSunPower * fwd + moonT * uMoonPower * 0.5) * 0.06 + uSkyIrr * 0.12;
+        float a = dens * fade * 0.85;
+        // The cloud sits high: most of the air (and its glow) is in front of it.
+        col = mix(col, lit * trans + col * 0.4, a);
+      }
+    }
     // Stars and a hint of the Milky Way when the sky is dark.
     float dark = clamp(1.0 - dot(col, vec3(0.3, 0.5, 0.2)) * 30.0, 0.0, 1.0) * uStars;
     if (dark > 0.0) {
@@ -92,6 +117,7 @@ export class Sky {
       ...globals,
       uInvViewProj: { value: new THREE.Matrix4() },
       uStars: { value: 1 },
+      uHighClouds: { value: 0 },
       uSkyOrigin: { value: new THREE.Vector3() },
     };
     this.mesh = new THREE.Mesh(geom, new THREE.ShaderMaterial({

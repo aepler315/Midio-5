@@ -34,6 +34,19 @@ vec3 noised(vec2 x, float per) {
   return vec3(v * 2.0 - 1.0, 2.0 * du * vec2(k1 + k4 * u.y, k2 + k4 * u.x));
 }
 float vnoise(vec2 x, float per) { return noised(x, per).x; }
+// Non-periodic 3D value noise in [0, 1] and its fbm.
+float vnoise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y);
+  float b = mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y);
+  return mix(a, b, f.z);
+}
+float fbm3(vec3 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) { s += a * vnoise3(p); p = p * 2.03 + 11.7; a *= 0.5; }
+  return s;
+}
 `;
 
 export const ATMOS = /* glsl */ `
@@ -95,9 +108,12 @@ void aerial(vec3 aKm, vec3 bKm, vec3 viewDir, out vec3 T, out vec3 L) {
   vec3 sM = vec3(BM * uMieMul * odM);
   vec3 tau = sR + sM * 1.11;
   T = exp(-tau);
-  vec3 mid = mix(aKm, bKm, 0.5);
-  float hm = max(0.0, length(mid) - RP);
-  vec3 up = normalize(mid);
+  // Most of the scattering happens in the dense air near the lower end, so
+  // light it with the sunlight that reaches there (not a midpoint that,
+  // seen from orbit, would be out in space).
+  vec3 low = ha < hb ? aKm : bKm;
+  float hm = min(ha, hb) + min(abs(dh), 2.0);
+  vec3 up = normalize(low);
   float mu = dot(viewDir, uSunDir);
   vec3 sunT = lightTransmittance(hm, dot(up, uSunDir));
   vec3 moonT = lightTransmittance(hm, dot(up, uMoonDir));

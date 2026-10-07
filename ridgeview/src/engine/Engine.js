@@ -10,6 +10,7 @@ import { Clouds } from './Clouds.js';
 import { Shadows } from './Shadows.js';
 import { Post } from './Post.js';
 import { Reflection } from './Reflection.js';
+import { Trees } from './Trees.js';
 import { sampleSkyLight } from './AtmosphereCPU.js';
 import { CameraRig } from '../scene/CameraRig.js';
 import { Looks } from '../scene/Looks.js';
@@ -33,9 +34,13 @@ export class Engine {
     this.shadows = new Shadows(this.globals, QUALITY[quality].shadowSize);
     this.post = new Post();
     this.reflection = new Reflection(this.globals);
+    this.trees = new Trees(this.globals, this.tiles);
+    this.trees.setRange(QUALITY[quality].treeFar);
+    this.trees.enabled = QUALITY[quality].treeFar > 0;
     this.scene = new THREE.Scene();
     this.scene.matrixWorldAutoUpdate = false;
     this.scene.add(this.tiles.group);
+    this.scene.add(this.trees.group);
     this.scene.add(this.clouds.mesh);
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.3, 1e8);
     this.rig = new CameraRig();
@@ -54,6 +59,8 @@ export class Engine {
   setQuality(name) {
     this.tiles.setQuality(name);
     this.shadows.setSize(QUALITY[name].shadowSize);
+    this.trees.setRange(QUALITY[name].treeFar);
+    this.trees.enabled = QUALITY[name].treeFar > 0;
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, name === 'low' ? 1 : name === 'medium' ? 1.25 : 2);
     this.resize();
   }
@@ -128,10 +135,13 @@ export class Engine {
     cu.uCoverage.value = L.deckCoverage;
     cu.uDark.value = L.deckDark;
     this.deckH = L.deckH;
+    this.sky.uniforms.uHighClouds.value = L.highClouds ?? 0;
     const p = this.post.uniforms;
     p.uStyle.value = this.looks.styleCode;
     p.uSat.value = L.sat;
     p.uContrast.value = L.contrast;
+    p.uTint.value.set(...(L.tint ?? [1, 1, 1]));
+    p.uPrecip.value = (L.precip ?? 0) * clamp(1 - (this.agl ?? 0) / 4000, 0, 1); // not from orbit
   }
 
   _updateSkyLight() {
@@ -154,10 +164,21 @@ export class Engine {
     const sunUp = Math.max(0, up[0] * params.sunDir[0] + up[1] * params.sunDir[1] + up[2] * params.sunDir[2]);
     const c = s.sunAtGround.map((v, i) => (0.85 / Math.PI) * (v * params.sunPower * (sunUp * 0.8 + 0.12) + s.irradiance[i]));
     g.uCloudCol.value.set(...c);
-    // Auto exposure from the light falling on open ground here.
-    const E = s.sunAtGround.map((v, i) => v * params.sunPower * sunUp + s.irradiance[i]);
+    // Auto exposure from the light reaching the ground here. Faces turned to
+    // a low sun get far more than flat ground, so the sun's share is
+    // weighted as if partly facing it; the moon counts as a light too.
+    const moonUp = Math.max(0, up[0] * params.moonDir[0] + up[1] * params.moonDir[1] + up[2] * params.moonDir[2]);
+    const face = (u) => (u > 0 ? 0.35 + 0.65 * u : 0);
+    const E = s.sunAtGround.map((v, i) => v * params.sunPower * face(sunUp) + s.moonAtGround[i] * params.moonPower * face(moonUp) + s.irradiance[i]);
     const lum = (0.2 / Math.PI) * (0.2126 * E[0] + 0.7152 * E[1] + 0.0722 * E[2]);
-    this.exposureTarget = clamp((0.2 / Math.max(lum, 1e-6)) * this.looks.cur.exposure, 0.02, 80);
+    let exposure = clamp((0.42 / Math.max(lum, 1e-6)) * this.looks.cur.exposure, 0.02, 60);
+    // From high up, the eye adapts to the sunlit planet, not the ground below.
+    const space = clamp((Math.log10(Math.max(h, 1)) - Math.log10(25000)) / (Math.log10(400000) - Math.log10(25000)), 0, 1);
+    if (space > 0) {
+      const sunlit = 0.42 / ((0.2 / Math.PI) * params.sunPower * 0.55);
+      exposure = Math.exp(Math.log(exposure) * (1 - space) + Math.log(sunlit) * space);
+    }
+    this.exposureTarget = exposure;
   }
 
   _prefetch(t, K) {
@@ -199,7 +220,8 @@ export class Engine {
     this.dem.update();
     if (this.frameNo % 4 === 1 || this.looks.animating || !this.skyLight) this._updateSkyLight();
     // Exposure adapts in log space (~0.6 s).
-    const target = this.looks.styleCode === 1 || this.looks.styleCode === 2 || this.looks.styleCode === 4 ? 1 : this.exposureTarget;
+    const fixed = [1, 2, 3, 4].includes(this.looks.styleCode); // display-referred styles
+    const target = fixed ? 1 : this.exposureTarget;
     this.exposure = Math.exp(Math.log(this.exposure) + (Math.log(target) - Math.log(this.exposure)) * Math.min(1, dt * 2.5));
     const p = this.post.uniforms;
     p.uExposure.value = this.exposure;
@@ -220,10 +242,15 @@ export class Engine {
     if (shadowOn) {
       this.tiles.usePass('shadow');
       this.clouds.mesh.visible = false;
+      this.trees.group.visible = false; // the depth shader has no instancing
       this.shadows.render(r, this.scene);
+      this.trees.group.visible = true;
       this.clouds.update(cam, enuBasis(lon, lat), this.deckH ?? 3000);
     }
     this.tiles.usePass('main');
+    if (this.looks.biome !== this._treeBiome) { this._treeBiome = this.looks.biome; this.trees.setKind(this.looks.biome); }
+    this.trees.group.visible = this.looks.styleCode === 0 || this.looks.styleCode === 5;
+    this.trees.update();
     if (this.tiles.q.micro) {
       this.reflection.detect(this, performance.now());
       this.reflection.render(this, dt);

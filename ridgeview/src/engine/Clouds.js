@@ -36,18 +36,7 @@ uniform float uTime;
 varying vec3 vRel;
 varying float vEdge;
 
-float n3(vec3 p) {
-  vec3 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y);
-  float b = mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y);
-  return mix(a, b, f.z);
-}
-float fbm(vec3 p) {
-  float s = 0.0, a = 0.5;
-  for (int i = 0; i < 5; i++) { s += a * n3(p); p = p * 2.03 + 11.7; a *= 0.5; }
-  return s;
-}
+float fbm(vec3 p) { return fbm3(p); }
 
 void main() {
   vec3 pKm = uCamKm + vRel * 0.001;

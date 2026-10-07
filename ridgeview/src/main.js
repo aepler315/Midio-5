@@ -10,9 +10,17 @@ import { DEG, clamp, distance, lonLatToEcef } from './core/geo.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
+};
+if (!document.createElement('canvas').getContext('webgl2')) {
+  document.getElementById('ui').innerHTML = '<div class="panel" style="padding:24px;text-align:center"><h2 style="font:400 26px/1.2 var(--serif);margin:0 0 8px">Ridgeview needs WebGL 2</h2><p style="margin:0;color:var(--ink-dim)">Try a current version of Chrome, Edge, Firefox or Safari, with hardware acceleration on.</p></div>';
+  throw new Error('WebGL2 unavailable');
+}
 const coarse = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 600;
-let quality = params.get('quality') || localStorage.getItem('rv-quality') || (coarse ? 'medium' : 'high');
-const userPickedQuality = params.has('quality') || !!localStorage.getItem('rv-quality');
+let quality = params.get('quality') || store.get('rv-quality') || (coarse ? 'medium' : 'high');
+const userPickedQuality = params.has('quality') || !!store.get('rv-quality');
 const engine = new Engine(canvas, { proxy: params.get('proxy') === '1', quality, preserve: params.has('test') });
 
 const [data, peakData] = await Promise.all([
@@ -63,6 +71,7 @@ const ui = new Ui(document.getElementById('ui'), ranges, {
   labels: () => setLabels(!state.labels),
   quality: (q) => setQuality(q, true),
   fullscreen: () => toggleFullscreen(),
+  share: () => shareLink(),
 });
 const labels = new Labels(document.getElementById('ui'), engine, known);
 const controls = new Controls(canvas, engine, {
@@ -219,6 +228,19 @@ function setQuality(q, byUser) {
   if (byUser) { try { localStorage.setItem('rv-quality', q); } catch { /* storage unavailable */ } }
 }
 
+/** A link that reopens exactly this view and look. */
+function shareLink() {
+  const { lon, lat, h } = engine.rig.lonLatH, hp = engine.rig.headingPitch(), L = engine.looks;
+  const q = new URLSearchParams({
+    range: ranges[state.index].id, view: String(state.view),
+    light: L.light, weather: L.weather, style: L.style, overlay: L.overlay,
+  });
+  if (state.free) q.set('at', [lon.toFixed(5), lat.toFixed(5), h.toFixed(0), hp.heading.toFixed(1), hp.pitch.toFixed(1), engine.rig.fov.toFixed(1)].join(','));
+  const url = `${location.origin}${location.pathname}?${q}`;
+  navigator.clipboard?.writeText(url).then(() => ui.caption('Link copied', 'Paste it to share this exact view'), () => ui.caption('Link', url));
+  history.replaceState(null, '', `?${q}`);
+}
+
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen?.();
   else document.documentElement.requestFullscreen?.().catch(() => {});
@@ -249,6 +271,7 @@ window.addEventListener('keydown', (e) => {
     case 'o': case 'O': cycle('overlay', OVERLAYS, L.overlay); break;
     case 'l': case 'L': setLabels(!state.labels); break;
     case 'f': case 'F': toggleFullscreen(); break;
+    case 'c': case 'C': shareLink(); break;
     case '?': case '/': ui.toggleHelp(); break;
     case 'Escape': ui.toggleList(false); ui.toggleHelp(false); break;
     default: return;
@@ -272,7 +295,14 @@ for (const g of ['light', 'weather', 'style', 'overlay']) setLook(g, startLook[g
 setLabels(params.has('labels') ? params.get('labels') !== '0' : saved.labels ?? true);
 
 const first = ranges[startIndex];
-if (params.has('test') || params.has('instant')) {
+const at = params.get('at')?.split(',').map(Number);
+if (at && at.length >= 5 && at.every(Number.isFinite)) {
+  // Deep link to an exact pose: lon,lat,height,heading,pitch[,fov]
+  goTo(startIndex, startView, { instant: true });
+  engine.rig.fov = at[5] ?? engine.rig.fov;
+  engine.rig.set(at[0], at[1], at[2], at[3], at[4]);
+  state.free = true;
+} else if (params.has('test') || params.has('instant')) {
   goTo(startIndex, startView, { instant: true });
 } else {
   // Dive in from orbit.

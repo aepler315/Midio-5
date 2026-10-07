@@ -94,7 +94,8 @@ export function sampleSkyLight(oKm, up, p) {
   const zenith = skyRadiance(oKm, up, p, 8);
   const hKm = Math.hypot(...oKm) - RP;
   const sunAtGround = lightTransmittance(hKm, dot(up, p.sunDir), p);
-  return { irradiance: irr, zenith, horizon, sunAtGround };
+  const moonAtGround = lightTransmittance(hKm, dot(up, p.moonDir), p);
+  return { irradiance: irr, zenith, horizon, sunAtGround, moonAtGround };
 }
 
 function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }

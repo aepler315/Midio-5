@@ -28,6 +28,7 @@ export class Ui {
         <select class="tb" data-act="quality" title="Detail level" aria-label="Detail level">
           <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option>
         </select>
+        <button class="tb" data-act="share" title="Copy a link to this view (C)">Share</button>
         <button class="tb" data-act="help" title="Controls (?)">?</button>
         <button class="tb" data-act="fullscreen" title="Fullscreen (F)">⤢</button>
       </div>
@@ -70,7 +71,7 @@ export class Ui {
           <dt>1–7</dt><dd>Light: alpenglow, golden, midday, raking, backlit, blue hour, moonlight</dd>
           <dt>Shift + 1–5</dt><dd>Weather: summer, autumn, winter, storm, cloud sea</dd>
           <dt>T · O · L</dt><dd>Next style · next overlay · labels</dd>
-          <dt>F</dt><dd>Fullscreen</dd>
+          <dt>F · C</dt><dd>Fullscreen · copy a link to this exact view</dd>
         </dl>
         <p class="credits">Elevation: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles</a> on AWS (USGS 3DEP, SRTM, GMTED2010, ETOPO1, Canada CDEM and others; <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">attribution</a>). Summits: GeoNames (CC BY 4.0). Ecoregions: RESOLVE 2017 (CC BY 4.0). Viewpoints computed by Ridgeview from the elevation data.</p>
       </section>

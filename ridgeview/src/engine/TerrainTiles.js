@@ -14,10 +14,10 @@ const CIRC = 2 * Math.PI * EARTH_RADIUS;
 const OCCLUDER_R = EARTH_RADIUS - 120;
 
 export const QUALITY = {
-  low: { errorPx: 9, M: 32, S: 128, maxZ: 16, maxTiles: 320, detail: false, micro: 0, shadowSize: 1024 },
-  medium: { errorPx: 6, M: 64, S: 128, maxZ: 17, maxTiles: 450, detail: true, micro: 1, shadowSize: 2048 },
-  high: { errorPx: 4, M: 64, S: 128, maxZ: 18, maxTiles: 650, detail: true, micro: 1, shadowSize: 2048 },
-  ultra: { errorPx: 2.6, M: 64, S: 128, maxZ: 19, maxTiles: 950, detail: true, micro: 1, shadowSize: 4096 },
+  low: { errorPx: 9, M: 32, S: 128, maxZ: 16, maxTiles: 320, detail: false, micro: 0, shadowSize: 1024, treeFar: 0 },
+  medium: { errorPx: 6, M: 64, S: 128, maxZ: 17, maxTiles: 450, detail: true, micro: 1, shadowSize: 2048, treeFar: 800 },
+  high: { errorPx: 4, M: 64, S: 128, maxZ: 18, maxTiles: 650, detail: true, micro: 1, shadowSize: 2048, treeFar: 1400 },
+  ultra: { errorPx: 2.6, M: 64, S: 128, maxZ: 19, maxTiles: 950, detail: true, micro: 1, shadowSize: 4096, treeFar: 2200 },
 };
 
 /** Dispose a tile geometry without freeing the index buffer all tiles share
@@ -342,6 +342,7 @@ export class TerrainTiles {
   }
 
   _dispose(t) {
+    this.onDispose?.(t);
     if (t.mesh) {
       disposeGeometry(t.mesh.geometry);
       t.mesh.material.uniforms.uTex.value.dispose();

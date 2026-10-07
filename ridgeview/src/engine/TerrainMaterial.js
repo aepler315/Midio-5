@@ -7,6 +7,7 @@
 // relief than the data is added procedurally and fades with distance.
 import * as THREE from 'three';
 import { NOISE, ATMOS, LOGDEPTH_VS } from './glsl.js';
+import { LANDCOVER } from './landcover.glsl.js';
 
 export const STYLE = { natural: 0, contours: 1, ink: 2, hypsometric: 3, hologram: 4, pixel: 5 };
 export const OVERLAY = { none: 0, slope: 1, aspect: 2, bands: 3 };
@@ -74,7 +75,7 @@ uniform float uCosLat;
 uniform vec3 uSkyIrr, uSkyZenith, uSkyHorizon;
 uniform int uStyle, uOverlay;
 uniform float uOverlayMix;
-uniform float uSnowShift, uTreeShift, uForestDensity, uForestFloor, uDryness, uAutumn, uWetness, uPlaya;
+uniform float uAutumn, uWetness, uPlaya;
 uniform vec3 uForestCol, uGrassCol, uDryCol, uRockCol, uRockCol2, uSoilCol, uSnowCol, uWaterCol, uAutumnCol;
 uniform float uCloudOn, uCloudTop, uCloudThick;
 uniform vec3 uCloudCol;
@@ -92,15 +93,7 @@ varying vec3 vRel;
 varying vec3 vUp;
 varying vec4 vS0;
 varying vec4 vS1;
-
-float table(float x, const float xs[10], const float ys[10]) {
-  if (x <= xs[0]) return ys[0];
-  for (int i = 1; i < 10; i++) if (x <= xs[i]) return mix(ys[i - 1], ys[i], (x - xs[i - 1]) / (xs[i] - xs[i - 1]));
-  return ys[9];
-}
-const float LATS[10] = float[10](0.0, 20.0, 30.0, 37.0, 44.0, 50.0, 55.0, 60.0, 66.0, 75.0);
-const float TREE[10] = float[10](3900.0, 3900.0, 3700.0, 3400.0, 3050.0, 2300.0, 1600.0, 1050.0, 600.0, 0.0);
-const float SNOW[10] = float[10](4800.0, 4800.0, 4500.0, 3900.0, 3500.0, 2900.0, 2400.0, 1900.0, 1300.0, 500.0);
+${LANDCOVER}
 
 float shadowTap(sampler2D m, vec3 c, float bias) { return step(c.z - bias, texture(m, c.xy).r); }
 float shadowPCF(sampler2D m, vec4 sc, float rad, float bias) {
@@ -145,12 +138,6 @@ vec2 contours(float h, float footM) {
   return vec2(minor, index);
 }
 
-float fbm2(vec2 p, float per) {
-  float s = 0.0, a = 0.5;
-  for (int i = 0; i < 4; i++) { s += a * vnoise(p, per); p *= 2.0; per *= 2.0; a *= 0.5; }
-  return s;
-}
-
 void main() {
   // Mirrored pass: only what stands above the lake's surface.
   if (uClipOn > 0.5 && vH < uReflH + 0.6) discard;
@@ -167,58 +154,12 @@ void main() {
   // Tile-local, world-locked coordinates (mercator metres, period 2048).
   vec2 gp = uTileOrigin + vUv * uTileSizeM;
   gp.y = -gp.y; // north-up
-  float slope = length(tx.xy);
-  float sdeg = degrees(atan(slope));
-  float cvx = tx.w;
-  float water = smoothstep(0.2, 0.32, tx.z);
-  float sea = smoothstep(0.7, 0.8, tx.z);
-  float lat = degrees(asin(clamp(up.z, -1.0, 1.0)));
-  float alat = abs(lat);
-  vec2 nh0 = vec2(-tx.x, -tx.y);
-  // +1 on poleward-facing slopes (cooler, moister, holds snow)
-  float poleward = (lat >= 0.0 ? -nh0.y : nh0.y) / max(length(nh0), 1e-3) * smoothstep(0.05, 0.3, slope);
-
-  // Multi-scale, domain-warped variation (world-locked, periodic in 2048 m).
-  vec2 warp = vec2(fbm2(gp / 256.0 + 3.7, 8.0), fbm2(gp / 256.0 + 9.2, 8.0));
-  float fL = fbm2(gp / 512.0 + vec2(1.3, 7.1), 4.0);
-  float fM = fbm2(gp / 128.0 + warp * 0.9, 16.0);
-  float fS = fbm2(gp / 32.0 + warp * 2.5, 64.0);
-  float nS = vnoise(gp / 8.0, 256.0);
-  float nL = fL;
-
-  // --- Land cover ----------------------------------------------------------
-  float tl = table(alat, LATS, TREE) + uTreeShift + fL * 120.0;
-  float sl = table(alat, LATS, SNOW) + uSnowShift + fL * 200.0 - poleward * 260.0 + cvx * 50.0;
-  float steep = sdeg + fM * 6.0 + fS * 3.0;
-  float alpine = smoothstep(tl - 50.0, tl + 450.0, vH + fM * 60.0);
-  // Below the treeline forest holds slopes up to ~45 degrees; above it rock shows sooner.
-  float rock = smoothstep(mix(40.0, 33.0, alpine), mix(50.0, 43.0, alpine), steep);
-  rock = max(rock, alpine * smoothstep(17.0, 31.0, steep - cvx * 5.0));
-  rock = max(rock, smoothstep(0.6, 1.8, cvx) * smoothstep(22.0, 32.0, sdeg) * (0.35 + 0.65 * alpine));
-  rock *= 1.0 - water;
-  float scree = (1.0 - rock) * smoothstep(-0.1, -0.9, cvx + fS * 0.4) * smoothstep(20.0, 30.0, sdeg) * smoothstep(tl - 700.0, tl - 100.0, vH);
-  // Forest: elevation band, slope, moisture (poleward slopes and hollows are wetter).
-  float band = smoothstep(tl + 40.0, tl - 380.0, vH + fM * 120.0) * smoothstep(uForestFloor - 120.0, uForestFloor + 160.0, vH + fM * 120.0);
-  float moist = 0.6 + poleward * (0.12 + 0.35 * uDryness) - cvx * 0.1 - uDryness * 0.45;
-  float pot = band * (1.0 - smoothstep(40.0, 50.0, sdeg)) * (1.0 - rock) * (1.0 - water);
-  // Dry valley floors stay open (sage, grass); wetter climates forest them.
-  pot *= mix(1.0, smoothstep(2.0, 7.0, sdeg + fM * 4.0), clamp(uDryness * 4.0, 0.0, 1.0));
-  // Avalanche paths: open strips down the fall line on steep forested slopes.
-  vec2 fall = slope > 1e-3 ? tx.xy / slope : vec2(1.0, 0.0);
-  float across = dot(gp, vec2(-fall.y, fall.x));
-  float chute = smoothstep(0.55, 0.8, vnoise(vec2(across / 48.0, dot(gp, fall) / 900.0) + warp * 0.4, 1024.0) * 0.5 + 0.5)
-              * smoothstep(24.0, 32.0, sdeg) * smoothstep(-0.2, -0.8, cvx + fM * 0.4);
-  float cover = moist + fM * 0.32 + fS * 0.14 + (uForestDensity - 0.65) * 0.9 - (1.0 - band) * 0.6 - chute * 0.7;
-  float forest = smoothstep(0.36, 0.56, cover) * smoothstep(0.02, 0.25, pot);
-  float snowLine = smoothstep(sl - 60.0, sl + 160.0, vH + fM * 90.0 + nS * 20.0);
-  float snowHold = 1.0 - smoothstep(42.0, 58.0, sdeg + fS * 6.0);
-  float snow = snowLine * snowHold;
-  // Couloirs and shaded hollows hold snow well below the snowline.
-  float gully = smoothstep(sl - 750.0, sl - 250.0, vH + fM * 120.0) * smoothstep(-0.15, -0.9, cvx + fS * 0.3)
-              * smoothstep(-0.2, 0.5, poleward) * (1.0 - smoothstep(40.0, 55.0, sdeg));
-  snow = max(snow, gully);
-  snow = max(snow, snowLine * 0.35 * smoothstep(52.0, 40.0, sdeg)); // dusting on rock
-  snow *= 1.0 - water * (1.0 - smoothstep(-1500.0, -2500.0, uSnowShift)); // lakes freeze only in deep winter
+  // --- Land cover (shared with the 3D trees) --------------------------------
+  Cover cv = landCover(tx, gp, vH, up);
+  float slope = cv.slope, sdeg = cv.sdeg, cvx = cv.cvx, water = cv.water, sea = cv.sea;
+  float poleward = cv.poleward, fL = cv.fL, fM = cv.fM, fS = cv.fS, nS = cv.nS, nL = cv.fL;
+  vec2 warp = cv.warp;
+  float alpine = cv.alpine, rock = cv.rock, scree = cv.scree, moist = cv.moist, forest = cv.forest, snow = cv.snow;
 
   // --- Normals ---------------------------------------------------------------
   vec2 slopeEN = tx.xy;
@@ -247,7 +188,8 @@ void main() {
   // --- Albedo ---------------------------------------------------------------
   vec3 meadow = mix(uGrassCol, uDryCol, clamp(uDryness * 0.6 + fS * 0.15 + (0.55 - moist) * 0.35 + alpine * 0.3, 0.0, 1.0));
   meadow *= 0.86 + 0.28 * nS * near;
-  meadow = mix(meadow, uAutumnCol, uAutumn * smoothstep(0.0, 0.5, fS) * (1.0 - alpine) * 0.6);
+  // Autumn: grass cures to tawny.
+  meadow = mix(meadow, mix(uDryCol, uAutumnCol, 0.3), uAutumn * 0.65 * (1.0 - alpine));
   meadow = mix(meadow, vec3(0.16, 0.13, 0.08), alpine * 0.35); // tundra mat
   // Rock: tone by region, strata, crack network, lichen.
   float strata = sin(vH / 5.5 + fM * 3.0 + fS * 1.2) * 0.5 + 0.5;
@@ -260,10 +202,15 @@ void main() {
   rockC *= 1.0 - 0.32 * smoothstep(0.1, 0.7, streak) * smoothstep(30.0, 50.0, sdeg);
   rockC *= (0.92 + 0.16 * strata) * (1.0 - 0.45 * crack) * (1.0 + 0.2 * nS * near) * (1.0 - 0.15 * smoothstep(0.0, -1.5, cvx));
   rockC = mix(rockC, vec3(0.11, 0.12, 0.07), 0.18 * smoothstep(0.15, 0.5, fS) * (1.0 - alpine * 0.6) * (1.0 - uDryness));
+  // Low outcrops among the trees are weathered dark and half overgrown.
+  rockC = mix(rockC * 0.72, rockC, alpine);
+  rockC = mix(rockC, uForestCol * 1.4, 0.22 * (1.0 - alpine) * (1.0 - uDryness));
   vec3 screeC = mix(rockC * 1.12, uSoilCol, 0.25) * (0.92 + 0.16 * nS);
   // Forest canopy: dark, varied stands; crowns and gaps up close.
   vec3 forestC = uForestCol * (0.8 + 0.3 * fM + 0.2 * fS);
-  forestC = mix(forestC, uAutumnCol * 0.7, uAutumn * smoothstep(0.1, 0.6, fS) * 0.45);
+  // Autumn: deciduous stands (aspen among conifers; whole broadleaf forests) turn.
+  float turning = uAutumn * mix(smoothstep(0.18, 0.4, fS + fM * 0.3), 0.9, smoothstep(0.75, 0.95, uForestDensity) * step(0.5, uForestDensity));
+  forestC = mix(forestC, uAutumnCol * (0.75 + 0.3 * fS), turning * (1.0 - alpine));
   float crown = smoothstep(-0.35, 0.45, noised(gp / 4.0, 512.0).x);
   forestC *= mix(1.0, 0.35 + 0.85 * crown, near);
   vec3 alb = meadow;
@@ -272,8 +219,9 @@ void main() {
   alb = mix(alb, rockC, rock);
   vec3 snowC = uSnowCol * (0.93 + 0.07 * nS);
   float snowOnForest = snow * forest;
-  alb = mix(alb, snowC, snow * (1.0 - forest * 0.8));
-  alb = mix(alb, mix(forestC, snowC, 0.25 * (1.0 - crown)), snowOnForest * 0.5);
+  alb = mix(alb, snowC, snow * (1.0 - forest));
+  // Under snow a forest stays dark: snow shows between and on the crowns.
+  alb = mix(alb, mix(forestC * 0.9, snowC, 0.22 + 0.18 * (1.0 - crown) * near), snowOnForest);
   alb *= 1.0 - uWetness * 0.35 * (1.0 - snow);
   vec3 playa = vec3(0.86, 0.82, 0.74) * (0.95 + 0.05 * nS);
   float isLake = water * (1.0 - sea);
@@ -376,9 +324,10 @@ void main() {
     float shade = clamp(dot(n, normalize(-0.6 * east + 0.6 * north + 0.8 * up)), 0.0, 1.0);
     vec3 lit = hc * (0.35 + 0.85 * shade);
     lit = mix(lit, lit * 0.85, isoLine(vH, 500.0, 1.0) * 0.6);
-    // keep the real sky light's colour so time of day still reads
-    vec3 key = (sunE + skyE + moonE) / max(uSunPower * 0.6, 1e-3);
-    col = lit * mix(vec3(1.0), clamp(key, 0.0, 1.5), 0.35) * uSunPower * 0.08;
+    // A hint of the real light's colour so time of day still reads.
+    vec3 key = sunE + skyE + moonE;
+    key /= max(max(key.r, max(key.g, key.b)), 1e-4);
+    col = lit * mix(vec3(1.0), key, 0.2) * 0.95;
   } else if (uStyle == 4) {
     // Hologram: glowing contours and a world-locked grid over black glass.
     vec2 cl = contours(vH, footM);
@@ -391,8 +340,8 @@ void main() {
     vec3 glow = mix(cyan, mag, hgt);
     vec3 c = vec3(0.0, 0.015, 0.03) + glow * (cl.x * 0.6 + cl.y * 1.6) + cyan * grid * 0.35 + glow * rim * 0.5;
     c += glow * 0.05 * max(dot(n, uSunDir), 0.0);
-    c = mix(c, vec3(0.0, 0.05, 0.1) + cyan * isoLine(tx.z, 0.25, 1.5) * 1.5, water * 0.85);
-    col = c * 1.6;
+    c = mix(c, vec3(0.0, 0.03, 0.06) + cyan * isoLine(tx.z, 0.25, 1.5) * 1.2, water);
+    col = c;
   }
 
   // --- Overlays ----------------------------------------------------------
@@ -422,13 +371,15 @@ void main() {
   }
 
   // --- Air between us and the ground ------------------------------------
-  if (uStyle == 0 || uStyle == 5 || uStyle == 3) {
+  if (uStyle == 0 || uStyle == 5) {
     vec3 fragKm = uCamKm + vRel * 0.001;
     vec3 T, L;
     aerial(uCamKm, fragKm, -V, T, L);
     col = col * T + L;
     // storms: grey veil
     col = mix(col, uSkyHorizon * 0.9, uStormDark * (1.0 - exp(-distM / 9000.0)));
+  } else if (uStyle == 3) {
+    col = mix(col, vec3(0.78, 0.84, 0.9), 1.0 - exp(-distM / 70000.0)); // atlas: light, clean haze
   } else if (uStyle == 1 || uStyle == 2) {
     col = mix(col, vec3(0.93, 0.90, 0.82) * 0.9, 1.0 - exp(-distM / 90000.0));
   } else {
