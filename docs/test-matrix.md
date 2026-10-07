@@ -26,13 +26,14 @@ the `audio-smoke` job.
 | --- | --- | --- | --- | --- |
 | `test` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm test` | zero failing Node tests under `test/*.js`, `test/*.mjs`, `test/helpers/*.js`; lint clean; no high+ npm advisories | Unit contracts for analysis, library fakes, export estimates, UI helpers | Real IndexedDB in a browser; Firefox/Safari; long recordings; physical devices |
 | `audio-smoke` | Playback/lighting/shading/seek/world/export/car/URL-loader smokes against source, then `stage:site` + `test:bootstrap` against that artifact | each script exits 0; staged Browse opens a real chooser; artifacts under `.smoke/` | Chromium can boot the actual public file set, upload a short synthetic fixture, pick a world, draw, seek, and start an export | Watchability, identity, other engines, songs longer than the fixture |
+| `version-browser` | `npm run stage:versions`, `npm run test:versions -- --site _site` | complete first-parent catalog; exact original Git blobs; Chromium navigation, search, HUD fade and song handoff pass at root and project paths | Every distinct published engine is selectable; UI-only revisions use their newest code; representative early/middle/latest engines work | Every song on every historical engine; non-Chromium browsers |
 | `world-chooser` | `npm run test:chooser`, `test:chooser-keyboard` | exit 0 | Pointer and keyboard world selection in Chromium | Visual distinctness of the nine worlds |
 
-GitHub Pages deploy stages one artifact with `stage:site`, runs bootstrap and
-audio playback against that exact directory, uploads it, and deploys only
-after the reusable validation workflow succeeds. It publishes `index.html`,
-`src/`, `soundfonts/`, `CNAME`, and `.nojekyll`; it does not publish tools,
-tests, raw terrain inputs, or the Soulseek bridge.
+GitHub Pages deploy downloads the exact `stage:versions` artifact validated
+by `version-browser`, uploads it, and deploys only after the reusable validation
+workflow succeeds. It publishes the picker, live engine, public runtime assets,
+content-addressed historical assets, `CNAME`, and `.nojekyll`; it does not
+publish tools, tests, raw terrain inputs, or the Soulseek bridge.
 
 ## Thresholds that are measured today
 
