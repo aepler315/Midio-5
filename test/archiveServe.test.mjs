@@ -36,6 +36,10 @@ function makeRepo() {
   git('add', '-A');
   git('commit', '--quiet', '-m', 'Second take (#7)');
 
+  // What GitHub's "Create a merge commit" writes: the title is in the body.
+  git('commit', '--quiet', '--allow-empty',
+    '-m', 'Merge pull request #9 from someone/some-branch', '-m', 'Teach the ridge to dance');
+
   // Present on disk, never committed: what a user-dropped SoundFont looks like.
   writeFileSync(join(repo, 'soundfonts/local.sf2'), 'RIFF');
   return repo;
@@ -69,14 +73,16 @@ test('archive serves each commit from its own origin with working navigation', a
   assert.match(timeline.headers['content-type'], /^text\/html/);
 
   const { versions } = JSON.parse((await get(port, 'localhost', '/versions.json')).body);
-  assert.deepEqual(versions.map((v) => v.subject),
-    ['Create Readme', 'Scaffold the app', 'Second take (#7)']);
-  assert.deepEqual(versions.map((v) => v.runnable), [false, true, true]);
-  assert.deepEqual(versions.map((v) => v.tags), [[], ['alpha'], []]);
-  assert.deepEqual(versions.map((v) => v.pr), [null, null, 7]);
+  assert.deepEqual(versions.map((v) => v.title),
+    ['Create Readme', 'Scaffold the app', 'Second take (#7)', 'Teach the ridge to dance (#9)']);
+  assert.equal(versions[3].subject, 'Merge pull request #9 from someone/some-branch');
+  assert.deepEqual(versions.map((v) => v.runnable), [false, true, true, true]);
+  assert.deepEqual(versions.map((v) => v.tags), [[], ['alpha'], [], []]);
+  assert.deepEqual(versions.map((v) => v.pr), [null, null, 7, 9]);
   assert.equal(versions[1].url, `http://${versions[1].id}.localhost:${port}/`);
 
   const [readme, first, second] = versions.map((v) => `${v.id}.localhost`);
+  assert.equal(new Set(versions.map((v) => v.id)).size, versions.length);
 
   // The same absolute URL means a different file in each version.
   const one = await get(port, first, '/src/main.js');
@@ -94,7 +100,9 @@ test('archive serves each commit from its own origin with working navigation', a
   const nav = (await get(port, first, '/__archive/nav.js')).body;
   assert.ok(nav.includes(`"prev":"http://${versions[0].id}.localhost:${port}/"`));
   assert.ok(nav.includes(`"next":"http://${versions[2].id}.localhost:${port}/"`));
-  assert.ok((await get(port, second, '/__archive/nav.js')).body.includes('"next":null'));
+  const newest = await get(port, `${versions[3].id}.localhost`, '/__archive/nav.js');
+  assert.ok(newest.body.includes('"next":null'));
+  assert.ok(newest.body.includes('"title":"Teach the ridge to dance (#9)"'));
 
   // A commit from before the app stays reachable and keeps its navigation.
   const empty = await get(port, readme, '/');
@@ -103,6 +111,7 @@ test('archive serves each commit from its own origin with working navigation', a
   assert.match(empty.body, /__archive\/nav\.js/);
 
   // Gitignored SoundFonts come from disk; nothing else on disk does.
+  assert.equal((await get(port, first, '/soundfonts/')).body, '["local.sf2"]');
   assert.equal((await get(port, first, '/soundfonts/local.sf2')).body, 'RIFF');
   assert.equal((await get(port, first, '/soundfonts/README.md')).body, 'drop fonts here\n');
   assert.equal((await get(port, readme, '/Readme.md')).status, 200);

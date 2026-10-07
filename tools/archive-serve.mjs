@@ -136,17 +136,22 @@ function openBlobReader(repo) {
 
 /** Oldest first, so a version's number is its position in the project's life. */
 export function listVersions(repo, ref) {
-  const format = ['%H', '%aI', '%s', '%D'].join(SEP) + END;
+  const format = ['%H', '%aI', '%s', '%D', '%b'].join(SEP) + END;
   const log = git(repo, [
     'log', '--first-parent', '--decorate-refs=refs/tags/*', `--format=${format}`, ref, '--',
   ]);
   const commits = log.split(END).map((entry) => entry.trim()).filter(Boolean).map((entry) => {
-    const [sha, date, subject, refs] = entry.split(SEP);
-    const pr = /\(#(\d+)\)$/.exec(subject);
+    const [sha, date, subject, refs, body = ''] = entry.split(SEP);
+    // Squash merges end "(#12)". Merge commits say only which branch landed;
+    // GitHub puts the pull request's title on the first line of the body.
+    const merge = /^Merge pull request #(\d+)/.exec(subject);
+    const pr = merge || /\(#(\d+)\)$/.exec(subject);
+    const described = merge && body.split('\n').map((line) => line.trim()).find(Boolean);
     return {
       sha,
       date,
       subject,
+      title: described ? `${described} (#${merge[1]})` : subject,
       pr: pr ? Number(pr[1]) : null,
       tags: (refs || '').split(',').map((name) => name.trim().replace(/^tag: /, '')).filter(Boolean),
     };
@@ -225,14 +230,14 @@ function navClient(nav) {
   };
   const label = document.createElement('span');
   label.className = 'label';
-  label.title = nav.subject;
+  label.title = nav.title;
   if (nav.tags.length) {
     const tag = document.createElement('span');
     tag.className = 'tag';
     tag.textContent = nav.tags.join(' ') + ' ';
     label.append(tag);
   }
-  label.append(`${nav.number}/${nav.total} · ${nav.date.slice(0, 10)} · ${nav.id} · ${nav.subject}`);
+  label.append(`${nav.number}/${nav.total} · ${nav.date.slice(0, 10)} · ${nav.id} · ${nav.title}`);
   const toggle = () => { host.hidden = !host.hidden; };
   bar.append(
     button('‹ older', 'Previous version (Alt+,)', () => go(nav.prev), !nav.prev),
@@ -282,7 +287,7 @@ function timelineClient() {
   function render() {
     const needle = search.value.trim().toLowerCase();
     const shown = versions.filter((v) => (!prsOnly.checked || v.pr || v.tags.length)
-      && (!needle || `${v.subject} ${v.sha} ${v.date} ${v.tags.join(' ')} #${v.pr || ''} v${v.number}`
+      && (!needle || `${v.title} ${v.subject} ${v.sha} ${v.date} ${v.tags.join(' ')} #${v.pr || ''} v${v.number}`
         .toLowerCase().includes(needle)));
     summary.textContent = `${shown.length} of ${versions.length} versions`;
     const fragment = document.createDocumentFragment();
@@ -301,7 +306,7 @@ function timelineClient() {
       row.append(el('span', 'num', String(v.number)), el('code', null, v.id));
       const subject = el('span', 'subject');
       for (const tag of v.tags) subject.append(el('span', 'badge tag', tag));
-      subject.append(v.subject);
+      subject.append(v.title);
       if (!v.runnable) subject.append(el('span', 'badge', 'no app yet'));
       if (v.sha === last) subject.append(el('span', 'badge', 'last viewed'));
       row.append(subject);
@@ -413,7 +418,7 @@ function placeholderPage(version) {
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0c0c14;
 color:#8b8ba0;font:14px/1.5 system-ui,sans-serif;text-align:center}b{color:#e8e8f0}</style></head>
 <body><p>Version ${version.number} has no <code>index.html</code>, so there is nothing to run.<br />
-<b>${safe(version.subject)}</b></p>
+<b>${safe(version.title)}</b></p>
 <script src="/__archive/nav.js" defer></script></body></html>
 `;
 }
@@ -483,12 +488,20 @@ export async function startArchive({
       const next = versions[index + 1];
       const nav = {
         id: version.id, number: version.number, total: versions.length, date: version.date,
-        subject: version.subject, tags: version.tags,
+        title: version.title, tags: version.tags,
         prev: prev ? origin(prev) : null,
         next: next ? origin(next) : null,
         home: `http://localhost:${listenPort}/#${version.id}`,
       };
       return send(res, 200, MIME['.js'], `(${navClient})(${JSON.stringify(nav)});\n`);
+    }
+
+    // Soundfont auto-discovery, as in tools/serve.js: the page asks which
+    // fonts were dropped into the folder, then fetches them (readUntracked).
+    if (pathname === 'soundfonts') {
+      const entries = await fs.readdir(path.join(root, 'soundfonts')).catch(() => []);
+      const fonts = entries.filter((name) => /\.(sf2|zip)$/i.test(name)).sort();
+      return send(res, 200, MIME['.json'], JSON.stringify(fonts));
     }
 
     let file = pathname || 'index.html';
