@@ -220,6 +220,21 @@ provider. Its provider/model/endpoint settings live in the debug overlay;
 external providers can require a user-supplied API key. Playback does not
 require this feature.
 
+## Version archive
+
+`npm run archive` opens a timeline of every commit on `main`, back to the
+first, and runs whichever one you pick. Nothing is checked out: each version
+is served straight from git at its own address
+(`http://<sha>.localhost:8090/`), so versions keep separate saved settings
+and libraries.
+
+Inside a version, the bar at the top moves between neighbours: `Alt+,`
+older, `Alt+.` newer, `Alt+L` back to the timeline, `Alt+H` hide the bar.
+The query string carries across, so a song loaded by URL follows you.
+
+The timeline follows the checked-out branch. To browse another one, or to
+use another port: `node tools/archive-serve.mjs 8090 origin/main --open`.
+
 ## Repository layout
 
 ```text
