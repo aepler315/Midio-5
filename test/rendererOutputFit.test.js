@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Renderer, applyFixedGroundTransform } from '../src/render/Renderer.js';
 import { displayLimitedSize } from '../src/render/StagePresets.js';
-import { resolveLandscapePresentation } from '../src/world/LandscapePresentation.js';
 
 // Replace only the Canvas boundary: production Renderer owns every transform,
 // viewport, clip and post-processing call exercised below.
@@ -30,17 +29,15 @@ function canvasFixture(width, height) {
   return { canvas, ctx, events, circles, text };
 }
 
-function renderFixture(width, height, { zoom = 1, retro = false, journey = false, exportMode = false, pixelated = false } = {}) {
+function renderFixture(width, height, { zoom = 1, retro = false } = {}) {
   const fixture = canvasFixture(width, height), renderer = new Renderer(fixture.canvas);
   let frameInputs;
-  renderer.rangePresentation = { enabled: true, journey, exportMode, setFrameInputs(inputs) { frameInputs = inputs; } };
-  renderer.presentationPixelated = pixelated;
+  renderer.rangePresentation = { enabled: true, setFrameInputs(inputs) { frameInputs = inputs; } };
   renderer.hudInFrame = true;
   renderer.composer = { draw(ctx) { ctx.arc(640, 360, 40, 0, Math.PI * 2); } };
   renderer._drawFilmFinish = ctx => ctx.arc(640 / zoom, 360 / zoom, 40, 0, Math.PI * 2);
   const sim = {
     stageW: 1280, stageH: 720, timeMs: 4000,
-    presentation: resolveLandscapePresentation('range', { rangeExperience: 'landscape' }),
     camera: { zoom, roll: 0, shakeX: 0, shakeY: 0 },
     lerpState: () => ({ worldX: 0, midioX: 220, midioDrawX: 220 }),
     perf: { particleMul: 1, heavyPostFx: true, bloomEnabled: false, retroPalette: retro },
@@ -54,7 +51,7 @@ function renderFixture(width, height, { zoom = 1, retro = false, journey = false
     },
   };
   renderer.draw(sim, 1);
-  return { ...fixture, renderer, frameInputs, sim };
+  return { ...fixture, renderer, frameInputs };
 }
 
 for (const [width, height, x, y, scale] of [[540, 960, 0, 328.125, .421875], [1000, 400, 144.44444444444446, 0, 5 / 9], [960, 540, 0, 0, .75]]) {
@@ -108,26 +105,4 @@ test('portrait phone uses a landscape backing store, distinct from portrait outp
   assert.ok(contentClip, 'phone backing uses the output fit clip');
   assert.ok(contentClip.rect[3] > 438);
   assert.ok(f.circles[0].ry > 24, 'phone renders its landscape strip, not 540x960 export framing');
-});
-
-for(const [width,height] of [[540,960],[720,720],[1000,400]]){
-  test(`natural Journey export composes directly into ${width}x${height}`,()=>{
-    const f=renderFixture(width,height,{journey:true,exportMode:true});
-    const vp=f.frameInputs.scenicViewport;
-    assert.deepEqual(f.events.find(e=>e.kind==='clip').rect,[0,0,width,height]);
-    assert.ok(Math.abs((vp.logicalWidth-2*vp.overscanPx)/(vp.logicalHeight-2*vp.overscanPx)-width/height)<1e-12);
-    assert.equal(vp.nominalHeight,720);
-    assert.equal(f.sim.stageW,1280,'simulation stage stays unchanged');
-    assert.equal(f.sim.stageH,720);
-    assert.equal(vp.nominalWidth,720*width/height);
-    assert.ok(f.circles.every(p=>Math.abs(p.rx-p.ry)<1e-9),'uniform mapping preserves geometry');
-    assert.equal(f.events.some(e=>e.kind==='fill'&&e.color==='#000000'),false,'no baked landscape bars');
-  });
-}
-test('Journey ordinary UI and geographic exports retain the authored landscape fit',()=>{
-  for(const options of [{journey:true},{exportMode:true},{journey:true,exportMode:true,pixelated:true}]){
-    const f=renderFixture(540,960,options);
-    assert.equal(f.frameInputs.scenicViewport.nominalWidth,1280);
-    assert.deepEqual(f.events.find(e=>e.kind==='clip').rect,[0,328.125,540,303.75]);
-  }
 });

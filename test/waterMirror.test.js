@@ -4,8 +4,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { mirrorCameraFor, mirrorTextureMatrix, mirrorSize, mirrorLevelFor, MIRROR_MIN_SAMPLES } from '../src/world/alpine/WaterMirror.js';
-import { RangeScene } from '../src/world/alpine/RangeScene.js';
-import { sceneUniforms } from '../src/world/alpine/TerrainMaterial.js';
 
 const camera = () => {
   const c = new THREE.PerspectiveCamera(35, 16 / 9, 20, 150000);
@@ -16,35 +14,6 @@ const camera = () => {
   return c;
 };
 const ndc = (cam, p) => new THREE.Vector3(...p).project(cam);
-
-test('successive mirror frames never sample the texture being rendered', () => {
-  const uniforms = sceneUniforms(THREE, {});
-  const mirror = { target: { texture: new THREE.Texture() }, matrix: new THREE.Matrix4(), frame: -1 };
-  const p = { uniforms, mirrorLevelM: 2055, depthScene: {}, scenes: { far: {}, mid: {}, near: {} } };
-  let target, draws = 0;
-  const scene = Object.assign(Object.create(RangeScene.prototype), {
-    THREE, camera: camera(), mirrorCamera: new THREE.PerspectiveCamera(), size: { width: 640, height: 360 }, stats: {},
-    _ensureMirror: () => mirror,
-    renderer: {
-      setRenderTarget(value) { target = value; }, setClearColor() {}, clear() {},
-      render() {
-        assert.notEqual(uniforms.uMirror.value, target.texture, 'WebGL rejects an attached texture even when mirror amount is zero');
-        draws++;
-      },
-    },
-  });
-  for (const side of ['A', 'B']) {
-    for (const frameId of [1, 2]) {
-      scene._prepareMirror(p, { qualityLevel: 0, frameId }, side, 'view');
-      assert.equal(uniforms.uMirror.value, mirror.target.texture, 'water samples the completed mirror after the pass');
-      assert.equal(uniforms.uMirrorAmount.value, 1);
-      const previousDraws = draws;
-      scene._prepareMirror(p, { qualityLevel: 0, frameId }, side, 'view');
-      assert.equal(draws, previousDraws, 'same-frame cached mirror is not redrawn');
-    }
-  }
-  assert.equal(draws, 16);
-});
 
 test('the mirror camera sees a point where the real camera sees its reflection, x mirrored', () => {
   const cam = camera(), level = 2055;

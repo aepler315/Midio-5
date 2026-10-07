@@ -10,30 +10,16 @@
 import { Role } from '../core/NoteEvent.js';
 import { clamp, clamp01 } from '../utils/math.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
-import { isAuthoredPitch, isMeasuredPitch } from '../audio/TonalEvidence.js';
 
 const WINDOW_MS = 6000;
 const EVAL_EVERY_MS = 240;
 const VAL_TAU = 2.5, EPIC_TAU = 2.0;
 
-// Three readings of the same notes, kept apart on purpose (F04). A recording's
-// note events carry pitches the analyser inferred from a frequency band or
-// placed as synthetic chord voicings, often with zero confidence. They are
-// real ACTIVITY -- something sounded, this densely -- but not evidence of a
-// key, a third or a register. Before this split, twelve placeholder pitches
-// with zero confidence produced a confident tonic, a major/minor tilt and
-// key changes the music never made.
-//   activity: every pitched non-rhythm event (density -> epic)
-//   tonal:    authored pitches only (histogram, tonic, third balance)
-//   register: authored or tracker-measured pitches (octave span -> epic)
 export class VibeDirector {
   constructor(timeline, tonalityTimeline = null) {
     this.notes = timeline
       .filter((e) => e.role !== Role.RHYTHM && Number.isFinite(e.pitch))
       .sort((a, b) => a.tMs - b.tMs);
-    // Parallel flags, so the one rolling window serves all three readings.
-    this._tonal = this.notes.map(isAuthoredPitch);
-    this._register = this.notes.map(isMeasuredPitch);
     this._lo = 0;
     this._hi = 0;
     this._nextEvalMs = 0;
@@ -47,11 +33,6 @@ export class VibeDirector {
     // enough evidence (count>=3) rather than reset every thin-evidence eval.
     this.tonic = 0;
     this.tonicConfidence = 0;
-    // Where the current tonic came from: 'spectral' (confident chroma key
-    // timeline), 'notes' (authored pitches), or 'unknown'. Unknown keeps the
-    // numeric tonic at its held value with zero confidence and contributes
-    // no third balance -- it is never read as C major.
-    this.tonalSource = 'unknown';
     // Raw-audio analysis supplies a Krumhansl key timeline from its spectral
     // chroma. Prefer it when confident so the live world does not disagree
     // with AudioAdapter's global-key fingerprint; MIDI/demo keep the exact
@@ -85,19 +66,13 @@ export class VibeDirector {
     while (this._hi < this.notes.length && this.notes[this._hi].tMs <= nowMs) this._hi++;
 
     const hist = new Array(12).fill(0);
-    let minP = Infinity, maxP = -Infinity, count = 0, tonalCount = 0, registerCount = 0;
+    let minP = Infinity, maxP = -Infinity, count = 0;
     for (let i = this._lo; i < this._hi; i++) {
       const n = this.notes[i];
+      hist[((n.pitch % 12) + 12) % 12] += n.vel;
+      if (n.pitch < minP) minP = n.pitch;
+      if (n.pitch > maxP) maxP = n.pitch;
       count++;
-      if (this._tonal[i]) {
-        hist[((n.pitch % 12) + 12) % 12] += Number.isFinite(n.vel) ? n.vel : 0;
-        tonalCount++;
-      }
-      if (this._register[i]) {
-        if (n.pitch < minP) minP = n.pitch;
-        if (n.pitch > maxP) maxP = n.pitch;
-        registerCount++;
-      }
     }
 
     let third = 0;
@@ -105,9 +80,8 @@ export class VibeDirector {
     if (spectralKey && spectralKey.confidence >= 0.15) {
       this.tonic = ((Math.round(spectralKey.tonic) % 12) + 12) % 12;
       this.tonicConfidence = clamp01(spectralKey.confidence);
-      this.tonalSource = 'spectral';
       third = clamp(spectralKey.majorness ?? 0, -1, 1);
-    } else if (tonalCount >= 3) {
+    } else if (count >= 3) {
       let tonic = 0;
       for (let pc = 1; pc < 12; pc++) if (hist[pc] > hist[tonic]) tonic = pc;
       const M = hist[(tonic + 4) % 12], m = hist[(tonic + 3) % 12];
@@ -117,7 +91,6 @@ export class VibeDirector {
       for (let pc = 0; pc < 12; pc++) if (pc !== tonic && hist[pc] > second) second = hist[pc];
       this.tonic = tonic;
       this.tonicConfidence = clamp01((hist[tonic] - second) / (hist[tonic] + 0.5));
-      this.tonalSource = 'notes';
     }
 
     let bright = 0;
@@ -130,7 +103,7 @@ export class VibeDirector {
 
     const E = energyCurves ? clamp01(energyCurves.globalEnergyNorm(nowMs, FLAT_WEIGHTS)) : 0.3;
     const density = count / (WINDOW_MS / 1000);
-    const octaves = registerCount >= 2 ? (maxP - minP) / 12 : 0;
+    const octaves = count >= 2 ? (maxP - minP) / 12 : 0;
     this._rawEpic = clamp01(0.45 * E + 0.25 * Math.min(1, density / 6) + 0.30 * Math.min(1, octaves / 3));
   }
 

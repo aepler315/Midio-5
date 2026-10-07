@@ -18,6 +18,9 @@ const BEAT_MS = 60000 / DEMO_BPM;       // 500
 const BAR_MS = BEAT_MS * 4;             // 2000
 export const DEMO_DURATION_MS = DEMO_BARS * BAR_MS;
 
+// A minor / C major diatonic. Melody lives in the upper octave so Midasus
+// has a wide pitch-space; bass sits two octaves down for Broshi.
+const SCALE = [57, 60, 62, 64, 67, 69, 72, 74]; // A C D E G A C D
 const CHORDS = {
   Am: [57, 60, 64],
   F:  [53, 57, 60],

@@ -160,12 +160,6 @@ html, body {
 
 .panel.hidden, .hidden { display: none !important; }
 
-/* Keep title inputs below the shared version arrow row, including phones
-   whose title card scrolls through its own panel. */
-.version-browser-enabled #loader.titleScreen {
-  padding-top: calc(max(16px, env(safe-area-inset-top)) + 84px);
-}
-
 /* ── Error banner ─────────────────────────────────────────────────────────── */
 /* Replaces the old native alert() surface (see showErrorBanner in main.js):
    a dismissible, styled-in-frame message instead of a browser dialog
@@ -660,7 +654,7 @@ html, body {
 }
 .titleAdvanced .hint a { color: color-mix(in srgb, var(--spec-gold) 85%, transparent); }
 
-/* Music-search rows (Soulseek panel) */
+/* Music-search rows (Jamendo/Soulseek panels) */
 .jamendoRow {
   display: flex;
   align-items: center;
@@ -3108,29 +3102,6 @@ html, body {
 }
 .displayRow { flex-wrap: wrap; }
 .displayRow select { min-width: 6em; }
-.sceneChoicePair { display: inline-flex; align-items: center; gap: var(--space-2); }
-.sceneChoiceRow select {
-  max-width: min(14em, 38vw);
-  /* Solid colours, not the translucent surface tokens: the opened list is
-     drawn by the browser on its own (often white) background, and options
-     inherit the select's light text, which left them white on white. */
-  color-scheme: dark;
-  background-color: #161b2a;
-  color: var(--text-primary);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-  padding: 4px var(--space-3);
-  font-size: 0.8rem;
-}
-.sceneChoiceRow option {
-  background-color: #161b2a;
-  color: #f2f0f8;
-}
-.sceneChoiceRow option:checked {
-  background-color: #34406a;
-  color: #ffffff;
-}
-.sceneChoiceRow select:disabled { opacity: 0.5; }
 
 #displaySettingsDialog { color: inherit; background: #111a25; border: 1px solid #647080; border-radius: 12px; max-width: min(90vw, 680px); }
 #displaySettingsDialog::backdrop { background: #0009; }

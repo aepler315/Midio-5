@@ -232,14 +232,8 @@ export class Renderer {
     // Logical stage (sim anchors) vs physical buffer (may be 720p–4K).
     // All world drawing uses logical dimensions; the transform scales into
     // the backing store so composition stays correct at every preset.
+    const nominalW = sim.stageW || sim.canvasWidth || 1280;
     const nominalH = sim.stageH || sim.canvasHeight || 720;
-    // Natural Journey exports author a camera for their requested aspect.
-    // Normal display and Pixel/Palette retain their existing stage fitting;
-    // simulation anchors/physics continue using the original logical stage.
-    const journeyAspect = this.rangePresentation?.enabled && this.rangePresentation.journey
-      && this.rangePresentation.exportMode && !this.presentationPixelated;
-    const nominalW = journeyAspect ? nominalH * canvas.width / canvas.height
-      : sim.stageW || sim.canvasWidth || 1280;
     // Off-frame camera pull-back (CameraDirector.zoom, 1 = normal, down to
     // ZOOM_MIN when pulled back): NOT a ctx.scale on the physical transform
     // -- that would shrink the world inside a fixed frame and leave empty
@@ -295,7 +289,7 @@ export class Renderer {
     const biomeManager = sim.biomes || null;
     const narrative = sim.rangeNarrativeAt?.() || null;
     this.rangeListeningActive = !!narrative;
-    const presentation = sim.presentation || resolveLandscapePresentation(biomeManager?.world);
+    const presentation = resolveLandscapePresentation(biomeManager?.world);
     const groundY = sim.stageAnchor?.groundY ?? sim.midio?.groundY ?? 625;
     this._capture?.dispose(); this._capture = null;
     if (biomeManager) biomeManager.rangeNarrative = narrative;
@@ -642,8 +636,7 @@ export class Renderer {
   _drawDropShockwave(ctx, canvas, sim, pose) {
     const hype = sim.hype;
     if (!hype) return;
-    // HypeDirector runs on heard time (Simulation.step), so its ring does too.
-    const u = hype.ringU(sim.heardTimeMs ?? sim.timeMs);
+    const u = hype.ringU(sim.timeMs);
     if (u == null) return;
     const cx = pose.midioDrawX, cy = sim.midio.groundY - 60;
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75;

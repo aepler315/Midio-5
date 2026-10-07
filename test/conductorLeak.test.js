@@ -77,11 +77,15 @@ test('a replay that disposes the old instance does not leave it listening', () =
 
 test('without dispose, a replay stacks listeners instead of replacing them (the bug this guards against)', () => {
   const conductor = loadedConductor();
+  let fires = 0;
   // Two "song loads" in a row, neither torn down -- the pre-fix behavior.
-  const undisposed = [1, 1, 2].map((seed) => new Broshi(conductor, {}, { seed }));
+  new Broshi(conductor, {}, { seed: 1 })._onKick = () => { fires++; };
+  const stale = new Broshi(conductor, {}, { seed: 1 });
+  stale._onKick = () => { fires++; };
+  new Broshi(conductor, {}, { seed: 2 })._onKick = () => { fires++; };
 
   // All three undisposed instances' RHYTHM listeners are still live.
   const rhythmListeners = conductor.listeners.get(Role.RHYTHM);
   assert.equal(rhythmListeners.size, 3, 'three undisposed Broshis leave three stale RHYTHM listeners');
-  assert.equal(undisposed.length, 3);
+  void stale;
 });

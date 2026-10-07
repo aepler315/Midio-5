@@ -135,7 +135,8 @@ test('dryness01 rises under sustained sunshine and falls back under rain', () =>
   w.kind = 'sunshine';
   w.intensity = 1;
   w.dryness01 = 0.3;
-  for (let i = 0; i < 600; i++) w._stepReservoirs(STEP);
+  let t = 0;
+  for (let i = 0; i < 600; i++) { w._stepReservoirs(STEP); t += 8.33; }
   const driedOut = w.dryness01;
   assert.ok(driedOut > 0.3, `dryness should have risen under sun, got ${driedOut}`);
 

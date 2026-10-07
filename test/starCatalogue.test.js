@@ -32,6 +32,7 @@ test('spectral class frequencies are right: M dwarfs dominate, O stars are vanis
 
 test('blackbody color runs red -> white -> blue as temperature rises, matching real stellar colors', () => {
   const cool = blackbodyRGB(2800);  // M dwarf: should read reddish
+  const mid = blackbodyRGB(5800);   // G star (sun-like): should read roughly white
   const hot = blackbodyRGB(20000);  // B star: should read blue-white
 
   assert.ok(cool.r > cool.b, `cool star should be redder than blue: ${JSON.stringify(cool)}`);

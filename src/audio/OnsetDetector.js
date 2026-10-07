@@ -1,7 +1,7 @@
 // Per-band RMS envelopes, spectral-flux onset detection/classification, and
 // BPM/phase estimation (spec §1.2.3-1.2.5). Pure numeric — operates on
 // decoded AudioBuffers from the StemSeparator, no DOM/graphics dependency.
-import { ONSET_WEIGHTS } from './bands.js';
+import { BANDS, ONSET_WEIGHTS } from './bands.js';
 import { clamp } from '../utils/math.js';
 
 const WIN = 1024, HOP = 512;

@@ -245,68 +245,6 @@ try {
     (await page.textContent('#exportNote')).slice(0, 120));
 
   check('no browser errors', errors.length === 0, errors.join(' | '));
-
-  // --- a native encoder failure after a successful start (F10)
-  //
-  // Windows Chrome has been seen to advertise H.264 MP4, construct and start
-  // the recorder, and then have its encoder fail. Reproduce that shape: the
-  // next MP4 recorder emits a real `error` event shortly after start and is
-  // then stopped the way the browser stops it. The player must see the
-  // encoder's own message, no file may be saved, and a WebM retry, when the
-  // browser has one, must produce a whole, decodable song.
-  if (candidate.ext === 'mp4') {
-    await page.evaluate(() => {
-      const Real = window.MediaRecorder;
-      let armed = true;
-      window.MediaRecorder = class FailingOnce extends Real {
-        start(...args) {
-          super.start(...args);
-          if (!armed || !String(this.mimeType || '').startsWith('video/mp4')) return;
-          armed = false;
-          setTimeout(() => {
-            const error = new DOMException('Simulated native encoder failure', 'EncodingError');
-            const event = new Event('error');
-            Object.defineProperty(event, 'error', { value: error });
-            this.onerror?.(event);
-            try { Real.prototype.stop.call(this); } catch { /* already stopped */ }
-          }, 800);
-        }
-      };
-      window.MediaRecorder.isTypeSupported = (t) => Real.isTypeSupported(t);
-    });
-    let unexpectedSave = null;
-    const onDownload = (d) => { unexpectedSave = d.suggestedFilename(); };
-    page.on('download', onDownload);
-    await page.selectOption('#exportPreset', '720p');
-    await page.click('#exportBtn');
-    await page.waitForFunction(
-      () => /Simulated native encoder failure/.test(document.getElementById('errorBannerText')?.textContent || ''),
-      null, { timeout: 30000 },
-    ).then(() => check('the encoder\'s own message reaches the player', true),
-      () => check('the encoder\'s own message reaches the player', false));
-    await page.locator('#completePanel:not(.hidden)').waitFor({ timeout: 120000 });
-    const note = await page.textContent('#exportNote');
-    check('the failure is not reported as "too short"', !/too short/.test(note) && /failed/i.test(note), note.slice(0, 160));
-    page.off('download', onDownload);
-    check('nothing was saved from the failed encoder', unexpectedSave === null, unexpectedSave || '');
-    const webmOk = await page.evaluate(() => MediaRecorder.isTypeSupported('video/webm'));
-    if (webmOk) {
-      check('a WebM retry is offered', await page.locator('#exportRetryCodecBtn').isVisible());
-      const retryDownload = page.waitForEvent('download', { timeout: 240000 });
-      await page.click('#exportRetryCodecBtn');
-      const retrySaved = await retryDownload;
-      const retryPath = path.join(out, 'retry' + path.extname(retrySaved.suggestedFilename()));
-      await retrySaved.saveAs(retryPath);
-      check('the retry is saved as WebM', retrySaved.suggestedFilename().endsWith('.webm'), retrySaved.suggestedFilename());
-      const retry = await inspect(page, await fs.readFile(retryPath), 'video/webm');
-      check('the retry has a picture', retry.colors > 200 && retry.middleRowLit > 0.5, `${retry.colors} colors`);
-      check('the retry has sound', retry.audioBytes === null || retry.audioBytes > 0, `${retry.audioBytes} audio bytes`);
-      // MediaRecorder WebM often lacks a duration header (Infinity); only a
-      // finite reading is judged.
-      check('the retry covers the whole song', !Number.isFinite(retry.duration) || retry.duration > 15,
-        `${retry.duration}`);
-    }
-  }
 } finally {
   await browser.close();
 }

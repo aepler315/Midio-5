@@ -56,35 +56,6 @@ function fakePresentation({ ready = true } = {}) {
 
 const groundView = { stage: { width: 1408, height: 848 }, apply() {} };
 
-test('the Range paints sunset, moonlight and sunrise through v2 and legacy presentation', () => {
-  for (const ready of [true, false]) {
-    const { m, calls } = manager();
-    m.rangePresentation = fakePresentation({ ready });
-    try {
-      for (const tSec of [0, 15, 30, 45, 60, 15]) {
-        m.tSec = tSec;
-        calls.length = 0;
-        m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
-        const twilight = tSec === 0 || tSec === 60;
-        assert.equal(m.celestialState.activeBody, twilight ? 'sun' : 'moon', `${ready}: ${tSec}s`);
-        if (twilight) {
-          assert.ok(m._night01 >= .75);
-          assert.ok(m._twilight.amount01 > .7);
-          assert.equal(m._twilight.rising, tSec === 60);
-          assert.ok(calls.includes('_drawCelestial'));
-          assert.ok(!calls.includes('_drawMoon'));
-        } else {
-          assert.equal(m._night01, 1);
-          assert.equal(m._twilight.amount01, 0);
-          assert.ok(calls.includes('_drawMoon'));
-          assert.ok(!calls.includes('_drawCelestial'));
-          assert.equal(m._scenicLight.colorHex, '#c8d8ff');
-        }
-      }
-    } finally { m.dispose(); }
-  }
-});
-
 test('v2 draws its partitions at the retained pass boundaries, legacy scenery not at all', () => {
   const { m, calls } = manager();
   const pres = fakePresentation();
@@ -99,21 +70,6 @@ test('v2 draws its partitions at the retained pass boundaries, legacy scenery no
   assert.equal(calls.filter((c) => c === '_drawCrestLight').length, 1, 'the Dancing Ridge lights the far range exactly once');
   assert.ok(!calls.includes('_drawHorizonEQ'), 'its drawn line belongs to the legacy stack only');
   assert.equal(m._rangeV2Active, true);
-  m.dispose();
-});
-
-test('journey owns both ranges and its lake in one scene without geographic overlays', () => {
-  const { m, calls } = manager();
-  const pres = fakePresentation();
-  pres.journey = true;
-  pres.captionViewFor = () => ({ id: 'moonlit-journey' });
-  m.rangePresentation = pres;
-  m.rangePerformance = true;
-  m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
-  assert.deepEqual(pres.passes, ['far']);
-  for (const pass of ['_drawSpectrumMassif', '_drawOcean', '_drawCrestLight', '_drawFarVignettes', '_drawMidDepthLife']) {
-    assert.ok(!calls.includes(pass), pass);
-  }
   m.dispose();
 });
 

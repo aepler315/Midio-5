@@ -189,7 +189,7 @@ test('figure switches happen roughly every 3.2s and cycle through exactly 3 figu
   const idx2 = v._figureIdx;
   assert.equal(idx2, idx0 + 2);
   // A third figure switch should end the voyage (exactly 3 figures/voyage).
-  advance(v, t, 3.3);
+  t = advance(v, t, 3.3);
   assert.equal(v.phase, VoyagePhase.REENTRY);
 });
 
@@ -250,7 +250,7 @@ test('a figure switch pens-up instead of drawing a straight morph chord', () => 
   v._figureOrder = ['lissajous', 'epicycle', 'superformula'];
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  advance(v, t, 0.9 + 1.6 + 3.2 + 0.05); // past first figure switch
+  t = advance(v, t, 0.9 + 1.6 + 3.2 + 0.05); // past first figure switch
   assert.ok(v._figureIdx >= 1);
   // No non-gap trail segment may be a long straight chord.
   let maxStep = 0;
@@ -334,7 +334,7 @@ test('a melody onset in deep space retunes her to the pitch class: hue and Lissa
   const v = new SkyVoyage(20);
   let t = 0;
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  advance(v, t, 0.9 + 1.6 + 0.1);
+  t = advance(v, t, 0.9 + 1.6 + 0.1);
   assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
 
   v.onMelodyOnset({ pitch: 64, vel: 0.8 }); // E -> pitch class 4
@@ -363,7 +363,7 @@ test('a pitch-class retune morphs the position rather than teleporting it', () =
   t = advance(v, t, 0.9 + 1.6 + 1.5); // mid-figure
   const before = { ...v.p };
   v.onMelodyOnset({ pitch: 66, vel: 0.9 }); // F# -> [5,3], very different from default [3,2]
-  advance(v, t, 1 / 60); // a single ~frame later
+  t = advance(v, t, 1 / 60); // a single ~frame later
   const jump = Math.hypot(v.p.x - before.x, v.p.y - before.y);
   assert.ok(jump < 40, `retune should morph, not teleport: jumped ${jump.toFixed(1)}px in one frame`);
 });
@@ -377,7 +377,7 @@ test('onset phase-kicks accumulate smoothly, never as an instant time jump', () 
   v.onMelodyOnset({ pitch: 60, vel: 1.0 });
   assert.equal(v._kickSmooth, 0, 'the kick must not apply instantaneously');
   assert.ok(v._kickTarget > 0.05, 'the kick target should be pending');
-  advance(v, t, 0.25); // still mid-ease, before bleed drains the target
+  t = advance(v, t, 0.25); // still mid-ease, before bleed drains the target
   assert.ok(v._kickSmooth > 0.03, 'the kick should have eased in by now');
   assert.ok(v._kickSmooth <= 0.32 + 1e-6, 'kick is hard-capped');
 });
@@ -388,7 +388,7 @@ test('figure switches do not stamp a teleport chord into the trail', () => {
   let t = 0;
   v.trigger(t, { x: 220, y: 480 }, 1280, 720);
   // Ride into deep space + past first figure boundary (FIGURE_SEC = 3.2).
-  advance(v, t, 0.9 + 1.6 + 3.2 + 0.05);
+  t = advance(v, t, 0.9 + 1.6 + 3.2 + 0.05);
   assert.equal(v.phase, VoyagePhase.DEEP_SPACE);
   assert.ok(v._figureIdx >= 1, 'should have advanced past the first figure');
   // Frame-to-frame steps along the live trail must stay continuous (gaps are
@@ -413,7 +413,7 @@ test('kick does not carry across figure boundaries', () => {
   t = advance(v, t, 0.3);
   assert.ok(v._kickSmooth > 0, 'kicks active mid-figure');
   // Cross the figure boundary.
-  advance(v, t, 3.2);
+  t = advance(v, t, 3.2);
   assert.equal(v._kickSmooth, 0, 'kick clears on figure switch');
   assert.equal(v._kickTarget, 0, 'kick target clears on figure switch');
 });
@@ -429,7 +429,7 @@ test('kicks in deep space spawn a capped sparkle burst; kicks elsewhere are igno
   assert.ok(v.sparkles.length >= 5, 'deep space: a burst appears');
   for (let i = 0; i < 20; i++) v.onKick(1.0); // spam
   assert.ok(v.sparkles.length <= 36, `sparkles must stay capped, got ${v.sparkles.length}`);
-  advance(v, t, 0.8); // past SPARKLE_LIFE_SEC
+  t = advance(v, t, 0.8); // past SPARKLE_LIFE_SEC
   assert.equal(v.sparkles.length, 0, 'sparkles expire');
 });
 
@@ -442,7 +442,7 @@ test('melody onsets in deep space cut micro-slashes that expire', () => {
   assert.equal(v.microSlashes.length, 1);
   for (let i = 0; i < 12; i++) v.onMelodyOnset({ pitch: 62 + i, vel: 0.7 });
   assert.ok(v.microSlashes.length <= 6, 'micro-slashes must stay capped');
-  advance(v, t, 0.4); // past SLASH_LIFE_SEC
+  t = advance(v, t, 0.4); // past SLASH_LIFE_SEC
   assert.equal(v.microSlashes.length, 0);
 });
 
@@ -468,7 +468,7 @@ test('landing resets the melody tuning for the next voyage', () => {
   t = advance(v, t, 0.9 + 1.6 + 0.1);
   v.onMelodyOnset({ pitch: 66, vel: 0.9 });
   assert.ok(v._liss, 'tuning is live mid-voyage');
-  advance(v, t, 14); // run the voyage out
+  t = advance(v, t, 14); // run the voyage out
   assert.equal(v.phase, VoyagePhase.IDLE);
   assert.equal(v._liss, null, 'tuning cleared for next time');
   assert.equal(v._kickTarget, 0);
@@ -482,7 +482,7 @@ test('expired constellations crystallize into the atlas instead of vanishing', (
   assert.ok(v.constellations.length >= 1);
   assert.equal(v.atlas.length, 0, 'nothing crystallized yet');
 
-  advance(v, t, 16); // past the 15s bright life
+  t = advance(v, t, 16); // past the 15s bright life
   assert.equal(v.constellations.length + 0, v.constellations.length); // (sanity no-op)
   assert.ok(v.atlas.length >= 1, 'the expired constellation should now live in the atlas');
   const entry = v.atlas[0];
@@ -503,7 +503,7 @@ test('the atlas persists after the voyage ends and across a second voyage', () =
   assert.ok(atlasAfterFirst >= 1, 'the sky remembers the first voyage');
 
   v.trigger(t, { x: 200, y: 400 }, 1280, 720);
-  advance(v, t, 30);
+  t = advance(v, t, 30);
   assert.ok(v.atlas.length > atlasAfterFirst, 'the second voyage adds to the same map');
 });
 

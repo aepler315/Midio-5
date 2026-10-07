@@ -5,20 +5,25 @@
 // downloading all of them.
 //
 // A song gets three ranges, one per ridge: a high one at the back, a mid
-// one in the middle and a low one in front (BiomeSet.chooseBiomeRidges).
+// one in the middle and a low one in front (RangeMatcher.matchRidgeSet).
 // Each range's module holds the skyline scanned for its far layer; that one
 // skyline is what the song's ridge draws, whichever ridge it stands on.
 import { RANGES, LOADERS } from './ranges/index.js';
-import { RIDGE_BANDS } from './RangeMatcher.js';
+import { RIDGE_BANDS, matchRidgeSet } from './RangeMatcher.js';
 import { readRecentRanges, readRecentViews, readRecentRegions } from './RangeHistory.js';
 import { assignSongScenes } from './SceneCatalog.js';
 import SCENE_CATALOG from './sceneCatalogData.js';
 import { chooseSongBiomes, chooseBiomeRidges } from './BiomeSet.js';
 import { profilesFromJSON } from './TerrainProfile.js';
-import { REAL_BIOME_NAMES } from '../RealBiomes.js';
 import { chooseHorizonRange, MASSIF_SALT } from './HorizonRidge.js';
 
 export { RANGES };
+
+/** Pick the song's three ranges from the whole basket, passing over the
+ *  ranges this player saw most recently: { far, mid, near } match results. */
+export function chooseRanges(profile, seed, recent = readRecentRanges()) {
+  return matchRidgeSet(RANGES, profile, seed, { recent });
+}
 
 /** Load a range's baked skyline and turn it into terrain profiles. Rejects
  *  on an unknown id or a profile TerrainProfile will not accept. */
@@ -27,6 +32,46 @@ export async function loadRangeProfiles(id) {
   if (!load) throw new Error(`no range '${id}' in the basket`);
   const mod = await load();
   return profilesFromJSON(mod.default);
+}
+
+/**
+ * Choose and load in one step. Resolves to
+ *   { range, ranges: { far, mid, near }, profiles: { L2, L3, L4 } }
+ * where `range` is the back (far) range, or null -- never rejects, because
+ * a missing range must not stop a song. The back range is required; a
+ * middle or front range that fails to load leaves that ridge to the
+ * game's own invented hills.
+ */
+export async function prepareSongRange(profile, seed) {
+  try {
+    const set = chooseRanges(profile, seed);
+    const loaded = await Promise.all(RIDGE_BANDS.map(async (b) => {
+      const match = set[b.ridge];
+      if (!match) return null;
+      try {
+        const layers = await loadRangeProfiles(match.range.id);
+        const skyline = layers.L2;
+        return skyline ? { ridge: b.ridge, layer: b.layer, range: match.range, skyline } : null;
+      } catch (err) {
+        if (b.ridge === 'far') throw err;
+        console.warn(`[terrain] ${b.ridge} range unavailable; that ridge stays invented`, err);
+        return null;
+      }
+    }));
+    const far = loaded.find((x) => x?.ridge === 'far');
+    if (!far) return null;
+    const ranges = {};
+    const profiles = {};
+    for (const x of loaded) {
+      if (!x) continue;
+      ranges[x.ridge] = x.range;
+      profiles[x.layer] = x.skyline;
+    }
+    return { range: far.range, ranges, profiles };
+  } catch (err) {
+    console.warn('[terrain] range unavailable; using the bundled Tetons', err);
+    return null;
+  }
 }
 
 /**
@@ -45,13 +90,10 @@ export async function loadRangeProfiles(id) {
  * for the spectrum massif behind it: another of those skylines, never the
  * horizon's. `sceneByBiome` maps each biome to its Range v2 SceneChoice
  * ({ view, fallbackReason }) from the curated catalog, drawn once per song.
- * `biome` (the player's pick, ui/SceneChoice.js) keeps the whole song in
- * that one biome instead of drawing the song's own; an unknown name is
- * ignored.
  */
-export async function prepareSongTerrain(profile, seed, recent = readRecentRanges(), { biome: pinned = null } = {}) {
+export async function prepareSongTerrain(profile, seed, recent = readRecentRanges()) {
   try {
-    const biomes = pinned && REAL_BIOME_NAMES.includes(pinned) ? [pinned] : chooseSongBiomes(profile, seed);
+    const biomes = chooseSongBiomes(profile, seed);
     if (!biomes.length) return null;
     const byBiome = new Map();
     const load = async (biome) => {

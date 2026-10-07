@@ -2,7 +2,7 @@
 
 Current completion status and the boundary between mechanical validation and
 remaining human/device evidence are recorded in
-[`../archive/feature-status.md`](../archive/feature-status.md) and
+[`../feature-status.md`](../feature-status.md) and
 [`validation.md`](./validation.md). The investigation below remains as
 historical evidence and is not rewritten to imply it ran on later revisions.
 

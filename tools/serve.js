@@ -133,12 +133,7 @@ function decodeRequestPath(rawUrl) {
 }
 
 function staticPath(reqPath) {
-  const archive = /^\/versions\/[a-z0-9]+(?:-[a-z0-9]+)*\/(?:index\.html|src\/.+|soundfonts\/.+)$/.test(reqPath);
-  const archiveIndex = /^\/versions\/[a-z0-9]+(?:-[a-z0-9]+)*\/$/.test(reqPath);
-  const archiveManifest = reqPath === '/versions/manifest.json' || reqPath === '/versions/build-report.json';
-  if (reqPath !== '/index.html' && !reqPath.startsWith('/src/') && !reqPath.startsWith('/soundfonts/')
-    && !archive && !archiveIndex && !archiveManifest) return null;
-  if (archiveIndex) reqPath += 'index.html';
+  if (reqPath !== '/index.html' && !reqPath.startsWith('/src/') && !reqPath.startsWith('/soundfonts/')) return null;
   const filePath = path.resolve(ROOT, `.${reqPath}`);
   const relative = path.relative(ROOT, filePath);
   if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;

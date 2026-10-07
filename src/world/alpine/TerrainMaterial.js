@@ -1,10 +1,8 @@
-import { firmamentUniforms, FIRMAMENT_GLSL } from './FirmamentGL.js';
 import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { GUST_FRONTS, GUST_IDLE_SEC, GUST_SWEEP_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
-import { MIRROR_LIFT, BACKDROP_FEATHER_UV } from './WaterMirror.js';
+import { MIRROR_LIFT } from './WaterMirror.js';
 import { ACTOR_GLSL, WAKE_GLSL, actorUniforms } from './ActorsGL.js';
-import { STORM_GLSL } from './RangeStorm.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
 // bundle). Task 8 ships the neutral-material pilot: real geometry, the
 // surface texture's full-grid normals, the frame's resolved celestial light
@@ -15,27 +13,6 @@ import { STORM_GLSL } from './RangeStorm.js';
 // GLSL twin of RangeFrame.sceneDeformation -- keep the two in step.
 import { MIST_GLSL, MIST_SAMPLES } from './RangeAtmosphere.js';
 import { GLACIER_GLSL } from './GlacierField.js';
-
-const LAKE_MUSIC_HITS = 4;
-
-/** Bounded conductor contacts for the geographic water shader. Rebind every
- * frame so seeking, accessibility changes and view changes cannot retain an
- * old ripple. Strength is preserved; the shader owns its short decay. */
-export function bindLakeMusic(uniforms, frame, { originM = null } = {}) {
-  const anchored = Array.isArray(originM) && originM.length === 3 && originM.every(Number.isFinite);
-  const enabled = !!frame.performance && !frame.reducedMotion && anchored;
-  const limit = (frame.qualityLevel ?? 0) >= 4 ? 2 : LAKE_MUSIC_HITS;
-  const hits = frame.waterHits || [];
-  uniforms.uLakeMusicOrigin.value.set(anchored ? originM[0] : 0, anchored ? originM[2] : 0);
-  uniforms.uLakeMusicGain.value = enabled ? (frame.reducedFlash ? .35 : 1) : 0;
-  uniforms.uLakeMusicCount.value = enabled ? Math.min(limit, hits.length) : 0;
-  for (let i = 0; i < LAKE_MUSIC_HITS; i++) {
-    const hit = enabled && i < limit ? hits[i] : null;
-    const age = hit ? (frame.timeMs - hit.tMs) / 1000 : -1;
-    const valid = Number.isFinite(age) && age >= 0 && age <= 2 && Number.isFinite(hit?.strength);
-    uniforms.uLakeMusicHits.value[i].set(valid ? age : -1, valid ? Math.max(0, Math.min(1, hit.strength)) : 0);
-  }
-}
 
 export const DEFORM_GLSL = /* glsl */`
   ${GLACIER_GLSL}
@@ -99,7 +76,6 @@ export const SCENE_VERT = /* glsl */`
 
 export const SCENE_FRAG = /* glsl */`
   precision highp float;
-  ${FIRMAMENT_GLSL}
   uniform sampler2D uSurface;
   ${DEFORM_GLSL}
   uniform vec3 uLightDir;
@@ -133,12 +109,6 @@ export const SCENE_FRAG = /* glsl */`
   uniform float rForestFloor;
   uniform float rWaterSkyMix; uniform float rWaterGlintGain;
   uniform float uTime;
-  uniform vec2 uLakeMusicHits[${LAKE_MUSIC_HITS}]; // age seconds, conductor strength
-  uniform vec2 uLakeMusicOrigin;
-  uniform int uLakeMusicCount;
-  uniform float uLakeMusicGain;
-  uniform float uMirrorLift;
-  uniform vec4 uCovePressure; // shore xz, bass pressure, heard seconds
   // Lake mirror (WaterMirror.js): the ground seen from the camera reflected
   // about the water level, projected by uMirrorMatrix; uMirrorAmount 0 when
   // there is none. While that image is drawn, ground below uClipBelow is cut.
@@ -153,7 +123,6 @@ export const SCENE_FRAG = /* glsl */`
   // and the camera's view-projection to find where a reflected ray meets it.
   uniform sampler2D uBackdrop;
   uniform float uBackdropAmount;
-  uniform vec4 uBackdropBounds;
   uniform mat4 uViewProj;
   // Gust fronts (the forest's): on the water they are cat's paws, rough
   // patches that cross the frame with each front and break the mirror.
@@ -173,7 +142,6 @@ export const SCENE_FRAG = /* glsl */`
   // instead of clipping; the dark blue-hour body keeps its separation.
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   ${MIST_GLSL}
-  ${STORM_GLSL}
   float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
   // Smooth value noise: a per-cell hash alone steps at every cell edge,
   // which a threshold (snow line, tree line) turns into a visible grid.
@@ -225,11 +193,6 @@ export const SCENE_FRAG = /* glsl */`
   float waterGlint(float cosine, float gain, float keyEnergy) {
     if (keyEnergy < 1e-10 || gain <= 0.0) return 0.0;
     return pow(max(cosine, 0.0), 600.0) * gain;
-  }
-  float lakeRing(float radius, float age, float strength) {
-    if (age < 0.0 || age > 2.0 || strength <= 0.0) return 0.0;
-    float band = (radius - (45.0 + age * 170.0)) / 14.0;
-    return exp(-band * band) * exp(-age / 0.65) * clamp(strength, 0.0, 1.0);
   }
 
   void main() {
@@ -386,58 +349,27 @@ export const SCENE_FRAG = /* glsl */`
     lit += albedo * actorLight(vRenderedWorld, nShade);
     // Broken cloud transmits the real solar key in broad moving swathes
     // across wet receivers; world coordinates keep them fixed to the land.
-    // Between the swathes the last of the cloud still shades the land, and
-    // wet rock and grass shine back toward the sun.
-    float opening=stormOpening(vRenderedWorld);
-    if (!water) lit *= 1.0 - uStorm.z*(1.0-opening)*.5;
+    float opening=smoothstep(.35,.72,vnoise12(vRenderedWorld.xz/1100.0+vec2(uTime*.02,0.0)));
     lit += albedo*uLightColor*key*uStorm.z*opening*.85;
-    if (!water && uStorm.w > 0.0) {
-      vec3 sheenH = normalize(uLightDir + normalize(uCameraPos - vRenderedWorld));
-      lit += uLightColor * pow(max(dot(nShade, sheenH), 0.0), 48.0) * uStorm.w * (0.12 + 0.6*uStorm.z*opening) * (1.0 - 0.75*uStorm.y);
-    }
-    float giantShade = 0.0;
     if (!water && uGiantPeak[1] > 0.0) {
-      giantShade = broshiShadow(vRenderedWorld);
       vec3 delta=vRenderedWorld-uGiantCenter[1];
       float lantern=1.0-smoothstep(uGiantSpan[1]*.45,uGiantSpan[1]*.85,length(vec2(dot(delta,uGiantRight),delta.y)));
       // A broad spill from Broshi's lantern gives his shadow contrast in
       // dark dawn. In daylight the scene's key remains dominant.
       lit += albedo * max(vec3(.3,.22,.16)-hemi*.08,vec3(0.0))*lantern*uGiantPeak[1];
-      lit *= 1.0 - giantShade*.96;
+      lit *= 1.0 - broshiShadow(vRenderedWorld)*.96;
     }
     if (uDebugMask == 3) { outColor = vec4(albedo * 4.0, 1.0); return; }
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
     if (uDebugMask == 5) { outColor = vec4(vec3(key), 1.0); return; }
     vec3 V = normalize(uCameraPos - vRenderedWorld);
-    float waterFres = 0.0, paw = 0.0, wake = 0.0, musicRing = 0.0;
+    float waterFres = 0.0, paw = 0.0, wake = 0.0;
     vec3 waterN = vec3(0.0, 1.0, 0.0);
     if (water && uHasMaterial > 0.5) {
       // Midio's wake roughens the water as a cat's paw does.
       wake = wakeAt(vWorld.xz);
-      // Rain stipples the whole lake while the squall is over it.
-      paw = max(max(catsPaw(vWorld.xz), wake), uStorm.x * 0.75);
+      paw = max(catsPaw(vWorld.xz), wake);
       vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * (0.025 + 0.05 * paw);
-      // World-space rings never leave the hydroflattened water mask, and
-      // several simultaneous contacts still have one small bounded response.
-      if (uLakeMusicGain > 0.0) {
-        vec2 radial = vWorld.xz - uLakeMusicOrigin;
-        float radius = length(radial);
-        for (int i = 0; i < ${LAKE_MUSIC_HITS}; i++) {
-          if (i >= uLakeMusicCount) break;
-          musicRing += lakeRing(radius, uLakeMusicHits[i].x, uLakeMusicHits[i].y);
-        }
-        musicRing = clamp(musicRing, 0.0, 1.0) * uLakeMusicGain;
-        ripple += radial / max(radius, 1.0) * musicRing * mix(.018, .045, uFullSky);
-      }
-      // Bass sends visible pressure through the water beside the resident.
-      // The geographic water branch clips it at the bank; no dry-land rings.
-      if (uCovePressure.z > 0.0) {
-        vec2 radial = vWorld.xz - uCovePressure.xy;
-        float radius = length(radial);
-        float pressure = sin(radius * .18 - uCovePressure.w * 3.5)
-          * exp(-radius / 62.0) * uCovePressure.z;
-        ripple += radial / max(radius, 1.0) * pressure * .075;
-      }
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       waterN = waterNormal;
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(vec3(0.0, 1.0, 0.0), V), 0.0), 5.0);
@@ -471,17 +403,11 @@ export const SCENE_FRAG = /* glsl */`
     // Under a cloud sea the lake's mirror and glints are hidden with it.
     float clear = 1.0 - mist * uMistFill;
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96) * uNarrative.y);
-    // What reaches the eye from his shadow is dimmed too: the air and mist
-    // in front of the slope lie in it, and the opening's neutral land must
-    // not wash his outline out of the range.
-    float veil = 1.0 - (1.0 - clamp(air, 0.0, 1.0)) * (1.0 - mist);
-    color *= 1.0 - giantShade * (.5 + .3 * veil);
-    color = mix(color, rainColor(), rainVeil(vRenderedWorld, dist) * 0.8 * uNarrative.y);
     // The lake mirrors the ground above it. The mirror image already holds
     // the air along its own (longer) path, so it replaces the water's colour
     // by the water's reflectance, as the sky reflection did in lit. Groove
     // and kicks shiver it in horizontal bands; a cat's paw breaks it up.
-    if (water && (uMirrorAmount > 0.0 || uFullSky > .5)) {
+    if (water && uMirrorAmount > 0.0) {
       float band = gl_FragCoord.y / max(uViewportPx.y, 1.0) * 260.0 + vnoise12(vWorld.xz / 240.0) * 6.2832;
       vec2 shiver = vec2(0.3 * sin(band * 0.37 - uTime * 1.7), sin(band + uTime * 2.3)) * uMirrorRipple * (1.0 + 3.0 * paw);
       // The backdrop, met by the view ray reflected off flat water (it is far
@@ -490,30 +416,12 @@ export const SCENE_FRAG = /* glsl */`
       // lies beyond its far shore; magical naturalism lowers the reflected
       // ray (MIRROR_LIFT, as the mirror camera does) so the water holds them.
       vec3 ray = normalize(vRenderedWorld - uCameraPos);
-      vec3 up = normalize(vec3(ray.x, abs(ray.y) * uMirrorLift, ray.z));
-      vec3 mirrored;
-      float have;
-      if (uFullSky > .5) {
-        vec3 rippleNormal = normalize(vec3(waterN.x * .35, waterN.y, waterN.z * .35));
-        up = reflect(ray, rippleNormal);
-        mirrored = firmamentRadiance(up, uSkyZenith, uSkyHorizon, true);
-        have = 1.0;
-      } else {
-      vec4 bc = uViewProj * vec4(uCameraPos + up * 60000.0, 1.0);
-      vec2 backdropUv = bc.xy / max(bc.w, 0.00001) * 0.5 + 0.5 + shiver;
-      vec4 captured = texture(uBackdrop, clamp(backdropUv, vec2(0.001), vec2(0.999)));
-      vec2 edge = min(backdropUv - uBackdropBounds.xy, uBackdropBounds.zw - backdropUv);
-      float capturedWeight = smoothstep(0.0, ${BACKDROP_FEATHER_UV.toFixed(3)}, min(edge.x, edge.y))
-        * captured.a * uBackdropAmount * step(0.00001, bc.w);
-      // Near-water rays reach above the captured sky. Transparent overscan
-      // and opaque letterboxing must continue into sky, never black borders.
-      vec3 reflectedSky = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.45, up.y));
-      vec3 capturedSky = srgbToLinear(clamp(captured.rgb / max(captured.a, 0.00001), 0.0, 1.0));
-      mirrored = mix(reflectedSky, capturedSky, capturedWeight);
-      have = uBackdropAmount;
-      }
+      vec3 up = vec3(ray.x, abs(ray.y) * ${MIRROR_LIFT.toFixed(3)}, ray.z);
+      vec4 bc = uViewProj * vec4(uCameraPos + normalize(up) * 60000.0, 1.0);
+      vec3 mirrored = srgbToLinear(texture(uBackdrop, clamp(bc.xy / bc.w * 0.5 + 0.5 + shiver, vec2(0.001), vec2(0.999))).rgb);
+      float have = uBackdropAmount;
       vec4 mc = uMirrorMatrix * vec4(vRenderedWorld, 1.0);
-      if (uMirrorAmount > 0.0 && mc.w > 0.0 && abs(vWorld.y - uMirrorLevel) < 3.0) {
+      if (mc.w > 0.0 && abs(vWorld.y - uMirrorLevel) < 3.0) {
         vec4 m = texture(uMirror, clamp(mc.xy / mc.w + shiver, vec2(0.001), vec2(0.999)));
         if (m.a > 0.004) mirrored = mix(mirrored, srgbToLinear(m.rgb / m.a), have > 0.0 ? m.a : 1.0);
         have = max(have, m.a);
@@ -527,9 +435,7 @@ export const SCENE_FRAG = /* glsl */`
       // Lanterns over the water lay a path of glints; Midio's wake catches
       // his light. Over the mirror, through the air.
       vec3 glow = actorGlint(vRenderedWorld, V, waterN) * 0.6 + uActorColor[0] * wake * 0.12;
-      // Rain on the lake breaks the path up, so it fades with the squall.
-      color += glow * clear * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0)) * (1.0 - 0.75 * uStorm.x);
-      color += mix(uSkyHorizon, vec3(0.3, 0.42, 0.5), 0.45) * musicRing * 0.035 * clear * uNarrative.z * uNarrative.w;
+      color += glow * clear * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0));
     }
     // A narrow physical silhouette supplies the main opening ink. Sparse
     // source-space hints are drawn separately against this same depth.
@@ -568,7 +474,6 @@ export function sceneUniforms(THREE, base) {
   return {
     ...base,
     ...actorUniforms(THREE),
-    ...firmamentUniforms(THREE),
     uGlacierEnabled: { value: 0 }, uGlacierStart: { value: new THREE.Vector2() }, uGlacierEnd: { value: new THREE.Vector2(0, -100) },
     uGlacierWidth: { value: 1 }, uGlacierSurface: { value: new THREE.Vector2() }, uGlacierMaxThickness: { value: 0 }, uGlacierRetreat: { value: 0 },
     uDeformAmp: { value: 0 }, uDeformKick: { value: 0 }, uDeformK: { value: 0 },
@@ -590,14 +495,10 @@ export function sceneUniforms(THREE, base) {
     uCameraPos: { value: new THREE.Vector3() },
     uDiag: { value: 0 },
     uHasMaterial: { value: 0 },
-    uStorm: { value: new THREE.Vector4() }, uRainShift: { value: 0 },
+    uStorm: { value: new THREE.Vector4() },
     uAmbientScale: { value: 2.5 },
     uDebugMask: { value: 0 },
     uTime: { value: 0 },
-    uLakeMusicHits: { value: Array.from({ length: LAKE_MUSIC_HITS }, () => new THREE.Vector2(-1, 0)) },
-    uMirrorLift: { value: MIRROR_LIFT },
-    uCovePressure: { value: new THREE.Vector4() },
-    uLakeMusicOrigin: { value: new THREE.Vector2() }, uLakeMusicCount: { value: 0 }, uLakeMusicGain: { value: 0 },
     // Gust fronts in flight: age (s), strength, and way across the frame.
     ...gustUniforms(),
     uForestKeep: { value: 1 },
@@ -608,7 +509,7 @@ export function sceneUniforms(THREE, base) {
     uMirror: { value: null }, uMirrorMatrix: { value: new THREE.Matrix4() }, uMirrorAmount: { value: 0 },
     uMirrorLevel: { value: 0 }, uMirrorRipple: { value: 0 }, uClipBelow: { value: -1e9 },
     uViewportPx: { value: new THREE.Vector2(1, 1) },
-    uBackdrop: { value: null }, uBackdropAmount: { value: 0 }, uBackdropBounds: { value: new THREE.Vector4(0, 0, 0, 0) }, uViewProj: { value: new THREE.Matrix4() },
+    uBackdrop: { value: null }, uBackdropAmount: { value: 0 }, uViewProj: { value: new THREE.Matrix4() },
     tRock: { value: null }, sRock: { value: 150 }, tRockNear: { value: null }, sRockNear: { value: 6 },
     tCanopy: { value: null }, sCanopy: { value: 70 }, tSnow: { value: null }, sSnow: { value: 60 },
     tSoil: { value: null }, sSoil: { value: 3 },

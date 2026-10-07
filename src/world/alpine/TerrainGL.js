@@ -161,3 +161,4 @@ export function createReviewMaterial(THREE, uniforms) {
   });
 }
 
+export const TERRAIN_VERTEX_SHADER = VERT;

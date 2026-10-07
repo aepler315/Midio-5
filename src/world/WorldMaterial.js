@@ -189,6 +189,13 @@ function wrapHue(h) {
   return x;
 }
 
+export function shiftHueHex(hex, deg) {
+  const { r, g, b } = hexToRgb(hex);
+  const hsl = rgbToHsl(r, g, b);
+  const rgb = hslToRgb(wrapHue(hsl.h + deg), hsl.s, hsl.l);
+  return rgbToHex(rgb.r, rgb.g, rgb.b);
+}
+
 /**
  * Ground is a different material from the ridge, not the same cutout
  * continued downward. Hue-shifted, a little more (or less) chroma, lifted

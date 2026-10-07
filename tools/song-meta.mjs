@@ -63,7 +63,7 @@ const VERSION_PATTERNS = [
 
 // Stripped for "same song" base identity (not a distinct version).
 const COLLAPSE_RE =
-  /\s*[([{]?\s*(remaster(?:ed)?(?:\s+\d{2,4})?|re-?master(?:ed)?|original\s+mix|original\s+version|album\s+version|single\s+version|deluxe(?:\s+edition)?|anniversary(?:\s+edition)?|\d{2,4}\s+remaster(?:ed)?)\s*[)\]}]?\s*/gi;
+  /\s*[\(\[\{]?\s*(remaster(?:ed)?(?:\s+\d{2,4})?|re-?master(?:ed)?|original\s+mix|original\s+version|album\s+version|single\s+version|deluxe(?:\s+edition)?|anniversary(?:\s+edition)?|\d{2,4}\s+remaster(?:ed)?)\s*[\)\]\}]?\s*/gi;
 
 export function basename(p) {
   if (!p) return 'unknown';
@@ -112,10 +112,11 @@ export function splitVersion(rawTitle) {
   let title = String(rawTitle || '').trim();
   // Drop collapsed tags first (remaster etc.)
   title = title.replace(COLLAPSE_RE, ' ').replace(/\s+/g, ' ').trim();
-  title = title.replace(/\s*[([{]\s*[)\]}]\s*/g, ' ').trim();
+  title = title.replace(/\s*[\(\[\{]\s*[\)\]\}]\s*/g, ' ').trim();
 
   let versionKey = 'original';
   let versionLabel = '';
+  let remixer = '';
 
   for (const pat of VERSION_PATTERNS) {
     const m = title.match(pat.re);
@@ -124,7 +125,7 @@ export function splitVersion(rawTitle) {
     if (pat.key === 'remix') {
       // Capture "Deadmau5 Remix" style
       const full = m[0].trim();
-      const remixer = (m[1] || '').trim();
+      remixer = (m[1] || '').trim();
       versionLabel = remixer ? `${remixer} Remix` : full.replace(/\b(rmx)\b/i, 'Remix');
       versionKey = `remix:${normalizeKey(versionLabel) || 'remix'}`;
     } else if (pat.key === 'slowed' || pat.key === 'stripped') {
@@ -136,7 +137,7 @@ export function splitVersion(rawTitle) {
     // Remove the version phrase from the base title
     title = title
       .replace(pat.re, ' ')
-      .replace(/\s*[([{]\s*[)\]}]\s*/g, ' ')
+      .replace(/\s*[\(\[\{]\s*[\)\]\}]\s*/g, ' ')
       .replace(/\s*[-–—]\s*$/, '')
       .replace(/^\s*[-–—]\s*/, '')
       .replace(/\s+/g, ' ')
@@ -175,7 +176,7 @@ export function parsePathMetadata(filepath, attrs = {}) {
   const cleaned = full.replace(/^@@[^/\\]+[/\\]/, '');
   const parts = cleaned.replace(/\\/g, '/').split('/').filter(Boolean);
   const file = parts.pop() || 'unknown';
-  const ext = (file.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
+  const ext = (file.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
   let base = file.replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim();
   // Track number prefixes: "01 - ", "1.", "01_"
   base = base.replace(/^\d{1,3}(\s*[-.)]\s*|\s+)/, '').trim();

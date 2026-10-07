@@ -76,14 +76,6 @@ export class SongRecorder {
     this._candidate = null;
     this._stopPromise = null;
     this._resolveStop = null;
-    // One object per recording. Every MediaRecorder handler closes over its
-    // own session, so a late or duplicated event from an earlier recording
-    // cannot finish, fail or feed the next one.
-    this._session = null;
-    // A recording the browser ended on its own (an encoder error, a lost
-    // track) finishes without anyone calling stop(). Its result waits here
-    // for the owner's next stop() rather than resolving into nowhere.
-    this._unclaimed = null;
   }
 
   /** Can this browser record at all? */
@@ -99,25 +91,6 @@ export class SongRecorder {
     return MR ? pickMimeType((type) => MR.isTypeSupported(type)) : null;
   }
 
-  /** True when a recording ended on its own and its result is waiting for
-   *  stop() to collect it. */
-  get hasUnclaimedResult() {
-    return !!this._unclaimed;
-  }
-
-  /**
-   * The best type this browser records in a DIFFERENT container from
-   * `failed` (a candidate or a MIME string), or null. After an MP4 encoder
-   * failure this is the WebM retry; it is offered, never taken silently.
-   */
-  fallbackCandidate(failed) {
-    const MR = this.scope?.MediaRecorder;
-    if (!MR) return null;
-    const failedType = typeof failed === 'string' ? failed : failed?.mimeType || '';
-    const ext = (typeof failed === 'object' && failed?.ext) || (failedType.startsWith('video/webm') ? 'webm' : 'mp4');
-    return pickMimeType((type) => !type.startsWith(`video/${ext}`) && MR.isTypeSupported(type));
-  }
-
   get elapsedMs() {
     return this.recording ? (this.scope?.performance?.now?.() ?? Date.now()) - this.startedMs : 0;
   }
@@ -130,22 +103,13 @@ export class SongRecorder {
    * with `this.error` set, because a failed export must not take the song
    * down with it.
    */
-  start({ presetId, deferFirstFrame = false, candidate: requested = null } = {}) {
+  start({ presetId, deferFirstFrame = false } = {}) {
     if (this.recording || this.finalizing) return false;
     this.error = null;
-    this._unclaimed = null;
     const MR = this.scope?.MediaRecorder;
     if (!MR || !this.stage) { this.error = 'This browser cannot record video.'; return false; }
 
-    // An explicit candidate (a retry in another container) is used as asked
-    // or refused; it never falls back to the default without saying so.
-    let candidate = this.candidate;
-    if (requested) {
-      let ok;
-      try { ok = !!MR.isTypeSupported(requested.mimeType); } catch { ok = false; }
-      if (!ok) { this.error = `This browser cannot record ${requested.mimeType}.`; return false; }
-      candidate = requested;
-    }
+    const candidate = this.candidate;
     if (!candidate) { this.error = 'This browser cannot record video.'; return false; }
 
     const preset = presetById(presetId);
@@ -159,12 +123,9 @@ export class SongRecorder {
         videoBitsPerSecond: videoBitsPerSecond(preset.width, preset.height),
         audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
       });
-      const session = { candidate, failure: null, stopRequested: false, finished: false };
-      this._session = session;
       this._chunks = [];
       this.bytes = 0;
       this._recorder.ondataavailable = (e) => {
-        if (this._session !== session || session.finished) return;
         if (!e.data?.size) return;
         if (this.bytes + e.data.size > MAX_RECORDING_BYTES) {
           this.error = 'Recording reached the 512 MB export limit.';
@@ -174,8 +135,11 @@ export class SongRecorder {
         this._chunks.push(e.data);
         this.bytes += e.data.size;
       };
-      this._recorder.onerror = (e) => this._fail(session, e);
-      this._recorder.onstop = () => this._finish(session);
+      this._recorder.onerror = (e) => {
+        this.error = e?.error?.message || 'Recording failed.';
+        this.onAutoStop?.(this.error);
+      };
+      this._recorder.onstop = () => this._finish();
       this._recorder.start(TIMESLICE_MS);
     } catch (err) {
       this.error = err?.message || String(err);
@@ -280,78 +244,29 @@ export class SongRecorder {
     }
   }
 
-  /**
-   * Stop and resolve to one of:
-   *   `{blob, candidate, codec, bytes, durationMs, preset}`  a file to save
-   *   `{failure: {name, message, mimeType}, candidate, ...}` the encoder
-   *       failed; there is no file, and a partial one is never offered
-   *   null                                                  nothing captured
-   * A recording that already ended on its own hands back that result.
-   */
+  /** Stop and resolve to `{blob, url, fileName-ready parts}` — or null if
+   *  nothing was captured. */
   stop() {
-    if (this._unclaimed) {
-      const result = this._unclaimed;
-      this._unclaimed = null;
-      return result;
-    }
     if (this.finalizing) return this._stopPromise;
     if (!this.recording) return null;
     this.recording = false;
     this.finalizing = true;
-    const session = this._session;
-    if (session) session.stopRequested = true;
     const pending = this._stopPromise;
     try {
       this._recorder.stop();
     } catch {
-      this._finish(session);
+      this._finish();
     }
     return pending;
   }
 
-  /** The browser's encoder reported an error. The error is kept with its own
-   *  name and message for the person reading the result, and the owner is
-   *  told to stop (once). Whatever was captured is discarded at finish: a
-   *  file the encoder gave up on is not a recording of the song. */
-  _fail(session, event) {
-    if (this._session !== session || session.finished || session.failure) return;
-    const err = event?.error;
-    session.failure = {
-      name: err?.name || 'Error',
-      message: err?.message || 'The browser\'s video encoder stopped with an error.',
-      mimeType: session.candidate?.mimeType || '',
-    };
-    this.error = session.failure.message;
-    if (!session.stopRequested) this.onAutoStop?.(this.error);
-  }
-
-  async _finish(session = this._session) {
-    if (!session || this._session !== session || session.finished) return;
-    session.finished = true;
+  async _finish() {
     const durationMs = (this.scope?.performance?.now?.() ?? Date.now()) - this.startedMs;
     const candidate = this._candidate;
     const chunks = this._chunks;
     const preset = this._preset;
     const resolveStop = this._resolveStop;
-    // Ended by the browser rather than by stop(): stay locked while the
-    // result is prepared, and keep it for the owner's stop() to collect.
-    const unrequested = !session.stopRequested;
-    if (unrequested) {
-      this.finalizing = true;
-      this._unclaimed = this._stopPromise;
-    }
     this._teardown();
-    if (unrequested && !session.failure) this.onAutoStop?.(this.error || 'Recording stopped on its own.');
-    if (session.failure) {
-      this._completeFinalization(resolveStop, {
-        failure: { ...session.failure },
-        candidate,
-        preset,
-        durationMs,
-        bytes: 0,
-      });
-      return;
-    }
     if (!chunks.length) {
       this._completeFinalization(resolveStop, null);
       return;
@@ -386,7 +301,6 @@ export class SongRecorder {
     this._resolveStop = null;
     this._preset = null;
     this._candidate = null;
-    this._session = null;
     resolveStop?.(result);
   }
 
@@ -428,8 +342,6 @@ export class SongRecorder {
     this._resolveStop = null;
     this._preset = null;
     this._candidate = null;
-    this._session = null;
-    this._unclaimed = null;
     resolveStop?.(null);
   }
 }

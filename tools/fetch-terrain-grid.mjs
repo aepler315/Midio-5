@@ -7,7 +7,7 @@
 //
 // Tiles are cached under .terrain-cache/ (gitignored) so rebuilding a range,
 // or tuning its camera, does not re-download anything.
-import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TERRARIUM_URL, decodePng, resampleGrid, tilesForBbox } from './lib/terrarium.mjs';
@@ -35,31 +35,12 @@ export async function loadTiles(bbox, zoom, maxTiles = 400) {
     }
   }
   let next = 0;
-  const fetchTile = async (tx, ty) => {
-    const url = `${TERRARIUM_URL}/${zoom}/${tx}/${ty}.png`;
-    let last;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) return Buffer.from(await res.arrayBuffer());
-        last = new Error(`tile ${zoom}/${tx}/${ty}: HTTP ${res.status}`);
-        if (res.status !== 429 && res.status < 500) throw last;
-      } catch (err) {
-        last = err;
-        if (err?.message?.startsWith('tile ') && !/HTTP (429|5)/.test(err.message)) throw err;
-      }
-      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
-    }
-    throw last;
-  };
   await Promise.all(Array.from({ length: Math.min(8, missing.length) }, async () => {
     while (next < missing.length) {
       const [tx, ty] = missing[next++];
-      const buf = await fetchTile(tx, ty);
-      const dest = path.join(CACHE, `${zoom}-${tx}-${ty}.png`);
-      const tmp = `${dest}.${process.pid}.tmp`;
-      writeFileSync(tmp, buf);
-      renameSync(tmp, dest);
+      const res = await fetch(`${TERRARIUM_URL}/${zoom}/${tx}/${ty}.png`);
+      if (!res.ok) throw new Error(`tile ${zoom}/${tx}/${ty}: HTTP ${res.status}`);
+      writeFileSync(path.join(CACHE, `${zoom}-${tx}-${ty}.png`), Buffer.from(await res.arrayBuffer()));
     }
   }));
   const tiles = new Map();

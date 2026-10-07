@@ -1,4 +1,4 @@
-import { stormAt, drawStormSky, arrivingStorm } from './alpine/RangeStorm.js';
+import { stormAt, drawStormSky } from './alpine/RangeStorm.js';
 import { ridgeAdvectionPxAt } from './RidgeMotionHistory.js';
 import { RidgeMotionHistory, createRidgeMusicSampler } from './RidgeMotionHistory.js';
 import { resolveLandscapePresentation } from './LandscapePresentation.js';
@@ -20,7 +20,7 @@ import { VisualMusicHistory } from './VisualMusicHistory.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
-import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds, cloudColours } from './alpine/RangeSkyComposition.js';
+import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
 import { rangeSkyState } from './alpine/RangeFrame.js';
 import { withNarrativeAlpha, drawNarrativeMarks } from '../render/NarrativeDraw.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
@@ -63,7 +63,7 @@ import { NearField, NEARFIELD_RATIO } from './NearField.js';
 import { GroundScatter, SCATTER_RATIO, scatterBiomeLayers } from './GroundScatter.js';
 import { flameFlicker, smokeDrift } from './Wildfire.js';
 import { castBiomes, classifyTransition, intensityBudget, dayArc } from './Dramaturgy.js';
-import { cycleMs as dayNightCycleMs, songSkyClock, songNightClock, twilightForClock, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
+import { cycleMs as dayNightCycleMs, songSkyClock, twilightAt, dayNight, celestialYFracFor, celestialXFracFor, horizonFade, sunScreenFrac, cyclePhase01 } from './DayNight.js';
 import { fuseSections } from '../lyrics/SectionFusion.js';
 import { scanLine, dominantSymbol } from '../lyrics/LyricLexicon.js';
 import { celestialApproach, approachScale } from './CelestialApproach.js';
@@ -471,6 +471,11 @@ export class BiomeManager {
     this._crestBeatClock = new CrestBeatClock(conductor.barGrid);
     this.energyCurves = energyCurves;
     this.durationMs = durationMs || 0;
+    // The sky's clock: one day across the song (dark before dawn, sunset at
+    // the end), or the repeating cycle for a song too short to hold one.
+    // Every `cycle` consumer (dayNight, cyclePhase01, celestial state)
+    // takes either.
+    this._dayNightCycleMs = songSkyClock(this.durationMs) || dayNightCycleMs(this.durationMs);
     this.w = canvasWidth;
     this.h = canvasHeight;
     this.groundY = groundY;
@@ -480,11 +485,6 @@ export class BiomeManager {
     this.customBiome = customBiome || null;
     this.world = getWorld(worldId || DEFAULT_WORLD_ID);
     this.worldId = this.world.id;
-    // The Range's song runs from sunset through moonlight to sunrise.
-    // Every sky, lighting and reflection consumer shares this same clock.
-    this._dayNightCycleMs = this.world.kind === 'alpine'
-      ? songNightClock(this.durationMs)
-      : songSkyClock(this.durationMs) || dayNightCycleMs(this.durationMs);
     // Optional real-terrain skylines for L2 (far), L3 (middle), L4 (near).
     // Absent, every layer stays procedural. L5 is never taken from here.
     this.terrainProfiles = terrainProfiles;
@@ -1418,10 +1418,6 @@ export class BiomeManager {
       this.sections = sectionsWithChapters(this.sections, this.chapterPlan);
       this._refreshChapterVariants();
     }
-    // Kept so lyrics that arrive after the world has started can be fused
-    // onto the same schedule they would have met on time (adoptLyricEvidence).
-    this._unfusedSections = this.sections;
-    this._fusionInputs = { barGrid, durationMs, conductorSchedule };
     this.sections = fuseSections(this.sections, lyricSections, barGrid, durationMs);
 
     // The conductor track has the last word (ConductorTrack.js). Everything
@@ -1439,63 +1435,7 @@ export class BiomeManager {
     if (!this._chapterInputs || !previous?.length) return;
     this.chapterPlan = planChapters({ ...this._chapterInputs, sections: this.sections, previous, committedThroughMs });
     this.sections = sectionsWithChapters(this.sections, this.chapterPlan);
-    if (this._unfusedSections) this._unfusedSections = sectionsWithChapters(this._unfusedSections, this.chapterPlan);
     this._refreshChapterVariants();
-  }
-
-  /**
-   * Lyrics that arrive after the performance started (a slow lookup) join
-   * it at the moment being heard, without a restart (F06).
-   *
-   * The schedule is fused exactly as it would have been on time, then only
-   * the present and future take the result: every section already finished
-   * stays as it was, the current one keeps its start (no boundary is
-   * inserted into the past) and takes the lyric labels found at this
-   * moment, and later sections come from the fused schedule. The section
-   * index is unchanged, so no transition fires on adoption. The synced-line
-   * cursor jumps to `heardTimeMs` without scanning the lines it passes, so
-   * no constellation glyph is hinted for a line already sung. Geography
-   * (chapters, the accepted world) is not touched: chapter fields ride on
-   * the same unfused sections either way.
-   *
-   * @param {{lyricSections?: object[]|null, syncedLyrics?: object[]|null}} evidence
-   * @param {number} heardTimeMs
-   * @returns {boolean} whether anything was adopted
-   */
-  adoptLyricEvidence({ lyricSections = null, syncedLyrics = null } = {}, heardTimeMs = 0) {
-    const sections = Array.isArray(lyricSections) && lyricSections.length ? lyricSections : null;
-    const lines = Array.isArray(syncedLyrics) && syncedLyrics.length ? syncedLyrics : null;
-    if (!sections && !lines) return false;
-    const heard = Number.isFinite(heardTimeMs) ? Math.max(0, heardTimeMs) : 0;
-
-    if (sections && this._unfusedSections?.length && this._fusionInputs) {
-      const { barGrid, durationMs, conductorSchedule } = this._fusionInputs;
-      const fused = applyConductorSchedule(
-        fuseSections(this._unfusedSections, sections, barGrid, durationMs),
-        conductorSchedule, barGrid, durationMs,
-      );
-      const old = this.sections;
-      const i = sectionIndexAt(old, heard);
-      const current = old[i];
-      const fusedNow = fused[sectionIndexAt(fused, heard)];
-      const future = fused.filter((s) => s.startMs > heard && s.startMs >= (current?.startMs ?? 0));
-      const endMs = future.length ? future[0].startMs : (current?.endMs ?? fusedNow?.endMs);
-      this.sections = [
-        ...old.slice(0, i),
-        { ...(fusedNow || current), startMs: current.startMs, endMs },
-        ...future,
-      ];
-      this._lyricSections = sections;
-    }
-
-    if (lines) {
-      this._syncedLyrics = lines;
-      let cursor = 0;
-      while (cursor < lines.length && lines[cursor].tMs <= heard) cursor++;
-      this._lyricLineCursor = cursor;
-      this.songSymbol = dominantSymbol(lines.map((l) => l.text));
-    }
-    return true;
   }
 
   _refreshChapterVariants() {
@@ -1648,18 +1588,6 @@ export class BiomeManager {
       gaps.push([mid, hi]);
     }
     return out.filter((i) => i > 0 && i < lastIdx);
-  }
-
-  /** Lyric structure (SectionFusion): the active section's kind, and its
-   *  lyric intensity, kind confidence and budget multiplier eased toward the
-   *  section's own. VibeDirector's epic bias reads these, so seek
-   *  reconstruction (ContinuousState.js) steps this same method. */
-  easeLyricForm(activeSection, dtSec) {
-    const k = 1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC);
-    this.currentKind = activeSection?.kind || null;
-    this.lyricIntensityEased += k * ((activeSection?.lyricIntensity ?? 0.4) - this.lyricIntensityEased);
-    this.kindConfidenceEased += k * ((activeSection?.kindConfidence ?? 0) - this.kindConfidenceEased);
-    this._kindBudgetMulEased += k * ((KIND_BUDGET_MUL[this.currentKind] ?? 1) - this._kindBudgetMulEased);
   }
 
   _sectionAt(nowMs) {
@@ -2300,12 +2228,18 @@ export class BiomeManager {
     // Lyric structure (SectionFusion): the active section's kind and its
     // eased lyric intensity, both neutral defaults (null / 0.4) when no
     // lyric data was ever fused in.
+    this.currentKind = activeSection?.kind || null;
     this.currentSectionText = activeSection?.lyricText || null;
     if (this.currentSectionText !== this._symbolForText) {
       this._symbolForText = this.currentSectionText;
       this.currentSectionSymbol = this.currentSectionText ? dominantSymbol(this.currentSectionText) : null;
     }
-    this.easeLyricForm(activeSection, dtSec);
+    const targetLyricIntensity = activeSection?.lyricIntensity ?? 0.4;
+    this.lyricIntensityEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetLyricIntensity - this.lyricIntensityEased);
+    const targetKindConfidence = activeSection?.kindConfidence ?? 0;
+    this.kindConfidenceEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindConfidence - this.kindConfidenceEased);
+    const targetKindBudgetMul = KIND_BUDGET_MUL[this.currentKind] ?? 1;
+    this._kindBudgetMulEased += (1 - Math.exp(-dtSec / FORM_HUE_TAU_SEC)) * (targetKindBudgetMul - this._kindBudgetMulEased);
 
     // Lyric-driven constellation glyphs: advance the synced-lyrics cursor
     // and scan each newly-reached line through LyricLexicon. A match queues
@@ -2554,7 +2488,7 @@ export class BiomeManager {
     // reflection glint, so everything tracks the same body.
     const dn = dayNight(this.tSec * 1000, this._dayNightCycleMs);
     // Sunrise and sunset colour, for the Range's sky and air (rangeSkyState).
-    this._twilight = twilightForClock(this.tSec * 1000, this._dayNightCycleMs);
+    this._twilight = twilightAt(cyclePhase01(this.tSec * 1000, this._dayNightCycleMs));
     const sunUp = dn.sunAlt > 0.001;
     const activeAlt = sunUp ? dn.sunAlt : dn.moonAlt;
     // Cast shadow (Stage 5 of the mountain overhaul): a near range can only
@@ -2622,7 +2556,7 @@ export class BiomeManager {
       })
       : null;
     this._rangeSky = this.world?.kind === 'alpine'
-      ? createRangeSkyComposition(this.spaceRidge, canvas, { voyageActive: (skyVoyage?.depth ?? 0) > 0, performance: !!this.rangePerformance })
+      ? createRangeSkyComposition(this.spaceRidge, canvas, { voyageActive: (skyVoyage?.depth ?? 0) > 0 })
       : null;
 
     // The horizon color, and from it the air color every range body and the
@@ -2671,8 +2605,7 @@ export class BiomeManager {
       return;
     }
 
-    this._fullRangeSky = !!(this._rangeV2Active && this.rangePresentation?.drawFirmament?.(ctx, canvas));
-    if (!this._fullRangeSky) this._drawSky(ctx, canvas, A, B, t, dn.night);
+    this._drawSky(ctx, canvas, A, B, t, dn.night);
     // The Range's sky is real sky: the narrative's coloured glyph arcs read
     // as marks on a chart, so they only draw where there is no Range sky.
     if (!this._rangeSky) drawNarrativeMarks(ctx, this.rangeNarrative, this.tSec * 1000, canvas, this.songSeed, this.reducedMotion);
@@ -2703,7 +2636,7 @@ export class BiomeManager {
       if (n) spaceCol = this.lerpCache.get('#000000', spaceCol, n.skyDark);
       const authority = n ? .15 + .85 * n.spaceAuthority : 1;
       // Worn as an aurora: the same musical skyline, given a natural body.
-      if (!this._fullRangeSky && this._pass('space-ridge')) this.spaceRidge.drawAurora(ctx, canvas, spaceCol, this.tSec, {
+      if (this._pass('space-ridge')) this.spaceRidge.drawAurora(ctx, canvas, spaceCol, this.tSec, {
         reducedFlash: this.reducedFlash, reducedMotion: this.reducedMotion, presentation: authority, night01: dn.night || 0 });
     }
 
@@ -2772,27 +2705,22 @@ export class BiomeManager {
       );
     });
     // Range v2: sparse, low-contrast cloud banks drifting on one wind and
-    // turning with the camera. Their shade is the sky behind them, a little
-    // greyer and lighter (brighter skies, whiter cloud), lit on the side
-    // facing the celestial. They do not read the aurora's live outline; a
-    // static fade keeps the few that reach up toward it thin.
-    if (this._rangeV2Active && !this._fullRangeSky && this._pass('range-clouds')) {
+    // turning with the camera, lit on the side facing the celestial, clear
+    // of the SpaceRidge.
+    if (this._rangeV2Active && this._pass('range-clouds')) {
       const halo = hexToRgb(this._scenicLight.colorHex);
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
-      const mid = hexToRgb(this._rotated(this.lerpCache.get(A.sky[1], B.sky[1], t)));
       const pan = this.rangePresentation?.skyPan;
       const panPx = (pan?.x || 0) * canvas.width / 2, panYPx = -(pan?.y || 0) * canvas.height / 2;
       withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, panPx, panYPx }), {
-        ...cloudColours(top, mid, halo),
+        dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
+        lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
         light: this._scenicLight, directGain: this._scenicLight.intensity,
-        fadeTop: [canvas.height * 0.08, canvas.height * 0.16],
+        allowPoint: this._rangeSky?.allowPoint || null,
       }));
     }
-    // Only over the GPU scene, whose land darkens under the deck with it;
-    // the legacy fallback keeps its own daylight palette.
-    // It enters with the arriving scene, at the partitions' own alpha.
-    if (this._rangeV2Active && this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
-      arrivingStorm(this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), this.rangePresentation?.arrival ?? 1), {
+    if (this._pass('range-clouds') && !this.terrainPreview) drawStormSky(ctx, canvas,
+      this.rangePresentation?.frame?.storm || stormAt(this, this.tSec * 1000), {
         tSec: this.tSec, seed: this.songSeed || 0, pan: this.rangePresentation?.skyPan,
         light: this._scenicLight, reducedMotion: this.reducedMotion,
       });
@@ -2835,13 +2763,12 @@ export class BiomeManager {
       if (!this._rangeSky) this._drawFataMorgana(ctx, canvas, worldX, A, B, t);
     }
     const glacialInland = v2 && [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.glacier);
-    const performanceLake = v2 && this.rangePerformance && (this.rangePresentation.journey || [A.name, B.name].some((name) => this.rangePresentation.captionViewFor?.(name)?.id === 'muncho-lake-south'));
-    if (!glacialInland && !performanceLake) withNarrativeAlpha(ctx, this.rangeNarrative?.features ?? 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
+    if (!glacialInland) withNarrativeAlpha(ctx, this.rangeNarrative?.features ?? 1, c => this._drawOcean(c, canvas, worldX, A, B, t, phenomenaFull, dn.night));
     if (legacyPasses) this._drawOceanLife(ctx, canvas, worldX, A, B, t, phenomenaFull);
     // The horizon EQ belongs to the v2 sequence (between far and mid)
     // whenever v2 draws, arriving or not.
     if (!v2) this._drawHorizonEQ(ctx, canvas, worldX, A, B, t);
-    if (!v2 || !this.rangePresentation.journey) this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
+    this._drawSpectrumMassif(ctx, canvas, worldX, A, B, t);
 
     // Concert beams: anchored at the celestial, drawn before the mountain
     // silhouettes so the ranges occlude their lower reach the same way
@@ -3013,7 +2940,6 @@ export class BiomeManager {
     const tint = ensureContrast(this._rotated(this.lerpCache.get(A.silhouette, B.silhouette, t)), skyHorizonNight, 0.14);
     const farTint = this.lerpCache.get(tint, skyHorizonNight, AERIAL_PULL.L2 || 0);
     pres.drawPartition(ctx, 'far', canvas);
-    if (pres.journey) return tint;
     this._drawCrestLight(ctx, canvas, worldX, A, B, t, pres.lastPartition);
     this._drawFarVignettes(ctx, canvas, worldX, A, B, t, phenomenaFull, farTint);
     pres.drawPartition(ctx, 'mid', canvas);
@@ -3735,8 +3661,6 @@ export class BiomeManager {
   }
 
   _drawSky(ctx, canvas, A, B, t, night = 0, starOptions = {}) {
-    // Water and vault ceilings retain local light effects, not astronomy.
-    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     if (this.rangeNarrative && this.world?.kind === 'alpine') {
       const sky = rangeSkyState(this, A, B, t, night, this.rangeNarrative);
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -3758,10 +3682,10 @@ export class BiomeManager {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
       }
-      // The narrative owns the background palette, not the star catalogue.
-      if (astronomical) this._drawStarfield(ctx, canvas, A, B, t, night, starOptions);
       return;
     }
+    // Water and vault ceilings retain local light effects, not astronomy.
+    const astronomical = identityAllows(this.world, 'astronomy') && starOptions.astronomical !== false;
     const dials = styleDials(this.visualStyle);
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     // Night + rendered both pull toward deep space so stars/ocean have a stage.
@@ -3909,9 +3833,7 @@ export class BiomeManager {
     const nightBoost = 0.55 + 1.55 * night;
     const biomeBoost = 0.95 * twinkleBlend;
     const spaceFloor = dials.spaceWash ? 0.22 : 0;
-    // The Range's night sky is present from the first frame, including silence.
-    const opening = this.world?.kind === 'alpine' ? 1 : this.openingGain;
-    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * opening;
+    const alpha = clamp01(ambient * nightBoost + biomeBoost + spaceFloor) * this.openingGain;
     if (alpha < 0.04) return;
 
     const twinkleRate = 1.15 + 0.7 * (this.calmLevel || 0) + 0.35 * night;
@@ -4032,13 +3954,6 @@ export class BiomeManager {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const starBuckets = this._starBuckets;
-    // The stage is authored at 1280px, then fitted into phones and exports.
-    // A one-logical-pixel star lost most of its area in that downscale.
-    // Retain a one-output-pixel core without adding stars, halos or flashes.
-    const starTransform = this.rangePerformance ? ctx.getTransform?.() : null;
-    const starScale = starTransform
-      ? Math.min(Math.hypot(starTransform.a, starTransform.b), Math.hypot(starTransform.c, starTransform.d)) : 1;
-    const starSize = starScale > 0 ? Math.min(4, Math.max(1, 1 / starScale)) : 1;
     // Cheap dots for the field; soft glow only for hero stars (layer 2).
     for (let starIndex = 0; starIndex < this.stars.length; starIndex++) {
       const s = this.stars[starIndex];
@@ -4078,7 +3993,7 @@ export class BiomeManager {
       const y = s.yFrac * skyH;
       if (this._rangeSky) a *= this._rangeSky.starBrightnessAt(x, y);
       if (a < 0.004) continue;
-      const sz = starSize;
+      const sz = 1;
 
       // The same air path that dimmed it also scatters its blue out first,
       // so what survives is warmer. Pull the star's own spectral hue toward
@@ -4090,10 +4005,10 @@ export class BiomeManager {
       if (s.layer === 2) {
         ctx.globalAlpha = a;
         ctx.fillStyle = useHue ? `hsl(${hue},55%,88%)` : '#ffffff';
-        ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
+        ctx.fillRect(x - 0.5, y - 0.5, sz, sz);
         if (s.companion) {
           ctx.globalAlpha = a * 0.45;
-          ctx.fillRect(x + s.companion.dx - sz / 2, y + s.companion.dy - sz / 2, sz, sz);
+          ctx.fillRect(x + s.companion.dx - 0.5, y + s.companion.dy - 0.5, 1, 1);
         }
       } else {
         // Deferred into a bucket instead of drawn here. Setting fillStyle per
@@ -4122,7 +4037,7 @@ export class BiomeManager {
             : (s.layer === 1 ? '#f0f4ff' : '#d8e0f5');
           starBuckets.set(key, bucket);
         }
-        bucket.rects.push(x - sz / 2, y - sz / 2, sz);
+        bucket.rects.push(x - 0.5, y - 0.5, sz);
       }
     }
 
@@ -5549,9 +5464,7 @@ export class BiomeManager {
     // into the sunrise or sunset's own colour while one burns.
     const darkness = this.celestialState?.darkness01 ?? 0;
     const strength = presence * (0.55 + 0.45 * activity) * (this.reducedFlash ? 0.5 : 1)
-      * clamp01(mask.arrival ?? 1) * (1 - CREST_LIGHT_DARK_CUT * darkness)
-      // No sun reaches the crests under the climax squall's deck.
-      * (1 - clamp01(this.rangePresentation?.frame?.storm?.amount ?? 0));
+      * clamp01(mask.arrival ?? 1) * (1 - CREST_LIGHT_DARK_CUT * darkness);
     if (strength < 0.005) return;
     const W = mask.width, H = mask.height;
     // The band is drawn small and blurred, then enlarged: a smooth falloff

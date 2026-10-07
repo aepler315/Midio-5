@@ -8,29 +8,24 @@ import { buildDemoSong } from './core/DemoSong.js';
 import { audioToTimeline } from './audio/AudioAdapter.js';
 import {
   OPENING_SECONDS, adoptFullAnalysis, asOpening, buildAudioOverview, sliceAudioBuffer, useOpeningAnalysis,
-  canCommitOpeningIdentity,
 } from './audio/OpeningAnalysis.js';
 import {
   AUDIO_LOAD_LIMITS, accumulateDecodedAudioBytes, accumulateDecodedByteLength,
   accumulateEncodedAudioBytes, audioAbortError, throwIfAborted, validateAudioFiles,
   validateDecodedAudioBuffer, validateDecodedByteLength,
 } from './audio/loadLimits.js';
-import { SourceSelection } from './audio/SourceSelection.js';
-import { analysisReadiness, READINESS_MESSAGES } from './audio/AnalysisReadiness.js';
 import { Simulation } from './sim/Simulation.js';
-import { captureContinuous } from './sim/ContinuousState.js';
-import { stormScoreFor, STORM_HANDOFF_MS } from './world/alpine/RangeStorm.js';
 import { resolveRendererMode } from './render/WebGLRenderer.js';
 import { hitTestComposerStrip } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
+import { designSynthPatches } from './audio/SynthPatchDesigner.js';
 import { Sf2Synth } from './audio/Sf2Synth.js';
 import { SoundfontLibrary, SynthRouter } from './audio/SoundfontLibrary.js';
 import { FontRecommender } from './audio/FontRecommender.js';
 import { VisionLoop } from './vision/VisionLoop.js';
 import { DebugOverlay } from './ui/DebugOverlay.js';
 import { FileChooserSupport } from './ui/FileChooserProbe.js';
-import { ownsNativeKeyboard } from './ui/KeyboardOwnership.js';
 import { prepareSongTerrain } from './world/terrain/RangeLibrary.js';
 import {
   ASK as ASK_WORLD, AUTO as TITLE_AUTO, readTitleWorld, resolveTitleWorldChoice, writeTitleWorld,
@@ -43,7 +38,7 @@ import {
 } from './net/UrlAudioSource.js';
 import { RecalibrationOverlay } from './ui/RecalibrationOverlay.js';
 import { rangeCaptionFor, sceneCaptionFor, CAPTION_DELAY_MS } from './ui/RangeCaption.js';
-import { realBiomeByName, ecoregionCaption } from './world/RealBiomes.js';
+import { realBiomeByName, ecoregionOfRange } from './world/RealBiomes.js';
 import { travelMs } from './world/BiomeSchedule.js';
 import { noteRangeShown } from './world/terrain/RangeHistory.js';
 import { groundSpeedMps } from './world/terrain/ProfileTravel.js';
@@ -60,9 +55,6 @@ import { getVisualStyle, resolveVisualStyle } from './render/VisualStyle.js';
 import { PerfGovernor, resolvePerfStartLevel, MAX_LEVEL as PERF_MAX_LEVEL } from './render/PerfGovernor.js';
 import { sharedResidency } from './render/GraphicsResidency.js';
 import { RangePresentation, resolveRangeMode } from './world/alpine/RangePresentation.js';
-import { AUTO as SCENE_AUTO, pickableViews, resolveSceneChoice, searchWithSceneChoice, viewLabel, writeSceneChoice } from './ui/SceneChoice.js';
-import SCENE_CATALOG from './world/terrain/sceneCatalogData.js';
-import { REAL_BIOMES, rangesByBiome } from './world/RealBiomes.js';
 import { residencyBudgetFor } from './render/GraphicsResidency.js';
 import {
   DEFAULT_STAGE_PRESET, resolveStagePreset, stageDims, isAutoPreset, isRetroPreset,
@@ -81,7 +73,6 @@ import {
 } from './ui/KeepAwake.js';
 import { cssVarMap } from './render/spectral.js';
 import { resolveDurationMs } from './core/SongDuration.js';
-import { resolveRangeExperience, rangePerformanceViewId, rangeJourneyEnabled } from './world/LandscapePresentation.js';
 import { formatSeed, parseSeed, resolveSongSeed } from './utils/seed.js';
 import { resolveIdentity } from './lyrics/SongIdentity.js';
 import { groundLyrics, hasUsableLyrics } from './lyrics/LyricGrounding.js';
@@ -133,7 +124,6 @@ let errorBannerTimer = null;
  *  the close button; a second failure just restarts the timer/text rather
  *  than stacking banners. */
 function showErrorBanner(message) {
-  if (typeof versionLoadFailed === 'function') versionLoadFailed(message);
   if (!errorBannerEl || !errorBannerTextEl) { window.alert(message); return; } // defensive: markup missing
   errorBannerTextEl.textContent = message;
   errorBannerEl.classList.remove('hidden');
@@ -285,7 +275,6 @@ const rangeSeekEl = document.getElementById('rangeSeek');
 rangeSeekEl?.addEventListener('change', () => { if (sim) seekSong(Number(rangeSeekEl.value) * 1000); });
 document.getElementById('rangeRestart')?.addEventListener('click', () => { if (sim) seekSong(0); });
 const rangeListening = true;
-const rangeExperience = resolveRangeExperience(typeof location !== 'undefined' ? location.search : '');
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
@@ -411,63 +400,6 @@ if (calibrateBtnEl) {
 let muteTimelineSynth = false;
 let loadShow = null; // percussion loading show, created in bootAudio
 let loadGen = 0;     // a newer load cancels a stale audition gate's start
-// The recording the player chose most recently (SourceSelection.js). Every
-// public way of choosing a song claims one synchronously, in the gesture;
-// asynchronous work publishes only while its selection is still current.
-const sourceSelection = new SourceSelection();
-let versionSession = { phase: 'title', sourceId: null, source: null, selection: null, completion: null };
-const versionListeners = new Set();
-let versionNotifyTimer = null;
-
-function versionEmit() {
-  for (const listener of versionListeners) listener(versionAdapterState());
-}
-
-function versionSelectionChanged(selection) {
-  versionSession.reject?.(new Error('The selected song has changed.'));
-  let resolve, reject;
-  const completion = new Promise((yes, no) => { resolve = yes; reject = no; });
-  // Ordinary player loads have no consumer; still retain rejection for adapter callers.
-  completion.catch(() => {});
-  versionSession = { phase: 'loading', sourceId: null, source: null, selection, completion, resolve, reject };
-  versionEmit();
-}
-
-function versionLoadFailed(message) {
-  if (versionSession.phase !== 'loading') return;
-  const error = new Error(String(message));
-  if (/audio.*(blocked|start)|blocked.*audio/i.test(error.message)) error.code = 'AUDIO_GESTURE_REQUIRED';
-  versionSession.phase = 'error';
-  versionSession.reject?.(error);
-  versionEmit();
-}
-
-function versionClearSource() {
-  versionSession.reject?.(new Error('The song was stopped.'));
-  versionSession = { phase: 'title', sourceId: null, source: null, selection: null, completion: null };
-  versionEmit();
-}
-
-function versionSourceStarted(selection, source, restoreIntent = null) {
-  if (!sourceSelection.isCurrent(selection) || versionSession.selection !== selection) return;
-  versionSession.phase = source ? 'ready' : 'error';
-  versionSession.heldPositionMs = restoreIntent ? Math.max(0, Math.min(Number(restoreIntent.positionMs) || 0, Math.max(0, (conductor?.durationMs || 0) - 1))) : null;
-  versionSession.source = source || null;
-  versionSession.sourceId = source ? (versionSession.restoreSourceId || crypto.randomUUID()) : null;
-  versionSession.resolve?.(versionAdapterState());
-  versionSession.resolve = versionSession.reject = null;
-  versionEmit();
-}
-
-/** A player chose a song: abort the previous choice and start a new load
- *  generation. Only public actions call this -- code that finishes work for
- *  a selection passes that selection on instead of claiming a newer one. */
-function claimSelection(opts) {
-  const selection = sourceSelection.begin(opts);
-  loadGen++;
-  if (typeof versionSelectionChanged === 'function') versionSelectionChanged(selection);
-  return selection;
-}
 
 // Retained so "Replay seed" can restart the same song without a page reload
 // (sim is fully seeded + autoplay-driven). `lastAudioBuffer` is only set on
@@ -476,10 +408,6 @@ let lastTimelineData = null;
 // The whole-song analysis of a song started on its opening
 // (OpeningAnalysis.js), while it is still running; null otherwise.
 let fullAnalysisPending = null;
-// The recording loaded most recently and how to analyse it whole again:
-// {selection, data, retryWholeSong}. Export retries only through this, and
-// only while `selection` is still current and `data` is still the song.
-let lastSongLoad = null;
 // What the running song was started with, so an in-place rebuild keeps it.
 let lastStartExtra = {};
 let lastAudioBuffer = null;
@@ -522,18 +450,8 @@ paramBus.rendererMode = rendererMode;
 // opts out, and any v2 failure falls back to legacy per frame on its own.
 // ?rangeView=<id> forces one catalog view for diagnostics. One presentation (and one GPU context) per page.
 const rangeMode = resolveRangeMode();
-// The player's range and biome (title screen, ?range=, ?biome=, or the
-// diagnostic ?rangeView=). Auto leaves both to the song.
-const PICKABLE_BIOMES = (() => {
-  const groups = rangesByBiome();
-  return REAL_BIOMES.filter((b) => groups.get(b.name)?.length > 0);
-})();
-let sceneChoice = resolveSceneChoice({
-  search: typeof location !== 'undefined' ? location.search : '',
-  catalog: SCENE_CATALOG, biomeNames: PICKABLE_BIOMES.map((b) => b.name),
-});
 const rangePresentation = rangeMode.mode === 'v2'
-  ? new RangePresentation({ mode: 'v2', journey: rangeJourneyEnabled(sceneChoice, rangeExperience), forcedViewId: rangePerformanceViewId(sceneChoice, rangeExperience), diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
+  ? new RangePresentation({ mode: 'v2', forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
   : null;
 
 // The title screen is alive from the very first frame: a living backdrop
@@ -891,6 +809,15 @@ async function bootAudioOnce() {
     canvasEl: auditionCanvasEl, textEl: auditionTextEl, barFillEl: auditionBarFillEl,
     audioEngine,
   });
+}
+
+/** MIDI/demo loads start immediately -- no more waiting on a loading
+ *  screen for font ratings to land. FontRecommender still auditions every
+ *  loaded font against this song in the background and steers the library
+ *  to the best fit as verdicts arrive, same as fonts dropped mid-song. */
+function startImmediately(data) {
+  offerWorldsThenStart(data);
+  fontRecommender?.auditionForTimeline(data);
 }
 
 function applySynthMutePolicy() {
@@ -1259,10 +1186,7 @@ function updatePauseButtonUI() {
 function togglePause() {
   if (!running || !sim || !audioEngine) return;
   paused = !paused;
-  versionSession.heldPositionMs = null;
-  if (paused) audioEngine.ctx.suspend().then(() => {
-    if (paused) versionSession.heldPositionMs = Math.max(0, audioEngine.nowMs - choreographyOutputLatencyMs());
-  });
+  if (paused) audioEngine.ctx.suspend();
   else { audioEngine.ctx.resume(); lastRafMs = null; }
   updatePauseButtonUI();
 }
@@ -1276,10 +1200,8 @@ function closeWorldChooser() {
 /** Back to the title/drop screen so a different song can be chosen. */
 function backToTitle() {
   // Any in-flight analysis belongs to the discarded song. Its progress or
-  // failure must not redraw this title screen later, and its work stops.
-  sourceSelection.cancel();
+  // failure must not redraw this title screen later.
   loadGen++;
-  versionClearSource();
   stopTimeline();
   completePanelEl.classList.add('hidden');
   hudEl.classList.add('hidden');
@@ -1456,112 +1378,6 @@ if (titleWorldEl && ALL_WORLDS) {
   titleWorldEl.addEventListener('change', () => writeTitleWorld(titleWorldEl.value));
 }
 
-// Title-screen range and biome picker (SceneChoice.js). A range sets the
-// biome to its own and locks it; changing either remembers it and writes it
-// into the address bar, so the page is a link to the scenery.
-const sceneRangeEl = document.getElementById('sceneRange');
-const sceneBiomeEl = document.getElementById('sceneBiome');
-if (sceneRangeEl && sceneBiomeEl) {
-  const biomeTitle = new Map(PICKABLE_BIOMES.map((b) => [b.name, b.title]));
-  // One flat list, every view the app can render. (Biome groups made every
-  // other row an unselectable group label.)
-  for (const v of pickableViews(SCENE_CATALOG)) {
-    const opt = document.createElement('option');
-    opt.value = v.id;
-    opt.textContent = viewLabel(v, biomeTitle.get(v.biome));
-    opt.title = v.place;
-    sceneRangeEl.appendChild(opt);
-  }
-  // A review link may name a pilot copy the menu leaves out.
-  if (sceneChoice.viewId && ![...sceneRangeEl.options].some((o) => o.value === sceneChoice.viewId)) {
-    const v = SCENE_CATALOG.views.find((x) => x.id === sceneChoice.viewId);
-    const opt = document.createElement('option');
-    opt.value = sceneChoice.viewId;
-    opt.textContent = v ? viewLabel(v, biomeTitle.get(v.biome)) : sceneChoice.viewId;
-    opt.dataset.reviewOnly = '1';
-    sceneRangeEl.appendChild(opt);
-  }
-  for (const b of PICKABLE_BIOMES) {
-    const opt = document.createElement('option');
-    opt.value = b.name;
-    opt.textContent = b.title;
-    sceneBiomeEl.appendChild(opt);
-  }
-  const show = () => {
-    sceneRangeEl.value = sceneChoice.viewId || SCENE_AUTO;
-    sceneBiomeEl.value = sceneChoice.biome || SCENE_AUTO;
-    sceneBiomeEl.disabled = !!sceneChoice.viewId;
-    sceneBiomeEl.title = sceneChoice.viewId
-      ? `Set by the range: ${biomeTitle.get(sceneChoice.biome) || sceneChoice.biome}. Pick Auto range to choose a biome.`
-      : sceneBiomeEl.dataset.title;
-  };
-  sceneBiomeEl.dataset.title = sceneBiomeEl.title;
-  const commit = ({ viewId = null, biome = null }) => {
-    const view = viewId ? SCENE_CATALOG.views.find((v) => v.id === viewId) : null;
-    sceneChoice = view ? { viewId: view.id, biome: view.biome, source: 'picked' } : { viewId: null, biome, source: biome ? 'picked' : null };
-    writeSceneChoice(sceneChoice);
-    try {
-      const url = new URL(location.href);
-      url.search = searchWithSceneChoice(url.search, sceneChoice);
-      history.replaceState(history.state, '', url);
-    } catch { /* no history API: still remembered */ }
-    show();
-  };
-  sceneRangeEl.addEventListener('change', () => {
-    const v = sceneRangeEl.value;
-    // Leaving a review link's pilot copy drops it from the menu again; it
-    // could not be remembered or linked under the ordinary ?range spelling.
-    for (const o of [...sceneRangeEl.options]) if (o.dataset.reviewOnly && o.value !== v) o.remove();
-    commit(v === SCENE_AUTO ? { viewId: null, biome: null } : { viewId: v });
-  });
-  sceneBiomeEl.addEventListener('change', () => {
-    const b = sceneBiomeEl.value;
-    commit({ viewId: null, biome: b === SCENE_AUTO ? null : b });
-  });
-  show();
-}
-
-/**
- * The look a song is offered with becomes its accepted identity only when
- * the analysis behind it may define one (canCommitOpeningIdentity). An
- * uninformative opening plays on it provisionally and is never cached as
- * the song; acceptDeferredIdentity settles it from the whole song.
- */
-function offerIdentity(data, look) {
-  if (canCommitOpeningIdentity(data.opening)) {
-    data.songIdentity = look;
-    delete data.provisionalIdentity;
-  } else {
-    data.provisionalIdentity = look;
-  }
-}
-
-/**
- * The whole-song analysis has landed on a song whose opening could not
- * define its identity. Accept one now: the cached identity when the cache
- * already knew this recording, otherwise one built from the whole song. The
- * performance in progress keeps the look it started with -- its world,
- * geography and custom biome are not repainted mid-song -- and every later
- * play, and the analysis cache, use the accepted identity.
- */
-function acceptDeferredIdentity(data, cachedIdentity = null, name = 'Audio') {
-  if (!data || data.songIdentity) return data?.songIdentity || null;
-  if (cachedIdentity?.songProfile?.version === PROFILE_VERSION && Number.isFinite(cachedIdentity.seed)) {
-    data.songIdentity = { ...cachedIdentity, seed: cachedIdentity.seed >>> 0 };
-  } else {
-    data.songIdentity = {
-      seed: resolveSongSeed({ timeline: data.timeline, durationMs: data.durationMs }, null),
-      songProfile: buildSongProfile({
-        energyCurves: data.energyCurves, durationMs: data.durationMs, bpm: data.bpm, beatPeriodMs: data.beatPeriodMs,
-        confidence: data.confidence, freeTime: data.freeTime, analysis: data.analysis, structure: data.structure,
-        timeline: data.timeline, barGrid: data.barGrid,
-      }),
-      customBiome: generateCustomBiomeFromMidi(data, name),
-    };
-  }
-  return data.songIdentity;
-}
-
 function offerWorldsThenStart(data, extra = {}) {
   try {
     clearCustomWorld();
@@ -1585,31 +1401,19 @@ function offerWorldsThenStart(data, extra = {}) {
     const autoSeed = Number.isFinite(identity?.seed)
       ? identity.seed >>> 0
       : resolveSongSeed({ timeline: data.timeline, durationMs: data.durationMs }, null);
-    const pinnedSeed = extra.restoreIntent?.seed ?? readPinnedSeed();
+    const pinnedSeed = readPinnedSeed();
     const seed = pinnedSeed != null && Number.isFinite(pinnedSeed) ? pinnedSeed >>> 0 : autoSeed;
-    if (!identity) offerIdentity(data, { seed: autoSeed, songProfile: profile, customBiome: data.customBiome || null });
+    if (!identity) data.songIdentity = { seed: autoSeed, songProfile: profile, customBiome: data.customBiome || null };
     pendingWorldStart = { data, extra, features, seed, profile };
     // The song's real mountain range (RangeLibrary): matched and loaded in
     // the background while the picker is up. One small module, normally
     // ready long before a card is clicked. Kept on the song's data so it
     // survives the rebuilds a song goes through (seek, replay, export).
     const pendingForRange = pendingWorldStart;
-    // The player's range/biome pick as it stands now; replays keep it.
-    pendingForRange.data.sceneChoice = { ...sceneChoice };
-    pendingForRange.terrainReady = prepareSongTerrain(profile, seed, undefined, { biome: sceneChoice.biome }).then((terrain) => {
+    pendingForRange.terrainReady = prepareSongTerrain(profile, seed).then((terrain) => {
       pendingForRange.data.terrain = terrain;
       return terrain;
     });
-    if (extra.restoreIntent) {
-      const mine = pendingWorldStart;
-      const generation = loadGen;
-      const isCurrent = () => generation === loadGen && (!extra.versionSelection || sourceSelection.isCurrent(extra.versionSelection));
-      mine.terrainReady.then(() => {
-        if (pendingWorldStart !== mine || !isCurrent()) return;
-        confirmWorld(versionRestoreWorldId(mine, extra.restoreIntent));
-      }).catch(err => { if (isCurrent()) showErrorBanner(err?.message || String(err)); });
-      return;
-    }
     lastFitDiagnostic = recordFitDiagnostic(features, profile);
     if (!ALL_WORLDS) {
       // One world: start in it. The home biome's ranges have to be there
@@ -1618,10 +1422,7 @@ function offerWorldsThenStart(data, extra = {}) {
       const mine = pendingWorldStart;
       const exporting = !!(extra.exportMode || readBulkExportFromUrl());
       const ready = mine.terrainReady.then((t) => (exporting && t?.whenAll ? t.whenAll.then(() => t) : t));
-      // A pinned biome waits for its terrain: starting on the fallback would
-      // play the song somewhere the player did not pick.
-      const pinned = !!mine.data.sceneChoice?.biome;
-      const wait = exporting || pinned ? ready : Promise.race([ready, new Promise((r) => setTimeout(r, BIOME_WAIT_MS))]);
+      const wait = exporting ? ready : Promise.race([ready, new Promise((r) => setTimeout(r, BIOME_WAIT_MS))]);
       wait.then(() => {
         if (pendingWorldStart !== mine) return;
         playSelectedWorld(ONE_WORLD_ID);
@@ -1642,8 +1443,7 @@ function offerWorldsThenStart(data, extra = {}) {
         if (titleChoice.mode === TITLE_AUTO) chooseRecommendedWorld();
         else playSelectedWorld(titleChoice.id);
       };
-      (mine.data.sceneChoice?.biome ? mine.terrainReady
-        : Promise.race([mine.terrainReady, new Promise((r) => setTimeout(r, RANGE_WAIT_MS))])).then(go);
+      Promise.race([mine.terrainReady, new Promise((r) => setTimeout(r, RANGE_WAIT_MS))]).then(go);
       return;
     }
     const hasLabels = Array.isArray(data.structure?.labels) && data.structure.labels.length > 1;
@@ -1654,7 +1454,6 @@ function offerWorldsThenStart(data, extra = {}) {
   } catch (err) {
     // The grid is a convenience; analysis failing must still start a song.
     console.error('[world chooser]', err);
-    if (extra.restoreIntent) { showErrorBanner('This version could not restore the selected song world: ' + (err?.message || err)); return; }
     pendingWorldStart = { data, extra };
     lastFitDiagnostic = null;
     confirmWorld(data.worldId || lastWorldId || DEFAULT_WORLD_ID);
@@ -1831,15 +1630,9 @@ function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
 function beginBulkExport({ width, height, presentation: override } = {}) {
   const size = evenExportSize({ w: width, h: height });
   if (!size) throw new Error(`Export size must be even and at least 2×2 (got ${width}×${height}).`);
-  if (!lastTimelineData) throw new Error(READINESS_MESSAGES.missing);
+  if (!lastTimelineData) throw new Error('Load a song before exporting.');
   // An export is the whole song: never render one from its opening alone.
-  // The same decision gates the Save-a-video button (requestFullSongExport).
-  const readiness = analysisReadiness(lastTimelineData, fullAnalysisPending);
-  if (readiness.state !== 'ready') {
-    throw new Error(readiness.state === 'pending'
-      ? 'Still analysing the whole song. Try the export again in a few seconds.'
-      : readiness.reason);
-  }
+  if (lastTimelineData.opening) throw new Error('Still analysing the whole song. Try the export again in a few seconds.');
   if (lastTimelineData.terrain && !lastTimelineData.terrain.allLoaded) throw new Error('Still loading the song\'s biomes. Try the export again in a few seconds.');
   const extra = {
     playBuffer: lastAudioBuffer || undefined,
@@ -1878,30 +1671,14 @@ function confirmWorld(id) {
     Promise.race([lyricsReady, new Promise((r) => setTimeout(r, LYRICS_START_WAIT_MS))]).then(() => {
       // A newer song chosen while waiting wins.
       if (gen !== loadGen) return;
-      startConfirmedWorld(pending, id).catch(err => showErrorBanner(err?.message || String(err)));
+      startConfirmedWorld(pending, id);
     });
     return;
   }
-  startConfirmedWorld(pending, id).catch(err => showErrorBanner(err?.message || String(err)));
+  startConfirmedWorld(pending, id);
 }
 
-function versionRestoreWorldId(pending, restoreIntent) {
-  const requested = restoreIntent.worldId;
-  if (requested !== 'custom') {
-    if (requested && !listWorlds().some(world => world.id === requested)) throw new Error('This version cannot restore the selected world.');
-    return requested || pending.data.worldId || lastWorldId || DEFAULT_WORLD_ID;
-  }
-  const baseId = restoreIntent.settings?.worldBaseId;
-  if (!baseId || !listWorlds().some(world => world.id === baseId)) throw new Error('This version cannot restore the selected song world.');
-  const { world } = buildWorldVariant(baseId, pending.features, { ...pending.data, profile: pending.profile });
-  if (world?.id !== 'custom' || (world.registeredId || world.baseId) !== baseId) throw new Error('This version could not regenerate the selected song world.');
-  setCustomWorld(world);
-  return world.id;
-}
-
-async function startConfirmedWorld(pending, id) {
-  const selection = pending.extra?.versionSelection;
-  if (selection && !sourceSelection.isCurrent(selection)) return;
+function startConfirmedWorld(pending, id) {
   id = resolveWorldId(id);
   stopWorldPreview();
   lastWorldId = id;
@@ -1914,16 +1691,7 @@ async function startConfirmedWorld(pending, id) {
   const extra = { ...(pending.extra || {}) };
   if (pending.seed != null && extra.songSeed === undefined) extra.songSeed = pending.seed;
   const exporting = !!(extra.exportMode || readBulkExportFromUrl());
-  const restore = extra.restoreIntent;
-  if (restore) {
-    await audioEngine.ctx.suspend();
-    if (selection && !sourceSelection.isCurrent(selection)) return;
-    extra.songSeed = restore.seed;
-    extra.startAtMs = Math.max(0, Math.min(Number(restore.positionMs) || 0, Math.max(0, pending.data.durationMs - 1)));
-    extra.startAtWallMs = 0;
-    extra.preservePause = true;
-    extra.restorePaused = true;
-  } else if (!exporting) audioEngine?.resume?.();
+  if (!exporting) audioEngine?.resume?.();
   // A recording already has every voice. The timeline synth (oscillator
   // "keyboard" tones + hat/kick clicks) must not sit on top of it.
   if (extra.playBuffer) muteTimelineSynth = true;
@@ -1931,23 +1699,8 @@ async function startConfirmedWorld(pending, id) {
   if (running) canvas.focus({ preventScroll: true });
   if (extra.playBuffer) {
     lastAudioBuffer = extra.playBuffer;
-    if (!exporting) audioEngine.playBuffer(extra.playBuffer, (extra.startAtMs || 0) / 1000);
+    if (!exporting) audioEngine.playBuffer(extra.playBuffer, 0);
   }
-  if (restore && running && sim) {
-    const generation = loadGen;
-    // A paused frame cannot advance the renderer's asynchronous preparation.
-    // Wait for this version's own presentation, then paint it at the held
-    // transport offset before advertising readiness to the navigator.
-    try {
-      if (rangePresentation) await rangePresentation.whenReady();
-    } catch (error) {
-      if (generation !== loadGen || (selection && !sourceSelection.isCurrent(selection))) return;
-      throw error;
-    }
-    if (generation !== loadGen || (selection && !sourceSelection.isCurrent(selection)) || !running || !sim) return;
-    renderer.draw(sim, 1);
-  }
-  if (selection && running && sim) versionSourceStarted(selection, extra.versionSource, restore);
 }
 
 /** Name the real ranges behind The Range (RangeCaption.js): one caption per
@@ -2002,7 +1755,7 @@ function applyRangeCaptions(timelineData, exportMode) {
           info ? { title: info.title, ecoregion: scene.place } : null)
         : captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
           title: info.title,
-          ecoregion: ecoregionCaption(entry.ranges.far?.id),
+          ecoregion: ecoregionOfRange(entry.ranges.far?.id),
         } : null);
       if (!caption) return;
       const atMs = i === 0 ? 0 : Math.max(0, sec.startMs + travelMs(sec) - CAPTION_DELAY_MS);
@@ -2024,9 +1777,9 @@ function startTimeline(timelineData, extra = {}) {
   const {
     songSeed: seedOverride = undefined, playBuffer, live = false,
     startAtMs = 0, startAtWallMs = 0, preservePause = false, captureMode: captureModeFlag = false,
-    exportMode: exportModeFlag = false, exportSize = null, keepAudio = false, continuousState = null,
+    exportMode: exportModeFlag = false, exportSize = null, keepAudio = false,
   } = extra;
-  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0, keepUserCamera: false, continuousState: null };
+  lastStartExtra = { ...extra, chapterState: null, keepAudio: false, startAtMs: 0, startAtWallMs: 0, keepUserCamera: false };
   const fromUrl = exportModeFlag ? null : readBulkExportFromUrl();
   const exportMode = !!(exportModeFlag || fromUrl);
   const exportQualityLevel = extra.exportQualityLevel ?? perfGovernor?.level ?? perfStartLevel;
@@ -2053,8 +1806,6 @@ function startTimeline(timelineData, extra = {}) {
   // stopTimeline: that resume is asynchronous and would land after the
   // suspend below, leaving the song playing under a stepped clock.
   stopTimeline({ preservePause: preservePause || exportMode, keepAudio });
-  versionSession.heldPositionMs = null;
-  if (extra.restorePaused) { paused = true; updatePauseButtonUI(); }
   fitCanvas();
   // Any path that is about to play a decoded recording (confirmWorld,
   // replay) mutes the timeline synth. Live listening mutes it for the same
@@ -2099,7 +1850,6 @@ function startTimeline(timelineData, extra = {}) {
     sim = new Simulation(conductor, paramBus, {
       bpm: timelineData.bpm || 120,
       rangeListening,
-      rangeExperience,
       rangeNarrative: timelineData.rangeNarrative || null,
       energyCurves: timelineData.energyCurves || null,
       ridgeMusicSession: timelineData.ridgeMusicSession,
@@ -2196,8 +1946,6 @@ function startTimeline(timelineData, extra = {}) {
   // it. Created here, per song, which is after the world is known.
   renderer = createPresentingRenderer({ canvas, mode: rendererMode, presentation: effectivePresentation(), residency: sharedResidency() });
   if (rangePresentation) {
-    rangePresentation.setJourney(rangeJourneyEnabled(timelineData.sceneChoice || sceneChoice, rangeExperience));
-    rangePresentation.setForcedView(rangePerformanceViewId(timelineData.sceneChoice || sceneChoice, rangeExperience));
     rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen, exportMode });
     renderer.rangePresentation = rangePresentation;
   }
@@ -2243,10 +1991,7 @@ function startTimeline(timelineData, extra = {}) {
   // start from boundaries after this point only (RangeFrame.landMoment01).
   // On the heard clock, as the first rebuilt frame samples it (Simulation.step).
   if (keepAudio) sim.biomes?.commitLandRejoin?.(visualNow(startedAt + presentationLeadMs, choreographyOutputLatencyMs()));
-  // Continuous musical state (ContinuousState.js): carried across exactly
-  // when the whole-song analysis replaces the opening mid-song, otherwise
-  // rebuilt from the song's start on the playback step.
-  if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs, { continuous: continuousState, stepMs: STEP_MS });
+  if (startedAt > 0) sim.startAt(startedAt + presentationLeadMs);
   // Both seeded in led time (see frame()), or the first frame would see the
   // whole lead as a delta and spend it on fixed steps nobody asked for.
   simTime = startedAt + presentationLeadMs;
@@ -2394,9 +2139,28 @@ function startTimeline(timelineData, extra = {}) {
   };
 }
 
+/**
+ * A MIDI and audio file dropped TOGETHER: the recording is what you hear,
+ * the score is what you see -- an exact description of the visuals for a
+ * song the engine would otherwise have to guess at from raw spectra.
+ *
+ * The two are assumed to share a t=0 origin, which is what exporting them
+ * from one project gives you. Nothing here tries to detect or correct an
+ * offset: a silently "corrected" sync that guessed wrong would be far worse
+ * to author against than one that is always literal.
+ *
+ * Analysis is skipped entirely (that's the raw-audio path's job) -- the MIDI
+ * already states every onset, so energy curves are synthesized from it just
+ * as they are for a MIDI-only load. That also makes this path near-instant
+ * where a raw-audio drop of the same song takes its separation/pitch pass.
+ */
 function showProgress(text) {
   progressEl.textContent = text;
   progressEl.classList.remove('hidden');
+}
+
+async function loadAudioFile(file) {
+  return loadAudioFiles([file]);
 }
 
 /** Sums N decoded stems into one stereo mix buffer -- the mix is both the
@@ -2642,52 +2406,29 @@ async function resolveLyricsForAudio(file, durationSec, vocalStem = null, { prom
   }
 }
 
-/**
- * Lyrics that land after the song's world has started (F06): hand them to
- * the running performance, which fuses them in from the moment being heard
- * (BiomeManager.adoptLyricEvidence). Only the performance of the selection
- * that asked for them adopts them; the audio is never restarted. A world not
- * started yet needs nothing -- startTimeline reads them off the song's data,
- * as does every later seek and replay. A bulk export renders frames by time
- * and must not change halfway, so it is left alone.
- */
-function adoptLateLyrics(data, selection, evidence) {
-  if (!evidence?.lyricSections?.length && !evidence?.syncedLyrics?.length) return false;
-  if (selection && !sourceSelection.isCurrent(selection)) return false;
-  if (!sim || lastTimelineData !== data || bulkExportArmed) return false;
-  const adopted = !!sim.biomes?.adoptLyricEvidence?.(evidence, sim.heardTimeMs);
-  if (adopted) console.info('[lyrics] adopted late lyrics into the running performance');
-  return adopted;
-}
-
 /** One audio file plays as itself; SEVERAL dropped together are treated as
  *  stems of one song -- summed into a mix for analysis/playback, with each
  *  file's NAME casting its notes to a character (see Casting.js). */
-async function loadAudioFiles(files, { selection = null, restoreIntent = null } = {}) {
-  if (!selection) selection = claimSelection({ kind: 'file', name: files?.[0]?.name || '' });
+async function loadAudioFiles(files) {
   let selectedFiles;
   try {
     selectedFiles = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
   } catch (err) {
-    if (!selection || sourceSelection.isCurrent(selection)) {
-      showErrorBanner(err?.message || 'The selected audio cannot be loaded.');
-    }
+    showErrorBanner(err?.message || 'The selected audio cannot be loaded.');
     return;
   }
-  // The selection is claimed by the player's action (handleFiles, a library
-  // row, a URL, the sample), never here: work finishing for an older choice
-  // must not be able to make itself the newest one. A direct call with no
-  // selection is itself the action, so it claims one before the first await.
-  if (!selection) {
-    selection = claimSelection({ kind: 'file', name: selectedFiles[0]?.name || '' });
-  }
-  if (!sourceSelection.isCurrent(selection)) return;
-  // A replacement selection aborts this signal. Web Audio cannot interrupt a
-  // native decode already in progress, but every boundary below observes it,
-  // so stale work cannot commit or start another expensive phase.
-  const { signal } = selection;
-  const myGen = loadGen;
-  const isStale = () => !sourceSelection.isCurrent(selection) || myGen !== loadGen;
+  // Abort the previous decode/analysis before claiming the new generation.
+  // Web Audio cannot interrupt a native decode already in progress, but every
+  // boundary below observes this signal so stale work cannot commit or start
+  // another expensive phase after a replacement selection.
+  loadAudioFiles._abortController?.abort();
+  const abortController = new AbortController();
+  loadAudioFiles._abortController = abortController;
+  const { signal } = abortController;
+  // Claim the load before the first await. Otherwise an older picker/drop
+  // stalled in bootAudio() can wake up later and overwrite the newer choice.
+  const myGen = ++loadGen;
+  const isStale = () => signal.aborted || myGen !== loadGen;
   stopTimeline();
   stopTitleBackdrop();
   loadShow?.stop();
@@ -2754,6 +2495,16 @@ async function loadAudioFiles(files, { selection = null, restoreIntent = null } 
     progressEl.classList.add('hidden');
     loaderEl.classList.remove('hidden');
     return;
+  }
+
+  // A play, and the one fact a folder scan can never know: how long the
+  // track actually is. Decoding is the only place that learns it, so this
+  // is where it goes back to the library. Fire-and-forget -- a storage
+  // failure must not delay the song by a frame.
+  if (playingFromLibrary) {
+    const track = playingFromLibrary;
+    playingFromLibrary = null;
+    musicLibrary.notePlayed(track, audioBuffer.duration).catch(() => {});
   }
 
   // A dropped audio file has real work ahead of it (band separation, onset/
@@ -2825,8 +2576,7 @@ async function loadAudioFiles(files, { selection = null, restoreIntent = null } 
     analysis.catch(() => {});
     // Fingerprint the song and look it up in the analysis cache. A hit is the
     // whole-song analysis, ready-made.
-    let lookedUp = null;
-    const lookUp = () => (lookedUp ??= (async () => {
+    const lookUp = async () => {
       try {
         fingerprint = await fingerprintBufferOffThread(audioBuffer);
         cacheKey = analysisCacheKey(fingerprint, { stems: isStemDrop ? decoded : [], groove: analysisGroove });
@@ -2842,34 +2592,6 @@ async function loadAudioFiles(files, { selection = null, restoreIntent = null } 
         console.warn('[analysis] fingerprint/cache lookup failed', err);
         return null;
       }
-    })());
-    // The whole song, in the background, once the picker has had a moment to
-    // paint. The cache lookup runs behind the picker too: the opening is
-    // analysed the same way every time, so the song looks the same cached or
-    // not, and a hit just finishes the whole-song pass early. The analysis
-    // takes turns with the page rather than holding it (cooperative), and
-    // lands on the same data object the picker and the running song hold
-    // (adoptFullAnalysis). Each attempt has its own abort, tied to this
-    // selection, so a retry after a failure starts clean.
-    const analyseWholeSong = () => {
-      const wholeAbort = new AbortController();
-      const cancelWhole = () => wholeAbort.abort();
-      signal.addEventListener('abort', cancelWhole, { once: true });
-      const attempt = new Promise((resolve) => setTimeout(resolve, 150)).then(async () => {
-        if (wholeAbort.signal.aborted) throw audioAbortError();
-        const whole = audioToTimeline(audioBuffer, {
-          groove: analysisGroove, signal: wholeAbort.signal, cooperative: true,
-        });
-        whole.catch(() => {});
-        const restored = await lookUp();
-        if (restored) {
-          cancelWhole();
-          return restored;
-        }
-        return whole;
-      });
-      attempt.catch(() => {}).finally(() => signal.removeEventListener('abort', cancelWhole));
-      return attempt;
     };
     let fullAnalysis = null;
     try {
@@ -2883,76 +2605,55 @@ async function loadAudioFiles(files, { selection = null, restoreIntent = null } 
         }
       } else {
         data = asOpening(await analysis, audioBuffer.duration * 1000);
-        // An opening that cannot define the song's look (silence, an
-        // atypical intro) asks the cache first: a recording played before
-        // starts with the identity it was accepted with, not a provisional
-        // one. The lookup is shared with the whole-song pass below.
-        if (!canCommitOpeningIdentity(data.opening)) {
-          const known = await lookUp();
-          if (known?.songIdentity?.songProfile) data.songIdentity = known.songIdentity;
-        }
-        fullAnalysis = analyseWholeSong();
+        // The whole song, in the background, once the picker has had a moment
+        // to paint. The cache lookup runs behind the picker too: the opening
+        // is analysed the same way every time, so the song looks the same
+        // cached or not, and a hit just finishes the whole-song pass early.
+        // The analysis takes turns with the page rather than holding it
+        // (cooperative), and lands on the same data object the picker and
+        // the running song hold (adoptFullAnalysis).
+        fullAnalysis = new Promise((resolve) => setTimeout(resolve, 150)).then(async () => {
+          if (analysisAbort.signal.aborted) throw audioAbortError();
+          const whole = audioToTimeline(audioBuffer, {
+            groove: analysisGroove, signal: analysisAbort.signal, cooperative: true,
+          });
+          whole.catch(() => {});
+          const restored = await lookUp();
+          if (restored) {
+            cancelAnalysis();
+            return restored;
+          }
+          return whole;
+        });
       }
     } finally {
-      // The first pass is over either way; the whole-song pass, if any, has
-      // its own abort (analyseWholeSong).
-      signal.removeEventListener('abort', cancelAnalysis);
+      if (!fullAnalysis) signal.removeEventListener('abort', cancelAnalysis);
       loadShow?.stop(loadShowSession);
     }
     if (isStale()) return;
     data.audioOverview = buildAudioOverview(audioBuffer);
     const opened = data;
-    // Adopt one whole-song attempt onto the song, or record why it failed.
-    // The failure is kept on the opening's coverage metadata, which is what
-    // a full-song export reads (AnalysisReadiness.js); a promise is never
-    // stored on the data, which the analysis cache serialises.
-    const adoptWholeSong = (attempt) => {
-      const wholeSong = attempt.then((full) => {
+    const wholeSong = fullAnalysis
+      ? fullAnalysis.then((full) => {
         if (isStale()) return null;
         upgradeRidgeMusicSession(opened, full,
           running && sim && lastTimelineData === opened && !bulkExportArmed ? sim.heardTimeMs : null,
           `load-${myGen}:final`);
-        const cachedIdentity = full?.songIdentity || null;
         adoptFullAnalysis(opened, full);
-        // A provisional look (uninformative opening) is settled from the
-        // whole song now, before the analysis is cached with it.
-        acceptDeferredIdentity(opened, cachedIdentity, selectedFiles[0].name || 'Audio');
         if (fullAnalysisPending === wholeSong) fullAnalysisPending = null;
         adoptFullAnalysisLive(opened);
         return opened;
       }).catch((err) => {
         if (fullAnalysisPending === wholeSong) fullAnalysisPending = null;
         // The opening stands: the song plays on what it has.
-        if (err?.name !== 'AbortError' && !isStale()) {
-          if (opened.opening) {
-            opened.opening.failed = true;
-            opened.opening.failure = String(err?.message || err || 'unknown error');
-          }
+        if (err?.name !== 'AbortError') {
+          if (opened.opening) opened.opening.failed = true;
           console.warn('[analysis] whole-song pass failed; keeping the opening', err);
         }
         return null;
-      });
-      fullAnalysisPending = wholeSong;
-      return wholeSong;
-    };
-    const wholeSong = fullAnalysis ? adoptWholeSong(fullAnalysis) : null;
-    if (!wholeSong) fullAnalysisPending = null;
-    // The one way back from a failed whole-song pass: analyse the same
-    // decoded recording again, for this selection only. Export asks for it
-    // (retryWholeSongAnalysis); a replaced selection cannot be revived.
-    lastSongLoad = {
-      selection,
-      data: opened,
-      retryWholeSong: () => {
-        if (isStale() || !opened.opening) return Promise.resolve(null);
-        opened.opening.failed = false;
-        delete opened.opening.failure;
-        return adoptWholeSong(analyseWholeSong()).then((result) => {
-          if (result && lyricsReady.settled) cacheWholeSong();
-          return result;
-        });
-      },
-    };
+      }).finally(() => signal.removeEventListener('abort', cancelAnalysis))
+      : null;
+    fullAnalysisPending = wholeSong;
     // Lyrics no longer hold up the world picker: the lookup is network work
     // with no fixed length, and the picker is where the player spends the
     // next few seconds anyway. It lands on the song's data when it resolves;
@@ -2963,26 +2664,18 @@ async function loadAudioFiles(files, { selection = null, restoreIntent = null } 
     // show must not wait on a disk write, and a failed one costs only a
     // re-analysis later. Lyrics are deliberately NOT in the bundle -- they
     // are fetched per play and the preference can change between plays.
-    const cacheWholeSong = () => {
-      if (!cacheKey || data.fromBundle || data.opening) return null;
-      return putBundle(cacheKey, packBundle(data, {
-        fingerprint, name: selectedFiles[0].name || '', identity: data.lyricIdentity,
-      })).catch((err) => console.warn('[analysis] could not cache bundle', err));
-    };
     const lyricsReady = lyricsPromise.then(({ identity: lyricIdentity, lyricSections, syncedLyrics }) => {
       data.lyricIdentity = lyricIdentity;
-      // Lyric grounding switched off while the lookup was in flight: the
-      // player's newer choice wins over the answer to the older one.
-      if (!lyricsDisabled) {
-        data.lyricSections = lyricSections;
-        data.syncedLyrics = syncedLyrics;
-        // Already playing? Join the running performance at the heard moment
-        // rather than waiting for a replay (adoptLateLyrics).
-        adoptLateLyrics(data, selection, { lyricSections, syncedLyrics });
-      }
+      data.lyricSections = lyricSections;
+      data.syncedLyrics = syncedLyrics;
       // Cached once the whole song is in (the key may only be known then,
       // too): an opening would be restored next time as if it were the song.
-      Promise.resolve(wholeSong).then(cacheWholeSong);
+      Promise.resolve(wholeSong).then(() => {
+        if (!cacheKey || data.fromBundle || data.opening) return null;
+        return putBundle(cacheKey, packBundle(data, {
+          fingerprint, name: selectedFiles[0].name || '', identity: lyricIdentity,
+        }));
+      }).catch((err) => console.warn('[analysis] could not cache bundle', err));
       return null;
     }).catch((err) => console.warn('[lyrics] lookup failed; continuing without', err))
       .finally(() => { lyricsReady.settled = true; });
@@ -3012,17 +2705,7 @@ async function loadAudioFiles(files, { selection = null, restoreIntent = null } 
     lastSongName = selectedFiles[0].name || 'song';
     lastAudioBuffer = audioBuffer;
     fontRecommender?.clear(); // the recording is its own sound source
-    // A play, and the one fact a folder scan can never know: how long the
-    // track actually is. Decoding is the only place that learns it, so it
-    // goes back to the library here, as the song is handed to the player --
-    // for the track this selection was made from, and only while it is still
-    // the player's choice (isStale was checked above, with no await since).
-    // A failed, cancelled or replaced library play reports nothing.
-    // Fire-and-forget: a storage failure must not delay the song by a frame.
-    if (selection.kind === 'library' && selection.libraryTrack) {
-      musicLibrary.notePlayed(selection.libraryTrack, audioBuffer.duration).catch(() => {});
-    }
-    offerWorldsThenStart(data, { playBuffer: audioBuffer, lyricsReady, versionSelection: selection, versionSource: { kind: 'audio-files', files: [...selectedFiles] }, restoreIntent });
+    offerWorldsThenStart(data, { playBuffer: audioBuffer, lyricsReady });
   } catch (err) {
     if (isStale() || err?.name === 'AbortError') return;
     console.error('[audio load failed]', err);
@@ -3034,19 +2717,20 @@ async function loadAudioFiles(files, { selection = null, restoreIntent = null } 
   }
 }
 
+function handleFile(file) {
+  if (!file) return;
+  handleFiles([file]);
+}
+
 /** One file plays as itself. Several files dropped together are stems of one
  *  song (their filenames cast the characters). The built-in sample is a
  *  second door into the same chooser. */
-function handleFiles(files, { selection = null } = {}) {
-  // A library row or a URL hands over the selection it claimed when the
-  // player acted; anything else (a pick, a drop) is a new choice right now.
-  if (selection && !sourceSelection.isCurrent(selection)) return;
+function handleFiles(files) {
   // Whatever this is, it is the source the player chose most recently, so
   // an in-flight URL fetch must not be allowed to land afterwards and take
   // the playback back. The URL path releases its own operation before
   // calling in here, so this never cancels the load that invoked it.
   cancelUrlLoad();
-  if (!selection) selection = claimSelection({ kind: 'file', name: files?.[0]?.name || '' });
   let list;
   try {
     list = validateAudioFiles(files, AUDIO_LOAD_LIMITS);
@@ -3055,12 +2739,11 @@ function handleFiles(files, { selection = null } = {}) {
     return;
   }
   if (!list.length) return;
-  if (!selection) selection = claimSelection({ kind: 'file', name: list[0]?.name || '' });
   closeWorldChooser();
   stopWorldPreview();
   pendingWorldStart = null;
   showProgress('Reading file…');
-  loadAudioFiles(list, { selection });
+  loadAudioFiles(list);
 }
 
 fileInputEl?.addEventListener('change', (e) => {
@@ -3119,7 +2802,6 @@ function revealUrlLoad(why = '', { focus = false } = {}) {
 }
 
 function setUrlLoadStatus(text, isError = false) {
-  if (isError && text && typeof versionLoadFailed === 'function') versionLoadFailed(text);
   if (!urlLoadStatusEl) return;
   urlLoadStatusEl.textContent = text || '';
   urlLoadStatusEl.classList.toggle('isError', Boolean(isError) && Boolean(text));
@@ -3286,16 +2968,12 @@ function cancelUrlLoad() {
   setUrlLoadBusy(false);
 }
 
-/** Starts a fresh URL operation, superseding any still in flight. The fetch
- *  is also abandoned as soon as `selection` stops being the player's newest
- *  choice, whichever source replaced it. */
-function beginUrlLoadOperation(selection) {
+/** Starts a fresh URL operation, superseding any still in flight. */
+function beginUrlLoadOperation() {
   urlLoadAbort?.abort();
-  const controller = new AbortController();
-  urlLoadAbort = controller;
-  selection?.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  urlLoadAbort = new AbortController();
   setUrlLoadBusy(true);
-  return controller.signal;
+  return urlLoadAbort.signal;
 }
 
 function endUrlLoadOperation(signal) {
@@ -3307,14 +2985,12 @@ function endUrlLoadOperation(signal) {
 
 /** Opens whatever the address turns out to be: a song, or a folder to browse. */
 async function openUrlTarget(raw) {
-  const selection = claimSelection({ kind: 'url', name: String(raw || '') });
-  const signal = beginUrlLoadOperation(selection);
+  const signal = beginUrlLoadOperation();
   setUrlLoadStatus('Opening\u2026');
   try {
     const result = await openAudioUrl(raw, { pageUrl: location.href, signal });
     if (signal.aborted) return;
     if (result.kind === 'listing') {
-      if (typeof versionLoadFailed === 'function') versionLoadFailed('Choose a song from this folder before changing versions.');
       renderUrlListing(result);
       const count = result.entries.length;
       setUrlLoadStatus(count
@@ -3326,7 +3002,7 @@ async function openUrlTarget(raw) {
     clearUrlLoadListing();
     setUrlLoadStatus('');
     endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
-    handleFiles([result.file], { selection });
+    handleFiles([result.file]);
   } catch (err) {
     if (signal.aborted) return;
     setUrlLoadStatus(
@@ -3353,8 +3029,7 @@ async function loadUrlAudio(url, name = '') {
   // the old request finished, cleared it, and started playing a song the
   // player had already moved on from. openUrlTarget() has always claimed
   // the operation up front for the same reason.
-  const selection = claimSelection({ kind: 'url', name: name || String(url || '') });
-  const signal = beginUrlLoadOperation(selection);
+  const signal = beginUrlLoadOperation();
   const verdict = classifyUrl(url, location.href);
   if (!verdict.ok) {
     setUrlLoadStatus(verdict.message, true);
@@ -3367,7 +3042,7 @@ async function loadUrlAudio(url, name = '') {
     if (signal.aborted) return;
     setUrlLoadStatus('');
     endUrlLoadOperation(signal); // release before handing off, see cancelUrlLoad
-    handleFiles([file], { selection });
+    handleFiles([file]);
   } catch (err) {
     if (signal.aborted) return;
     setUrlLoadStatus(
@@ -3436,19 +3111,14 @@ worldSelectEl?.addEventListener('cancel', (e) => {
 });
 
 /** Authored sample (Proof) so a visitor can see the worlds without a file. */
-async function startDemoSample(restoreIntent = null) {
-  // The sample is a choice too: it outranks an older fetch, an upload still
-  // decoding or analysing, and a library permission prompt still open.
-  const selection = claimSelection({ kind: 'sample', name: 'Proof' });
-  cancelUrlLoad();
+async function startDemoSample() {
+  cancelUrlLoad(); // the sample is a choice too, and outranks an older fetch
   try {
     await bootAudio();
   } catch (err) {
-    if (!sourceSelection.isCurrent(selection)) return;
     showErrorBanner(err?.message || 'Audio is blocked. Click the page, then try again.');
     return;
   }
-  if (!sourceSelection.isCurrent(selection)) return;
   muteTimelineSynth = false;
   lastAudioBuffer = null;
   lastSongName = 'Proof';
@@ -3471,7 +3141,7 @@ async function startDemoSample(restoreIntent = null) {
       boundariesMs,
       confidence: 1,
     },
-  }, { versionSelection: selection, versionSource: { kind: 'demo' }, restoreIntent });
+  });
 }
 demoBtnEl?.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -3720,10 +3390,9 @@ function frame(tRaf) {
   lastDrawMs = tRaf;
 
   if (pendingCapturePresetId && captureClock.captureReady) {
-    const session = pendingCaptureSession || recordingSessionFor(pendingCapturePresetId);
+    const presetId = pendingCapturePresetId;
     pendingCapturePresetId = null;
-    pendingCaptureSession = null;
-    beginRecorder(session);
+    beginRecorder(presetId);
   }
 
   const alpha = acc / STEP_MS;
@@ -3848,6 +3517,13 @@ function frame(tRaf) {
   rafHandle = requestAnimationFrame(frame);
 }
 
+function formatClock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
 function formatDuration(ms) {
   const total = Math.max(0, Math.round(ms / 1000));
   const m = Math.floor(total / 60);
@@ -3967,15 +3643,8 @@ function adoptFullAnalysisLive(data) {
   if (!running || !sim || !audioEngine || lastTimelineData !== data) return;
   if (bulkExportArmed) return;
   const wasPaused = paused;
-  // What is on screen now, carried into the rebuilt performance so nothing
-  // continuous jumps at the boundary: the musical directors' state, and the
-  // storm's envelope, which then eases to the whole song's own storm.
-  const continuousState = captureContinuous(sim);
-  const previousStorm = stormScoreFor(sim.biomes);
-  const handoffAtMs = sim.heardTimeMs ?? audioEngine.nowMs;
   startTimeline(data, {
     ...lastStartExtra,
-    continuousState,
     songSeed: sim.songSeed,
     startAtMs: Math.max(1, audioEngine.nowMs),
     keepAudio: true,
@@ -3985,7 +3654,6 @@ function adoptFullAnalysisLive(data) {
     chapterState: { previous: sim.biomes.chapterPlan, committedThroughMs: sim.heardTimeMs ?? audioEngine.nowMs, landSections: sim.biomes.sections },
   });
   if (!running || !sim) return;
-  if (previousStorm && sim.biomes) sim.biomes.stormHandoff = { score: previousStorm, atMs: handoffAtMs, durationMs: STORM_HANDOFF_MS };
   if (wasPaused) { paused = true; updatePauseButtonUI(); }
   renderer.draw(sim, 1);
 }
@@ -4011,7 +3679,6 @@ function seekSong(ms) {
   if (buffer) audioEngine.playBuffer(buffer, t / 1000);
   if (wasPaused) {
     paused = true;
-    if (typeof versionSession !== 'undefined') versionSession.heldPositionMs = t;
     audioEngine.ctx.suspend();
     updatePauseButtonUI();
   }
@@ -4135,7 +3802,6 @@ const HUD_FADE_MS = 3000;
 let hudAwake = true;
 let hudSleepAtMs = 0;
 function wakeHud() {
-  for (const el of document.querySelectorAll('[data-version-navigation]')) { el.inert = false; el.classList.remove('hud-faded'); }
   hudSleepAtMs = performance.now() + HUD_FADE_MS;
   if (hudAwake) return;
   hudAwake = true;
@@ -4143,7 +3809,6 @@ function wakeHud() {
   hudLeftEl?.classList.remove('hud-faded');
 }
 function hudIdleTick(nowRafMs) {
-  if (document.activeElement?.closest?.('[data-version-navigation]')) { hudSleepAtMs = nowRafMs + HUD_FADE_MS; return; }
   // A recording holds the HUD open. The stop control is in there, and a
   // faded HUD sits under the canvas -- so letting it fade would mean the
   // only way to end a recording is to tap the stage first, and that tap is
@@ -4165,7 +3830,6 @@ function hudIdleTick(nowRafMs) {
   }
   if (hudAwake && nowRafMs >= hudSleepAtMs) {
     hudAwake = false;
-    for (const el of document.querySelectorAll('[data-version-navigation]')) { el.inert = true; el.classList.add('hud-faded'); }
     hudRightEl?.classList.add('hud-faded');
     hudLeftEl?.classList.add('hud-faded');
   }
@@ -4250,11 +3914,7 @@ const INERT_KEYS = new Set([
 ]);
 
 window.addEventListener('keydown', (e) => {
-  // A focused text field, an IME composition, an already-handled event and
-  // a Ctrl/Meta/Alt chord all belong to the browser. Decide that before any
-  // branch below can toggle a setting, open an overlay, tap the beat or
-  // preventDefault a letter out of a URL (KeyboardOwnership.js).
-  if (ownsNativeKeyboard(e) || e.target?.closest?.('[data-version-navigation]')) return;
+  if (e.defaultPrevented) return;
   // A modal chooser owns keyboard input. R stays available for accessibility;
   // all other keys retain native dialog/button behavior, including Escape.
   if (worldSelectEl?.open) {
@@ -4265,9 +3925,6 @@ window.addEventListener('keydown', (e) => {
   // the gameplay handler's inert-key guard can suppress them.
   if ((e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar')
     && e.target?.closest?.('button, input, select, textarea, a')) return;
-  // A focused menu owns every key: arrows move through it and letters jump
-  // to an entry, so none of them may become a shortcut or be swallowed.
-  if (e.target?.closest?.('select')) return;
   if (running) wakeHud();
   if (e.key === 'Escape') {
     if (fontModalEl && !fontModalEl.classList.contains('hidden')) closeFontModal();
@@ -4343,8 +4000,10 @@ window.addEventListener('keydown', (e) => {
   if (INERT_KEYS.has(e.key)) { e.preventDefault(); return; }
 
   // Almost any other key resyncs the player's beat anchor (BeatAnchor.js) --
-  // ignore held-key auto-repeat. Chords and typing were excluded above.
-  if (e.repeat) return;
+  // ignore held-key auto-repeat, modifier chords, and typing into a field.
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const activeTag = document.activeElement?.tagName;
+  if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
   beatTap();
 });
 
@@ -4496,13 +4155,15 @@ function onSongComplete() {
  *  whatever is currently in the seed field (or auto if blank). */
 function replaySong({ songSeed } = {}) {
   if (!lastTimelineData) { window.location.reload(); return; }
-  // A full-song recording is the whole song. requestFullSongExport() waits
-  // for the analysis and checks it; this is the last line of defence, so the
-  // recorder is never armed over an opening-only analysis whatever the path.
-  if (pendingExportPresetId && analysisReadiness(lastTimelineData, fullAnalysisPending).state !== 'ready') {
-    pendingExportPresetId = null;
-    pendingExportCandidate = null;
-    showExportReadiness(analysisReadiness(lastTimelineData, fullAnalysisPending));
+  // A full-song recording is the whole song: wait for its analysis rather
+  // than record the part past the opening with nothing driving it.
+  if (pendingExportPresetId && lastTimelineData.opening && fullAnalysisPending) {
+    const waitingOn = lastTimelineData;
+    showProgress('Finishing the analysis…');
+    fullAnalysisPending.finally(() => {
+      progressEl.classList.add('hidden');
+      if (lastTimelineData === waitingOn) replaySong({ songSeed });
+    });
     return;
   }
   // Capture buffer before rebuild — startTimeline stops the AudioContext source
@@ -4519,10 +4180,8 @@ function replaySong({ songSeed } = {}) {
   // managed to press a button.
   if (pendingExportPresetId) {
     const presetId = pendingExportPresetId;
-    const candidate = pendingExportCandidate;
     pendingExportPresetId = null;
-    pendingExportCandidate = null;
-    startRecording(presetId, { fullSong: true, candidate });
+    startRecording(presetId);
   }
   // Start the recorder's master-bus tap before the replacement source. That
   // keeps the first audio onset inside a full-song file instead of letting
@@ -4653,6 +4312,9 @@ const libraryFolderInputEl = document.getElementById('libraryFolderInput');
 const libraryFolderHintEl = document.querySelector('.libraryFolderHint');
 
 const musicLibrary = new MusicLibrary();
+/** Set when a load came from the library, so the decode can report the
+ *  track's real duration back. Cleared as soon as it is consumed. */
+let playingFromLibrary = null;
 let autoTagAbort = null;
 
 const libraryPanel = libraryPanelEl
@@ -4783,34 +4445,27 @@ function closeLibrary({ cancelScan = true } = {}) {
  *  from here on. */
 async function playLibraryTrack(track) {
   if (!track) return;
-  // Claimed in the click, before the permission prompt and the file read:
-  // a song dropped or picked while either is pending is the newer choice,
-  // and this one must then neither play nor report anything.
-  const selection = claimSelection({ kind: 'library', name: displayTitle(track), libraryTrack: track });
   unlockAudio();
   // A remembered library with no live handle: one click gets it back rather
   // than making the player hunt for the folder button.
   if (!musicLibrary.playable && musicLibrary.root?.handle) {
-    const granted = await musicLibrary.grantAccess();
-    if (!sourceSelection.isCurrent(selection)) return;
-    if (!granted) {
+    if (!await musicLibrary.grantAccess()) {
       showErrorBanner('Allow access to your music folder to play from the library.');
       return;
     }
   }
   const file = await musicLibrary.openFile(track);
-  if (!sourceSelection.isCurrent(selection)) return;
   if (!file) {
     showErrorBanner(musicLibrary.playable
       ? `“${displayTitle(track)}” isn’t where the library remembers it. Rescan the folder to catch up.`
       : 'Pick your music folder again to play from the library.');
     return;
   }
+  playingFromLibrary = track;
   // The scan keeps running: playing the first track you recognise is the
   // reason the rows stream in at all.
   closeLibrary({ cancelScan: false });
-  // The track rides on the selection, so only this load can be credited.
-  handleFiles([file], { selection });
+  handleFiles([file]);
 }
 
 async function chooseMusicFolder() {
@@ -4956,8 +4611,6 @@ const completeExportEl = document.getElementById('completeExport');
 const exportPresetEl = document.getElementById('exportPreset');
 const exportBtnEl = document.getElementById('exportBtn');
 const exportNoteEl = document.getElementById('exportNote');
-const exportRetryAnalysisBtnEl = document.getElementById('exportRetryAnalysisBtn');
-const exportRetryCodecBtnEl = document.getElementById('exportRetryCodecBtn');
 
 const EXPORT_PRESET_KEY = 'midio.export.preset';
 
@@ -4967,15 +4620,6 @@ let pendingExportPresetId = null;
 /** Mid-song capture waits until the live presentation lead has been paid
  * down without rewinding simulation time. */
 let pendingCapturePresetId = null;
-let pendingCaptureSession = null;
-/** What the recording in progress is OF, fixed when it starts: the file is
- *  named from this, never from whatever song is loaded when it finishes. */
-let activeRecordingSession = null;
-/** The last recording the browser's encoder failed, for the complete screen
- *  to explain and offer a retry in another container. */
-let lastRecordingFailure = null;
-/** The container a requested full-song export must use (a retry), or null. */
-let pendingExportCandidate = null;
 /** The last object URL handed out, revoked when the next one replaces it. */
 let lastExportUrl = null;
 
@@ -5001,48 +4645,28 @@ function ensureRecorder() {
   return songRecorder;
 }
 
-/** A snapshot of what a recording is of, taken when it is asked for. */
-function recordingSessionFor(presetId, { fullSong = false, candidate = null } = {}) {
-  return Object.freeze({
-    selectionId: sourceSelection.current?.id ?? null,
-    songName: lastSongName || 'song',
-    requestedPreset: presetId,
-    startedAtHeardMs: sim?.heardTimeMs ?? 0,
-    fullSong: !!fullSong,
-    candidate: candidate || null,
-  });
-}
-
-function beginRecorder(sessionOrPreset) {
-  const session = typeof sessionOrPreset === 'string' || !sessionOrPreset
-    ? recordingSessionFor(sessionOrPreset || storedExportPresetId())
-    : sessionOrPreset;
+function beginRecorder(presetId) {
   const recorder = ensureRecorder();
   if (!recorder) { showErrorBanner('Start a song before recording.'); return false; }
-  if (!recorder.start({ presetId: session.requestedPreset, deferFirstFrame: true, candidate: session.candidate })) {
+  if (!recorder.start({ presetId, deferFirstFrame: true })) {
     showErrorBanner(recorder.error || 'This browser cannot record video.');
     captureClock.release(audioEngine?.nowMs || 0);
     syncRecordUI();
     return false;
   }
-  activeRecordingSession = session;
-  lastRecordingFailure = null;
-  exportRetryCodecBtnEl?.classList.add('hidden');
   recordReadoutAtMs = 0;
   syncRecordUI();
   return true;
 }
 
-function startRecording(presetId = storedExportPresetId(), options = {}) {
+function startRecording(presetId = storedExportPresetId()) {
   const recorder = ensureRecorder();
   if (!recorder?.candidate) {
     showErrorBanner('This browser cannot record video.');
     return false;
   }
-  const session = recordingSessionFor(presetId, options);
-  if (captureClock.captureReady) return beginRecorder(session);
+  if (captureClock.captureReady) return beginRecorder(presetId);
   pendingCapturePresetId = presetId;
-  pendingCaptureSession = session;
   captureClock.arm(audioEngine?.nowMs || 0);
   syncRecordUI();
   return true;
@@ -5054,30 +4678,20 @@ function finishRecording() {
   const recorder = songRecorder;
   if (pendingCapturePresetId) {
     pendingCapturePresetId = null;
-    pendingCaptureSession = null;
     captureClock.release(audioEngine?.nowMs || 0);
     syncRecordUI();
     return;
   }
-  // A recording the encoder ended on its own still has a result to collect.
-  if (!recorder?.recording && !recorder?.hasUnclaimedResult) return;
-  const session = activeRecordingSession || recordingSessionFor(storedExportPresetId());
-  activeRecordingSession = null;
+  if (!recorder?.recording) return;
   captureClock.release(audioEngine?.nowMs || 0);
-  const pending = recorder.stop();
-  if (!pending) { syncRecordUI(); return; }
-  pending.then((result) => {
+  recorder.stop().then((result) => {
     syncRecordUI();
-    if (result?.failure) {
-      reportRecordingFailure(result, session);
-      return;
-    }
     if (!result) {
       setExportNote('Nothing was captured — the recording was too short to save.', 'isWarning');
       return;
     }
     const fileName = exportFileName({
-      songName: session.songName,
+      songName: lastSongName || 'song',
       presetId: result.preset?.id,
       ext: result.candidate?.ext || 'mp4',
     });
@@ -5092,58 +4706,6 @@ function finishRecording() {
     syncRecordUI();
   });
   syncRecordUI();
-}
-
-/**
- * The browser's encoder failed mid-recording. Nothing is saved -- a file the
- * encoder gave up on is not a recording of the song -- and the encoder's own
- * words reach the player, kept apart from "too short". When the browser
- * records another container, a retry in it is offered: a fresh, explicit
- * attempt that names its format, never a silent swap.
- */
-function reportRecordingFailure(result, session) {
-  const { name, message, mimeType } = result.failure;
-  const fallback = songRecorder?.fallbackCandidate(result.candidate || mimeType) || null;
-  lastRecordingFailure = { session, failure: result.failure, fallback };
-  const text = `Recording failed: ${message} (${name}, ${mimeType || 'unknown format'}). Nothing was saved.`;
-  console.error('[export] encoder failed', result.failure);
-  showErrorBanner(text);
-  showRecordingFailure();
-}
-
-/** The failure line and retry button, if the failed recording was of the
- *  song still loaded. */
-function showRecordingFailure() {
-  const f = lastRecordingFailure;
-  const current = !!f && f.session.selectionId === (sourceSelection.current?.id ?? null);
-  if (!current) {
-    exportRetryCodecBtnEl?.classList.add('hidden');
-    return false;
-  }
-  const { name, message, mimeType } = f.failure;
-  const retry = f.fallback
-    ? ` You can record it again as ${f.fallback.ext.toUpperCase()} (${f.fallback.video || 'browser-chosen'} video).`
-    : '';
-  setExportNote(`Recording failed: ${message} (${name}, ${mimeType || 'unknown format'}). Nothing was saved.${retry}`, 'isWarning');
-  if (exportRetryCodecBtnEl) {
-    exportRetryCodecBtnEl.textContent = f.fallback ? `Record full song as ${f.fallback.ext.toUpperCase()}` : '';
-    exportRetryCodecBtnEl.classList.toggle('hidden', !f.fallback);
-  }
-  return true;
-}
-
-/** Record the whole song again, from frame zero, in the fallback container.
- *  A separate file, never spliced onto the failed one; it goes through the
- *  same whole-song readiness as any full-song export. */
-function retryRecordingInFallback() {
-  const f = lastRecordingFailure;
-  exportRetryCodecBtnEl?.classList.add('hidden');
-  if (!f?.fallback || f.session.selectionId !== (sourceSelection.current?.id ?? null) || !lastTimelineData) {
-    setExportNote('That recording has been replaced. Load it again to export it.', 'isWarning');
-    return;
-  }
-  lastRecordingFailure = null;
-  requestFullSongExport(f.session.requestedPreset, { candidate: f.fallback });
 }
 
 function downloadBlob(blob, fileName) {
@@ -5240,17 +4802,6 @@ function syncExportUI() {
   if (candidate && size > 0) parts.push(`Up to about ${formatBytes(size)} for this song.`);
   if (candidate) parts.push('Recording replays the song in real time.');
   setExportNote(parts.filter(Boolean).join(' '));
-  // A whole-song pass that already failed is said here, with its retry,
-  // before anyone presses Save and waits for a replay that cannot happen.
-  const readiness = analysisReadiness(lastTimelineData, fullAnalysisPending);
-  if (candidate && (readiness.state === 'failed' || readiness.state === 'provisional')) {
-    showExportReadiness(readiness);
-  } else {
-    exportRetryAnalysisBtnEl?.classList.add('hidden');
-  }
-  // An encoder failure in this song's last recording is the most recent
-  // thing the player needs to know about exporting it.
-  showRecordingFailure();
 }
 
 recordBtnEl?.addEventListener('click', () => {
@@ -5268,94 +4819,12 @@ exportBtnEl?.addEventListener('click', () => {
   if (!lastTimelineData) return;
   const presetId = exportPresetEl?.value || storedExportPresetId();
   rememberExportPresetId(presetId);
-  requestFullSongExport(presetId);
-});
-exportRetryAnalysisBtnEl?.addEventListener('click', () => retryWholeSongAnalysis());
-exportRetryCodecBtnEl?.addEventListener('click', () => retryRecordingInFallback());
-
-/** True while `data` is still the song on screen and, when it came from a
- *  load, that load is still the player's choice. */
-function songStillCurrent(data, load) {
-  if (lastTimelineData !== data) return false;
-  if (load && load.data === data) return sourceSelection.isCurrent(load.selection);
-  return true;
-}
-
-/** Say why a full-song export cannot start, and offer the retry when the
- *  whole-song analysis failed. Listening is unaffected: the song still plays
- *  on its opening analysis. */
-function showExportReadiness(readiness) {
-  const failed = readiness.state === 'failed' || readiness.state === 'provisional';
-  const canRetry = failed && !!lastSongLoad && lastSongLoad.data === lastTimelineData
-    && sourceSelection.isCurrent(lastSongLoad.selection);
-  exportRetryAnalysisBtnEl?.classList.toggle('hidden', !canRetry);
-  if (readiness.state === 'ready') return;
-  setExportNote(readiness.reason, failed ? 'isWarning' : '');
-}
-
-/**
- * Save a video of the whole song.
- *
- * Only a whole-song analysis may reach the first exported frame
- * (AnalysisReadiness.js). A pass still running is waited for; a pass that
- * failed, or an opening with nothing running behind it, stops here with the
- * reason and a retry, instead of recording the part past the opening with
- * nothing driving it and calling the file complete. The song (and the load
- * that produced it) is re-checked after the wait, so a recording replaced
- * meanwhile is never exported.
- */
-async function requestFullSongExport(presetId, { candidate = null } = {}) {
-  const data = lastTimelineData;
-  const load = lastSongLoad?.data === data ? lastSongLoad : null;
-  let readiness = analysisReadiness(data, fullAnalysisPending);
-  if (readiness.state === 'pending') {
-    setExportNote(readiness.reason);
-    if (exportBtnEl) exportBtnEl.disabled = true;
-    try { await fullAnalysisPending; } catch { /* the readiness check below says what happened */ }
-    if (exportBtnEl) exportBtnEl.disabled = false;
-    if (!songStillCurrent(data, load)) return;
-    readiness = analysisReadiness(data, fullAnalysisPending);
-  }
-  if (readiness.state !== 'ready') {
-    showExportReadiness(readiness);
-    return;
-  }
-  exportRetryAnalysisBtnEl?.classList.add('hidden');
   pendingExportPresetId = presetId;
-  pendingExportCandidate = candidate;
-  setExportNote(candidate
-    ? `Recording as ${candidate.ext.toUpperCase()}… the song is replaying in real time. It saves itself when it finishes.`
-    : 'Recording… the song is replaying in real time. It saves itself when it finishes.');
+  setExportNote('Recording… the song is replaying in real time. It saves itself when it finishes.');
   // Same seed, so the file is the show that was just watched and not a
   // different roll of the same song.
   replaySong({ songSeed: lastSongSeed });
-}
-
-/** Analyse the current recording whole again after a failed pass. Bound to
- *  the load that produced the song on screen: a recording that has since
- *  been replaced cannot be revived by its old retry. */
-function retryWholeSongAnalysis() {
-  const load = lastSongLoad;
-  exportRetryAnalysisBtnEl?.classList.add('hidden');
-  if (!load || !songStillCurrent(load.data, load)) {
-    setExportNote('That recording has been replaced. Load it again to export it.', 'isWarning');
-    return;
-  }
-  const data = load.data;
-  setExportNote('Analysing the whole song again…');
-  if (exportBtnEl) exportBtnEl.disabled = true;
-  load.retryWholeSong().then(() => {
-    if (!songStillCurrent(data, load)) return;
-    if (exportBtnEl) exportBtnEl.disabled = false;
-    const readiness = analysisReadiness(data, fullAnalysisPending);
-    if (readiness.state === 'ready') {
-      setExportNote('The whole song is analysed. Save a video to record it start to finish.', 'isResult');
-      syncRecordUI();
-    } else {
-      showExportReadiness(readiness);
-    }
-  });
-}
+});
 
 syncRecordUI();
 
@@ -5364,77 +4833,3 @@ if (!window.__SMW) window.__SMW = {
   get presentationDiagnostics() { return titlePresentation?.diagnostics; },
   get displayPrefs() { return { ...displayPrefs }; },
 };
-
-
-// Narrow production API: ownership comes from the actual selection and start,
-// never from an old debug object or a non-null decoded buffer.
-function versionAdapterState() {
-  let blockedReason = null;
-  if (songRecorder?.recording || pendingCapturePresetId) blockedReason = 'Finish recording before changing versions.';
-  else if (songRecorder?.finalizing || pendingExportPresetId || bulkExportArmed) blockedReason = 'Finish exporting before changing versions.';
-  else if (recalibration.active) blockedReason = 'Finish calibration before changing versions.';
-  else if (versionSession.phase === 'loading') blockedReason = 'The selected song is still loading.';
-  else if (running && !versionSession.source) blockedReason = 'This source cannot be carried to another version.';
-  const durationMs = conductor?.durationMs || 0;
-  return { phase: versionSession.phase, generation: loadGen, sourceId: versionSession.sourceId, source: versionSession.source,
-    positionMs: Math.max(0, Math.min(paused && versionSession.heldPositionMs != null ? versionSession.heldPositionMs : (audioEngine ? audioEngine.nowMs - choreographyOutputLatencyMs() : 0), durationMs)), durationMs,
-    seed: sim?.songSeed ?? lastSongSeed, paused, worldId: sim?.worldId || lastWorldId,
-    rangeViewId: sceneChoice?.viewId ?? null, settings: { reducedFlash, reducedMotion, stageRes: stageResEl?.value, stageFps: stageFpsEl?.value, worldBaseId: sim?.worldId === 'custom' ? (getCustomWorld()?.registeredId || getCustomWorld()?.baseId || null) : null }, blockedReason };
-}
-
-async function versionSetPaused(value) {
-  if (!audioEngine || !running || !sim) throw new Error('There is no ready song.');
-  if (value) {
-    await audioEngine.ctx.suspend();
-    versionSession.heldPositionMs = paused && versionSession.heldPositionMs != null ? versionSession.heldPositionMs : Math.max(0, audioEngine.nowMs - choreographyOutputLatencyMs());
-    paused = true;
-  } else {
-    const resumed = await audioEngine.resume();
-    if (!resumed) { const error = new Error('Tap Resume to enable audio.'); error.code = 'AUDIO_GESTURE_REQUIRED'; throw error; }
-    paused = false;
-    versionSession.heldPositionMs = null;
-    lastRafMs = null;
-  }
-  updatePauseButtonUI();
-  versionEmit();
-}
-
-function versionLoadSource(source, restoreIntent = {}) {
-  if (!['audio-files', 'demo'].includes(source?.kind)) return Promise.reject(new Error('This source cannot be carried to another version.'));
-  const settings = restoreIntent.settings || {};
-  if (typeof settings.reducedFlash === 'boolean') { reducedFlash = settings.reducedFlash; setReducedFlash(reducedFlash); }
-  if (typeof settings.reducedMotion === 'boolean') { reducedMotion = settings.reducedMotion; setReducedMotion(reducedMotion); syncMotionButton(); }
-  for (const [control, value] of [[stageResEl, settings.stageRes], [stageFpsEl, settings.stageFps]]) {
-    if (control && value != null && [...control.options].some(option => option.value === String(value))) control.value = String(value);
-  }
-  const restoreBaseId = restoreIntent.worldId === 'custom' ? settings.worldBaseId : restoreIntent.worldId;
-  if (restoreIntent.worldId && (!restoreBaseId || !listWorlds().some(world => world.id === restoreBaseId))) return Promise.reject(new Error('This version cannot restore the selected world.'));
-  if (restoreIntent.rangeViewId) {
-    const restoredChoice = resolveSceneChoice({ search: searchWithSceneChoice('', { viewId: restoreIntent.rangeViewId }), catalog: SCENE_CATALOG, biomeNames: PICKABLE_BIOMES.map(b => b.name) });
-    if (restoredChoice.viewId !== restoreIntent.rangeViewId) return Promise.reject(new Error('This version cannot restore the selected range view.'));
-    sceneChoice = restoredChoice;
-  }
-  fpsCapMs = 1000 / readFpsCap();
-  const loading = source.kind === 'demo' ? startDemoSample(restoreIntent) : loadAudioFiles(source.files, { restoreIntent });
-  const session = versionSession;
-  session.restoreSourceId = restoreIntent.sourceId || null;
-  loading.catch(error => { if (versionSession === session) versionLoadFailed(error?.message || String(error)); });
-  if (!session.completion || session.phase !== 'loading') return Promise.reject(new Error('The original audio source could not be loaded.'));
-  return session.completion;
-}
-
-const versionSessionAdapter = {
-  getState: versionAdapterState,
-  subscribe(listener) {
-    versionListeners.add(listener);
-    if (!versionNotifyTimer) versionNotifyTimer = setInterval(versionEmit, 250);
-    return () => { versionListeners.delete(listener); if (!versionListeners.size) { clearInterval(versionNotifyTimer); versionNotifyTimer = null; } };
-  },
-  pause: () => versionSetPaused(true),
-  loadSource: versionLoadSource,
-  async seek(ms) { seekSong(ms); versionSession.heldPositionMs = paused ? audioEngine.nowMs : null; versionEmit(); },
-  setPaused: versionSetPaused,
-  wakeHud,
-};
-window.__MIDIO_VERSION_ADAPTER = versionSessionAdapter;
-window.dispatchEvent(new CustomEvent('midio-version-adapter', { detail: versionSessionAdapter }));

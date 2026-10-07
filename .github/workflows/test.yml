@@ -14,8 +14,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
       - name: Set up the game
         uses: ./.github/actions/setup
       - name: Audit game dependencies
@@ -49,7 +47,6 @@ jobs:
           npm run test:export -- http://127.0.0.1:8080
           npm run test:car -- http://127.0.0.1:8080
           npm run test:urlload -- http://127.0.0.1:8080
-          npm run test:late-evidence -- http://127.0.0.1:8080
       - name: Exercise the staged production artifact
         run: |
           npm run stage:site
@@ -67,43 +64,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # The default renderer. Range v2 (real terrain on WebGL2) is what players
-  # get, but every smoke above pins legacy so software GL can keep up with
-  # live playback. This drives v2 itself on the export clock, against the
-  # staged production artifact: the served modules and assets must be the
-  # checked-out ones, v2 must be active (a silent fallback to legacy fails),
-  # each frame must be composed and not blank, and there must be no page or
-  # shader errors. Lifecycle, motion and export suites stay release checks.
-  range-v2-pilot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Set up the game
-        uses: ./.github/actions/setup
-        with:
-          browser: true
-      - name: Exercise the staged Range v2 renderer
-        run: |
-          mkdir -p .smoke
-          npm run stage:site
-          SITE_ROOT=_site HOST=127.0.0.1 PORT=8090 node tools/serve.js > .smoke/range-server.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-          node tools/range-scene-smoke.mjs --url http://127.0.0.1:8090 --source-root . \
-            --expect-sha "$(git rev-parse HEAD)" --suite pilot --view teton-jackson-lake \
-            --output .smoke/range-pilot
-      - name: Upload Range v2 diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: range-v2-pilot
-          path: .smoke/
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 7
-
   world-chooser:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -114,7 +74,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           browser: true
-      - name: Exercise pointer and keyboard world selection and typed input
+      - name: Exercise pointer and keyboard world selection
         run: |
           mkdir -p .smoke
           HOST=127.0.0.1 node tools/serve.js > .smoke/chooser-server.log 2>&1 &
@@ -122,39 +82,11 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           npm run test:chooser -- http://127.0.0.1:8080
           npm run test:chooser-keyboard -- http://127.0.0.1:8080
-          npm run test:input-shortcuts -- http://127.0.0.1:8080
       - name: Upload chooser diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: world-chooser
-          path: .smoke/
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 7
-
-  version-browser:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout complete historical objects
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-      - name: Set up the game
-        uses: ./.github/actions/setup
-        with:
-          browser: true
-      - name: Stage and exercise all version checkpoints
-        run: |
-          mkdir -p .smoke
-          npm run stage:versions
-          npm run test:versions -- --site _site
-      - name: Upload version-browser diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: version-browser
           path: .smoke/
           include-hidden-files: true
           if-no-files-found: ignore

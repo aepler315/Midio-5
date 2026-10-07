@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ParticleField } from '../src/world/ParticleField.js';
+import { Murmuration } from '../src/world/Murmuration.js';
 import { OrbitalDebris } from '../src/sim/OrbitalDebris.js';
 
 function fakeCtx() {
@@ -27,6 +28,15 @@ test('ParticleField.draw draws fewer particles at a lower particleMul', () => {
   assert.equal(ctxShed.arcCount, 12);
 });
 
+test('Murmuration.draw draws fewer boids at a lower particleMul', () => {
+  const m = new Murmuration(800, 600, 1);
+  const ctxFull = fakeCtx(), ctxShed = fakeCtx();
+  m.draw(ctxFull, 0, '#fff', 1);
+  m.draw(ctxShed, 0, '#fff', 0.6);
+  assert.equal(ctxFull.lineCount, 120); // 60 birds, two wings each
+  assert.equal(ctxShed.lineCount, 72); // 36 birds
+});
+
 test('OrbitalDebris.draw draws fewer shards at a lower particleMul', () => {
   const d = new OrbitalDebris(1);
   const ctxFull = fakeCtx(), ctxShed = fakeCtx();
@@ -40,16 +50,21 @@ test('OrbitalDebris.draw draws fewer shards at a lower particleMul', () => {
 
 for (const mul of [0, -0.5, 2]) {
   test(`fixed-size particle consumers bound emitted geometry for multiplier ${mul}`, () => {
+    const m = new Murmuration(800, 600, 1);
     const d = new OrbitalDebris(1);
-    const debris = fakeCtx();
+    const birds = fakeCtx(), debris = fakeCtx();
+    m.draw(birds, 0, '#fff', mul);
     d.draw(debris, 200, 0, mul);
+    assert.equal(birds.lineCount, mul <= 0 ? 0 : 120);
     assert.equal(debris.strokeCount, mul <= 0 ? 0 : 13);
   });
 }
 
 test('empty particle collections emit no geometry', () => {
-  const debris = fakeCtx();
+  const birds = fakeCtx(), debris = fakeCtx();
+  new Murmuration(800, 600, 1, { n: 0 }).draw(birds, 0, '#fff', 1);
   new OrbitalDebris(1, { n: 0 }).draw(debris, 200, 0, 1);
+  assert.equal(birds.lineCount, 0);
   assert.equal(debris.strokeCount, 0);
 });
 

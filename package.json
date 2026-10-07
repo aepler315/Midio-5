@@ -20,23 +20,19 @@
     "test:landscape": "node tools/range-landscape-smoke.mjs",
     "test:chooser": "node tools/smoke-world-chooser.mjs",
     "test:chooser-keyboard": "node tools/chooser-keyboard-smoke.mjs",
-    "test:input-shortcuts": "node tools/input-shortcuts-smoke.mjs",
     "test:retro": "node tools/retro-smoke.mjs",
     "test:peaks": "node tools/peak-evidence.mjs",
     "test:export": "node tools/export-smoke.mjs",
     "export:bulk": "node tools/bulk-export.mjs",
     "test:car": "node tools/car-mode-smoke.mjs",
     "test:urlload": "node tools/url-load-smoke.mjs",
-    "test:late-evidence": "node tools/late-evidence-smoke.mjs",
     "music-server": "node tools/music-server.mjs",
     "bench:sections": "node tools/benchmark-segmentation.mjs",
     "eval:worlds": "node tools/evaluate-worlds.mjs",
     "slskd": "docker compose up -d slskd",
     "slskd:down": "docker compose down",
     "slskd:logs": "docker compose logs -f slskd",
-    "start:full": "docker compose up -d slskd && node tools/serve.js",
-    "stage:versions": "node tools/stage-versions.mjs . _site",
-    "test:versions": "node tools/version-browser-smoke.mjs"
+    "start:full": "docker compose up -d slskd && node tools/serve.js"
   },
   "dependencies": {
     "slsk-client": "2.0.2"
@@ -47,7 +43,6 @@
     "eslint": "^10.11.0",
     "globals": "^17.12.0",
     "playwright": "^1.63.0",
-    "three": "0.186.1",
-    "yaml": "2.9.1"
+    "three": "0.186.1"
   }
 }
