@@ -11,8 +11,7 @@
       "checks": [
         "running restore before resumed clock",
         "reload and browser history preserve current source",
-        "real recording and calibration block arrows; saved canvas recording excludes DOM chrome",
-        "actual full-song export blocks both arrows and excludes DOM chrome; real stop UI saves bounded sample",
+        "real calibration blocks arrows",
         "missing destination stays recoverable and retries",
         "ordered stems, replacement, real IndexedDB and quota recovery",
         "interrupted restore retains raw source and retries",
@@ -26,7 +25,7 @@
       ],
       "limitations": [
         "Chromium only; no real iOS audio policy, physical safe-area device or deployment duration measured.",
-        "The full-song export check starts the real export and stops it early through the HUD; it does not verify a complete exported pilot file. Pending duplication uses a matching injected IDB record while the original owner remains alive.",
+        "Pending duplication uses a matching injected IDB record while the original owner remains alive.",
         "Audio source-start offsets and one AudioContext are observed; acoustic output and process-wide audio exclusivity require a real device check."
       ]
     },
@@ -37,8 +36,7 @@
       "checks": [
         "running restore before resumed clock",
         "reload and browser history preserve current source",
-        "real recording and calibration block arrows; saved canvas recording excludes DOM chrome",
-        "actual full-song export blocks both arrows and excludes DOM chrome; real stop UI saves bounded sample",
+        "real calibration blocks arrows",
         "missing destination stays recoverable and retries",
         "ordered stems, replacement, real IndexedDB and quota recovery",
         "interrupted restore retains raw source and retries",
@@ -52,7 +50,7 @@
       ],
       "limitations": [
         "Chromium only; no real iOS audio policy, physical safe-area device or deployment duration measured.",
-        "The full-song export check starts the real export and stops it early through the HUD; it does not verify a complete exported pilot file. Pending duplication uses a matching injected IDB record while the original owner remains alive.",
+        "Pending duplication uses a matching injected IDB record while the original owner remains alive.",
         "Audio source-start offsets and one AudioContext are observed; acoustic output and process-wide audio exclusivity require a real device check."
       ]
     }

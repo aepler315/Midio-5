@@ -10312,8 +10312,7 @@
   "checks": [
     "running restore before resumed clock",
     "reload and browser history preserve current source",
-    "real recording and calibration block arrows; saved canvas recording excludes DOM chrome",
-    "actual full-song export blocks both arrows and excludes DOM chrome; real stop UI saves bounded sample",
+    "real calibration blocks arrows",
     "missing destination stays recoverable and retries",
     "ordered stems, replacement, real IndexedDB and quota recovery",
     "interrupted restore retains raw source and retries",
@@ -10630,14 +10629,14 @@
   ],
   "limitations": [
     "Chromium only; no real iOS audio policy, physical safe-area device or deployment duration measured.",
-    "The full-song export check starts the real export and stops it early through the HUD; it does not verify a complete exported pilot file. Pending duplication uses a matching injected IDB record while the original owner remains alive.",
+    "Pending duplication uses a matching injected IDB record while the original owner remains alive.",
     "Audio source-start offsets and one AudioContext are observed; acoustic output and process-wide audio exclusivity require a real device check."
   ],
   "compatibilityDisplay": {
     "selectedThrough": "Display settings UI",
     "stageRes": "360",
     "stageFps": "30",
-    "appliesTo": "running restore, mobile, recording and export phases",
+    "appliesTo": "running restore and mobile phases",
     "reason": "Bounded native scene rendering on Chromium software GL",
     "renderer": {
       "mode": "v2",
@@ -10866,167 +10865,6 @@
         }
       ]
     }
-  },
-  "recordingCaptureSources": [
-    {
-      "id": "",
-      "detached": true,
-      "width": 1280,
-      "height": 720,
-      "frames": [
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 61661.800000000745
-        },
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 63496.59999999963
-        },
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 72987.80000000075
-        },
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 73074.59999999963
-        },
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 73122.69999999925
-        },
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 73159.19999999925
-        },
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 81056.40000000037
-        },
-        {
-          "sourceId": "stage",
-          "sourceTag": "CANVAS",
-          "sourceIsStage": true,
-          "sourceIsCanvas": true,
-          "width": 640,
-          "height": 360,
-          "atMs": 81130.5
-        }
-      ]
-    }
-  ],
-  "export": {
-    "startedThrough": "exportBtn",
-    "stoppedThrough": "recordBtn",
-    "blockedReason": "Finish recording before changing versions.",
-    "sampleFile": "full-song-export-stopped.mp4",
-    "captureSources": [
-      {
-        "id": "",
-        "detached": true,
-        "width": 800,
-        "height": 480,
-        "frames": [
-          {
-            "sourceId": "stage",
-            "sourceTag": "CANVAS",
-            "sourceIsStage": true,
-            "sourceIsCanvas": true,
-            "width": 640,
-            "height": 360,
-            "atMs": 94077
-          },
-          {
-            "sourceId": "stage",
-            "sourceTag": "CANVAS",
-            "sourceIsStage": true,
-            "sourceIsCanvas": true,
-            "width": 640,
-            "height": 360,
-            "atMs": 94102.90000000037
-          },
-          {
-            "sourceId": "stage",
-            "sourceTag": "CANVAS",
-            "sourceIsStage": true,
-            "sourceIsCanvas": true,
-            "width": 640,
-            "height": 360,
-            "atMs": 94529.40000000037
-          },
-          {
-            "sourceId": "stage",
-            "sourceTag": "CANVAS",
-            "sourceIsStage": true,
-            "sourceIsCanvas": true,
-            "width": 640,
-            "height": 360,
-            "atMs": 96428.80000000075
-          },
-          {
-            "sourceId": "stage",
-            "sourceTag": "CANVAS",
-            "sourceIsStage": true,
-            "sourceIsCanvas": true,
-            "width": 640,
-            "height": 360,
-            "atMs": 96462.40000000037
-          },
-          {
-            "sourceId": "stage",
-            "sourceTag": "CANVAS",
-            "sourceIsStage": true,
-            "sourceIsCanvas": true,
-            "width": 640,
-            "height": 360,
-            "atMs": 98353.69999999925
-          },
-          {
-            "sourceId": "stage",
-            "sourceTag": "CANVAS",
-            "sourceIsStage": true,
-            "sourceIsCanvas": true,
-            "width": 640,
-            "height": 360,
-            "atMs": 106168.09999999963
-          }
-        ]
-      }
-    ]
   },
   "indexedDB": [
     {
