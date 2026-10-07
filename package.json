@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Browser music visualizer: drop a song, pick a world, watch it play itself.",
   "scripts": {
-    "start": "node tools/serve.js",
-    "dev": "node tools/serve.js 8080",
+    "start": "node tools/start-history.mjs",
+    "dev": "node tools/start-history.mjs 8080",
     "lint": "eslint src tools test",
     "test": "node --test test/*.js test/*.mjs",
     "test:all": "node --test",
@@ -32,7 +32,9 @@
     "slskd": "docker compose up -d slskd",
     "slskd:down": "docker compose down",
     "slskd:logs": "docker compose logs -f slskd",
-    "start:full": "docker compose up -d slskd && node tools/serve.js"
+    "start:full": "docker compose up -d slskd && node tools/start-history.mjs",
+    "stage:versions": "node tools/stage-history.mjs . _site",
+    "test:versions": "node tools/history-picker-smoke.mjs"
   },
   "dependencies": {
     "slsk-client": "2.0.2"

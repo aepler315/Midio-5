@@ -133,7 +133,8 @@ function decodeRequestPath(rawUrl) {
 }
 
 function staticPath(reqPath) {
-  if (reqPath !== '/index.html' && !reqPath.startsWith('/src/') && !reqPath.startsWith('/soundfonts/')) return null;
+  const fullHistory = /^\/versions\/(?:maps\/v-[a-f0-9]{12}\.json|objects\/[a-f0-9]{40})$/.test(reqPath) || ['/history-worker.js', '/engine/index.html', '/versions/manifest.json', '/versions/build-report.json'].includes(reqPath);
+  if (reqPath !== '/index.html' && !reqPath.startsWith('/src/') && !reqPath.startsWith('/soundfonts/') && !fullHistory) return null;
   const filePath = path.resolve(ROOT, `.${reqPath}`);
   const relative = path.relative(ROOT, filePath);
   if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
