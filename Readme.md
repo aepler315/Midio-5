@@ -12,14 +12,25 @@ step for this app.
 
 ## Run locally
 
-Use Node.js 24 (the version used in CI) and npm:
+Use Node.js 24 (the version used in CI), npm, and Git:
 
 ```sh
 npm ci
 npm start
 ```
 
-Open [localhost:8080](http://localhost:8080). The server binds to
+The first start builds the complete version catalog automatically. A downloaded
+source ZIP obtains the public Git history on its first start; a Git clone uses
+its local history. No separate staging command is needed.
+
+Open [localhost:8080](http://localhost:8080). Use the large arrows to move
+chronologically, or open the version label to search and select any published
+engine revision. UI-only and build/documentation updates are folded into the
+preceding engine revision, using its newest code. The latest version opens
+by default. Historical versions retain their original interfaces and capabilities;
+engines predating native seeking restart a carried song at the beginning.
+
+The server binds to
 `127.0.0.1` by default. Set `HOST=0.0.0.0` only when you intentionally need
 LAN access, or set `PORT` to change the port.
 

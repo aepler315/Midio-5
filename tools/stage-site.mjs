@@ -92,7 +92,7 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
   return { checked: true, rebuilt, views };
 }
 
-export async function stageSite(sourceDir, outputDir) {
+export async function assertStagePaths(sourceDir, outputDir) {
   const source = path.resolve(sourceDir);
   const output = path.resolve(outputDir);
   const [canonicalSource, canonicalOutput] = await Promise.all([
@@ -108,6 +108,11 @@ export async function stageSite(sourceDir, outputDir) {
     && path.relative(canonicalSource, canonicalOutput) !== '_site') {
     throw new Error('Stage output inside the source must be its dedicated _site directory.');
   }
+  return { source, output };
+}
+
+export async function stageSite(sourceDir, outputDir) {
+  const { source, output } = await assertStagePaths(sourceDir, outputDir);
   for (const required of REQUIRED) {
     try { await fs.access(path.join(source, required)); }
     catch { throw new Error(`Missing required runtime input: ${required}`); }
