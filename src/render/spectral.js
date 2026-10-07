@@ -166,7 +166,7 @@ export function easeSpectralShift(cur, target, dtSec, tauSec = 1.5) {
 export function feverStops(tonic, haloHex = '#ffd76a') {
   const base = spectralHue(tonic || 0);
   const { r, g, b } = hexToRgb(haloHex);
-  const { s, l } = rgbToHsl(r, g, b);
+  const { h, s, l } = rgbToHsl(r, g, b);
   return {
     cool: { h: (base + 140) % 360, s: Math.min(100, s * 0.8 + 12), l: 57 },
     warm: { h: base, s, l: Math.max(55, l) },

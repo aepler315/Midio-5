@@ -30,6 +30,10 @@ const RESOLUTION_ALIASES = {
   '2160': '2160p', '2160p': '2160p', '4k': '2160p', uhd: '2160p',
 };
 
+export function resolutionById(id) {
+  return BULK_RESOLUTIONS.find((r) => r.id === id) || null;
+}
+
 /**
  * Validate a frame size for export, or return null if it cannot be used.
  *

@@ -1,7 +1,8 @@
 # Super Maudio World
 
 Drop a song, pick a world, watch it play itself. Super Maudio World is a
-browser music visualizer with moving scenery and musical effects. The recording supplies the sound; its
+browser music visualizer with an automatically choreographed cast, moving
+scenery, and musical effects. The recording supplies the sound; its
 analysed rhythm, pitch, energy, and structure drive the performance. Each
 world keeps its own look and listens to that analysis in its own way.
 
@@ -22,10 +23,8 @@ Open [localhost:8080](http://localhost:8080). The server binds to
 `127.0.0.1` by default. Set `HOST=0.0.0.0` only when you intentionally need
 LAN access, or set `PORT` to change the port.
 
-1. Drop an audio file anywhere on the page, choose **Browse files**, pick a
-   music folder once and play from your library (see below), open a song by
-   address with **Load from a URL**, or choose **Play a sample** to hear the
-   built-in song *Proof* without a file.
+1. Drop an audio file anywhere on the page, choose **Browse files**, or
+   pick a music folder once and play from your library (see below).
    The picker accepts MP3, WAV, FLAC, OGG, M4A, AAC, and other audio formats
    your browser can decode.
 2. Wait while the recording is pulled apart: frequency bands, onsets,
@@ -33,8 +32,8 @@ LAN access, or set `PORT` to change the port.
 3. Choose a world. Every card is equal. Preview the **same** quiet stretch
    and the **same** peak in each world, then **Play**. **Choose for me**
    is optional and never ranks the cards.
-4. Watch the performance. There is nothing to steer and no way to fail;
-   optional taps help calibrate the groove.
+4. Watch the performance. Midio plays himself; there is no movement control
+   or failure condition. Optional taps help calibrate the groove.
 
 Several files selected or dropped together are treated as **stems of one
 song**, summed for playback and analysis. Use descriptive names such as
@@ -44,15 +43,9 @@ musical parts. They should share a common start time. This is not a playlist.
 Dropping a new recording during playback replaces the current song after
 the new recording has been prepared. **Stop** returns to the upload screen.
 
-Whichever way you choose a song, the most recent choice wins. A library
-track still waiting on folder permission, a URL still downloading, or an
-upload still being analysed is abandoned as soon as you pick something
-else, and it can neither take the playback back nor be recorded in the
-library as played ([src/audio/SourceSelection.js](src/audio/SourceSelection.js)).
-
-The page plays recordings (file, folder library or URL) and the authored
-sample. MIDI uploads, paired MIDI/audio playback and song-search controls
-are no longer part of the page. MIDI and synthesis modules and the local
+The current page has one entry path: audio uploads. MIDI uploads, paired
+MIDI/audio playback, the built-in demo, and song-search controls are no
+longer part of the page. MIDI and synthesis modules and the local
 Soulseek/free-music bridge remain in the repository for internal or legacy
 use; Docker and a Soulseek account are not required to play uploaded audio.
 
@@ -96,21 +89,6 @@ wherever you are, and **Save a video** on the complete screen replays the
 song and records it end to end. Picture and sound come out in one file, in
 sync, with no mirroring or projection in between.
 
-A full-song video is always made from the analysis of the whole recording.
-A long song starts playing on its opening while the rest is analysed in the
-background; **Save a video** waits for that to finish. If the whole-song
-analysis failed, the song keeps playing on its opening, and the complete
-screen says so and offers **Analyse the whole song again** instead of
-recording a file that only the opening drives.
-
-If the browser's video encoder fails partway (some Windows Chrome builds
-advertise H.264 MP4 and then fail to encode it), nothing is saved: the
-encoder's own message is shown, and when the browser can record WebM the
-complete screen offers **Record full song as WebM**, a fresh recording from
-the start rather than a patched-up file. A recording is always named after
-the song it recorded, even if another song is loaded before it finishes
-saving.
-
 Presets cover 480p, 720p and 1080p, plus **Car display** (800×480) for a
 double-DIN head unit, letterboxed rather than stretched. Chrome and Edge
 produce H.264 MP4, which plays anywhere; Firefox produces WebM and some
@@ -149,8 +127,6 @@ That path steps every frame and muxes H.264 with ffmpeg. See [docs/video-export.
 | `P` | Toggle the FPS display |
 | `T` | Toggle track details when available |
 | `F3` | Toggle section labels on the mountain seekbar |
-| `F4` | Hold the scanned ridges still, to check a range's geographic profile |
-| `Esc` | Close the section detail opened from the seekbar |
 
 On a car head unit, the first tap after a long idle gap is spent entirely on
 waking the display and restoring fullscreen, never on a control; a screen
@@ -181,33 +157,19 @@ from a mixed recording are approximate; sharing a timeline format with the
 MIDI adapter does not imply MIDI-level transcription accuracy.
 
 The **Conductor** dispatches that timeline against the audio clock.
-Ahead-of-time subscriptions let the scene prepare a change whose peak
+Ahead-of-time subscriptions let a performer prepare a move whose peak
 lands on a note's onset. The visual clock compensates for reported audio
 output latency, with the optional Bluetooth trim above. Simulation runs at
 a fixed 120 Hz and rendering interpolates between steps.
 
-Musical casting sorts the notes into three lanes named for the cast:
-clean melodic material to **Midasus**, bass to **Broshi**, and lead
-material to **Midio**, with fallbacks when parts cannot be identified. The
-Range places the trio within a sheltered cove: Broshi rests on the bank,
-Midio sits partly underwater among reeds, and Midasus drifts near a pine.
-Bass presses into nearby water, rhythm sends out ripples, and melody guides
-small stars and restrained gestures. Their poses read the heard audio clock,
-including after a seek. MIDI role fallbacks retain real note pitches;
-uncertain recording pitches are weighted by confidence. With uploaded
-stems, filenames and each stem's activity help assign the notes.
-
-The Range starts at sunset, passes through dense stars and moonlight, and
-ends at sunrise. Stars retain a visible core on small screens. Its default
-view travels sideways along Muncho Lake in 3D; the inhabitants share the
-terrain's depth, light and water reflections. Reduced motion holds the
-camera and residents still; reduced flash softens changing light and water.
-The cove is authored for Muncho. Explicit other scenery choices remain
-available, and `?rangeExperience=landscape` selects scenery-only Range.
+Musical casting assigns clean melodic material to **Midasus**, bass to
+**Broshi**, and lead material to **Midio**, with fallbacks when parts cannot
+be identified. With uploaded stems, filenames and each stem's activity
+help assign the notes.
 
 The world registry contains eight landscape styles. Cathode has been retired; old playback IDs resolve to The Range.
 
-- **The Range** — a moonlit 3D range, a lake, and a trio that moves with the mix.
+- **The Range** — mountains that breathe with the mix.
 - **After Hours** — a city that glows with the groove.
 - **Far Side** — a lunar landscape. No air. Nothing softens.
 - **The Fathom** — an underwater world, slow on purpose.
@@ -267,7 +229,7 @@ src/
   core/      NoteEvent timeline, Conductor, ParamBus, MIDI utilities
   audio/     Filtering, onset/tempo/pitch analysis, song profile, caching, playback
   lyrics/    Song identity, lyric lookup, alignment, and section interpretation
-  sim/       Fixed-step simulation, world directors, character performers, calibration, effects
+  sim/       Fixed-step choreography, companions, calibration, and effects
   world/     World registry, adaptation, private fit, palettes, terrain, scenery
   eval/      Private world-quality corpus (no audio, no public scores)
   render/    Canvas compositor, optional WebGL overlay, performance governor
@@ -360,25 +322,6 @@ The other `tools/smoke-*.mjs` scripts are legacy or specialized diagnostics;
 some still target removed MIDI/demo/SoundFont UI and are not the maintained
 upload regression suite.
 
-### Range v2 renderer check
-
-The default renderer has its own check, run in CI against the staged site.
-It renders on the export clock, so it works on software WebGL, slowly (about
-seven minutes in a cloud sandbox). It fails if the served files are not the
-checked-out ones, if v2 falls back to legacy, if a frame is blank, or on any
-page or shader error:
-
-```sh
-npm run stage:site
-SITE_ROOT=_site PORT=8090 node tools/serve.js &
-node tools/range-scene-smoke.mjs --url http://127.0.0.1:8090 --source-root . \
-  --expect-sha "$(git rev-parse HEAD)" --suite pilot --view teton-jackson-lake \
-  --output .smoke/range-pilot
-```
-
-Software-GL timings are not device measurements; see
-[Range v2 device runs](docs/range-v2-device-runs.md) for those.
-
 ## Additional references
 
 - [World design notes](docs/worlds.md) — design background; the current
@@ -393,13 +336,5 @@ Software-GL timings are not device measurements; see
   the current upload page does not expose its search/connect controls.
 - [SoundFont tooling](soundfonts/README.md) — retained synthesis support;
   uploaded recordings play their own audio with the timeline synth muted.
-- [Terrain pipeline](docs/terrain-pipeline.md) — how elevation data becomes
-  the bundled terrain profiles.
-- [Frame pacing](docs/frame-pacing.md) — where to look first when playback
-  stalls.
-- [Spectral sea](docs/spectral-sea.md) — what the wave field does and does
-  not model.
-- [Archive](docs/archive/README.md) — finished plans and audits, kept for
-  history.
 
 Display settings now separate **Natural / Pixel / Palette** from **Auto / Economy** quality. Open **Display** during playback to change them. [Pixel presentation](docs/pixel-presentation.md) explains migration, palettes and exports; [landscape peaks](docs/landscape-peaks.md) explains climax storms and the three landscape-scale instrument characters.

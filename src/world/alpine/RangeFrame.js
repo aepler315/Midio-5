@@ -1,6 +1,4 @@
-import { sampleFirmamentMusic } from './RangeFirmament.js';
 import { stormAt } from './RangeStorm.js';
-import { sampleJourneyDirection } from './JourneyDirection.js';
 import { resolveRangeComposition } from './RangeComposition.js';
 import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
 import { ridgeAdvectionPxAt } from '../RidgeMotionHistory.js';
@@ -26,7 +24,7 @@ import { profileTravelPx } from '../terrain/ProfileTravel.js';
 import { styleDials } from '../../render/VisualStyle.js';
 import { cloudSeaAt } from './CloudSea.js';
 import { rangeActorsAt } from './RangeActors.js';
-import { rangeCameraMoveAt, rangeUserCamera, NEUTRAL_MOVE } from './RangeCamera.js';
+import { rangeCameraMoveAt, rangeUserCamera } from './RangeCamera.js';
 import { hexLerp } from '../../utils/color.js';
 
 const NIGHT_SKY = '#05060d';
@@ -151,7 +149,8 @@ export function rangeMusicState({ env = null, tSec = 0, kickAgeMs = Infinity, ki
   return state;
 }
 
-/** The land's largest movements belong to the song's big moments. At a
+/** The land moves only at the song's big moments (Ashton, 2026-10-02:
+ *  constant heaving with every kick and phrase read as accidental). At a
  *  section change the range swells over `riseMs`, holds, and settles over
  *  `settleMs`; a lift into a louder section swells fully, any other change
  *  by `changeFloor`, a repeat of the same part not at all. Metres are
@@ -199,40 +198,24 @@ function swellOf(sections, timeMs, fromMs, toMs) {
   return best;
 }
 
-/** The swell runs one way for the whole song (from `seed`, not the
- * section), so neither a section change nor re-analysis turns it mid-swell. */
+/** The land's geometry for a frame: the rhythmic, melodic and gesture
+ *  channels are kept as `source` (for evidence and the water) but move
+ *  nothing; only the moment's slow swell and lift do, at a fixed target
+ *  size, so the land is still between moments. The swell runs one way for
+ *  the whole song (from `seed`, not the section), so neither a section
+ *  change nor a re-analysis can turn it mid-swell. */
 export function landWaveDir(seed = 0) {
   const angle = Math.atan2(-.6, .8) + (hashSeed(`${seed}:land`) / 4294967296 - .5) * .9;
   return [Math.cos(angle), Math.sin(angle)];
 }
 
-export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, seed = 0, performance = false } = {}) {
+export function landMotion(music, moment01, { tSec = 0, reducedMotion = false, seed = 0 } = {}) {
   const m = reducedMotion ? 0 : unit(moment01);
-  // The source already has causal pressure, overlapping kick tails and
-  // confidence-weighted melodic release. Keep that phrasing visible between
-  // section turns instead of discarding it. The slow, fixed-direction carrier
-  // avoids the former restless heave; accents recede as the big swell rises.
-  // At maximum source values this adds < 42 m between moments, < 9 m at a
-  // full swell, staying below the existing 106.7 m calibration reference.
-  const response = reducedMotion ? 0 : 1 - .8 * m;
   const out = { ...music, source: music, landMoment01: m, waveDir: landWaveDir(seed),
-    amplitudeM: LAND_SWELL.waveM * m + music.amplitudeM * (performance ? .7 : .35) * response,
-    kickM: music.kickM * (performance ? 2 : .6) * response,
-    gestureM: music.gestureM * (performance ? .8 : .35) * response,
-    melodicM: music.melodicM * (performance ? 1.2 : .65) * response,
-    structuralM: LAND_SWELL.liftM * m,
-    // Multiplying absolute time by live pitch spins the field on a note
-    // change late in the song. Pitch may shape its wavelength and strength,
-    // but this deterministic carrier always advances at one slow rate.
-    melodyPhaseRad: 2 * Math.PI * (performance ? .07 : .025) * tSec,
-    phaseRad: 2 * Math.PI * (performance ? .045 : LAND_SWELL.waveHz) * tSec, calibrationActivity01: 1 };
-  out.totalBoundM = out.amplitudeM + out.kickM + out.gestureM + out.melodicM + out.structuralM;
-  // Stronger performance gestures still obey the same geological budget.
-  if (out.totalBoundM > RANGE_MOTION_REFERENCE_M) {
-    const gain = RANGE_MOTION_REFERENCE_M / out.totalBoundM;
-    for (const k of ['amplitudeM', 'kickM', 'gestureM', 'melodicM', 'structuralM']) out[k] *= gain;
-    out.totalBoundM = RANGE_MOTION_REFERENCE_M;
-  }
+    amplitudeM: LAND_SWELL.waveM * m,
+    kickM: 0, gestureM: 0, melodicM: 0, structuralM: LAND_SWELL.liftM * m,
+    phaseRad: 2 * Math.PI * LAND_SWELL.waveHz * tSec, calibrationActivity01: 1 };
+  out.totalBoundM = out.amplitudeM + out.structuralM;
   return out;
 }
 
@@ -273,8 +256,6 @@ export const RANGE_DAYLIGHT = Object.freeze({ top: '#3a6fb8', mid: '#78a8d8', ho
 export const RANGE_DAYLIGHT_MIX = 0.6;
 /** How far a moonless night pulls every sky stop (and the air) toward space. */
 export const RANGE_MOONLESS_PULL = 0.85;
-// Cool moonlight remains visible when a biome supplies a pale warm sky.
-const RANGE_MOONLIGHT = ['#101b31', '#182742', '#2b3d58'];
 
 /** Sky colours the scene's atmosphere must agree with (same stops and
  *  night pull as BiomeManager._drawSky's three-stop case). */
@@ -286,10 +267,7 @@ export function rangeSkyState(mgr, A, B, t, night, narrative = null) {
   const stop = (i, k) => {
     const c = mgr._rotated(mgr.lerpCache.get(A.sky[i], B.sky[i], t));
     const amount = Math.min(0.97, pull * k + RANGE_MOONLESS_PULL * darkness);
-    const base = amount > 0.02 ? mgr.lerpCache.get(c, NIGHT_SKY, amount) : c;
-    if (mgr._dayNightCycleMs?.body !== 'night') return base;
-    const moonlight = hexLerp(RANGE_MOONLIGHT[i], NIGHT_SKY, .8 * darkness);
-    return hexLerp(base, moonlight, .9);
+    return amount > 0.02 ? mgr.lerpCache.get(c, NIGHT_SKY, amount) : c;
   };
   if (!narrative) return { top: stop(0, 1), mid: stop(1, .75), horizon: stop(2, .45), air: mgr._airColor || stop(2, .45) };
   const dark = narrative.skyDark;
@@ -308,7 +286,7 @@ export function rangeSkyState(mgr, A, B, t, night, narrative = null) {
   // Sunrise and sunset colour the whole sky, horizon most, and the air
   // with it, so distant ranges glow in the same light.
   const tw = mgr._twilight;
-  if (tw?.amount01 > 0) {
+  if (tw?.amount01 > 0.01) {
     const a = tw.amount01;
     top = hexLerp(top, tw.colors.top, 0.35 * a);
     mid = hexLerp(mid, tw.colors.mid, 0.6 * a);
@@ -338,7 +316,6 @@ export function buildRangeFrame({
   const narrative = sim.rangeNarrativeAt?.(timeMs) || null;
   const reducedFlash = !!mgr.reducedFlash;
   const reducedMotion = !!(sim.reducedMotion || mgr.reducedMotion);
-  const performance = !!sim.presentation?.trioHabitat;
   const progress01 = mgr.terrainPreview ? SCENE_PREVIEW_PROGRESS : sceneProgressAt({
     timeMs, curves: mgr.energyCurves, durationMs: mgr.durationMs, reducedFlash: reducedMotion, response: mgr.world?.response,
   });
@@ -392,7 +369,7 @@ export function buildRangeFrame({
     motionPresence01: ridgeSample?.motionPresence01, calibrationActivity01: ridgeSample?.pressureEnergy01,
   });
   const land = landMotion(music, landMoment01(mgr.sections, timeMs, mgr._landHistory),
-    { tSec: timeMs / 1000, reducedMotion, seed: sim.songSeed ?? 0, performance });
+    { tSec: timeMs / 1000, reducedMotion, seed: sim.songSeed ?? 0 });
   const ridgeViewport = { width: sim.stageW || 1280, height: sim.stageH || 720 };
   const ridges = mgr._frameRidges || (mgr.ridgeMusicSession && mgr.spaceRidge ? {
     stateKey: mgr.ridgeMusicSession.stateKey,
@@ -415,15 +392,8 @@ export function buildRangeFrame({
     e.presence = narrative?.cast[e.id] ?? 1;
     e.visible = e.visible && e.presence > .001;
   }
-  const waterTimeline = mgr.conductor?.timeline || sim.conductor?.timeline || [];
-  // Read the recorded canonical handoff at the onset, not today's
-  // activity, so a legitimate ring releases into silence. Authored MIDI's
-  // zero-attack onset retains its velocity. Other consumers keep their policy.
-  const waterHits = recentConductorHits(waterTimeline, timeMs, performance && mgr.ridgeMusicSession ? {
-    onsetGain: event => event.src === 'midi' ? 1 : unit(mgr.ridgeMusicSession.sample(event.tMs).activity01),
-  } : undefined);
   return freezeDeep({
-    frameId, generation, timeMs, durationMs: mgr.durationMs || 0, seed: sim.songSeed ?? 0,
+    frameId, generation, timeMs, seed: sim.songSeed ?? 0,
     beatTransport: mgr.beatTransport ? { ...mgr.beatTransport } : null,
     sectionId: section?.sectionId ?? section?.sourceSegmentId ?? null,
     motifId: motif.id, chapterId: section?.chapterId ?? null, motif,
@@ -431,22 +401,19 @@ export function buildRangeFrame({
     compositions: Object.fromEntries((renderedViews || [from?.view, to?.view]).filter(Boolean).map(v => [v.id, resolveRangeComposition(v)])),
     viewFromId: from?.view?.id ?? null, viewToId: to?.view?.id ?? null,
     forcedCandidate: !!forcedView?.forcedCandidate,
-    progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion, performance,
+    progress01, glacier, qualityLevel: sim.perf?.level ?? 0, reducedFlash, reducedMotion,
     // How much of the Forest Service map under the land shows (quiet passages).
     cloudSea01: cloudSeaAt(mgr, timeMs),
     storm: stormAt(mgr, timeMs),
-    journeyDirection: sampleJourneyDirection({timeMs,sections:mgr.sections,durationMs:mgr.durationMs,
-      music:ridgeSample?.journey,reducedMotion:reducedMotion||!!mgr.terrainPreview}),
     // The cast as lights in the land: brightness, travel and peaks per lane.
-    actors: performance ? null : rangeActorsAt(sim, timeMs),
+    actors: rangeActorsAt(sim, timeMs),
     // Camera: this section's slow cinematic move, and the listener's zoom.
-    cameraMove: performance ? NEUTRAL_MOVE : rangeCameraMoveAt({ timeMs, sections: mgr.sections, durationMs: mgr.durationMs,
+    cameraMove: rangeCameraMoveAt({ timeMs, sections: mgr.sections, durationMs: mgr.durationMs,
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),
     userCamera: sim.userCameraEnabled ? rangeUserCamera.sample() : null,
     scenicViewport, groundViewport,
-    light: lightState, music: land, habitatMusic: performance ? ridgeSample || null : null,
-    skyMusic: performance ? sampleFirmamentMusic(mgr.ridgeMusicSession, timeMs) : null, ridges, narrative, groundBars, emitters,
-    waterHits,
+    light: lightState, music: land, ridges, narrative, groundBars, emitters,
+    waterHits: recentConductorHits(mgr.conductor?.timeline || sim.conductor?.timeline || [], timeMs),
     // World anchoring for fixed-ground dressing (rock stage, pools).
     worldX: pose.worldX, originX: pose.midioX,
   });

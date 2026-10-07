@@ -1,7 +1,7 @@
 import { cameraBasis } from '../terrain/SceneTravel.js';
 /** One frame's Range-specific upper-sky ownership. Keep faint star depth
  * behind the live ridge while reserving its body for incidental figures. */
-export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = false, performance = false } = {}) {
+export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = false } = {}) {
   const corridorAt = spaceRidge.corridor(canvas);
   const allowPoint = (x, y) => {
     const { top, bottom } = corridorAt(x);
@@ -12,10 +12,7 @@ export function createRangeSkyComposition(spaceRidge, canvas, { voyageActive = f
     const feather = Math.max(1, canvas.height * 0.025);
     const distance = Math.max(top - y, y - bottom, 0);
     const u = Math.min(1, distance / feather);
-    // The passive stage keeps a dense night sky behind the aurora. Its
-    // translucent curtain still dims stars, without erasing their cores.
-    const floor = performance ? 0.55 : 0.12;
-    return floor + (1 - floor) * u * u * (3 - 2 * u);
+    return 0.12 + 0.88 * u * u * (3 - 2 * u);
   };
   return {
     allowPoint,
@@ -35,10 +32,8 @@ export function rangeMoonRadius(canvasHeight, scale) {
 // ---------------------------------------------------------------------------
 // Range v2 sky hierarchy (Task 13). The reference moon is a secondary object
 // about 3.5% of the frame width across, textured and partly crossed by cloud;
-// the sky holds sparse, low-contrast cloud banks, mostly below the aurora's
-// resting hem. The banks never read the aurora's live (musical) outline: a
-// cloud that came and went with every flash read as a lump that twitched on
-// the beat and then froze.
+// the sky holds sparse, low-contrast cloud banks that leave the SpaceRidge
+// corridor and the Dancing Ridge their own space.
 
 /** Moon radius under Range v2: ~3.5% of the frame width across. */
 export function rangeV2MoonRadius(canvasWidth, approachScale = 1) {
@@ -72,38 +67,12 @@ export function drawMoonMaria(ctx, cx, cy, R, alpha = 1) {
  *  way (about seven minutes to cross the frame). */
 export const CLOUD_DRIFT_W_PER_SEC = 0.0025;
 
-/** Vertical band of the calm sky's banks (fractions of the frame height):
- *  under the aurora's resting hem, over and behind the peaks. */
-export const CLOUD_BAND = Object.freeze([0.15, 0.33]);
-/** Puffs per bank: enough for an irregular outline, few enough to stay cheap
- *  (two gradients each, seven banks). */
-export const CLOUD_PUFFS = 11;
-
-/** A bank's shape in its own units (x along its width 0..1, y and r in
- *  multiples of its height, y up negative): domed puffs on a flat base,
- *  largest in the middle and tapering at both ends, plus a faint veil that
- *  ties them into one layer. Pure in (i, seed). */
-export function cloudShape(i, seed, puffs = CLOUD_PUFFS) {
-  const shape = [];
-  for (let k = 0; k < puffs; k++) {
-    const u = Math.min(0.97, Math.max(0.03, (k + 0.5 + (hash(i * 31 + k, seed + 11) - 0.5) * 0.7) / puffs));
-    const envelope = Math.pow(Math.sin(Math.PI * u), 0.7);
-    const r = (0.45 + 0.55 * hash(i * 31 + k, seed + 12)) * (0.35 + 0.65 * envelope);
-    // Sitting on the base: the centre rises by about half the puff, with a
-    // little scatter, so the top billows and the underside stays level.
-    const y = -r * 0.5 + (hash(i * 31 + k, seed + 13) - 0.5) * 0.18;
-    shape.push({ u, y, r });
-  }
-  return shape;
-}
-
 /**
  * Deterministic cloud banks for a frame: sparse, elongated, drifting slowly
  * in heard time (pure: pause holds, seek reconstructs). Every bank moves
  * with the one wind (nearer, lower banks a little faster), and `panPx` /
  * `panYPx` carry them with the camera's turn and tilt, so they hang in the sky over the
- * land instead of sliding across the screen on their own. Nothing musical
- * moves or reshapes them.
+ * land instead of sliding across the screen on their own.
  */
 export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, panPx = 0, panYPx = 0, count = 7 }) {
   const banks = [];
@@ -113,10 +82,9 @@ export function rangeCloudBanks({ width, height, tSec = 0, seed = 0, panPx = 0, 
     const speed = width * CLOUD_DRIFT_W_PER_SEC * (0.85 + 0.3 * y01);
     const raw = hash(i, seed + 2) * span + tSec * speed + panPx;
     const x = ((raw % span) + span) % span - width * 0.3;
-    const y = height * (CLOUD_BAND[0] + (CLOUD_BAND[1] - CLOUD_BAND[0]) * y01) + panYPx;
+    const y = height * (0.06 + 0.3 * y01) + panYPx;
     const w = width * (0.12 + 0.16 * hash(i, seed + 4));
-    banks.push({ id: `bank${i}`, x, y, w, h: w * (0.1 + 0.06 * hash(i, seed + 5)), alpha: 0.24 + 0.12 * hash(i, seed + 6),
-      puffs: CLOUD_PUFFS, shape: cloudShape(i, seed) });
+    banks.push({ id: `bank${i}`, x, y, w, h: w * (0.1 + 0.06 * hash(i, seed + 5)), alpha: 0.28 + 0.14 * hash(i, seed + 6), puffs: 7 });
   }
   return banks;
 }
@@ -134,83 +102,30 @@ export function skyTurn(pose, refForward) {
   return { x: dot(refForward, right) / depth, y: dot(refForward, up) / depth };
 }
 
-const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
-
-/** A calm cloud's colours from the sky around it ({r,g,b} top and mid
- *  stops) and the scenic light's colour: the shade is that sky, a little
- *  greyer and lifted toward white (more under a brighter sky), so a bank is
- *  never a dark hole in a lit sky; the lit layer is the light, whitened. */
-export function cloudColours(top, mid, halo) {
-  const sky = [0, 1, 2].map((i) => {
-    const k = ['r', 'g', 'b'][i];
-    return (top?.[k] ?? 0) * 0.4 + (mid?.[k] ?? 0) * 0.6;
-  });
-  const lum = 0.2126 * sky[0] + 0.7152 * sky[1] + 0.0722 * sky[2];
-  const lift = 0.12 + 0.45 * clamp(lum / 255, 0, 1);
-  const shade = sky.map((v) => {
-    const grey = v + (lum - v) * 0.3;
-    return Math.round(grey + (255 - grey) * lift);
-  });
-  const h = [halo?.r ?? 255, halo?.g ?? 255, halo?.b ?? 255];
-  const lit = h.map((v) => Math.round(v + (255 - v) * 0.35));
-  return { shade, lit };
-}
-const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${Math.max(0, a).toFixed(3)})`;
-
-/**
- * Paint cloud banks: each puff a soft body in the cloud's shade colour, and
- * a lit layer offset toward the light, strongest on the puffs that face it.
- * The light's side is continuous in its position (no flip as it crosses a
- * bank), and nothing here depends on the music.
- *   shade, lit    rgb arrays (the caller derives them from the sky and light)
- *   light         {x, y} in canvas pixels, or null (lit from above)
- *   fadeTop       [y0, y1]: banks fade out above y1 to nothing at y0 (static)
- * `dark` is accepted for `shade` (older callers).
- */
-export function drawRangeClouds(ctx, banks, { shade = null, dark = [52, 60, 78], lit = [196, 176, 168], light = null,
-  alpha = 1, directGain = 1, fadeTop = null } = {}) {
-  const body = shade || dark;
-  const gain = clamp(Number.isFinite(directGain) ? directGain : 1, 0, 1.5);
+/** Paint cloud banks: a dark body with a lit rim toward the light. */
+export function drawRangeClouds(ctx, banks, { dark = [52, 60, 78], lit = [196, 176, 168], light = null, allowPoint = null, alpha = 1, directGain = 1 } = {}) {
   ctx.save();
   for (const b of banks) {
-    let bankAlpha = b.alpha * alpha;
-    if (fadeTop) bankAlpha *= clamp((b.y - fadeTop[0]) / Math.max(1, fadeTop[1] - fadeTop[0]), 0, 1);
-    if (!(bankAlpha > 0.002)) continue;
-    // Direction to the light, varying smoothly with where it is.
-    const lx = light ? clamp((light.x - b.x) / Math.max(1, b.w), -1, 1) : 0;
-    const ly = light ? clamp((light.y - b.y) / Math.max(1, b.h * 6), -1, 1) : -1;
-    const ll = Math.hypot(lx, ly) || 1;
-    const shape = b.shape || cloudShape(Number(String(b.id).replace(/\D/g, '')) || 0, 0, b.puffs || CLOUD_PUFFS);
-    // The veil: one long, thin layer under the puffs.
-    const veilR = b.w * 0.55;
-    const vg = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, veilR);
-    vg.addColorStop(0, rgba(body, bankAlpha * 0.45));
-    vg.addColorStop(1, rgba(body, 0));
-    ctx.fillStyle = vg;
-    ctx.save();
-    ctx.translate(b.x, b.y); ctx.scale(1, (b.h * 0.7) / veilR); ctx.translate(-b.x, -b.y);
-    ctx.beginPath(); ctx.arc(b.x, b.y, veilR, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-    for (const p of shape) {
-      const px = b.x - b.w / 2 + p.u * b.w, py = b.y + p.y * b.h;
-      const rx = p.r * b.h * 2.2, ry = p.r * b.h * 1.25;
-      // How squarely this puff faces the light: the puffs on the lit side
-      // of the bank (and its crown) catch it; the base stays in shade.
-      const ox = (px - b.x) / Math.max(1, b.w / 2), oy = (py - b.y) / Math.max(1, b.h);
-      const facing = clamp(0.5 + 0.5 * ((ox * lx + oy * ly) / ll) + 0.25 * (-p.y), 0, 1);
-      const layers = [[body, 0, 1, 0.8], [lit, 0.3, 0.7, 0.6 * gain * facing]];
-      for (const [col, off, size, a] of layers) {
-        if (!(a > 0.001)) continue;
-        const cx = px + (lx / ll) * rx * off, cy = py + (ly / ll) * ry * off;
-        const r = rx * size;
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        g.addColorStop(0, rgba(col, bankAlpha * a));
-        g.addColorStop(0.55, rgba(col, bankAlpha * a * 0.55));
-        g.addColorStop(1, rgba(col, 0));
+    const lx = light ? Math.sign(light.x - b.x) : 0, ly = light ? (light.y < b.y ? -1 : 1) : -1;
+    for (let p = 0; p < b.puffs; p++) {
+      const u = b.puffs === 1 ? 0.5 : p / (b.puffs - 1);
+      const px = b.x - b.w / 2 + u * b.w;
+      const py = b.y + Math.sin(u * 9 + b.w) * b.h * 0.25;
+      if (allowPoint && !allowPoint(px, py)) continue;
+      const rx = b.h * (1.3 + 0.9 * Math.sin(u * Math.PI)), ry = b.h * (0.55 + 0.35 * Math.sin(u * Math.PI));
+      for (const [col, off, a] of [[lit, 0.2, 0.75 * directGain], [dark, -0.06, 1]]) {
+        const ox = px + lx * rx * off, oy = py + ly * ry * off;
+        const g = ctx.createRadialGradient(ox, oy, 0, ox, oy, rx);
+        g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${(b.alpha * a * alpha).toFixed(3)})`);
+        g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
         ctx.fillStyle = g;
         ctx.save();
-        ctx.translate(cx, cy); ctx.scale(1, ry / rx); ctx.translate(-cx, -cy);
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.translate(ox, oy);
+        ctx.scale(1, ry / rx);
+        ctx.translate(-ox, -oy);
+        ctx.beginPath();
+        ctx.arc(ox, oy, rx, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
       }
     }

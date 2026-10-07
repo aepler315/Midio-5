@@ -1,5 +1,4 @@
-import { FirmamentGL, FIRMAMENT_BYTES } from './FirmamentGL.js';
-import { giantLayout, giantAmounts, mirrorGiantSpan, aheadOfEye } from './LandscapeGiants.js';
+import { giantLayout, giantAmounts } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
 // here, renders transparent terrain partitions that RangePresentation copies
@@ -17,7 +16,7 @@ import { resolveRangeComposition, compositionBars } from './RangeComposition.js'
 // reserved here before creation and released through dispose().
 import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
-import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, bindLakeMusic, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
+import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
 import { terrainFeatureSegments } from './TerrainFeatures.js';
 import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { placeForestAsync } from './ForestCover.js';
@@ -27,20 +26,15 @@ import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
 import { buildRockStage } from './RockStage.js';
 import { RockStageGL } from './RockStageGL.js';
-import { applyCameraMoves, rangeUserCamera, rangeRailPose, NEUTRAL_MOVE } from './RangeCamera.js';
+import { cameraPoseAt } from '../terrain/SceneTravel.js';
+import { applyCameraMoves, rangeUserCamera } from './RangeCamera.js';
 import { BANDS, terrainFringeBytes, terrainHeightAt } from './TerrainMesh.js';
 import { mistParams } from './RangeAtmosphere.js';
-import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, backdropBounds, MIRROR_CLIP_M, MIRROR_LIFT, MIRROR_LEVEL_TOLERANCE_M } from './WaterMirror.js';
+import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT } from './WaterMirror.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors, glacierSample } from './GlacierField.js';
 import { ActorsGL } from './ActorsGL.js';
-import { CoveGL, COVE_GPU_BYTES } from './CoveGL.js';
-import { buildRangeHabitat } from './RangeHabitat.js';
-import { sampleRangePerformance } from './RangePerformance.js';
 import { ACTOR_IDS, ACTOR_HUES, ACTOR_LOOK, ACTOR_START, actorRoutes, routePosition } from './RangeActors.js';
-// Storm light, linear: the deck's underside, the rain-dimmed horizon, the rain air.
-// STORM_AIR meets the slate the sky paints at the horizon (drawStormSky) once displayed.
-const STORM_ZENITH = { r: .02, g: .026, b: .036 }, STORM_HORIZON = { r: .03, g: .038, b: .05 }, STORM_AIR = { r: .028, g: .036, b: .048 };
 
 const BACKDROP_KEY = 'range:water-backdrop';
 
@@ -77,31 +71,6 @@ function waterLevel(data) {
   hs.sort((a, b) => a - b);
   return hs[hs.length >> 1];
 }
-
-/** The giant's reflection source stands beyond the shore and can be dry.
- * Musical contacts instead use a stored hydroflattened sample nearest that
- * layout. A bounded lattice scan runs once at preparation, never per frame. */
-export function lakeMusicOrigin(data, layout, levelM) {
-  if (!layout?.hasLake || !Number.isFinite(levelM)) return null;
-  const center = layout.centers[0], { originM, cellSizeM } = data.grid;
-  let nearest = null, best = Infinity;
-  for (const tile of data.tiles.values()) {
-    if (!tile.visible || !tile.flowBytes) continue;
-    const n = tile.samples, step = Math.max(1, Math.floor(n / 16));
-    for (let z = 0; z < n; z += step) for (let x = 0; x < n; x += step) {
-      const i = z * n + x, height = tile.heightsM[i];
-      if (tile.flowBytes[i] !== 255 || !Number.isFinite(height) || Math.abs(height - levelM) >= MIRROR_LEVEL_TOLERANCE_M) continue;
-      const px = originM[0] + (tile.ix * data.cells + x * tile.stride) * cellSizeM;
-      const pz = originM[1] + (tile.iz * data.cells + z * tile.stride) * cellSizeM;
-      const distance = (px - center[0]) ** 2 + (pz - center[2]) ** 2;
-      if (distance < best) { best = distance; nearest = [px, height, pz]; }
-    }
-  }
-  return nearest;
-}
-
-/** Midio's mirrored sheet keeps this far ahead of a zoomed-in eye. */
-const MIDIO_MIN_AHEAD_M = 600;
 
 export class RangeScene {
   /** `THREE` is the local bundle; `residency` the shared ledger. */
@@ -296,7 +265,6 @@ export class RangeScene {
    * is released.
    */
   captureBackdrop(ctx, stage, frame) {
-    if (frame?.performance) { this.releaseBackdrop(); return false; }
     const wanted = !this.contextLost && rangeQuality(frame?.qualityLevel).waterMirror
       && [...this.prepared.values()].some((p) => Number.isFinite(p.mirrorLevelM));
     if (!wanted || !ctx?.canvas || !(stage?.width > 0)) { this.releaseBackdrop(); return false; }
@@ -312,7 +280,6 @@ export class RangeScene {
         : Object.assign(document.createElement('canvas'), { width, height });
       const THREE = this.THREE;
       const texture = new THREE.CanvasTexture(canvas);
-      texture.premultiplyAlpha = true;
       texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = false;
       b = { width, height, epoch: this.contextEpoch, canvas, ctx: canvas.getContext('2d'), texture, frame: -1 };
       const dispose = (x) => { x.texture.dispose(); x.canvas.width = x.canvas.height = 0; if (this.backdrop === x) this.backdrop = null; };
@@ -323,7 +290,6 @@ export class RangeScene {
     const T = ctx.getTransform?.() || { a: 1, d: 1, e: 0, f: 0 };
     b.ctx.clearRect(0, 0, width, height);
     b.ctx.drawImage(ctx.canvas, T.e, T.f, T.a * stage.width, T.d * stage.height, 0, 0, width, height);
-    b.bounds = backdropBounds({ ...frame?.scenicViewport, logicalWidth: stage.width, logicalHeight: stage.height }, T, ctx.canvas);
     b.texture.needsUpdate = true;
     b.frame = frame?.frameId ?? -1;
     return true;
@@ -337,37 +303,6 @@ export class RangeScene {
   }
 
   /**
-   * Does this side really have a lake mirror for `frame`? Usable lake
-   * metadata, a quality that keeps the mirror, and a target that won its
-   * residency reservation (it is optional light: anything may deny or evict
-   * it). Resolved once per frame, view and side, and shared by everything
-   * that depends on it -- the water (_prepareMirror) and the route Midio's
-   * giant takes (uMidioCloud, renderSkyGiants) -- so the two can never
-   * disagree. Before this was shared, a lake with a denied reservation sent
-   * the giant to a reflection that was never drawn, and he vanished (F08).
-   * @returns {{wanted: boolean, mirror: object|null}}
-   */
-  _resolveMirror(p, frame, side = 'A', viewId = null) {
-    const state = (this._mirrorState ??= { A: null, B: null });
-    const held = state[side];
-    if (held && held.p === p && held.frameId === frame?.frameId && held.viewId === viewId
-      && (!held.mirror || this.mirrors?.[side] === held.mirror)) return held;
-    const level = p?.mirrorLevelM;
-    const wanted = !this.contextLost && Number.isFinite(level) && rangeQuality(frame?.qualityLevel).waterMirror
-      && (frame?.narrative?.materials ?? 1) > .01;
-    const mirror = wanted ? this._ensureMirror(side) || null : null;
-    if (!wanted) this.releaseMirror(side);
-    state[side] = { p, frameId: frame?.frameId, viewId, wanted, mirror };
-    return state[side];
-  }
-
-  /** True when Midio's giant is drawn as a reflection in this side's lake
-   *  rather than as a cloud: a lake layout AND a mirror that exists. */
-  _giantMirrored(p, frame, side = 'A', viewId = null) {
-    return !!p?.giantLayout?.hasLake && !!this._resolveMirror(p, frame, side, viewId).mirror;
-  }
-
-  /**
    * Draw this side's lake mirror for `frame` (once per frame and view) and
    * point the water at it; without water near the view's level, at a
    * quality that sheds it, or without room, the water keeps its sky
@@ -378,23 +313,18 @@ export class RangeScene {
     u.uViewportPx.value.set(this.size.width, this.size.height);
     const ripple = (m) => (frame.reducedMotion ? 0.001 : 0.0012 + 0.0025 * (m?.groove ?? 0) + 0.004 * (m?.kick01 ?? 0));
     const level = p.mirrorLevelM;
-    const { mirror: m } = this._resolveMirror(p, frame, side, viewId);
-    if (!m) { u.uMirrorAmount.value = 0; u.uBackdropAmount.value = 0; return; }
+    const wanted = Number.isFinite(level) && rangeQuality(frame.qualityLevel).waterMirror
+      && (frame.narrative?.materials ?? 1) > .01;
+    const m = wanted ? this._ensureMirror(side) : null;
+    if (!m) { u.uMirrorAmount.value = 0; u.uBackdropAmount.value = 0; if (!wanted) this.releaseMirror(side); return; }
     if (m.frame !== frame.frameId || m.view !== viewId) {
       const r = this.renderer;
       const THREE = this.THREE;
-      mirrorCameraFor(THREE, this.camera, level, this.mirrorCamera, frame.performance ? 1 : MIRROR_LIFT);
+      mirrorCameraFor(THREE, this.camera, level, this.mirrorCamera, MIRROR_LIFT);
       mirrorTextureMatrix(THREE, this.mirrorCamera, m.matrix);
       for (const fm of p.fringeMeshes || []) fm.visible = false;
       u.uMirrorAmount.value = 0;
-      // A disabled reflection still has an active sampler. Unbind the
-      // previous image before drawing into it to avoid framebuffer feedback.
-      u.uMirror.value = null;
       u.uClipBelow.value = level + MIRROR_CLIP_M;
-      // Rain over the reflected land stands where the mirror camera sees it;
-      // the main camera's matrix is restored below, before the partitions.
-      this.mirrorCamera.updateMatrixWorld();
-      u.uViewProj.value.multiplyMatrices(this.mirrorCamera.projectionMatrix, this.mirrorCamera.matrixWorldInverse);
       r.setRenderTarget(m.target);
       r.setClearColor(0x000000, 0);
       r.clear(true, true, false);
@@ -412,7 +342,6 @@ export class RangeScene {
     const b = this.backdrop?.frame === frame.frameId ? this.backdrop : null;
     u.uBackdrop.value = b?.texture || null;
     u.uBackdropAmount.value = b ? 1 : 0;
-    u.uBackdropBounds.value.set(...(b?.bounds || [0, 0, 0, 0]));
     u.uViewProj.value.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     u.uMirrorLevel.value = level;
     u.uMirrorRipple.value = ripple(frame.music);
@@ -459,7 +388,7 @@ export class RangeScene {
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
-      let surface, geos, material, depthMaterial, forest, stageGL, featureMaterial, actors, habitat, firmament;
+      let surface, geos, material, forest, stageGL, featureMaterial, actors;
       const featureGeometries = {};
       const stale = () => {
         if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
@@ -494,9 +423,8 @@ export class RangeScene {
         // buffers; their exact size is counted from the tile plan (no
         // geometry built), so the one reservation covers them and a view
         // that cannot fit is denied before the mesh is built.
-        const habitatLayout = buildRangeHabitat(cpu.data, view);
         const fringeBytes = terrainFringeBytes(cpu.data, { budget: this.budget });
-        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes() + FIRMAMENT_BYTES + (habitatLayout ? COVE_GPU_BYTES : 0);
+        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes();
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
         geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
@@ -511,13 +439,12 @@ export class RangeScene {
         await yieldToMain();
         const base = terrainUniforms(THREE, cpu.data, surface);
         const uniforms = sceneUniforms(THREE, base);
-        firmament = new FirmamentGL(THREE, uniforms);
         applyMaterial(uniforms, mat.pack, mat.textures, view.materialRules || {});
         material = createSceneMaterial(THREE, uniforms);
         featureMaterial = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms,
           vertexShader: SCENE_VERT, fragmentShader: FEATURE_FRAG, transparent: true,
           depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth });
-        depthMaterial = createDepthMaterial(THREE, uniforms);
+        const depthMaterial = createDepthMaterial(THREE, uniforms);
         await yieldToMain();
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const meshes = {}, depthMeshes = {}, scenes = {};
@@ -582,24 +509,15 @@ export class RangeScene {
           depthScenes[band].add(dm);
           for (const d of forest.depthByBand?.[band] || []) depthScenes[band].add(d);
         }
-        if (habitatLayout) {
-          habitat = new CoveGL(THREE, uniforms, habitatLayout);
-          scenes[habitatLayout.band].add(habitat.group);
-          depthScene.add(habitat.depthGroup);
-          depthScenes[habitatLayout.band].add(habitat.bandDepthGroup);
-          // Scenery-only views use the same cache; visibility belongs to the frame.
-          habitat.group.visible = habitat.depthGroup.visible = habitat.bandDepthGroup.visible = false;
-        }
         // Compile now, not in the first playing frame.
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
-        const layout = giantLayout(cpu.data, view, [uniforms.uHeightRange.value.x, uniforms.uHeightRange.value.y], waterLevelM);
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
-          forest, stageGL, featureGeometries, featureMaterial, habitat, habitatLayout, firmament,
+          forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
-          giantLayout: layout, lakeMusicOriginM: lakeMusicOrigin(cpu.data, layout, waterLevelM),
+          giantLayout: giantLayout(cpu.data, view, [uniforms.uHeightRange.value.x, uniforms.uHeightRange.value.y], waterLevelM),
           rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key, actors, actorRoutes: routes,
         };
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
@@ -620,9 +538,6 @@ export class RangeScene {
           this.residency?.release(cpu.key);
           forest?.dispose();
           actors?.dispose();
-          habitat?.dispose();
-          firmament?.dispose();
-          depthMaterial?.dispose();
           stageGL?.dispose();
           material?.dispose();
           featureMaterial?.dispose();
@@ -758,8 +673,6 @@ export class RangeScene {
     for (const g of Object.values(p.featureGeometries || {})) g.dispose();
     p.forest?.dispose();
     p.actors?.dispose();
-    p.habitat?.dispose();
-    p.firmament?.dispose();
     p.stageGL?.dispose();
     for (const g of Object.values(p.geometries || {})) g.dispose();
     for (const g of Object.values(p.fringes || {})) g.dispose();
@@ -799,7 +712,7 @@ export class RangeScene {
    *  rendered ground. Computed once per frame and view and shared by the
    *  partition passes and the sky (RangePresentation._skyPan). */
   movedPose(view, frame, p = this.prepared.get(view.id) || null) {
-    const rail = rangeRailPose(view, frame);
+    const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
     const proj = scenicProjection(rail.fovYDeg, frame.scenicViewport);
     // This view's VISIBLE frustum (the overscan margin excluded): the
     // pointer is normalised against the visible stage, and the zoom must
@@ -813,7 +726,7 @@ export class RangeScene {
     if (!poses) this._movedPoses.set(frame, poses = new Map());
     let pose = poses.get(view.id);
     if (!pose) {
-      pose = applyCameraMoves(rail, frame.performance ? NEUTRAL_MOVE : frame.cameraMove, frame.userCamera, {
+      pose = applyCameraMoves(rail, frame.cameraMove, frame.userCamera, {
         heightAt: p?.data ? this._renderedGround(view, frame, p.data) : null, waterLevelM: p?.waterLevelM,
         sampleStepM: p?.data?.grid?.cellSizeM, cone: { tanX, tanY },
         heightRangeM: p?.uniforms ? [p.uniforms.uHeightRange.value.x, p.uniforms.uHeightRange.value.y] : null });
@@ -838,14 +751,10 @@ export class RangeScene {
 
   /** Per-frame uniforms: light from where the celestial is drawn, sky and
    *  air colours from the frame, the shared deformation. */
-  _setUniforms(p, frame, side = 'A', viewId = null) {
+  _setUniforms(p, frame) {
     const THREE = this.THREE;
     const u = p.uniforms;
     const n = frame.narrative;
-    u.uMirrorLift.value = frame.performance ? 1 : MIRROR_LIFT;
-    // The anchor is a real hydroflattened lake sample chosen once at view
-    // preparation, so a hit stays on the water as the camera travels.
-    bindLakeMusic(u, frame, { originM: frame.performance && p.habitatLayout ? p.habitatLayout.anchors.midio : p.lakeMusicOriginM });
     u.uNarrative.value.set(n?.relief ?? 1, n?.atmosphere ?? 1, n?.materials ?? 1, n?.features ?? 1);
     u.uNarrativeInk.value = n ? (1 - n.materials) * (1 - n.skyDark) : 0;
     applyGlacierUniforms(u, p.view.glacier, frame.glacier);
@@ -881,21 +790,9 @@ export class RangeScene {
     // reflection, so it keeps the frame's authored environment colors.
     u.uAmbientScale.value = 2.5 * (frame.light.ambientMultiplier ?? 1);
     u.uStorm.value.set(storm.amount, storm.flash, storm.break01, storm.wet01);
-    // Under the squall the sun is gone behind the deck; the sky's own
-    // (darkened, below) radiance is most of what lights the land.
-    u.uLightColor.value.multiplyScalar(1 - storm.amount * .92);
-    u.uLightColor.value.add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * 1.6));
-    u.uAmbientScale.value *= 1 - storm.amount * .15;
-    // Lightning lights the land from inside the deck, where the sky draws it.
-    // The rain veil projects through the main camera on every view, mirror or not.
-    u.uViewProj.value.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
-    const skyPan = this.skyPan || { x: 0, y: 0 };
-    u.uRainShift.value = (skyPan.x || 0) / 2;
-    if (storm.flash > 0) {
-      const fx = ((storm.flashU ?? .5) + u.uRainShift.value) * 2 - 1;
-      const flashDir = new THREE.Vector3(fx, .7, 0.5).unproject(this.camera).sub(this.camera.position).normalize();
-      u.uLightDir.value.lerp(flashDir, Math.min(1, storm.flash * 3)).normalize();
-    }
+    u.uLightColor.value.multiplyScalar(1 - storm.amount * .8);
+    u.uLightColor.value.add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * 1.3));
+    u.uAmbientScale.value *= 1 - storm.amount * .55;
     u.uSolarTransmission.value = c.body === 'sun' && strength > 0 ? .18 : 0;
     if (frame.light.sky) {
       hexToLinear(THREE, frame.light.sky.top, u.uSkyZenith.value).multiplyScalar(0.9);
@@ -914,45 +811,27 @@ export class RangeScene {
       u.uAirColor.value.multiply(tint);
     }
     u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night) * (p.rules?.airScale ?? RULE_DEFAULTS.airScale);
-    if (storm.amount > 0 || storm.break01 > 0) {
-      // Slate storm light in the sky, the air and the water's reflection;
-      // thick rain air under the squall, then rain-washed clarity after it.
-      const k = storm.amount * .95;
-      u.uSkyZenith.value.lerp(STORM_ZENITH, k);
-      u.uSkyHorizon.value.lerp(STORM_HORIZON, k);
-      u.uAirColor.value.lerp(STORM_AIR, k).add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * .35));
-      u.uAirDensity.value *= 1 + storm.amount * .6 - storm.break01 * .35;
-    }
     const amounts = giantAmounts(frame);
     const layout = p.giantLayout;
     if (layout) {
       u.uGiantPeak.value = amounts;
       layout.centers.forEach((center, i) => u.uGiantCenter.value[i].set(...center));
       layout.skyCenters.forEach((center, i) => u.uSkyGiantCenter.value[i].set(...center));
+      if (layout.hasLake) u.uGiantCenter.value[0].y = p.waterLevelM;
       u.uGiantSpan.value = layout.spans;
-      if (layout.hasLake) {
-        const eye = this.camera.position.toArray();
-        const center = aheadOfEye(layout.centers[0], eye, layout.forward, MIDIO_MIN_AHEAD_M);
-        u.uGiantCenter.value[0].set(center[0], p.waterLevelM, center[2]);
-        const bottom = new THREE.Vector3(0, -.92, .5).unproject(this.camera).sub(this.camera.position);
-        u.uGiantSpan.value = [mirrorGiantSpan(eye, bottom.toArray(), center,
-          p.waterLevelM, MIRROR_LIFT, layout.spans[0]), ...layout.spans.slice(1)];
-      }
-      u.uMirrorAspect.value = layout.hasLake ? 1 / MIRROR_LIFT : 1;
-      u.uSkyGiantSpan.value = layout.skySpan;
       u.uGiantRight.value.set(...layout.right); u.uGiantForward.value.set(...layout.forward);
-      // Broshi's lantern is carried just behind the viewer, so his shadow
-      // lands on the range in his own proportions (a Brocken spectre).
-      u.uShadowEye.value.copy(this.camera.position);
-      // In the lake only when this side's mirror really exists this frame;
-      // otherwise the held intensity goes to the sky as a cloud.
-      u.uMidioCloud.value = this._giantMirrored(p, frame, side, viewId) ? 0 : 1;
+      // Project from the sun when its angle meets the caster plane. At
+      // grazing angles, the actor's lantern takes over without singularities.
+      const sunRay = u.uLightDir.value;
+      u.uShadowRay.value.copy(Math.abs(sunRay.dot(u.uGiantForward.value)) > .25 && c.body === 'sun'
+        ? sunRay : u.uGiantForward.value.clone().add(new THREE.Vector3(0,.25,0)).normalize());
+      u.uMidioCloud.value = layout.hasLake && Number.isFinite(p.mirrorLevelM) ? 0 : 1;
       u.uGiantTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     }
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0),
-      sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .3, u.uMidioCloud.value * amounts[0] * .3), cameraY: this.camera.position.y });
+      sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .88, u.uMidioCloud.value * amounts[0] * .88), cameraY: this.camera.position.y });
     const quality = rangeQuality(frame.qualityLevel);
     u.uMistDensity.value = mp.density * (n?.atmosphere ?? 1);
     u.uMistSteps.value = quality.mistSteps;
@@ -966,23 +845,12 @@ export class RangeScene {
     u.uMistColor.value.r = Math.min(0.9, u.uMistColor.value.r);
     u.uMistColor.value.g = Math.min(0.9, u.uMistColor.value.g);
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
-    u.uFullSky.value = frame.performance ? 1 : 0;
-    u.uFirmamentTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
-    u.uFirmamentSeed.value = ((frame.seed || 0) % 9973) * .01;
-    u.uFirmamentNight.value = night;
-    u.uFirmamentFlash.value = frame.reducedFlash ? .18 : 1;
-    u.uFirmamentBands.value.set(frame.skyMusic?.aurora01 ?? .36, frame.skyMusic?.melody01 ?? 0, frame.skyMusic?.bass01 ?? 0);
-    u.uFirmamentMotion.value.set(frame.skyMusic?.rhythm01 ?? 0, frame.skyMusic?.bass01 ?? 0,
-      frame.skyMusic?.melody01 ?? 0, frame.reducedMotion ? 0 : 1);
-    const radius = (c.radiusFrac || .0175) * this.camera.aspect * 2 * Math.tan(this.camera.fov * Math.PI / 360);
-    u.uFirmamentBody.value.set(dir.x, dir.y, dir.z, radius);
-    hexToLinear(THREE, c.colorHex, u.uFirmamentBodyColor.value).multiplyScalar(c.body ? .8 * (c.visibility ?? 1) : 0);
-    u.uFirmamentWeather.value.set(storm.amount, storm.flash);
-    u.uSkyProjectionInverse.value.copy(this.camera.projectionMatrixInverse);
-    u.uSkyCameraWorld.value.copy(this.camera.matrixWorld);
     u.uCameraPos.value.copy(this.camera.position);
     this._setActors(p, frame);
-    this._setHabitat(p, frame);
+    if (layout && (c.body !== 'sun' || Math.abs(u.uLightDir.value.dot(u.uGiantForward.value)) <= .25)) {
+      const lantern = u.uActorPos.value[1].clone().sub(u.uGiantCenter.value[1]).normalize();
+      if (Math.abs(lantern.dot(u.uGiantForward.value)) > .25) u.uShadowRay.value.copy(lantern);
+    }
   }
 
   /**
@@ -1074,36 +942,6 @@ export class RangeScene {
     });
   }
 
-  /** The cove owns real meshes, shared terrain light and water responses.
-   * No Canvas overlay or gameplay actor is involved. */
-  _setHabitat(p, frame) {
-    const habitat = p.habitat;
-    const u = p.uniforms;
-    if (u.uCovePressure) u.uCovePressure.value.set(0, 0, 0, 0);
-    if (!habitat) return;
-    const active = !!frame.performance;
-    habitat.group.visible = habitat.depthGroup.visible = habitat.bandDepthGroup.visible = active;
-    if (!active) { habitat.snapshot = null; return; }
-    const pose = sampleRangePerformance({ timeMs: frame.timeMs, music: frame.habitatMusic,
-      layout: p.habitatLayout, reducedMotion: frame.reducedMotion, reducedFlash: frame.reducedFlash });
-    habitat.update(pose);
-    pose.actors.forEach((actor, i) => {
-      const color = new this.THREE.Color().setHSL(ACTOR_HUES[actor.id] / 360, .55, .6).convertSRGBToLinear();
-      const gain = actor.glow * (.28 + .48 * (frame.light?.night01 ?? 0));
-      // Low contact light reaches the bank and the adjacent water.
-      const lift = actor.id === 'midasus' ? 0 : actor.heightM * .2;
-      u.uActorPos.value[i].set(actor.positionM[0], actor.positionM[1] + lift, actor.positionM[2]);
-      u.uActorColor.value[i].set(color.r * gain, color.g * gain, color.b * gain);
-      u.uActorRadius.value[i] = actor.id === 'midasus' ? 24 : 18;
-    });
-    const midio = pose.actors.find(a => a.id === 'midio').positionM, broshi = p.habitatLayout.anchors.broshi;
-    const f = p.habitatLayout.forward;
-    u.uWake.value.set(midio[0], midio[2], midio[0] - f[0] * 35, midio[2] - f[2] * 35);
-    const flash = frame.reducedFlash ? .35 : 1;
-    u.uWakeAmt.value = pose.waterResponse.wake * .8 * flash;
-    if (u.uCovePressure) u.uCovePressure.value.set(broshi[0], broshi[2], pose.waterResponse.bass * flash, frame.reducedMotion ? 0 : frame.timeMs / 1000);
-  }
-
   _tileAt(data, x, z) {
     const { grid, cells } = data;
     const ix = Math.floor((x - grid.originM[0]) / grid.cellSizeM / cells);
@@ -1111,30 +949,17 @@ export class RangeScene {
     return data.byIndex.get(`${ix},${iz}`) || null;
   }
 
-  renderFirmament(frame, viewId) {
-    const p = this.prepared.get(viewId);
-    if (!frame.performance || !p?.firmament || this.contextLost) return null;
-    this._setCamera(p.view, frame, p);
-    this._setUniforms(p, frame, 'A', viewId);
-    this._setCanvasSize(this.size.width, this.size.height);
-    this.renderer.setRenderTarget(null);
-    this.renderer.setClearColor(0x000000, 0);
-    this.renderer.clear(true, true, false);
-    this.renderer.render(p.firmament.scene, this.camera);
-    return this.canvas;
-  }
-
   // Atmosphere has its own copy boundary. It must never enter the terrain
   // alpha mask consumed by crest light and the sampled mountain skyline.
   renderSkyGiants(frame, viewId, { side = 'A', bandColumns = null } = {}) {
     const p = this.prepared.get(viewId);
     const amounts = giantAmounts(frame);
-    if (!p || this.contextLost || !rangeQuality(frame.qualityLevel).landscapeGiants) return null;
-    const mirrored = this._giantMirrored(p, frame, side, viewId);
-    if (!(amounts[2] > .001 || amounts[0] > .001 && !mirrored)) return null;
+    const mirrored = p?.giantLayout.hasLake && Number.isFinite(p.mirrorLevelM);
+    if (!p || this.contextLost || !rangeQuality(frame.qualityLevel).landscapeGiants
+      || !(amounts[2] > .001 || amounts[0] > .001 && !mirrored)) return null;
     const target = side === 'B' ? this.sideTargets.B : this.target;
     if (!target) return null;
-    this._setCamera(p.view, frame, p); this._setUniforms(p, frame, side, viewId);
+    this._setCamera(p.view, frame, p); this._setUniforms(p, frame);
     const r = this.renderer;
     if (bandColumns && p.depthScenes) this._travelDepth(p, target, 'far', bandColumns);
     else {
@@ -1165,7 +990,7 @@ export class RangeScene {
     // The camera is shared: set this side's pose for every pass, even when
     // its depth pre-pass (kept per side) is reused.
     this._setCamera(p.view, frame, p);
-    this._setUniforms(p, frame, side, viewId);
+    this._setUniforms(p, frame);
     this._prepareMirror(p, frame, side, viewId);
     // The backdrop holds the far partition itself: far water reflecting it
     // would feed back into the next copy, so it keeps the ground mirror only.
@@ -1246,10 +1071,7 @@ export class RangeScene {
     // The scene's key light, re-expressed for the stage: from behind and
     // above, on the celestial's side of the frame.
     const THREE = this.THREE;
-    // A lightning flash lights the stage from its strike, as it does the land.
-    const storm = frame.storm, strike = Math.min(1, (storm?.flash || 0) * 3);
-    const key = strike > 0 ? { x: frame.light.ground.x + (((storm.flashU ?? .5) + (u.uRainShift?.value || 0)) * vp.logicalWidth - frame.light.ground.x) * strike,
-      y: frame.light.ground.y + (vp.logicalHeight * .15 - frame.light.ground.y) * strike } : frame.light.ground;
+    const key = frame.light.ground;
     // Stage normals use +Y upward; the recorded ground anchor is Canvas
     // +Y downward. Keep the existing shallow depth/rock calibration.
     const lightDir = new THREE.Vector3((key.x - vp.logicalWidth * .5) / vp.logicalHeight,

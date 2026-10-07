@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { JumpController } from '../src/sim/JumpController.js';
+import { JumpController, A, W, jumpY } from '../src/sim/JumpController.js';
 import { ParamBus } from '../src/core/ParamBus.js';
 import { AirJumpSequencer, BUDGET_4BAR, BUDGET_8BAR } from '../src/sim/AirJumpSequencer.js';
 import { PhraseTracker } from '../src/core/PhraseTracker.js';

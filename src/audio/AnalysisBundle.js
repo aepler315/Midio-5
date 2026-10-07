@@ -29,6 +29,7 @@
 //   name for every note. Stored as parallel typed arrays -- all the times,
 //   then all the pitches -- the field names are paid for once.
 import { EnergyCurves } from './EnergyCurves.js';
+import { BANDS } from './bands.js';
 import { Role } from '../core/NoteEvent.js';
 import { Lane } from '../core/Casting.js';
 import { buildSongProfile, snapshotSongProfile, PROFILE_VERSION, validSongProfileSnapshot } from './SongProfile.js';

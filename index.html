@@ -1,12 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class="version-browser-enabled">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Super Maudio World</title>
   <link rel="stylesheet" href="./src/ui/style.css" />
-  <link rel="stylesheet" href="./src/ui/version-navigation.css" />
-  <script id="midio-version-metadata" type="application/json">{"currentId":"natural-valley","liveId":"natural-valley","siteRootRelative":"./","archivesAvailable":false}</script>
 </head>
 <body>
   <div id="app">
@@ -92,24 +90,6 @@
             <option value="ask" selected>Show me the worlds</option>
             <option value="auto">Choose for me</option>
           </select>
-        </div>
-
-        <!-- Pin the scenery (ui/SceneChoice.js). Auto lets each song choose,
-             as before. A range brings its own biome. Remembered, and kept in
-             the address bar so the page links to it. Filled in by main.js. -->
-        <div class="resRow sceneChoiceRow">
-          <span class="sceneChoicePair">
-          <label for="sceneRange">Range</label>
-          <select id="sceneRange" title="The mountain view your songs play in. Auto lets each song choose. Applies from the next song. Remembered.">
-            <option value="auto" selected>Auto</option>
-          </select>
-          </span>
-          <span class="sceneChoicePair">
-          <label for="sceneBiome">Biome</label>
-          <select id="sceneBiome" title="Keep the whole song in one biome. Auto lets each song choose and travel. A range picks its own biome. Applies from the next song. Remembered.">
-            <option value="auto" selected>Auto</option>
-          </select>
-          </span>
         </div>
 
         <!-- The way in for browsers with no file chooser. Hidden until it is
@@ -376,8 +356,6 @@
             <button id="exportBtn" type="button" class="ghostbtn">Record full song</button>
           </div>
           <p id="exportNote" class="hint completeExportNote"></p>
-          <button id="exportRetryAnalysisBtn" type="button" class="ghostbtn chipbtn hidden">Analyse the whole song again</button>
-          <button id="exportRetryCodecBtn" type="button" class="ghostbtn chipbtn hidden">Record full song as WebM</button>
         </div>
 
         <div class="completeActions">
@@ -412,6 +390,5 @@
   </div>
 
   <script type="module" src="./src/main.js"></script>
-  <script type="module" src="./src/ui/VersionBootstrap.js"></script>
 </body>
 </html>

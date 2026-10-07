@@ -5,6 +5,7 @@
 // (for unit tests) — both provide DecompressionStream, Blob, and Response
 // as globals.
 
+const EOCD_SIG = 0x06054b50; // "PK\x05\x06"
 const CDH_SIG = 0x02014b50;  // "PK\x01\x02"
 const LFH_SIG = 0x04034b50;  // "PK\x03\x04"
 

@@ -164,6 +164,14 @@ export function extractVisionContent(provider, data) {
   }
 }
 
+/** Models known to be shut down; the Gemini default must not be one of these. */
+export const RETIRED_GEMINI_MODELS = Object.freeze([
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+]);
+
 export function visionHttpError(provider, status, model) {
   if ((status === 400 || status === 404 || status === 410) && model) {
     return new Error(

@@ -155,7 +155,7 @@ test('eruption fires a ground pulse at the surface point', () => {
   const gf = makeMockGroundField();
   let t = 0;
   b.trigger(t, { x: 300, y: 480 }, 500, 480);
-  advance(b, t, 8.8, 500, gf); // clear DIG_IN + TUNNELING
+  t = advance(b, t, 8.8, 500, gf); // clear DIG_IN + TUNNELING
   assert.equal(b.phase, BurrowPhase.ERUPT);
   const eruptCall = gf.calls[gf.calls.length - 1];
   assert.ok(eruptCall.sagPx > 30, 'eruption pulse should be a pronounced sag, not a small ridge tick');
@@ -268,7 +268,7 @@ test('dig-in flings dirt shards, and the eruption flings a second, bigger burst'
   }
   t = advance(b, t, 2); // shards from dig-in expire (max life ~1.1s)
   assert.equal(b.shards.length, 0);
-  advance(b, t, 6.9); // reach the eruption (~8.7s total)
+  t = advance(b, t, 6.9); // reach the eruption (~8.7s total)
   assert.equal(b.phase, BurrowPhase.ERUPT);
   assert.ok(b.shards.length >= 14, 'the eruption flings its own burst');
 });
@@ -281,7 +281,7 @@ test('shards keep flying (and eventually expire) after the burrow has gone idle'
   t = advance(b, t, 0.5); // past 9.2s total: now IDLE, shards mid-arc
   assert.equal(b.phase, BurrowPhase.IDLE);
   assert.ok(b.shards.length > 0, 'shards outlive the burrow');
-  advance(b, t, 1.5);
+  t = advance(b, t, 1.5);
   assert.equal(b.shards.length, 0, 'and then expire');
 });
 
@@ -349,6 +349,7 @@ test('crystal charges ring down over time', () => {
 
 test('a vein forms only when BOTH crystals of a pair are charged, and dissolves as charge fades', () => {
   const { b, t } = intoTunnelingWithCrystals();
+  const n = b.crystals.length;
   // Charge exactly one crystal: no pair, no vein.
   b.onMelodyOnset({ pitch: 60, vel: 1.0 }); // class 0 -> crystal 0
   let t2 = advance(b, t, 0.05);

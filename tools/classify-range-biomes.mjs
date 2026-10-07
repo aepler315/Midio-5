@@ -1,5 +1,4 @@
-// Tag every range in the basket with the biome its crest stands in, and
-// the biomes around that crest.
+// Tag every range in the basket with the real biome it stands in.
 //
 //   node tools/classify-range-biomes.mjs Ecoregions2017.shp
 //
@@ -8,18 +7,14 @@
 // ecoregions, each inside one of 14 biomes. It is an argument, not fetched
 // or committed here -- it is 150 MB.
 //
-// Each range's box is a stamp centred on its summit. The ecoregion under
-// that summit is the biome the skyline stands in — a sky island stays
-// pine-oak even when the rest of the stamp is desert. The outer ring is
-// stored as `surrounding`. `share` is how much of the inner crest agrees
-// with the summit, counted only over samples that hit an ecoregion, so
-// open water does not make a coast look mixed.
-// Written to data/terrain/range-biomes.json and, as a module,
-// src/world/terrain/rangeBiomes.js, which RealBiomes.js turns into the
-// game's biomes.
+// A range is sampled on a 7 x 7 grid over its bounding box and takes the
+// ecoregion most of those points fall in. The Cascades are rainforest on
+// one flank and dry pine on the other; the majority is what most of the
+// skyline you are looking at stands in. The result is written to
+// data/terrain/range-biomes.json and, as a module, src/world/terrain/
+// rangeBiomes.js, which RealBiomes.js turns into the game's biomes.
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { classifySamples, crestRingCells } from './lib/biomeSample.mjs';
 
 const shpPath = process.argv[2];
 if (!shpPath) {
@@ -27,7 +22,6 @@ if (!shpPath) {
   process.exit(1);
 }
 const GRID = 7;
-const CELL = 2;
 
 function readDbf(file) {
   const b = readFileSync(file);
@@ -95,63 +89,35 @@ function inside(shape, x, y) {
   return hit;
 }
 
-function indexShapes(shapes) {
-  const cells = new Map();
-  shapes.forEach((shape, i) => {
-    if (!shape) return;
-    const [x0, y0, x1, y1] = shape.box;
-    for (let x = Math.floor(x0 / CELL); x <= Math.floor(x1 / CELL); x++) {
-      for (let y = Math.floor(y0 / CELL); y <= Math.floor(y1 / CELL); y++) {
-        const key = `${x},${y}`;
-        const list = cells.get(key);
-        if (list) list.push(i);
-        else cells.set(key, [i]);
-      }
-    }
-  });
-  return cells;
-}
-
 const shapes = readShp(shpPath);
 const rows = readDbf(shpPath.replace(/\.shp$/i, '.dbf'));
-const cells = indexShapes(shapes);
-
-function at(x, y) {
-  const list = cells.get(`${Math.floor(x / CELL)},${Math.floor(y / CELL)}`);
-  if (!list) return null;
-  for (const i of list) {
-    if (inside(shapes[i], x, y)) {
-      const row = rows[i];
-      return row ? { biome: row.BIOME_NAME, ecoregion: row.ECO_NAME } : null;
-    }
-  }
-  return null;
-}
-
-const { crest, around } = crestRingCells(GRID);
 const dir = 'src/world/terrain/ranges';
 const out = {};
 for (const file of readdirSync(dir).filter((f) => f.endsWith('.meta.json')).sort()) {
   const meta = JSON.parse(readFileSync(path.join(dir, file), 'utf8'));
   const [w, s, e, n] = meta.bbox;
-  const take = (ij) => ij.map(([i, j]) => at(
-    w + ((i + 0.5) / GRID) * (e - w),
-    s + ((j + 0.5) / GRID) * (n - s),
-  ));
-  const row = classifySamples({
-    summit: at((w + e) / 2, (s + n) / 2),
-    crest: take(crest),
-    around: take(around),
-  });
-  if (!row) {
+  const votes = new Map();
+  for (let i = 0; i < GRID; i++) {
+    for (let j = 0; j < GRID; j++) {
+      const x = w + ((i + 0.5) / GRID) * (e - w);
+      const y = s + ((j + 0.5) / GRID) * (n - s);
+      const k = shapes.findIndex((sh) => inside(sh, x, y));
+      if (k < 0) continue;
+      const key = `${rows[k].BIOME_NAME}|${rows[k].ECO_NAME}`;
+      votes.set(key, (votes.get(key) || 0) + 1);
+    }
+  }
+  const best = [...votes.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (!best) {
     console.warn(`${meta.id}: no ecoregion under its box`);
     continue;
   }
-  out[meta.id] = row;
+  const [biome, ecoregion] = best[0].split('|');
+  out[meta.id] = { biome, ecoregion, share: +(best[1] / (GRID * GRID)).toFixed(2) };
 }
 const text = JSON.stringify({
   source: 'RESOLVE Ecoregions 2017 (Dinerstein et al. 2017), CC-BY 4.0',
-  method: `the ecoregion under the summit; share is how much of the inner crest agrees; the outer ring of a ${GRID}x${GRID} grid is stored as surrounding`,
+  method: `majority of a ${GRID}x${GRID} grid over each range's bounding box`,
   ranges: out,
 }, null, 1);
 writeFileSync('data/terrain/range-biomes.json', `${text}\n`);
@@ -160,4 +126,3 @@ writeFileSync('src/world/terrain/rangeBiomes.js',
 const tally = {};
 for (const r of Object.values(out)) tally[r.biome] = (tally[r.biome] || 0) + 1;
 console.log(tally);
-console.log(`${Object.keys(out).length} ranges, ${Object.values(out).filter((r) => r.surrounding.length).length} with a different biome around the crest`);

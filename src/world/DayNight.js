@@ -4,7 +4,6 @@
 // darken the sky, and brighten the stars at night.
 import { clamp01, smoothstep } from '../utils/math.js';
 import { OCEAN_HORIZON_FRAC } from './Ocean.js';
-import { hexLerp } from '../utils/color.js';
 
 const MIN_CYCLE_MS = 100000;
 const MAX_CYCLE_MS = 200000;
@@ -69,15 +68,9 @@ export function dayNight(nowMs, cycle) {
   else if (p < sunSpan) night = smoothstep(sunSpan - BAND, sunSpan, p);
   else if (p < 1 - BAND) night = 1;
   else night = 1 - smoothstep(1 - BAND, 1.0, p);
-  // The Range brackets its night with twilight, never a bright daytime sky.
-  if (cycle?.body === 'night') night = .75 + .25 * night;
 
   // Dawn/dusk washes bracket the sun's own rise and set.
-  // The night clock crosses phase 1 -> 0 at dawn: build its wash before
-  // that wrap too, so sunrise never introduces a one-frame colour jump.
-  const dawnDistance = Math.abs(p - 0.03);
-  const dawnAlpha = clamp01(1 - (cycle?.body === 'night'
-    ? Math.min(dawnDistance, 1 - dawnDistance) : dawnDistance) / 0.12) * 0.16;
+  const dawnAlpha = clamp01(1 - Math.abs(p - 0.03) / 0.12) * 0.16;
   const duskAlpha = clamp01(1 - Math.abs(p - (sunSpan - 0.03)) / 0.12) * 0.18;
 
   // Azimuth: how far each body is along its OWN arc, 0 at its rise and 1 at
@@ -217,46 +210,6 @@ export function songSkyClock(durationMs) {
   });
 }
 
-/** A bounded afterglow shared by the physical bodies and the Journey's
- * star/constellation reveal. The sun remains visible for the first 36%
- * of twilight, then the moon rises at 60%, while the sky is still blue. */
-export const SONG_NIGHT_TWILIGHT = Object.freeze({ frac: .25, maxMs: 45000, sunsetFrac: .36, moonriseFrac: .6 });
-
-/** Sunset -> moonlight -> sunrise for the Range. The moon owns at least
- * the middle 70% of a known song, with twilight bounded to 45s at either
- * end. Only a low slice of the sun's arc appears. Hold sunrise after the
- * ending; without a known ending, repeat the moon's existing 150s arc. */
-export function songNightClock(durationMs) {
-  const known = Number.isFinite(durationMs) && durationMs > 0;
-  const d = known ? durationMs : TARGET_CYCLE_MS;
-  const sunEdge = .025;
-  const twilightMs = known ? Math.min(d * SONG_NIGHT_TWILIGHT.frac, SONG_NIGHT_TWILIGHT.maxMs) : 0;
-  const sunsetMs = twilightMs * SONG_NIGHT_TWILIGHT.sunsetFrac;
-  const moonriseMs = twilightMs * SONG_NIGHT_TWILIGHT.moonriseFrac;
-  const moonsetMs = d - moonriseMs, sunriseMs = d - sunsetMs;
-  return Object.freeze({
-    body: 'night', durationMs: d,
-    twilightMs, sunsetMs, moonriseMs, moonsetMs, sunriseMs,
-    phaseAt(ms) {
-      const t = Math.max(0, Number.isFinite(ms) ? ms : 0);
-      if (!known) {
-        const u = (t % d) / d;
-        const arc = u - SONG_SUN_LINGER * Math.sin(2 * Math.PI * u) / (2 * Math.PI);
-        return 0.5 + (MOON_SET_PHASE - 0.5) * arc;
-      }
-      // Ease at each horizon so both altitude and speed agree with the
-      // empty sky on the other side; a held opening/ending eases too.
-      if (t < sunsetMs) {
-        return SUN_SET_PHASE - sunEdge * (1 - smoothstep(0, sunsetMs, t));
-      }
-      if (t < moonriseMs) return SUN_SET_PHASE + CELESTIAL_GAP * smoothstep(sunsetMs, moonriseMs, t);
-      if (t <= moonsetMs) return 0.5 + (MOON_SET_PHASE - 0.5) * smoothstep(moonriseMs, moonsetMs, t);
-      if (t < sunriseMs) return MOON_SET_PHASE + (1 - MOON_SET_PHASE) * smoothstep(moonsetMs, sunriseMs, t);
-      return sunEdge * smoothstep(sunriseMs, d, t);
-    },
-  });
-}
-
 /** Screen-height fraction for a body at altitude `alt` (0 at the horizon,
  *  1 at zenith) -- rises from and sets into the sea horizon rather than an
  *  arbitrary sky band. */
@@ -292,25 +245,4 @@ export function twilightAt(p01) {
   // Rising: the sun's morning half and the dark before it.
   const rising = p < SUN_SET_PHASE / 2 || p >= 0.5 + (MOON_SET_PHASE - 0.5) / 2;
   return { amount01, rising, xFrac, colors: rising ? TWILIGHT.dawn : TWILIGHT.dusk };
-}
-
-
-const BLUE_HOUR = Object.freeze({
-  horizon: '#394a83', mid: '#282c61', top: '#141c3f', glow: '#7a69ad',
-});
-
-/** The Range's afterglow continues through moonrise. A separate, eased
- * color clock avoids losing all sunset color when the sun dips out of view.
- * Sampling stays pure so held playback, exports and seeks agree. */
-export function twilightForClock(nowMs, clock) {
-  const orbit = twilightAt(cyclePhase01(nowMs, clock));
-  if (clock?.body !== 'night' || !(clock.twilightMs > 0)) return orbit;
-  const time = Math.min(clock.durationMs, Math.max(0, Number.isFinite(nowMs) ? nowMs : 0));
-  const rising = time > clock.durationMs / 2;
-  const progress = clamp01((rising ? clock.durationMs - time : time) / clock.twilightMs);
-  const amount01 = 1 - smoothstep(0, 1, progress);
-  const cool = smoothstep(.1, .8, progress);
-  const warm = rising ? TWILIGHT.dawn : TWILIGHT.dusk;
-  const colors = Object.fromEntries(Object.keys(warm).map(stop => [stop, hexLerp(warm[stop], BLUE_HOUR[stop], cool)]));
-  return { amount01, rising, xFrac: orbit.xFrac, colors };
 }

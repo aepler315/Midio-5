@@ -180,7 +180,7 @@ test('at most 2 voyages per song, with a cooldown between them', () => {
   assert.equal(ctx.midasus.forceVoyageCalls.length, 2, 'a second voyage should now be allowed');
   ctx.midasus.voyage.active = false;
 
-  run(director, ctx, t, 61); // past cooldowns again, but the cap is 2
+  t = run(director, ctx, t, 61); // past cooldowns again, but the cap is 2
   assert.equal(ctx.midasus.forceVoyageCalls.length, 2, 'must not exceed the per-song voyage cap');
 });
 
@@ -203,7 +203,7 @@ test('the global cooldown blocks the next excursion from starting right after on
 
   // The 25s global cooldown is timed from the voyage's actual launch moment
   // (~12s in, not "now"), so it should still be blocking here.
-  run(director, ctx, t, 3.5);
+  t = run(director, ctx, t, 3.5);
   assert.equal(ctx.midasus.forceVoyageCalls.length, 1, 'global cooldown should still be blocking');
 });
 
@@ -220,7 +220,7 @@ test('the end guard forces any active excursion home and blocks new ones', () =>
 test('with durationMs=0 (unknown length), the start/end guards are skipped entirely', () => {
   const director = new ExcursionDirector(0);
   const ctx = makeCtx({ vibe: { epic: 0.9, valence: 0 } });
-  run(director, ctx, 0, 4.1); // well under the usual 12s start guard
+  let t = run(director, ctx, 0, 4.1); // well under the usual 12s start guard
   assert.equal(ctx.midasus.forceVoyageCalls.length, 1, 'no known duration -> no start guard to block this');
 });
 

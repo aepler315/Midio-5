@@ -82,6 +82,10 @@ export function hashSeed(input) {
   return h >>> 0;
 }
 
+export function randRange(rand, lo, hi) {
+  return lo + rand() * (hi - lo);
+}
+
 /** Shortest-arc lerp between two hue angles in degrees, result wrapped to [0, 360). */
 export function lerpHue(h0, h1, t) {
   let d = ((h1 - h0 + 540) % 360) - 180;

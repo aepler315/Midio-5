@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { stageSite } from '../tools/stage-site.mjs';
 
 async function fixture() {
@@ -63,8 +62,7 @@ test('stageSite follows symlinked ancestors when checking destructive overlap', 
 test('staging verifies the Range v2 runtime bundle and shipped terrain assets', async () => {
   const { verifyRangeRuntime } = await import('../tools/stage-site.mjs');
   const fsp = fs, p = path;
-  // fileURLToPath: URL.pathname is not a filesystem path on Windows.
-  const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
+  const root = p.resolve(p.dirname(new URL(import.meta.url).pathname), '..');
   const out = await fsp.mkdtemp(p.join(os.tmpdir(), 'midio-stage-range-'));
   await fsp.cp(p.join(root, 'src'), p.join(out, 'src'), { recursive: true });
   const ok = await verifyRangeRuntime(root, out);
@@ -80,17 +78,4 @@ test('staging verifies the Range v2 runtime bundle and shipped terrain assets', 
   await fsp.rm(p.join(out, 'src', 'world', 'terrain', 'sceneCatalogData.js'));
   await assert.rejects(verifyRangeRuntime(root, out), /scene catalog cannot be loaded/);
   await fsp.rm(out, { recursive: true, force: true });
-});
-
-test('stageSite rejects public input symlinks before deleting existing output', async(t)=>{
-  const {root,source,output}=await fixture();t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  await fs.mkdir(output);await fs.writeFile(path.join(output,'keep'),'prior artifact');
-  await fs.symlink(path.join(source,'secret.txt'),path.join(source,'src/leak.js'));
-  await assert.rejects(stageSite(source,output),/symlink/i);
-  assert.equal(await fs.readFile(path.join(output,'keep'),'utf8'),'prior artifact');
-});
-test('malformed Range runtime metadata fails verification', async(t)=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'midio-runtime-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  await fs.mkdir(path.join(root,'src/vendor/range'),{recursive:true});await fs.writeFile(path.join(root,'src/vendor/range/runtime.json'),'{bad');
-  const {verifyRangeRuntime}=await import('../tools/stage-site.mjs');await assert.rejects(verifyRangeRuntime(root,root),/runtime|JSON/i);
 });

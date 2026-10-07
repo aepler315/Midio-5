@@ -239,7 +239,7 @@ export async function resolveArchiveDownload(item) {
   const files = meta.files || [];
   // Prefer medium-bitrate mp3s; skip derivative trash when possible
   const mp3s = files
-    .filter((f) => /\.mp3$/i.test(f.name || '') && !/sample|preview|_64kb/i.test(f.name || ''))
+    .filter((f) => /\.mp3$/i.test(f.name || '') && !/sample|preview|\_64kb/i.test(f.name || ''))
     .sort((a, b) => Number(b.size || 0) - Number(a.size || 0));
   const pick = mp3s[0] || files.find((f) => /\.mp3$/i.test(f.name || ''));
   if (!pick) throw new Error(`No MP3 on archive.org item ${id}`);
@@ -285,7 +285,7 @@ export async function downloadFreeTrack(item, demoCatalog = DEMO_CATALOG) {
 /** Combined free search: demos first (instant), then Archive.org. */
 export async function searchFreeMusic(query) {
   const demos = searchDemoCatalog(query);
-  let archive;
+  let archive = [];
   try {
     archive = await searchInternetArchive(query, { rows: 20 });
   } catch {

@@ -47,7 +47,7 @@ function note(o) {
   };
 }
 
-test('noteOn plays a melodic note as one oscillator through one gain, unfiltered', () => {
+test('with no patches set, noteOn plays the original plain tone (single oscillator, no filter/unison)', () => {
   const { ae, calls } = fakeAudioEngine();
   const synth = new SimpleSynth(ae);
   synth.noteOn(note({}));
@@ -56,10 +56,69 @@ test('noteOn plays a melodic note as one oscillator through one gain, unfiltered
   assert.equal(calls.gains, 1);
 });
 
-test('RHYTHM notes use the dedicated drum voices', () => {
+test('setPatches(null/empty) is a no-op: still plays the plain tone', () => {
   const { ae, calls } = fakeAudioEngine();
   const synth = new SimpleSynth(ae);
+  synth.setPatches(null);
+  synth.setPatches({});
+  synth.noteOn(note({}));
+  assert.equal(calls.oscillators, 1);
+  assert.equal(calls.filters, 0);
+});
+
+test('a channel with a designed patch is voiced through the patched path: filter + primary oscillator', () => {
+  const { ae, calls } = fakeAudioEngine();
+  const synth = new SimpleSynth(ae);
+  synth.setPatches({
+    0: {
+      type: 'sawtooth', attack: 0.02, release: 0.3, cutoffHz: 3000, resonanceQ: 1,
+      unisonGain: 0, unisonDetuneCents: 0, vibratoDepthCents: 0, vibratoRateHz: 5, peakGain: 0.15,
+    },
+  });
+  synth.noteOn(note({ channel: 0 }));
+  assert.equal(calls.filters, 1, 'patched voicing should route through a lowpass filter');
+  assert.equal(calls.oscillators, 1, 'no unison/vibrato configured -> exactly one oscillator');
+});
+
+test('a chordal patch (unisonGain > 0) adds a second detuned oscillator; vibrato adds an LFO oscillator', () => {
+  const { ae, calls } = fakeAudioEngine();
+  const synth = new SimpleSynth(ae);
+  synth.setPatches({
+    0: {
+      type: 'triangle', attack: 0.05, release: 0.6, cutoffHz: 2000, resonanceQ: 1,
+      unisonGain: 0.3, unisonDetuneCents: 8, vibratoDepthCents: 10, vibratoRateHz: 5.5, peakGain: 0.1,
+    },
+  });
+  synth.noteOn(note({ channel: 0, durMs: 500 }));
+  // primary + unison + vibrato LFO = 3 oscillators.
+  assert.equal(calls.oscillators, 3);
+  assert.equal(calls.filters, 1);
+});
+
+test('a note on a channel with no patch entry still falls back to the plain tone even when other channels have patches', () => {
+  const { ae, calls } = fakeAudioEngine();
+  const synth = new SimpleSynth(ae);
+  synth.setPatches({
+    0: {
+      type: 'sawtooth', attack: 0.02, release: 0.3, cutoffHz: 3000, resonanceQ: 1,
+      unisonGain: 0, unisonDetuneCents: 0, vibratoDepthCents: 0, vibratoRateHz: 5, peakGain: 0.15,
+    },
+  });
+  synth.noteOn(note({ channel: 1 }));
+  assert.equal(calls.filters, 0, 'channel 1 has no patch, so no filter should be involved');
+  assert.equal(calls.oscillators, 1);
+});
+
+test('RHYTHM notes always use the dedicated drum voices, ignoring any patch on that channel', () => {
+  const { ae, calls } = fakeAudioEngine();
+  const synth = new SimpleSynth(ae);
+  synth.setPatches({
+    9: {
+      type: 'sawtooth', attack: 0.02, release: 0.3, cutoffHz: 3000, resonanceQ: 1,
+      unisonGain: 0, unisonDetuneCents: 0, vibratoDepthCents: 0, vibratoRateHz: 5, peakGain: 0.15,
+    },
+  });
   synth.noteOn(note({ channel: 9, role: Role.RHYTHM, pitch: 36 }));
-  assert.equal(calls.filters, 0, 'the kick voice is a pitched sweep, not filtered noise');
+  assert.equal(calls.filters, 0, 'the kick voice never touches the filter/patch path');
   assert.equal(calls.oscillators, 1);
 });

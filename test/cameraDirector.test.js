@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CameraDirector, CALM_DRIFT_AMP_PX, CALM_DRIFT_PERIOD_SEC,
-  beatSwayOffset, BEAT_SWAY_BASE_PX, BEAT_SWAY_ENERGY_PX,
+  beatSwayOffset, BEAT_SWAY_BASE_PX, BEAT_SWAY_ENERGY_PX, BEAT_SWAY_LATERAL_PX,
   UNIVERSE_ZOOM_DIP, UNIVERSE_ROLL_MAX, FLOAT_TILT_MAX, ZOOM_MIN,
 } from '../src/render/CameraDirector.js';
 

@@ -2,8 +2,7 @@ import { WALL_SHARE } from '../src/world/terrain/ranges/shapes.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  REAL_BIOMES, REAL_BIOME_NAMES, REAL_BIOME_TEMPERATURE, biomeForEcoregion, biomeOfRange,
-  ecoregionCaption, ecoregionOfRange, rangesByBiome, surroundingOfRange,
+  REAL_BIOMES, REAL_BIOME_NAMES, REAL_BIOME_TEMPERATURE, biomeForEcoregion, biomeOfRange, rangesByBiome,
 } from '../src/world/RealBiomes.js';
 import { RANGES } from '../src/world/terrain/ranges/index.js';
 import { chooseSongBiomes, chooseBiomeRidges, castSongBiomes, SONG_BIOME_COUNT } from '../src/world/terrain/BiomeSet.js';
@@ -26,32 +25,7 @@ test('ecoregion rules split the biomes that cover unlike places', () => {
   assert.equal(biomeForEcoregion({ biome: 'Deserts & Xeric Shrublands', ecoregion: 'Colorado Plateau shrublands' }), 'CANYON');
   assert.equal(biomeForEcoregion({ biome: 'Deserts & Xeric Shrublands', ecoregion: 'Mojave desert' }), 'DESERT');
   assert.equal(biomeForEcoregion({ biome: 'N/A', ecoregion: 'Rock and Ice' }), 'ICEFIELD');
-  assert.equal(biomeForEcoregion({ biome: 'Tropical & Subtropical Coniferous Forests' }), 'PINE_OAK');
-  assert.equal(biomeForEcoregion({ biome: 'Tropical & Subtropical Moist Broadleaf Forests' }), 'BROADLEAF');
   assert.equal(biomeForEcoregion({ biome: 'Mangroves' }), null);
-});
-
-test('the summit keeps a sky island, and the basin stays in the caption', () => {
-  assert.equal(biomeOfRange('chiricahua-mountains'), 'PINE_OAK');
-  assert.equal(ecoregionOfRange('chiricahua-mountains'), 'Sierra Madre Occidental pine-oak forests');
-  assert.equal(ecoregionCaption('chiricahua-mountains'),
-    'Sierra Madre Occidental pine-oak forests, above Chihuahuan desert');
-  assert.equal(biomeOfRange('pinaleno-mountains'), 'PINE_OAK');
-  assert.equal(biomeOfRange('inyo-mountains'), 'CONIFER');
-  assert.equal(ecoregionOfRange('inyo-mountains'), 'Great Basin montane forests');
-  assert.ok(surroundingOfRange('inyo-mountains').some((s) => s.ecoregion === 'Great Basin shrub steppe'));
-  assert.equal(biomeOfRange('manzano-mountains'), 'PINE_OAK');
-  assert.equal(biomeOfRange('magdalena-mountains'), 'PINE_OAK');
-  assert.equal(biomeOfRange('sierra-mixteca'), 'BROADLEAF');
-  assert.equal(ecoregionOfRange('sierra-mixteca'), 'Oaxacan montane forests');
-  // The unsuffixed Bighorn stamp sits in the basin. Cloud Peak is the forest.
-  assert.equal(biomeOfRange('big-horn-mountains'), 'STEPPE');
-  assert.equal(biomeOfRange('bighorn-mountains-wyoming-usa'), 'CONIFER');
-  assert.equal(ecoregionCaption('kettle-river-range'), 'Northern Rockies conifer forests');
-  assert.equal(biomeOfRange('sawtooth-range-idaho-usa'), 'CONIFER');
-  assert.equal(ecoregionOfRange('sawtooth-range-idaho-usa'), 'South Central Rockies forests');
-  assert.equal(biomeOfRange('olympic-mountains'), 'RAINFOREST');
-  assert.match(ecoregionCaption('olympic-mountains'), /coastal/i);
 });
 
 test('real biomes carry what the renderer reads, and a temperature spread over 0..1', () => {

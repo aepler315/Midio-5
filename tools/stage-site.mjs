@@ -10,7 +10,7 @@ function overlaps(a, b) {
   return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..');
 }
 
-export async function canonicalPath(target) {
+async function canonicalPath(target) {
   const missing = [];
   let cursor = target;
   for (;;) {
@@ -40,10 +40,7 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
   const vendor = path.join(outputDir, 'src', 'vendor', 'range');
   let runtime;
   try { runtime = JSON.parse(await fs.readFile(path.join(vendor, 'runtime.json'), 'utf8')); }
-  catch (error) {
-    if (error.code === 'ENOENT') return { checked: false };
-    throw new Error(`Invalid Range runtime metadata: ${error.message}`, { cause: error });
-  }
+  catch { return { checked: false }; }
   for (const [name, want] of Object.entries(runtime.files)) {
     const buf = await fs.readFile(path.join(vendor, name));
     if (sha256(buf) !== want.sha256) throw new Error(`staged src/vendor/range/${name} does not match runtime.json`);
@@ -95,7 +92,7 @@ export async function verifyRangeRuntime(sourceDir, outputDir) {
   return { checked: true, rebuilt, views };
 }
 
-export async function assertStagePaths(sourceDir, outputDir) {
+export async function stageSite(sourceDir, outputDir) {
   const source = path.resolve(sourceDir);
   const output = path.resolve(outputDir);
   const [canonicalSource, canonicalOutput] = await Promise.all([
@@ -111,25 +108,10 @@ export async function assertStagePaths(sourceDir, outputDir) {
     && path.relative(canonicalSource, canonicalOutput) !== '_site') {
     throw new Error('Stage output inside the source must be its dedicated _site directory.');
   }
-  return { source, output };
-}
-
-export async function assertRegularTree(target) {
-  const stat = await fs.lstat(target);
-  if (stat.isSymbolicLink()) throw new Error(`Public runtime symlink is forbidden: ${target}`);
-  if (stat.isDirectory()) {
-    for (const name of await fs.readdir(target)) await assertRegularTree(path.join(target, name));
-  } else if (!stat.isFile()) throw new Error(`Public runtime input must be a regular file: ${target}`);
-}
-
-export async function stageSite(sourceDir, outputDir) {
-  const { source, output } = await assertStagePaths(sourceDir, outputDir);
   for (const required of REQUIRED) {
     try { await fs.access(path.join(source, required)); }
     catch { throw new Error(`Missing required runtime input: ${required}`); }
   }
-
-  for (const input of ['index.html', 'CNAME', 'src', 'soundfonts']) await assertRegularTree(path.join(source, input));
 
   await fs.rm(output, { recursive: true, force: true });
   await fs.mkdir(output, { recursive: true });

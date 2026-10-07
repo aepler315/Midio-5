@@ -1,43 +1,16 @@
 // Song-owned, causal filters. Rendering queries immutable analysis rather than
-// advancing envelopes; only compact filter states are checkpointed.
+// advancing envelopes; only seven states per filter are checkpointed.
 import { VisualMusicHistory } from './VisualMusicHistory.js';
-import { compileLandscapeSources, compileTrioSources } from './alpine/RangeNarrative.js';
+import { compileLandscapeSources } from './alpine/RangeNarrative.js';
 import { ridgeKickEnv } from './MountainChoreo.js';
 import { EnergyCurves } from '../audio/EnergyCurves.js';
 import { FLAT_WEIGHTS } from '../audio/bands.js';
 import { clamp01, smoothstep } from '../utils/math.js';
 
 const freeze = a => Object.freeze(a);
-const TRIO_IDS = freeze(['midio', 'broshi', 'midasus']);
-const SILENT_SOURCE = freeze({ activity: 0, pitchActivity: 0, pitch01: .5 });
-const zero = () => ({ bands: Array(7).fill(0), levels: Array(7).fill(0), depths: Array(7).fill(0), armed: Array(7).fill(true), flashMs: Array(7).fill(-Infinity), energy: 0, motionPresence01: 0, melodyActivity: 0, melodyPitchWeight: 0,
-  journeyPulse: 0, journeySources: TRIO_IDS.map(() => ({ activity: 0, pitchActivity: 0, pitchWeight: 0 })) });
-const copy = s => ({ bands: [...s.bands], levels: [...s.levels], depths: [...s.depths], armed: [...s.armed], flashMs: [...s.flashMs], energy: s.energy, motionPresence01: s.motionPresence01, melodyActivity: s.melodyActivity, melodyPitchWeight: s.melodyPitchWeight,
-  journeyPulse: s.journeyPulse, journeySources: s.journeySources.map(source => ({ ...source })) });
+const zero = () => ({ bands: Array(7).fill(0), levels: Array(7).fill(0), depths: Array(7).fill(0), armed: Array(7).fill(true), flashMs: Array(7).fill(-Infinity), energy: 0, motionPresence01: 0, melodyActivity: 0, melodyPitchWeight: 0 });
+const copy = s => ({ bands: [...s.bands], levels: [...s.levels], depths: [...s.depths], armed: [...s.armed], flashMs: [...s.flashMs], energy: s.energy, motionPresence01: s.motionPresence01, melodyActivity: s.melodyActivity, melodyPitchWeight: s.melodyPitchWeight });
 const follow = (v, raw, dt, attack, release) => v + (1 - Math.exp(-dt / (raw > v ? attack : release))) * (raw - v);
-
-// Exact exponential response to an arrived linear ramp. Returning weights
-// lets confidence and confidence-weighted pitch take the identical path.
-function rampWeights(dt, tau) {
-  const x = dt / tau, alpha = -Math.expm1(-x);
-  const end = x < 1e-4 ? x / 2 - x * x / 6 + x * x * x / 24 : 1 - alpha / x;
-  return [1 - alpha, alpha - end, end];
-}
-function responseWeights(value, start, end, dt, attack, release) {
-  const slope = (end - start) / dt;
-  const tau = start > value || (start === value && slope > 0) ? attack : release;
-  const error = value - start;
-  const crossing = error * slope > 0 ? tau * Math.log1p(error / (slope * tau)) : Infinity;
-  if (!(crossing > 0 && crossing < dt)) return rampWeights(dt, tau);
-  // Switch time constants where the filtered value meets a turning target,
-  // rather than changing coefficients when a query happens to cross a tick.
-  const [r0, a0, b0] = rampWeights(crossing, tau);
-  const [r1, a1, b1] = rampWeights(dt - crossing, slope > 0 ? attack : release);
-  const fraction = crossing / dt;
-  return [r1 * r0, r1 * (a0 + b0 * (1 - fraction)) + a1 * (1 - fraction),
-    r1 * b0 * fraction + a1 * fraction + b1];
-}
-const applyResponse = (value, start, end, weights) => clamp01(weights[0] * value + weights[1] * start + weights[2] * end);
 let sessionId = 0;
 
 /** Musical scrolling belongs to heard time, never a Simulation's reset origin. */
@@ -46,7 +19,7 @@ export function ridgeAdvectionPxAt(heardTimeMs, reducedMotion = false) {
 }
 
 export class RidgeMotionHistory {
-  #curves; #events; #visual; #sources; #trioSources; #journeyEdges; #checkpoints; #floor; #cal; #cues; #midi; #ends; #cache = new Map();
+  #curves; #events; #visual; #sources; #checkpoints; #floor; #cal; #cues; #midi; #ends; #cache = new Map();
   constructor({ energyCurves = null, timeline = [], response = null, durationMs = 0, generation = 'analysis', stepMs = 20, casting, conductorCues = [] } = {}) {
     if (stepMs !== 20) throw new RangeError('Ridge history uses the canonical 20 ms clock');
     this.generation = generation;
@@ -60,13 +33,6 @@ export class RidgeMotionHistory {
     casting ??= Object.fromEntries([['midio', 'MIDIO', 'bass'], ['broshi', 'BROSHI', 'melody'], ['midasus', 'MIDASUS', 'melody']]
       .map(([id, lane, fallback]) => [id, this.#events.some(e => e.lane === lane) ? 'source-lane' : fallback]));
     this.#sources = compileLandscapeSources({ timeline: this.#events, durationMs: this.durationMs, casting });
-    this.#trioSources = compileTrioSources({ timeline: this.#events, durationMs: this.durationMs });
-    // Just event boundaries, not another song-sized sampled history. Source
-    // lookup has a 40ms attack, a minimum 90ms note and a 120ms note tail.
-    this.#journeyEdges = [...new Set(this.#events.filter(e => clamp01(e.vel) > 0).flatMap(e => {
-      const duration = Math.max(90, Number.isFinite(e.durMs) ? e.durMs : 90);
-      return [e.tMs, e.tMs + 40, e.tMs + 80, e.tMs + e.durMs + 120, e.tMs + duration, e.tMs + duration + 120];
-    }).filter(Number.isFinite))].sort((a, b) => a - b);
     this.#cues = conductorCues.filter(e => e.type === 'calm' || e.kind === 'calm').map(e => freeze({ ...e })).sort((a, b) => a.tMs - b.tMs);
     if (energyCurves?.bands) {
       const c = new EnergyCurves(this.durationMs, energyCurves.rateHz || 50);
@@ -151,40 +117,6 @@ export class RidgeMotionHistory {
       }
       at = end;
     }
-    this.#advanceJourney(state, from, to);
-  }
-  #advanceJourney(state, from, to) {
-    let at = from, lo = 0, hi = this.#journeyEdges.length;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.#journeyEdges[mid] <= at + 1e-8) lo = mid + 1; else hi = mid; }
-    const rate = this.#curves?.rateHz || 50;
-    while (at < to - 1e-8) {
-      const frameEdge = (Math.floor(at * rate / 1000 + 1e-8) + 1) * 1000 / rate;
-      const end = Math.min(to, frameEdge, this.#journeyEdges[lo] ?? Infinity), dt = (end - at) / 1000;
-      // The interval contains no new source frame or event edge. Its interior
-      // gate includes a MIDI attack beginning at zero, and excludes the next
-      // audio frame even when that frame lands exactly at the interval end.
-      const audible = this.#raw((at + end) / 2).activity01 > 0;
-      const startSources = audible ? this.#trioSources.sample(at) : null;
-      const endSources = audible ? this.#trioSources.sample(end) : null;
-      for (let i = 0; i < TRIO_IDS.length; i++) {
-        const source = state.journeySources[i], id = TRIO_IDS[i];
-        const start = startSources?.[id] ?? SILENT_SOURCE, target = endSources?.[id] ?? SILENT_SOURCE;
-        const activityWeights = responseWeights(source.activity, start.activity, target.activity, dt, .1, .25);
-        const pitchWeights = responseWeights(source.pitchActivity, start.pitchActivity, target.pitchActivity, dt, .1, .25);
-        source.activity = applyResponse(source.activity, start.activity, target.activity, activityWeights);
-        source.pitchActivity = applyResponse(source.pitchActivity, start.pitchActivity, target.pitchActivity, pitchWeights);
-        source.pitchWeight = applyResponse(source.pitchWeight, start.pitchActivity * start.pitch01, target.pitchActivity * target.pitch01, pitchWeights);
-        if (source.activity < 1e-5 && !start.activity && !target.activity) source.activity = 0;
-        if (source.pitchActivity < 1e-5 && !start.pitchActivity && !target.pitchActivity) {
-          source.pitchActivity = 0; source.pitchWeight = 0;
-        }
-      }
-      const startPulse = this.#kick01(at), endPulse = this.#kick01(end);
-      state.journeyPulse = applyResponse(state.journeyPulse, startPulse, endPulse,
-        responseWeights(state.journeyPulse, startPulse, endPulse, dt, .04, .1));
-      at = end;
-      if (this.#journeyEdges[lo] <= at + 1e-8) lo++;
-    }
   }
   #kick01(at) {
     const kicks = this.#visual.kicks;
@@ -229,22 +161,10 @@ export class RidgeMotionHistory {
     const sources = this.#sources.sample(at).sources;
     const gatedSources = raw.activity01 > 0 ? sources : freeze(Object.fromEntries(Object.entries(sources)
       .map(([id, s]) => [id, freeze({ ...s, activity: 0, pitchActivity: 0, pitch01: .5 })])));
-    const trio = this.#trioSources.sample(at);
-    const trioSources = raw.activity01 > 0 ? trio : freeze(Object.fromEntries(Object.entries(trio)
-      .map(([id, s]) => [id, freeze({ ...s, activity: 0, pitchActivity: 0, pitch01: .5 })])));
-    const journeySources = freeze(Object.fromEntries(TRIO_IDS.map((id, i) => {
-      const source = state.journeySources[i];
-      return [id, freeze({ activity: source.activity, pitchActivity: source.pitchActivity,
-        pitch01: source.pitchActivity ? clamp01(source.pitchWeight / source.pitchActivity) : .5 })];
-    })));
-    const journey = freeze({ energy01: state.energy,
-      bass01: Math.max(.6 * state.bands[0] + .4 * state.bands[1], journeySources.broshi.activity),
-      melody01: Math.max(journeySources.midio.activity, journeySources.midasus.activity),
-      pulse01: state.journeyPulse, presence01: state.motionPresence01, bands: freeze(state.bands), sources: journeySources });
     const sample = freeze({ generation: this.generation, pressureEnergy01, bassPressure01, rhythmAccent01, spaceFlash01: freeze(state.flashMs.map(ms => Math.max(0, 1 - (at - ms) / 300))), bands: freeze(state.bands), spaceLevels: freeze(state.levels), spaceDepths: freeze(state.depths),
       kickMs: kick.kickMs, kickAmp: kick.kickAmp, kick01: this.#kick01(at),
       activity01: raw.activity01, motionPresence01: state.motionPresence01,
-      motionMelody: freeze({ activity: state.melodyActivity, pitch01: state.melodyActivity ? clamp01(state.melodyPitchWeight / state.melodyActivity) : .5 }), sources: gatedSources, trioSources, journey });
+      motionMelody: freeze({ activity: state.melodyActivity, pitch01: state.melodyActivity ? clamp01(state.melodyPitchWeight / state.melodyActivity) : .5 }), sources: gatedSources });
     // Small query memo only; checkpoints remain the musical authority.
     if (this.#cache.size >= 64) this.#cache.delete(this.#cache.keys().next().value);
     this.#cache.set(at, sample);
@@ -261,16 +181,6 @@ export function createRidgeMusicSampler({ primary, previous = null, handoffStart
     const b = primary.sample(timeMs), a = previous.sample(timeMs);
     const u = clamp01((timeMs - handoffStartMs) / handoffDurationMs), mix = u * u * (3 - 2 * u);
     const lerp = (x, y) => x + (y - x) * mix;
-    const journeySources = freeze(Object.fromEntries(TRIO_IDS.map(id => {
-      const x = a.journey.sources[id], y = b.journey.sources[id];
-      const pitchActivity = lerp(x.pitchActivity, y.pitchActivity);
-      return [id, freeze({ activity: lerp(x.activity, y.activity), pitchActivity,
-        pitch01: pitchActivity > 0 ? clamp01(lerp(x.pitchActivity * x.pitch01, y.pitchActivity * y.pitch01) / pitchActivity) : .5 })];
-    })));
-    const journey = freeze({ energy01: lerp(a.journey.energy01, b.journey.energy01),
-      bass01: lerp(a.journey.bass01, b.journey.bass01), melody01: lerp(a.journey.melody01, b.journey.melody01),
-      pulse01: lerp(a.journey.pulse01, b.journey.pulse01), presence01: lerp(a.journey.presence01, b.journey.presence01),
-      bands: freeze(b.journey.bands.map((v, i) => lerp(a.journey.bands[i], v))), sources: journeySources });
     const contributionIndex = {};
     const sources = freeze(Object.fromEntries(Object.keys(b.sources).map(id => {
       const x = a.sources[id], y = b.sources[id];
@@ -288,33 +198,16 @@ export function createRidgeMusicSampler({ primary, previous = null, handoffStart
       return [id, freeze({ source: x.source === y.source ? x.source : null, activity, pitchActivity, pitch01, contributors })];
     })));
     const sourceContributions = freeze(contributionIndex);
-    const trioContributionIndex = {};
-    const trioSources = freeze(Object.fromEntries(Object.keys(b.trioSources).map(id => {
-      const x = a.trioSources[id], y = b.trioSources[id];
-      const activity = lerp(x.activity, y.activity), pitchActivity = lerp(x.pitchActivity, y.pitchActivity);
-      const pitch01 = pitchActivity > 0
-        ? lerp(x.pitchActivity * x.pitch01, y.pitchActivity * y.pitch01) / pitchActivity : .5;
-      const contributors = freeze(x.source === y.source
-        ? [freeze({ source: x.source, activity, pitchActivity, pitch01 })]
-        : [freeze({ ...x, activity: x.activity * (1 - mix), pitchActivity: x.pitchActivity * (1 - mix) }),
-          freeze({ ...y, activity: y.activity * mix, pitchActivity: y.pitchActivity * mix })]);
-      for (const contributor of contributors) {
-        const retained = trioContributionIndex[contributor.source];
-        if (!retained || contributor.activity > retained.activity) trioContributionIndex[contributor.source] = contributor;
-      }
-      return [id, freeze({ source: x.source === y.source ? x.source : null, activity, pitchActivity, pitch01, contributors })];
-    })));
-    const trioSourceContributions = freeze(trioContributionIndex);
     const melodyActivity = lerp(a.motionMelody.activity, b.motionMelody.activity);
     const motionMelody = freeze({ activity: melodyActivity, pitch01: melodyActivity
       ? lerp(a.motionMelody.activity * a.motionMelody.pitch01, b.motionMelody.activity * b.motionMelody.pitch01) / melodyActivity : .5 });
-    return freeze({ ...b, motionMelody, journey, bands: freeze(b.bands.map((v, i) => lerp(a.bands[i], v))),
+    return freeze({ ...b, motionMelody, bands: freeze(b.bands.map((v, i) => lerp(a.bands[i], v))),
       spaceFlash01: freeze(b.spaceFlash01.map((v, i) => lerp(a.spaceFlash01[i], v))),
       spaceLevels: freeze(b.spaceLevels.map((v, i) => lerp(a.spaceLevels[i], v))), spaceDepths: freeze(b.spaceDepths.map((v, i) => lerp(a.spaceDepths[i], v))),
       pressureEnergy01: lerp(a.pressureEnergy01, b.pressureEnergy01), bassPressure01: lerp(a.bassPressure01, b.bassPressure01),
       motionPresence01: lerp(a.motionPresence01, b.motionPresence01),
       rhythmAccent01: lerp(a.rhythmAccent01, b.rhythmAccent01), activity01: lerp(a.activity01, b.activity01), kick01: lerp(a.kick01, b.kick01), kickAmp: lerp(a.kickAmp, b.kickAmp),
-      kickMs: mix < 1 ? a.kickMs : b.kickMs, sources, sourceContributions, trioSources, trioSourceContributions });
+      kickMs: mix < 1 ? a.kickMs : b.kickMs, sources, sourceContributions });
   } });
 }
 

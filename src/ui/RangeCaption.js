@@ -71,14 +71,9 @@ export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome
   if (worldKind !== 'alpine') return null;
   const far = range && range.name ? range : BUNDLED_RANGE;
   const cast = far === BUNDLED_RANGE ? { far } : { horizon: ridges?.horizon, massif: ridges?.massif, far, mid: ridges?.mid, near: ridges?.near };
-  const sources = new Set(Object.values(cast).filter(Boolean).map((x) => x.source));
-  let credit = 'Elevation: AWS Terrain Tiles';
-  if (sources.has('discovered') || sources.has('subrange')) {
-    const names = sources.has('subrange') && sources.has('discovered')
-      ? 'GeoNames and Wikidata'
-      : sources.has('subrange') ? 'GeoNames' : 'Wikidata';
-    credit = `Elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: ${names}`;
-  }
+  const credit = Object.values(cast).some((x) => x?.source === 'discovered')
+    ? 'Elevation: AWS Terrain Tiles · summits: GeoNames (CC BY 4.0) · ranges: Wikidata'
+    : 'Elevation: AWS Terrain Tiles';
   const credits = biome?.title ? `${credit} · biomes: RESOLVE Ecoregions 2017 (CC BY 4.0)` : credit;
   return {
     biome: biome?.title ? { title: biome.title, ecoregion: biome.ecoregion || '' } : null,
@@ -95,9 +90,6 @@ export function rangeCaptionFor(range, worldKind, stats = {}, ridges = {}, biome
  */
 export function sceneCaptionFor(view, { horizon = null, massif = null } = {}, biome = null) {
   if (!view?.title) return null;
-  if (view.id === 'moonlit-journey') return {
-    biome: null, rows: [{ label: '', name: 'Moonlit Journey', region: '' }], stats: '', credit: '',
-  };
   const rows = [];
   if (horizon?.name) rows.push({ label: 'HORIZON', name: horizon.name, region: shortRegion(horizon.region) });
   if (massif?.name) rows.push({ label: 'MASSIF', name: massif.name, region: shortRegion(massif.region) });

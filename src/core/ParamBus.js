@@ -77,3 +77,4 @@ export class ParamBus {
   }
 }
 
+export const KEYS_LIST = KEYS;

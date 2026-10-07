@@ -6,7 +6,7 @@ import {
   extractRidgePortrait, findLandmarks, sampleEnergyWave, phrasePeriod,
   composeAlpinePeaks, seedPeaks, layerWeathering, spineAt, phraseAt,
   lithologyFromShares, layerLithology, massProfile,
-  PORTRAIT_SAMPLES,
+  PORTRAIT_SAMPLES, MAX_LANDMARKS,
 } from '../src/world/RidgePortrait.js';
 import { ALPINE_CHARACTERS, alpineHeightField, rollingHeightField } from '../src/world/SilhouetteGenerator.js';
 
@@ -226,10 +226,11 @@ test('alpineHeightField with a portrait stays in 0..1, has a few distinct summit
   const noise = new ValueNoise1D(42, 256);
   const n = 512, step = 4, width = n * step;
   const h = alpineHeightField(noise, n, step, 1234, width, 'massif', portrait, 'L2');
-  let max = 0, peaks = 0;
+  let max = 0, sum = 0, peaks = 0;
   for (let i = 0; i < n; i++) {
     assert.ok(h[i] >= 0 && h[i] <= 1, `h[${i}]=${h[i]}`);
     max = Math.max(max, h[i]);
+    sum += h[i];
   }
   for (let i = 2; i < n - 2; i++) {
     if (h[i] > 0.55 && h[i] >= h[i - 1] && h[i] >= h[i + 1] && h[i] > h[i - 2] && h[i] > h[i + 2]) peaks++;

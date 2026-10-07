@@ -24,6 +24,3 @@ _site/
 
 # Elevation tiles fetched by tools/fetch-terrain-grid.mjs
 /.terrain-cache/
-
-# Local listening evidence: production runs, review books (tools/listening/)
-/.listening/

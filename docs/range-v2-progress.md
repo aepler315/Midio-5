@@ -202,9 +202,6 @@ Brainstorm section 6, the "presence ladder" Ashton chose: light is the floor, co
 
 ## One day per song (2026-10-01)
 
-**Superseded for the Range on 2026-10-05:** its song now stays at night,
-with one moonrise and moonset. See "A moonlit day" below.
-
 Ashton asked for songs to open just before sunrise in near-total darkness, with a dramatic sunrise, and to end on a dramatic sunset.
 
 - **Clock.** `songSkyClock` (DayNight.js) replaces the repeating day/night cycle for any song of 30 s or more. It runs 7% of the song (9-22 s) in the dark before dawn, the sun's arc for the body of the song (lingering near the horizon: its pace runs at 1 - 0.6 cos 2 pi u of the mean), sunset 6% (8-18 s) before the end, then afterglow into dark with no moon. Every `cycle` consumer takes the clock in place of a length, so the legacy painters follow the same day.
@@ -223,9 +220,6 @@ Ashton saw the sun come up "in an instant" and the clouds move as if by accident
 - Evidence (Teton, 180 s song): `teton-jackson-lake-dawn-grid.jpg` (2-60 s).
 
 ## The land moves only at big moments (2026-10-02)
-
-**Superseded on 2026-10-05:** `landMotion` now retains restrained musical
-response between these section swells. See "Restore musical response" below.
 
 Ashton found the land moving with the song accidental. It heaved all the time: a swell rolling across the ridges at 0.045 Hz sized by groove and sustain, a lift on every kick, a melodic tilt, a summit gesture, and a section lift that dropped and regrew at every boundary. Together they came to 8-20 px. The default chosen for him ("Big moments only") keeps all of those channels on the frame as `music.source` (the water still ripples to the kick, and evidence still reads them) but lets none of them move the ground.
 
@@ -323,66 +317,3 @@ Device measurement: `tools/range-device-probe.js` and `docs/range-v2-device-runs
 - `node tools/review-range-views.mjs --views nc-ross-lake-north --source published --stations 21 --modes neutral,silhouette`
 - `node tools/range-scene-smoke.mjs --url http://127.0.0.1:8092 --source-root "$PWD" --expect-sha <sha> --suite pilot|export|motion|complete --output .smoke/range-v2`
 - `node tools/gen-pilot-wav.mjs <out.wav> 60` (calm/energetic/calm motion-pilot song)
-
-## Restore musical response (2026-10-05)
-
-The big-moments-only adapter discarded the smoothed musical channels before
-they reached terrain and forest geometry. A song could have a live kick and
-melody in `music.source` while the rendered land stayed still. `landMotion`
-now passes through 35% of pressure, 60% of kick lift, 35% of summit gesture,
-and 65% of melodic displacement. These accents recede to 20% of their normal
-strength as a full section swell arrives. The fixed slow swell direction,
-section envelope, confidence gates, heard-time history, and shoreline receiver
-mask stay in place. Silence settles to stillness; reduced motion disables all
-deformation. Tonal evidence rules and the camera are unchanged.
-
-The combined maximum is below the existing 106.7 m pre-calibration reference:
-ordinary music contributes at most 41.845 m, and a full swell plus music at
-most 98.369 m. View calibration and geological caps still apply. These are
-bounds, not claims that every view moves by the same number of pixels.
-
-Melody uses a fixed 0.025 Hz carrier. The old source formula multiplied absolute
-song time by live pitch, so a smooth pitch change five minutes into a song
-could whirl the terrain through eight cycles in under a second. Pitch still
-affects melodic strength and wavelength, but no longer changes elapsed phase.
-The regression test samples actual history-driven geometry at 60 Hz across
-that late-song pitch transition.
-
-Checks now inspect the final `frame.music`, rather than accepting motion only
-in the discarded `frame.music.source`. Relevant checks:
-
-```
-node --test test/landMoments.test.js test/ridgeMotionHistory.test.js test/rangeFrame.test.js test/rangeExpression.test.js
-npm test
-npm run lint
-PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium node tools/range-response-evidence.mjs
-```
-
-The evidence tool runs the real compositor twice with the same generated
-audio, seeded construction, Teton view, CONIFER blend, dimensions and heard
-times. Only `RangeFrame.js` is substituted from the specified baseline ref.
-It saves opening stills, twelve frames per version, source/audio hashes,
-renderer identity and the final musical channels in `.smoke/range-response`.
-This is synthetic, software-rendered evidence; acceptance on real recordings
-and device performance require separate listening and hardware review.
-
-## A moonlit day (2026-10-05)
-
-The Range's "day" is now a lunar arc: the moon rises from the right horizon,
-crosses overhead at the song's midpoint, and sets on the left as the song
-ends. Its travel slows near each horizon. Night sky, cool moonlight, stars,
-aurora and moonlit reflections persist throughout; sunrise/sunset washes
-are disabled. The existing moon phase and musical sky response remain.
-
-`songMoonClock` maps heard time into the moon's half of the shared celestial
-cycle. `BiomeManager` selects it for alpine worlds, so legacy and v2 painters,
-the terrain's light direction, water, atmospheric fill and shadows all share
-the same moon. Known durations, including short songs, get one complete arc
-and hold dark after moonset. Unknown durations repeat a 150-second lunar
-cycle. Seeking and replay reconstruct the same sky directly from song time.
-
-Tests cover the full arc, absence of sun and dawn/dusk washes, short/unknown
-durations, light anchoring and both renderer paths. Capture three production
-frames with `PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium node tools/moon-cycle-evidence.mjs`
-while the app is served on port 8092. The tool records the resolved lighting
-and actual compositor frames in `.smoke/moon-cycle`.
