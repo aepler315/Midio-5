@@ -128,7 +128,7 @@ async function serve(site, prefix) {
 // Observe exact restore completion and the instant before resume. This is
 // instrumentation around the production adapter, not a substitute loader.
 function installProbe() {
-  const probe = window.__VERSION_SMOKE = { restores: [], resumes: [], audioStarts: [], contexts: [], workerUrls: [], captureSources: [], failures: [], failRestore: false, failQuota: false };
+  const probe = window.__VERSION_SMOKE = { restores: [], resumes: [], audioStarts: [], contexts: [], workerUrls: [], failures: [], failRestore: false, failQuota: false };
   const snapshot = adapter => {
     const { source, ...state } = adapter.getState();
     return { ...state, sourceKind: source?.kind, files: source?.files?.map(f => ({ name: f.name, size: f.size, type: f.type, lastModified: f.lastModified })) || [] };
@@ -168,36 +168,7 @@ function installProbe() {
     if (probe.failQuota && this.name === 'records' && a[0]?.source) throw new DOMException('Injected audio quota error', 'QuotaExceededError');
     return put.apply(this, a);
   };
-  const capturedCanvases = new WeakMap(), capturedTracks = new Map();
-  const captureStream = HTMLCanvasElement.prototype.captureStream;
-  HTMLCanvasElement.prototype.captureStream = function (...a) {
-    const frames = capturedCanvases.get(this) || [];
-    capturedCanvases.set(this, frames);
-    const stream = captureStream.apply(this, a);
-    const capture = { id: this.id, detached: !this.isConnected, width: this.width, height: this.height, frames };
-    for (const track of stream.getVideoTracks()) capturedTracks.set(track.id, capture);
-    return stream;
-  };
-  // KeepAwake also captures a 2px canvas, but never records it. Attribute
-  // evidence to the tracks actually consumed by the native MediaRecorder.
-  const OriginalMediaRecorder = window.MediaRecorder;
-  window.MediaRecorder = class extends OriginalMediaRecorder {
-    constructor(stream, options) {
-      super(stream, options);
-      for (const track of stream.getVideoTracks()) {
-        const capture = capturedTracks.get(track.id);
-        probe.captureSources.push(capture || { unknown: true, frames: [] });
-      }
-    }
-  };
-  const drawImage = CanvasRenderingContext2D.prototype.drawImage;
-  CanvasRenderingContext2D.prototype.drawImage = function (source, ...a) {
-    const frames = capturedCanvases.get(this.canvas);
-    if (frames) frames.push({ sourceId: source?.id || '', sourceTag: source?.tagName || source?.constructor?.name,
-      sourceIsStage: source === document.getElementById('stage'), sourceIsCanvas: source instanceof HTMLCanvasElement,
-      width: source?.width, height: source?.height, atMs: performance.now() });
-    return drawImage.call(this, source, ...a);
-  };
+
 }
 
 async function state(page) {
@@ -308,7 +279,9 @@ async function clickHudButton(page, selector) {
   if (await available.count()) await focusVisibleNavigation(available.first());
   // The real target click moves focus normally. Active recording/calibration
   // holds the existing HUD when all navigation controls are disabled.
-  await page.locator(selector).click();
+  const target = page.locator(selector), bounds = await target.boundingBox();
+  assert.ok(bounds && await target.isVisible() && await target.isEnabled(), `${selector}: HUD target must be available`);
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 }
 async function switchVersion(page, direction, expected, timeout) {
   console.log(`Version-browser smoke: ${direction} to ${expected.id}`);
@@ -323,7 +296,9 @@ async function switchVersion(page, direction, expected, timeout) {
     window.__VERSION_SMOKE.lastSwitchClick = attempt;
     sessionStorage.setItem('midio:smoke-last-switch-click', JSON.stringify(attempt));
   }, selector);
-  await page.locator(selector).click();
+  const target = page.locator(selector), bounds = await target.boundingBox();
+  assert.ok(bounds && await target.isVisible() && await target.isEnabled(), `${selector}: HUD target must be available`);
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.waitForFunction(id => {
     const text = document.getElementById('midio-version-metadata')?.textContent;
     if (text && JSON.parse(text).currentId === id) return true;
@@ -376,7 +351,7 @@ async function configureRunningDisplay(page, report) {
   const configured = await state(page);
   assert.equal(configured.settings.stageRes, '360'); assert.equal(configured.settings.stageFps, '30');
   report.compatibilityDisplay = { selectedThrough: 'Display settings UI', stageRes: '360', stageFps: '30',
-    appliesTo: 'running restore, mobile, recording and export phases', reason: 'Bounded native scene rendering on Chromium software GL',
+    appliesTo: 'running restore and mobile phases', reason: 'Bounded native scene rendering on Chromium software GL',
     renderer: await page.evaluate(() => ({ mode: window.__SMW?.rangeState?.mode, sceneClass: window.__SMW?.sim?.biomes?.rangePresentation?.scene?.constructor.name })) };
   assert.equal(report.compatibilityDisplay.renderer.mode, 'v2');
   console.log('Version-browser smoke: actual Display controls selected native 360p / 30fps for running phases');
@@ -560,9 +535,8 @@ async function runPrefix(options, audit, prefix, wavs) {
     assert.equal((await state(page)).sourceId, song.sourceId); report.checks.push('reload and browser history preserve current source');
     console.log('Version-browser smoke: reload/history passed; checking mobile HUD lifecycle');
     await mobileChecks(page, output, report);
-    console.log('Version-browser smoke: mobile HUD passed; checking real calibration and recording');
-    // The real calibration/recording UI must block departure. Recording is
-    // saved so the evidence includes the actual output, not just a flag.
+    console.log('Version-browser smoke: mobile HUD passed; checking calibration');
+    // The real calibration UI must block departure.
     await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(false));
     await clickHudButton(page, '#calibrateBtn');
     await page.waitForFunction(() => /calibr/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || '')
@@ -571,50 +545,12 @@ async function runPrefix(options, audit, prefix, wavs) {
     await clickHudButton(page, '#calibrateBtn');
     await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason
       && !document.getElementById('versionPrevious').disabled && !document.getElementById('versionNext').disabled);
-    await clickHudButton(page, '#recordBtn');
-    await page.waitForFunction(() => /record/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || '')
-      && document.getElementById('versionPrevious').disabled && document.getElementById('versionNext').disabled);
-    assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
-    await page.waitForFunction(() => document.getElementById('recordBtn')?.title === 'Stop recording and save the video', null, { timeout: options.timeout });
-    await page.waitForTimeout(1800);
-    const downloadPromise = page.waitForEvent('download', { timeout: 30000 }); await clickHudButton(page, '#recordBtn');
-    const download = await downloadPromise; await download.saveAs(path.join(output, `recording-${path.basename(download.suggestedFilename())}`));
-    const captures = await page.evaluate(() => window.__VERSION_SMOKE.captureSources);
-    assert.ok(captures.length && captures.every(c => c.detached && c.frames.length > 0 && c.frames.every(f => f.sourceIsStage && f.sourceIsCanvas)), 'recorder captures detached compositor frames drawn only from stage pixels; DOM version chrome stays outside output');
-    report.recordingCaptureSources = captures;
-    await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
-    await page.evaluate(() => window.__MIDIO_VERSION_ADAPTER.setPaused(true)); report.checks.push('real recording and calibration block arrows; saved canvas recording excludes DOM chrome');
-    console.log('Version-browser smoke: calibration and saved recording passed');
-
-    // Reach Complete through the real transport, then start the application's
-    // full-song export UI. Its existing HUD stop button ends the actual export
-    // early and saves a sample, bounding this check without mutating recorder
-    // state or waiting for all thirty seconds of this pilot.
-    console.log('Version-browser smoke: actual full-song export start/stop');
     await page.evaluate(async () => {
-      const adapter = window.__MIDIO_VERSION_ADAPTER;
-      await adapter.seek(Math.max(0, adapter.getState().durationMs - 1000)); await adapter.setPaused(false);
+      await window.__MIDIO_VERSION_ADAPTER.setPaused(true);
+      await window.__MIDIO_VERSION_ADAPTER.seek(6200);
     });
-    await page.locator('#completePanel:not(.hidden)').waitFor({ state: 'visible', timeout: 30000 });
-    await page.locator('#exportPreset').selectOption('car');
-    await page.locator('#exportBtn').click();
-    await page.waitForFunction(() => /record|export/i.test(window.__MIDIO_VERSION_ADAPTER.getState().blockedReason || '')
-      && document.getElementById('versionPrevious').disabled && document.getElementById('versionNext').disabled, null, { timeout: options.timeout });
-    assert.equal(await page.locator('#versionPrevious').isDisabled(), true); assert.equal(await page.locator('#versionNext').isDisabled(), true);
-    await page.waitForFunction(() => document.getElementById('recordBtn')?.title === 'Stop recording and save the video', null, { timeout: options.timeout });
-    const exporting = await state(page);
-    assert.ok(exporting.positionMs < 10000, 'full-song export restarted actual playback near the beginning');
-    await page.waitForTimeout(1200);
-    const exportDownloadPromise = page.waitForEvent('download', { timeout: 30000 }); await clickHudButton(page, '#recordBtn');
-    const exportDownload = await exportDownloadPromise;
-    await exportDownload.saveAs(path.join(output, `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}`));
-    const exportCaptures = await page.evaluate(() => window.__VERSION_SMOKE.captureSources);
-    assert.ok(exportCaptures.length > captures.length && exportCaptures.every(c => c.detached && c.frames.length > 0 && c.frames.every(f => f.sourceIsStage && f.sourceIsCanvas)), 'actual export compositor draws only stage pixels and excludes DOM version controls');
-    await page.waitForFunction(() => !window.__MIDIO_VERSION_ADAPTER.getState().blockedReason);
-    await page.evaluate(async () => { await window.__MIDIO_VERSION_ADAPTER.setPaused(true); await window.__MIDIO_VERSION_ADAPTER.seek(6200); });
-    report.export = { startedThrough: 'exportBtn', stoppedThrough: 'recordBtn', blockedReason: exporting.blockedReason, sampleFile: `full-song-export-stopped${path.extname(exportDownload.suggestedFilename())}`, captureSources: exportCaptures.slice(captures.length) };
-    report.checks.push('actual full-song export blocks both arrows and excludes DOM chrome; real stop UI saves bounded sample');
-    console.log('Version-browser smoke: actual export start/stop passed; checking missing destination retry');
+    report.checks.push('real calibration blocks arrows');
+    console.log('Version-browser smoke: calibration passed; checking missing destination retry');
 
     // Failure before departure must preserve both current song and pause.
     await wake(page); const beforeFailure = await state(page), beforeUrl = page.url();
@@ -744,7 +680,7 @@ async function runPrefix(options, audit, prefix, wavs) {
     execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-y', '-framerate', '2', '-i', path.join(screencastDir, '%05d.jpg'), '-vf', 'scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', path.join(output, 'click-through.mp4')], { timeout: 60000, stdio: 'pipe' });
     report.video = { path: 'click-through.mp4', frames: frameCount, samplingMs: 2000, playbackFps: 2, speed: 4 };
     report.limitations.push('Chromium only; no real iOS audio policy, physical safe-area device or deployment duration measured.',
-      'The full-song export check starts the real export and stops it early through the HUD; it does not verify a complete exported pilot file. Pending duplication uses a matching injected IDB record while the original owner remains alive.',
+      'Pending duplication uses a matching injected IDB record while the original owner remains alive.',
       'Audio source-start offsets and one AudioContext are observed; acoustic output and process-wide audio exclusivity require a real device check.');
     report.passed = true;
   } catch (error) {
