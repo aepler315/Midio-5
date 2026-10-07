@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { withAllWorlds } from './lib/allWorlds.mjs';
+import { listWorlds } from '../src/world/Worlds.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const url = process.argv[2] || 'http://127.0.0.1:8080';
@@ -43,18 +44,20 @@ try {
   assert.match(title, /how your song looks/i);
 
   const cards = page.locator('.worldCard');
-  assert.equal(await cards.count(), 9);
+  const worldIds = listWorlds().map(world => world.id).sort();
+  assert.deepEqual(await cards.evaluateAll(cards => cards.map(card => card.dataset.worldId).sort()), worldIds,
+    'exactly one card per registered world');
 
   const names = await cards.locator('.worldCardName').allInnerTexts();
-  assert.equal(new Set(names).size, 9, 'exactly one card per registered world');
+  assert.equal(new Set(names).size, worldIds.length, 'each world has a distinct name');
   assert.ok(names.includes('The Range'));
   assert.ok(!names.includes('Cathode'));
 
   const body = await page.locator('#worldSelect').innerText();
   assert.equal(/%|best match|is-best/i.test(body), false, 'no public ranking copy');
 
-  assert.equal(await page.locator('.worldCardPlayBtn').count(), 9);
-  assert.equal(await page.locator('.worldCardPreviewBtn').count(), 9);
+  assert.equal(await page.locator('.worldCardPlayBtn').count(), worldIds.length);
+  assert.equal(await page.locator('.worldCardPreviewBtn').count(), worldIds.length);
   assert.ok(await page.locator('#worldPassageQuiet').count());
   assert.ok(await page.locator('#worldPassagePeak').count());
   assert.ok(await page.locator('#worldChooseForMe').count());
@@ -71,7 +74,7 @@ try {
   await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 400, null, { timeout: 60000 });
   assert.equal(await page.evaluate(() => window.__SMW.sim.biomes.world.kind), 'city');
   assert.deepEqual(errors, [], 'chooser has no browser errors');
-  console.log('PASS world chooser: 9 equal cards, no scores, Preview stays on the picker, Play starts After Hours');
+  console.log(`PASS world chooser: ${worldIds.length} equal cards, no scores, Preview stays on the picker, Play starts After Hours`);
 } finally {
   await browser.close();
 }
