@@ -168,13 +168,27 @@ function installProbe() {
     if (probe.failQuota && this.name === 'records' && a[0]?.source) throw new DOMException('Injected audio quota error', 'QuotaExceededError');
     return put.apply(this, a);
   };
-  const capturedCanvases = new WeakMap();
+  const capturedCanvases = new WeakMap(), capturedTracks = new Map();
   const captureStream = HTMLCanvasElement.prototype.captureStream;
   HTMLCanvasElement.prototype.captureStream = function (...a) {
     const frames = capturedCanvases.get(this) || [];
     capturedCanvases.set(this, frames);
-    probe.captureSources.push({ id: this.id, detached: !this.isConnected, width: this.width, height: this.height, frames });
-    return captureStream.apply(this, a);
+    const stream = captureStream.apply(this, a);
+    const capture = { id: this.id, detached: !this.isConnected, width: this.width, height: this.height, frames };
+    for (const track of stream.getVideoTracks()) capturedTracks.set(track.id, capture);
+    return stream;
+  };
+  // KeepAwake also captures a 2px canvas, but never records it. Attribute
+  // evidence to the tracks actually consumed by the native MediaRecorder.
+  const OriginalMediaRecorder = window.MediaRecorder;
+  window.MediaRecorder = class extends OriginalMediaRecorder {
+    constructor(stream, options) {
+      super(stream, options);
+      for (const track of stream.getVideoTracks()) {
+        const capture = capturedTracks.get(track.id);
+        probe.captureSources.push(capture || { unknown: true, frames: [] });
+      }
+    }
   };
   const drawImage = CanvasRenderingContext2D.prototype.drawImage;
   CanvasRenderingContext2D.prototype.drawImage = function (source, ...a) {
