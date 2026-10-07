@@ -6,7 +6,7 @@
 // children are ready, so there are never holes. Positions are relative to
 // the camera, which keeps centimetre precision anywhere on the planet.
 import * as THREE from 'three';
-import { prepareTile, gridIndex, tileHeightAt, RENDER_MIN_Z, demLevelFor } from './TileBuilder.js';
+import { prepareTile, gridIndex, tileHeightAt, tileWaterAt, RENDER_MIN_Z, demLevelFor } from './TileBuilder.js';
 import { createTerrainMaterial } from './TerrainMaterial.js';
 import { EARTH_RADIUS, DEG, mxToLon, myToLat, lonToMx, latToMy, ecefToLonLat } from '../core/geo.js';
 
@@ -14,11 +14,19 @@ const CIRC = 2 * Math.PI * EARTH_RADIUS;
 const OCCLUDER_R = EARTH_RADIUS - 120;
 
 export const QUALITY = {
-  low: { errorPx: 9, M: 32, S: 128, maxZ: 16, maxTiles: 350, detail: false, micro: 0, shadowSize: 1024 },
-  medium: { errorPx: 6, M: 64, S: 128, maxZ: 17, maxTiles: 500, detail: true, micro: 1, shadowSize: 2048 },
-  high: { errorPx: 4, M: 64, S: 128, maxZ: 18, maxTiles: 700, detail: true, micro: 1, shadowSize: 2048 },
-  ultra: { errorPx: 2.6, M: 64, S: 128, maxZ: 19, maxTiles: 1000, detail: true, micro: 1, shadowSize: 4096 },
+  low: { errorPx: 9, M: 32, S: 128, maxZ: 16, maxTiles: 320, detail: false, micro: 0, shadowSize: 1024 },
+  medium: { errorPx: 6, M: 64, S: 128, maxZ: 17, maxTiles: 450, detail: true, micro: 1, shadowSize: 2048 },
+  high: { errorPx: 4, M: 64, S: 128, maxZ: 18, maxTiles: 650, detail: true, micro: 1, shadowSize: 2048 },
+  ultra: { errorPx: 2.6, M: 64, S: 128, maxZ: 19, maxTiles: 950, detail: true, micro: 1, shadowSize: 4096 },
 };
+
+/** Dispose a tile geometry without freeing the index buffer all tiles share
+ *  (three.js deletes a disposed geometry's index buffer on the GPU, which
+ *  would silently break every other tile's vertex array). */
+function disposeGeometry(g) {
+  g.index = null;
+  g.dispose();
+}
 
 class Tile {
   constructor(z, x, y, parent) {
@@ -98,7 +106,12 @@ export class TerrainTiles {
       return t._bounds;
     }
     let lo = -200, hi = 8900;
-    for (let p = t.parent; p; p = p.parent) if (p.data) { lo = p.data.minH; hi = p.data.maxH; break; }
+    const [d, dx, dy] = this._demTile(t);
+    const dem = this.dem.get(d, dx, dy);
+    if (dem) { lo = dem.min; hi = dem.max; } else {
+      for (let p = t.parent; p; p = p.parent) if (p.data) { lo = p.data.minH; hi = p.data.maxH; break; }
+    }
+    lo = Math.max(lo, -50); // the sea surface is drawn at 0
     const key = `${lo}|${hi}`;
     if (t._boundsFrom !== key) { t._bounds = this._sphere(t, lo, hi); t._boundsFrom = key; }
     return t._bounds;
@@ -146,10 +159,12 @@ export class TerrainTiles {
    */
   update(view) {
     this.frame++;
+    this.now = performance.now();
     this.view = view;
     this.mainList = [];
     this.shadowList = [];
     this.queue = [];
+    this.wanted = 0;
     this._sphereTmp ??= new THREE.Sphere();
     for (const r of this.roots) this._visit(r);
     for (const t of [...this.mainList, ...this.shadowList]) {
@@ -163,6 +178,16 @@ export class TerrainTiles {
     this.stats.drawn = this.mainList.length;
     this.stats.built = this.built.size;
     this.stats.maxZ = this.mainList.reduce((m, t) => Math.max(m, t.z), 0);
+    this.stats.wanted = this.wanted;
+  }
+
+  /** Request (but do not draw) what another view will need, e.g. the end of a flight. */
+  prefetch(view) {
+    const keep = [this.view, this.mainList, this.shadowList];
+    this.view = view; this.mainList = []; this.shadowList = [];
+    for (const r of this.roots) this._visit(r);
+    [this.view, this.mainList, this.shadowList] = keep;
+    this._schedule();
   }
 
   _cull(t) {
@@ -179,13 +204,16 @@ export class TerrainTiles {
   _visit(t) {
     const c = this._cull(t);
     if (!c.main && !c.caster) return;
-    t.seen = this.frame;
+    t.seen = this.frame; t.seenAt = this.now;
     if (t.state !== 'built') { this._want(t, 0); return; }
     const sse = (t.widthM / this.q.M) * this.view.K / c.dist;
-    if (sse > this.q.errorPx && t.z < this.q.maxZ) {
+    // Off-screen shadow casters only need coarse shapes.
+    const threshold = c.main ? this.q.errorPx : this.q.errorPx * 6;
+    if (sse > threshold && t.z < this.q.maxZ) {
       const kids = this._children(t);
       let ready = true;
       for (const k of kids) {
+        k.seen = this.frame; k.seenAt = this.now; // needed while the parent refines, even if off screen
         if (k.state === 'built') continue;
         const kc = this._cull(k);
         if (!kc.main && !kc.caster) continue;
@@ -198,6 +226,7 @@ export class TerrainTiles {
     if (c.caster || c.main) this.shadowList.push(t);
     if (!t.data.exact && !t.rebuilding && this.frame - t.rebuildCheck > 20) {
       t.rebuildCheck = this.frame;
+      this.wanted++;
       if (this._neighboursSettled(t)) { t.rebuilding = true; this.queue.push({ t, p: t.z + 5 }); }
       else this._requestNeighbours(t, t.z + 2);
     }
@@ -229,6 +258,7 @@ export class TerrainTiles {
 
   _want(t, p) {
     if (t.state !== 'new') return;
+    this.wanted++;
     t.wantFrame = this.frame;
     const [d, x, y] = this._demTile(t);
     const st = this.dem.request(d, x, y, p);
@@ -265,8 +295,8 @@ export class TerrainTiles {
     job.w.busy--;
     const t = job.t;
     t.job = null;
+    if (t.state === 'new') { this._schedule(); return; } // evicted while building
     if (error) { console.error(error); t.state = t.data ? 'built' : 'new'; t.rebuilding = false; return; }
-    if (t.state === 'new') return; // evicted while building
     this._upload(t, tile);
     t.state = 'built';
     t.rebuilding = false;
@@ -289,7 +319,7 @@ export class TerrainTiles {
     const n = 2 ** t.z;
     const origin = new THREE.Vector2(((t.x / n) * CIRC) % 2048, ((t.y / n) * CIRC) % 2048);
     if (t.mesh) {
-      t.mesh.geometry.dispose();
+      disposeGeometry(t.mesh.geometry);
       t.mesh.material.uniforms.uTex.value.dispose();
       t.mesh.geometry = geom;
       const u = t.mesh.material.uniforms;
@@ -313,12 +343,11 @@ export class TerrainTiles {
 
   _dispose(t) {
     if (t.mesh) {
-      t.mesh.geometry.dispose();
+      disposeGeometry(t.mesh.geometry);
       t.mesh.material.uniforms.uTex.value.dispose();
       t.mesh.material.dispose();
     }
     t.mesh = null; t.data = null; t.state = 'new'; t.rebuilding = false; t._boundsFrom = null;
-    if (t.job) { this.jobs.delete(t.job); t.job = null; }
     this.built.delete(t);
     if (t.children && t.children.every((k) => k.state === 'new' && !k.children)) t.children = null;
   }
@@ -326,7 +355,8 @@ export class TerrainTiles {
   _evict() {
     const max = this.q.maxTiles;
     if (this.built.size <= max) return;
-    const old = [...this.built].filter((t) => t.z > RENDER_MIN_Z && this.frame - t.seen > 30).sort((a, b) => a.seen - b.seen);
+    // Old means unused for a while in both frames and wall-clock time.
+    const old = [...this.built].filter((t) => t.z > RENDER_MIN_Z && this.frame - t.seen > 8 && this.now - (t.seenAt ?? 0) > 1500).sort((a, b) => a.seen - b.seen);
     for (const t of old) {
       if (this.built.size <= max * 0.9) break;
       this._dispose(t);
@@ -360,6 +390,14 @@ export class TerrainTiles {
     if (!t) return NaN;
     const n = 2 ** t.z;
     return tileHeightAt(t.data, lonToMx(lon) * n - t.x, Math.min(0.999999, latToMy(lat)) * n - t.y);
+  }
+
+  /** Water class under a lon/lat: 0 land, 1 lake, 2 sea (from the deepest built tile). */
+  waterAt(lon, lat) {
+    const t = this.tileAt(lon, lat);
+    if (!t) return 0;
+    const n = 2 ** t.z;
+    return tileWaterAt(t.data, lonToMx(lon) * n - t.x, Math.min(0.999999, latToMy(lat)) * n - t.y);
   }
 
   /** First terrain hit along a ray (ECEF origin, unit dir). Returns the
@@ -408,6 +446,6 @@ export class TerrainTiles {
 
   /** Is everything needed for the current view built? */
   get settled() {
-    return this.jobs.size === 0 && this.queue.length === 0;
+    return this.jobs.size === 0 && this.queue.length === 0 && this.stats.wanted === 0;
   }
 }

@@ -26,6 +26,7 @@ export async function shoot({ query, out, W = 1280, H = 720, waitS = 90, script 
   const logs = [];
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') logs.push(`${m.type()}: ${m.text()}`); });
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+  page.on('response', (r) => { if (r.status() >= 400) logs.push(`http ${r.status()}: ${r.url()}`); });
   const url = `http://127.0.0.1:${port}/?proxy=1&test=1&${query}`;
   await page.goto(url);
   const t0 = Date.now();
@@ -35,14 +36,16 @@ export async function shoot({ query, out, W = 1280, H = 720, waitS = 90, script 
     info = await page.evaluate(() => {
       const e = window.__rv?.engine;
       if (!e) return null;
-      return { drawn: e.tiles.stats.drawn, built: e.tiles.stats.built, building: e.tiles.jobs.size, queue: e.tiles.queue.length, dem: e.dem.queue.size + e.dem.inFlight, maxZ: e.tiles.stats.maxZ, exposure: e.exposure };
+      return { wanted: e.tiles.stats.wanted, drawn: e.tiles.stats.drawn, built: e.tiles.stats.built, building: e.tiles.jobs.size, queue: e.tiles.queue.length, dem: e.dem.queue.size + e.dem.inFlight, maxZ: e.tiles.stats.maxZ, exposure: e.exposure };
     }).catch(() => null);
-    if (info && info.building === 0 && info.queue === 0 && info.dem === 0 && info.drawn > 0) stable++; else stable = 0;
+    if (info && info.wanted === 0 && info.building === 0 && info.queue === 0 && info.dem === 0 && info.drawn > 0) stable++; else stable = 0;
     if (stable >= 3) break;
   }
   if (script) await page.evaluate(script);
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: out });
+  await page.evaluate(() => { window.__rv.paused = true; });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__rv.still());
+  await page.screenshot({ path: out, timeout: 180000 });
   if (!keepOpen) { await browser.close(); server.close(); }
   return { info, logs, seconds: (Date.now() - t0) / 1000, page, browser, server };
 }

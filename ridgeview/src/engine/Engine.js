@@ -9,6 +9,7 @@ import { Sky } from './Sky.js';
 import { Clouds } from './Clouds.js';
 import { Shadows } from './Shadows.js';
 import { Post } from './Post.js';
+import { Reflection } from './Reflection.js';
 import { sampleSkyLight } from './AtmosphereCPU.js';
 import { CameraRig } from '../scene/CameraRig.js';
 import { Looks } from '../scene/Looks.js';
@@ -31,6 +32,7 @@ export class Engine {
     this.clouds = new Clouds(this.globals);
     this.shadows = new Shadows(this.globals, QUALITY[quality].shadowSize);
     this.post = new Post();
+    this.reflection = new Reflection(this.globals);
     this.scene = new THREE.Scene();
     this.scene.matrixWorldAutoUpdate = false;
     this.scene.add(this.tiles.group);
@@ -71,6 +73,7 @@ export class Engine {
     }
     this.camera.aspect = w / h;
     this.post.uniforms.uRes.value.set(W, H);
+    this.globals.uViewRes.value.set(W, H);
     this.width = w; this.height = h;
   }
 
@@ -157,6 +160,18 @@ export class Engine {
     this.exposureTarget = clamp((0.2 / Math.max(lum, 1e-6)) * this.looks.cur.exposure, 0.02, 80);
   }
 
+  _prefetch(t, K) {
+    this._pfRig ??= new CameraRig();
+    this._pfCam ??= new THREE.PerspectiveCamera(40, 1, 0.3, 1e8);
+    const rig = this._pfRig, cam = this._pfCam;
+    rig.fov = t.fov;
+    rig.set(t.lon, t.lat, t.h, t.heading, t.pitch);
+    cam.aspect = this.camera.aspect;
+    rig.apply(cam);
+    const proj = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    this.tiles.prefetch({ cam: rig.pos, frustum: new THREE.Frustum().setFromProjectionMatrix(proj), K: K * 0.5, casters: null });
+  }
+
   frame(dt) {
     this.time += dt;
     this.frameNo++;
@@ -180,6 +195,7 @@ export class Engine {
     const shadowOn = this.looks.styleCode !== 1 && this.looks.styleCode !== 4 && sunUp > -0.06 && this.agl < 60000 && this.tiles.q.shadowSize > 0;
     const casters = this.shadows.fit(this.camera, sunVec, Math.max(0, this.agl), shadowOn);
     this.tiles.update({ cam, frustum, K, casters });
+    if (this.prefetchTarget && this.frameNo % 3 === 0) this._prefetch(this.prefetchTarget, K);
     this.dem.update();
     if (this.frameNo % 4 === 1 || this.looks.animating || !this.skyLight) this._updateSkyLight();
     // Exposure adapts in log space (~0.6 s).
@@ -208,6 +224,10 @@ export class Engine {
       this.clouds.update(cam, enuBasis(lon, lat), this.deckH ?? 3000);
     }
     this.tiles.usePass('main');
+    if (this.tiles.q.micro) {
+      this.reflection.detect(this, performance.now());
+      this.reflection.render(this, dt);
+    } else this.globals.uReflOn.value = 0;
     r.setRenderTarget(this.hdr);
     r.clear(true, true, false);
     r.render(this.sky.scene, this.sky.camera);

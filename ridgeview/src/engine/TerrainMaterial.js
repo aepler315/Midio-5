@@ -31,6 +31,9 @@ export function createGlobals() {
     uShadow0: { value: null }, uShadow1: { value: null }, uShadowM0: { value: new THREE.Matrix4() }, uShadowM1: { value: new THREE.Matrix4() },
     uShadowOn: { value: 0 }, uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) }, uShadowBias: { value: new THREE.Vector2(1e-4, 1e-4) },
     uMicro: { value: 1 },
+    // Planar reflection of a lake: the mirrored pass and the texture it makes.
+    uMirror: { value: new THREE.Matrix4() }, uClipOn: { value: 0 },
+    uReflTex: { value: null }, uReflOn: { value: 0 }, uReflH: { value: 0 }, uViewRes: { value: new THREE.Vector2(1, 1) },
   };
 }
 
@@ -38,6 +41,7 @@ const VS = /* glsl */ `
 attribute float aH;
 uniform vec3 uTileCenter;   // tile centre ECEF (m), float precision is enough for directions
 uniform mat4 uShadowM0, uShadowM1;
+uniform mat4 uMirror;
 varying vec2 vUv;
 varying float vH;
 varying vec3 vRel;
@@ -53,7 +57,7 @@ void main() {
   vUp = normalize(uTileCenter + position);
   vS0 = uShadowM0 * wp;
   vS1 = uShadowM1 * wp;
-  gl_Position = projectionMatrix * viewMatrix * wp;
+  gl_Position = projectionMatrix * viewMatrix * (uMirror * wp);
   applyLogDepth();
 }
 `;
@@ -75,6 +79,9 @@ uniform vec3 uForestCol, uGrassCol, uDryCol, uRockCol, uRockCol2, uSoilCol, uSno
 uniform float uCloudOn, uCloudTop, uCloudThick;
 uniform vec3 uCloudCol;
 uniform float uStormDark, uTime, uMicro;
+uniform float uClipOn, uReflOn, uReflH;
+uniform sampler2D uReflTex;
+uniform vec2 uViewRes;
 uniform sampler2D uShadow0, uShadow1;
 uniform float uShadowOn;
 uniform vec2 uShadowTexel;
@@ -145,6 +152,8 @@ float fbm2(vec2 p, float per) {
 }
 
 void main() {
+  // Mirrored pass: only what stands above the lake's surface.
+  if (uClipOn > 0.5 && vH < uReflH + 0.6) discard;
   vec2 tuv = (vec2(1.5) + vUv * uS) / uTexSize;
   vec4 tx = texture(uTex, tuv);
   vec3 up = normalize(vUp);
@@ -182,20 +191,32 @@ void main() {
   float sl = table(alat, LATS, SNOW) + uSnowShift + fL * 200.0 - poleward * 260.0 + cvx * 50.0;
   float steep = sdeg + fM * 6.0 + fS * 3.0;
   float alpine = smoothstep(tl - 50.0, tl + 450.0, vH + fM * 60.0);
-  float rock = smoothstep(34.0, 44.0, steep);
+  // Below the treeline forest holds slopes up to ~45 degrees; above it rock shows sooner.
+  float rock = smoothstep(mix(40.0, 33.0, alpine), mix(50.0, 43.0, alpine), steep);
   rock = max(rock, alpine * smoothstep(17.0, 31.0, steep - cvx * 5.0));
-  rock = max(rock, smoothstep(0.6, 1.8, cvx) * smoothstep(18.0, 28.0, sdeg));
+  rock = max(rock, smoothstep(0.6, 1.8, cvx) * smoothstep(22.0, 32.0, sdeg) * (0.35 + 0.65 * alpine));
   rock *= 1.0 - water;
   float scree = (1.0 - rock) * smoothstep(-0.1, -0.9, cvx + fS * 0.4) * smoothstep(20.0, 30.0, sdeg) * smoothstep(tl - 700.0, tl - 100.0, vH);
   // Forest: elevation band, slope, moisture (poleward slopes and hollows are wetter).
   float band = smoothstep(tl + 40.0, tl - 380.0, vH + fM * 120.0) * smoothstep(uForestFloor - 120.0, uForestFloor + 160.0, vH + fM * 120.0);
-  float moist = 0.55 + poleward * (0.15 + 0.35 * uDryness) - cvx * 0.12 - uDryness * 0.45;
-  float pot = band * (1.0 - smoothstep(33.0, 45.0, sdeg)) * (1.0 - rock) * (1.0 - water);
-  float cover = moist + fM * 0.45 + fS * 0.18 + (uForestDensity - 0.65) * 0.9 - (1.0 - band) * 0.5;
-  float forest = smoothstep(0.38, 0.5, cover) * smoothstep(0.02, 0.25, pot);
+  float moist = 0.6 + poleward * (0.12 + 0.35 * uDryness) - cvx * 0.1 - uDryness * 0.45;
+  float pot = band * (1.0 - smoothstep(40.0, 50.0, sdeg)) * (1.0 - rock) * (1.0 - water);
+  // Dry valley floors stay open (sage, grass); wetter climates forest them.
+  pot *= mix(1.0, smoothstep(2.0, 7.0, sdeg + fM * 4.0), clamp(uDryness * 4.0, 0.0, 1.0));
+  // Avalanche paths: open strips down the fall line on steep forested slopes.
+  vec2 fall = slope > 1e-3 ? tx.xy / slope : vec2(1.0, 0.0);
+  float across = dot(gp, vec2(-fall.y, fall.x));
+  float chute = smoothstep(0.55, 0.8, vnoise(vec2(across / 48.0, dot(gp, fall) / 900.0) + warp * 0.4, 1024.0) * 0.5 + 0.5)
+              * smoothstep(24.0, 32.0, sdeg) * smoothstep(-0.2, -0.8, cvx + fM * 0.4);
+  float cover = moist + fM * 0.32 + fS * 0.14 + (uForestDensity - 0.65) * 0.9 - (1.0 - band) * 0.6 - chute * 0.7;
+  float forest = smoothstep(0.36, 0.56, cover) * smoothstep(0.02, 0.25, pot);
   float snowLine = smoothstep(sl - 60.0, sl + 160.0, vH + fM * 90.0 + nS * 20.0);
   float snowHold = 1.0 - smoothstep(42.0, 58.0, sdeg + fS * 6.0);
   float snow = snowLine * snowHold;
+  // Couloirs and shaded hollows hold snow well below the snowline.
+  float gully = smoothstep(sl - 750.0, sl - 250.0, vH + fM * 120.0) * smoothstep(-0.15, -0.9, cvx + fS * 0.3)
+              * smoothstep(-0.2, 0.5, poleward) * (1.0 - smoothstep(40.0, 55.0, sdeg));
+  snow = max(snow, gully);
   snow = max(snow, snowLine * 0.35 * smoothstep(52.0, 40.0, sdeg)); // dusting on rock
   snow *= 1.0 - water * (1.0 - smoothstep(-1500.0, -2500.0, uSnowShift)); // lakes freeze only in deep winter
 
@@ -224,7 +245,7 @@ void main() {
   vec2 nh = vec2(dot(n, east), dot(n, north));
 
   // --- Albedo ---------------------------------------------------------------
-  vec3 meadow = mix(uGrassCol, uDryCol, clamp(uDryness * 0.7 + fS * 0.2 + (0.55 - moist) * 0.5 + alpine * 0.25, 0.0, 1.0));
+  vec3 meadow = mix(uGrassCol, uDryCol, clamp(uDryness * 0.6 + fS * 0.15 + (0.55 - moist) * 0.35 + alpine * 0.3, 0.0, 1.0));
   meadow *= 0.86 + 0.28 * nS * near;
   meadow = mix(meadow, uAutumnCol, uAutumn * smoothstep(0.0, 0.5, fS) * (1.0 - alpine) * 0.6);
   meadow = mix(meadow, vec3(0.16, 0.13, 0.08), alpine * 0.35); // tundra mat
@@ -233,6 +254,10 @@ void main() {
   float crackN = vnoise(gp / 16.0 + warp * 3.0, 128.0);
   float crack = (1.0 - smoothstep(0.0, 0.07, abs(crackN))) * smoothstep(9.0, 3.0, footM);
   vec3 rockC = mix(uRockCol, uRockCol2, clamp(0.5 + 0.6 * fL + 0.25 * strata - 0.1, 0.0, 1.0));
+  // Water staining and lichen streaks running down the fall line of cliffs.
+  vec2 fall2 = slope > 1e-3 ? tx.xy / slope : vec2(1.0, 0.0);
+  float streak = vnoise(vec2(dot(gp, vec2(-fall2.y, fall2.x)) / 6.0, dot(gp, fall2) / 160.0) + warp * 0.3, 2048.0);
+  rockC *= 1.0 - 0.32 * smoothstep(0.1, 0.7, streak) * smoothstep(30.0, 50.0, sdeg);
   rockC *= (0.92 + 0.16 * strata) * (1.0 - 0.45 * crack) * (1.0 + 0.2 * nS * near) * (1.0 - 0.15 * smoothstep(0.0, -1.5, cvx));
   rockC = mix(rockC, vec3(0.11, 0.12, 0.07), 0.18 * smoothstep(0.15, 0.5, fS) * (1.0 - alpine * 0.6) * (1.0 - uDryness));
   vec3 screeC = mix(rockC * 1.12, uSoilCol, 0.25) * (0.92 + 0.16 * nS);
@@ -281,10 +306,16 @@ void main() {
     float calm = mix(0.35, 1.0, sea);
     vec3 nw = normalize(up - (r1.y * east + r1.z * north) * 0.03 * calm - (r2.y * east + r2.z * north) * 0.018 * calm);
     float cosV = max(dot(nw, V), 0.0);
-    float fres = 0.025 + 0.975 * pow(1.0 - cosV, 5.0);
+    float fres = 0.02 + 0.78 * pow(1.0 - cosV, 5.0);
     vec3 R = reflect(-V, nw);
     float re = clamp(dot(R, up), 0.0, 1.0);
-    vec3 refl = mix(uSkyHorizon, uSkyZenith, pow(re, 0.6));
+    vec3 refl = mix(uSkyHorizon, uSkyZenith, pow(re, 0.6)) * 0.8;
+    if (uReflOn > 0.001 && abs(vH - uReflH) < 2.5) {
+      // The mountains mirrored in the lake, broken up by the ripples.
+      vec2 d = (vec2(dot(nw, east), dot(nw, north))) * (0.35 / max(1.0, distM / 400.0));
+      vec3 mirror = texture(uReflTex, gl_FragCoord.xy / uViewRes + d * vec2(0.5, 1.0)).rgb;
+      refl = mix(refl, mirror, uReflOn);
+    }
     float shallow = isLake * (1.0 - smoothstep(0.3, 0.46, tx.z));
     vec3 waterC = mix(uWaterCol, vec3(0.06, 0.12, 0.10), shallow * 0.8);
     vec3 body = waterC / PI * (sunE * 0.35 + skyE * 1.2);
@@ -412,7 +443,7 @@ export function createTerrainMaterial(globals, tileUniforms) {
     vertexShader: VS,
     fragmentShader: FS,
     uniforms: { ...globals, ...tileUniforms },
-    extensions: {},
+    side: THREE.DoubleSide, // the mirrored pass flips winding
   });
 }
 

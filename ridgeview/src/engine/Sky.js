@@ -16,6 +16,7 @@ ${ATMOS}
 uniform mat4 uInvViewProj;
 uniform int uStyle;
 uniform float uTime, uStars;
+uniform vec3 uSkyOrigin; // camera position in the mirrored pass (else 0)
 varying vec2 vNdc;
 
 float starField(vec3 d) {
@@ -32,7 +33,7 @@ float starField(vec3 d) {
 
 void main() {
   vec4 p = uInvViewProj * vec4(vNdc, -1.0, 1.0); // near plane: the far plane cancels to w~0 in float32
-  vec3 d = normalize(p.xyz / p.w);
+  vec3 d = normalize(p.xyz / p.w - uSkyOrigin);
   vec3 trans;
   vec3 col = skyRadiance(uCamKm, d, trans);
   vec2 hitP = raySphere(uCamKm, d, RP);
@@ -91,6 +92,7 @@ export class Sky {
       ...globals,
       uInvViewProj: { value: new THREE.Matrix4() },
       uStars: { value: 1 },
+      uSkyOrigin: { value: new THREE.Vector3() },
     };
     this.mesh = new THREE.Mesh(geom, new THREE.ShaderMaterial({
       vertexShader: VS, fragmentShader: FS, uniforms: this.uniforms, depthTest: false, depthWrite: false,

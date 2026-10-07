@@ -246,11 +246,13 @@ export function buildPrepared(prep, { M = 64, detail = true } = {}) {
   }
   // CPU heights (no apron) for picking and queries.
   const hf = new Float32Array((S + 1) * (S + 1));
+  const wm = new Uint8Array((S + 1) * (S + 1));
   let minH = Infinity, maxH = -Infinity;
   for (let j = 0; j <= S; j++) {
     for (let i = 0; i <= S; i++) {
       const h = F[(j + 1) * P + (i + 1)];
       hf[j * (S + 1) + i] = h;
+      wm[j * (S + 1) + i] = water[(j + 1) * P + (i + 1)];
       if (h < minH) minH = h;
       if (h > maxH) maxH = h;
     }
@@ -286,7 +288,7 @@ export function buildPrepared(prep, { M = 64, detail = true } = {}) {
   return {
     z, x, y, S, M, center, radius, minH, maxH, exact: prep.exact, demLevel: wn.d,
     positions: pos, uvs: uv, heights: hv, index: gridIndex(M),
-    tex, texSize: P, heightfield: hf,
+    tex, texSize: P, heightfield: hf, water: wm,
     peaks: z >= 9 && z <= 15 ? findPeaks(hf, S, (i, j) => [mxToLon((x + i / S) / n), myToLat((y + j / S) / n)]) : [],
   };
 }
@@ -317,6 +319,12 @@ function findPeaks(hf, S, toLonLat) {
     }
   }
   return out.sort((a, b) => b.h - a.h).slice(0, 3);
+}
+
+/** Water class at tile fraction (u, v): 0 land, 1 lake, 2 sea. */
+export function tileWaterAt(tile, u, v) {
+  const S = tile.S, i = Math.min(S, Math.max(0, Math.round(u * S))), j = Math.min(S, Math.max(0, Math.round(v * S)));
+  return tile.water[j * (S + 1) + i];
 }
 
 /** Bilinear height from a built tile at tile fraction (u, v). */

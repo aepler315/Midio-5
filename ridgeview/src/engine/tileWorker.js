@@ -7,7 +7,7 @@ self.onmessage = (e) => {
     const t = buildPrepared(prep, { M, detail });
     const { index, ...rest } = t; // the index buffer is shared on the main thread
     void index;
-    self.postMessage({ id, tile: rest }, [rest.positions.buffer, rest.uvs.buffer, rest.heights.buffer, rest.tex.buffer, rest.heightfield.buffer]);
+    self.postMessage({ id, tile: rest }, [rest.positions.buffer, rest.uvs.buffer, rest.heights.buffer, rest.tex.buffer, rest.heightfield.buffer, rest.water.buffer]);
   } catch (err) {
     self.postMessage({ id, error: String(err?.stack || err) });
   }

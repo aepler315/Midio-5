@@ -27,7 +27,8 @@ export class Flight {
     const dir1 = headingPitchToDirection(to.heading, to.pitch, to.lon, to.lat);
     this.l1 = ecefToLonLat(...v3.add(end, v3.scale(dir1, to.lookDist ?? 12000)));
     this.dist = distance(a.lon, a.lat, to.lon, to.lat);
-    this.duration = clamp(2.6 + 1.25 * Math.log10(1 + this.dist / 1500), 2.6, 8.5);
+    const travel = Math.max(this.dist, Math.abs(a.h - to.h) * 0.6);
+    this.duration = clamp(2.6 + 1.25 * Math.log10(1 + travel / 1500), 2.6, 8.5);
     // Peak altitude: high enough to see the planet's curve on long jumps and
     // to clear any terrain between nearby viewpoints.
     let clear = 0;

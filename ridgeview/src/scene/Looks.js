@@ -46,11 +46,11 @@ export const OVERLAYS = [
 
 // Colours are sRGB hex; the shader works in linear light.
 export const BIOMES = {
-  conifer: { forest: '#1b3622', grass: '#5c7638', dry: '#9b8b5a', rock: '#7d776f', rock2: '#5c5751', soil: '#6d5b47', autumn: '#b88a2c', density: 0.85, dryness: 0.25, floor: -1000, playa: 0 },
-  taiga: { forest: '#1f3326', grass: '#66773f', dry: '#8f8a5c', rock: '#77736d', rock2: '#56534f', soil: '#62553f', autumn: '#c49a2a', density: 0.8, dryness: 0.15, floor: -1000, playa: 0 },
+  conifer: { forest: '#18301e', grass: '#4a5c30', dry: '#7a7556', rock: '#76736e', rock2: '#575551', soil: '#6d5b47', autumn: '#b88a2c', density: 0.85, dryness: 0.22, floor: -1000, playa: 0 },
+  taiga: { forest: '#1b2e22', grass: '#56663a', dry: '#7f7a58', rock: '#77736d', rock2: '#56534f', soil: '#62553f', autumn: '#c49a2a', density: 0.8, dryness: 0.15, floor: -1000, playa: 0 },
   tundra: { forest: '#2b3a29', grass: '#757248', dry: '#8f7f5a', rock: '#716e6a', rock2: '#55524f', soil: '#5d5040', autumn: '#a0492c', density: 0.3, dryness: 0.35, floor: -1000, playa: 0 },
   ice: { forest: '#2a3a2a', grass: '#6e6f48', dry: '#857a5a', rock: '#6f6d6b', rock2: '#4f4e4d', soil: '#5a5045', autumn: '#9a5a2c', density: 0.25, dryness: 0.3, floor: -1000, playa: 0 },
-  broadleaf: { forest: '#2c4a24', grass: '#5a7d3d', dry: '#8a8a55', rock: '#7a756e', rock2: '#5e5a55', soil: '#66553f', autumn: '#c0521e', density: 0.95, dryness: 0.1, floor: -1000, playa: 0 },
+  broadleaf: { forest: '#283f22', grass: '#526e38', dry: '#807d52', rock: '#7a756e', rock2: '#5e5a55', soil: '#66553f', autumn: '#c0521e', density: 0.95, dryness: 0.1, floor: -1000, playa: 0 },
   desert: { forest: '#3b4430', grass: '#9c8a62', dry: '#b9a27a', rock: '#93735b', rock2: '#a5876c', soil: '#b39572', autumn: '#a8843c', density: 0.35, dryness: 0.85, floor: 1950, playa: 1 },
   steppe: { forest: '#2f3e2a', grass: '#8b8758', dry: '#b0a274', rock: '#857a6c', rock2: '#6a6159', soil: '#9c8664', autumn: '#b08a36', density: 0.5, dryness: 0.65, floor: 1800, playa: 1 },
   chaparral: { forest: '#36472b', grass: '#8a8352', dry: '#b4a070', rock: '#8a8074', rock2: '#6c645c', soil: '#9b8364', autumn: '#a8843c', density: 0.65, dryness: 0.6, floor: -1000, playa: 0 },

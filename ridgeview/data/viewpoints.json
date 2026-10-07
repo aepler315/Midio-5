@@ -138,7 +138,7 @@
     "reliefM": 3265
    },
    "demZoom": 10,
-   "evaluated": 2424,
+   "evaluated": 2400,
    "views": [
     {
      "score": 1.23,
@@ -199,32 +199,32 @@
      }
     },
     {
-     "score": 1.147,
+     "score": 1.143,
      "eye": {
-      "lon": -117.90807,
-      "lat": 36.41134,
+      "lon": -117.87768,
+      "lat": 36.42767,
       "agl": 120,
-      "h": 1205
+      "h": 1208
      },
-     "heading": 297.9,
-     "pitch": 0.1,
+     "heading": 291.5,
+     "pitch": -0.6,
      "hfov": 38,
      "target": {
-      "lon": -118.38106,
-      "lat": 36.6116,
-      "h": 3415
+      "lon": -118.3915,
+      "lat": 36.58934,
+      "h": 3001
      },
      "features": {
       "own": 1,
-      "faceDeg": 5.157,
-      "faceFrac": 0.235,
+      "faceDeg": 4.923,
+      "faceFrac": 0.225,
       "fit": 1,
       "open": 1,
-      "drama": 0.085,
+      "drama": 0.078,
       "peaks": 2,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 47831.513
+      "distanceM": 49370.724
      }
     }
    ]
@@ -365,6 +365,35 @@
    "evaluated": 2280,
    "views": [
     {
+     "score": 1.185,
+     "eye": {
+      "lon": -111.38491,
+      "lat": 40.61382,
+      "agl": 120,
+      "h": 2207
+     },
+     "heading": 267.6,
+     "pitch": -1.5,
+     "hfov": 38,
+     "target": {
+      "lon": -111.66405,
+      "lat": 40.60477,
+      "h": 2971
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 5.224,
+      "faceFrac": 0.238,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.15,
+      "peaks": 2,
+      "water": 1,
+      "summitVisible": 1,
+      "distanceM": 23611.507
+     }
+    },
+    {
      "score": 1.146,
      "eye": {
       "lon": -111.44619,
@@ -373,7 +402,7 @@
       "h": 2184
      },
      "heading": 292.2,
-     "pitch": -1.5,
+     "pitch": -1.7,
      "hfov": 38,
      "target": {
       "lon": -111.68868,
@@ -394,61 +423,32 @@
      }
     },
     {
-     "score": 1.101,
+     "score": 0.984,
      "eye": {
-      "lon": -111.38801,
-      "lat": 40.63992,
-      "agl": 400,
-      "h": 2542
-     },
-     "heading": 261.8,
-     "pitch": -4.8,
-     "hfov": 46,
-     "target": {
-      "lon": -111.67084,
-      "lat": 40.60848,
-      "h": 3027
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 7.046,
-      "faceFrac": 0.262,
-      "fit": 1,
-      "open": 1,
-      "drama": 0.085,
-      "peaks": 1,
-      "water": 1,
-      "summitVisible": 1,
-      "distanceM": 24151.285
-     }
-    },
-    {
-     "score": 1.003,
-     "eye": {
-      "lon": -111.88634,
-      "lat": 40.33111,
+      "lon": -111.86323,
+      "lat": 40.32298,
       "agl": 1000,
       "h": 2368
      },
-     "heading": 32.2,
-     "pitch": -5,
-     "hfov": 46,
+     "heading": 27.5,
+     "pitch": -7,
+     "hfov": 38,
      "target": {
-      "lon": -111.67998,
-      "lat": 40.5797,
-      "h": 2469
+      "lon": -111.68656,
+      "lat": 40.58084,
+      "h": 2650
      },
      "features": {
       "own": 1,
-      "faceDeg": 7.5,
-      "faceFrac": 0.279,
+      "faceDeg": 8.013,
+      "faceFrac": 0.366,
       "fit": 1,
       "open": 1,
-      "drama": 0.117,
-      "peaks": 2,
+      "drama": 0.081,
+      "peaks": 1,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 32730.862
+      "distanceM": 32371.474
      }
     }
    ]
@@ -474,7 +474,7 @@
     "reliefM": 1923
    },
    "demZoom": 10,
-   "evaluated": 2064,
+   "evaluated": 1992,
    "views": [
     {
      "score": 1.395,
@@ -485,7 +485,7 @@
       "h": 1640
      },
      "heading": 274.4,
-     "pitch": 4.7,
+     "pitch": 0.7,
      "hfov": 46,
      "target": {
       "lon": -116.14935,
@@ -494,44 +494,44 @@
      },
      "features": {
       "own": 1,
-      "faceDeg": 5.777,
+      "faceDeg": 5.778,
       "faceFrac": 0.215,
       "fit": 1,
       "open": 1,
-      "drama": 0.511,
+      "drama": 0.51,
       "peaks": 3,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 4483.628
+      "distanceM": 4483.849
      }
     },
     {
-     "score": 1.35,
+     "score": 1.345,
      "eye": {
       "lon": -116.11904,
-      "lat": 51.39464,
-      "agl": 120,
-      "h": 1678
+      "lat": 51.39651,
+      "agl": 2,
+      "h": 1571
      },
-     "heading": 222.5,
-     "pitch": 5.5,
-     "hfov": 46,
+     "heading": 223.7,
+     "pitch": 4.5,
+     "hfov": 38,
      "target": {
-      "lon": -116.17005,
-      "lat": 51.35993,
-      "h": 2119
+      "lon": -116.17308,
+      "lat": 51.36119,
+      "h": 2253
      },
      "features": {
       "own": 1,
-      "faceDeg": 6.495,
-      "faceFrac": 0.242,
+      "faceDeg": 5.453,
+      "faceFrac": 0.249,
       "fit": 1,
       "open": 1,
-      "drama": 0.428,
-      "peaks": 4,
+      "drama": 0.42,
+      "peaks": 3,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 5243.814
+      "distanceM": 5436.209
      }
     },
     {
@@ -1088,93 +1088,93 @@
     "reliefM": 2832
    },
    "demZoom": 10,
-   "evaluated": 2256,
+   "evaluated": 2232,
    "views": [
     {
-     "score": 1.4,
+     "score": 1.389,
      "eye": {
-      "lon": -163.983,
-      "lat": 54.616,
+      "lon": -164.01895,
+      "lat": 54.612,
       "agl": 120,
-      "h": 103
+      "h": 100
      },
-     "heading": 3.9,
-     "pitch": 3.7,
+     "heading": 10.3,
+     "pitch": 2.4,
      "hfov": 38,
      "target": {
-      "lon": -163.96496,
-      "lat": 54.7694,
-      "h": 1851
+      "lon": -163.96771,
+      "lat": 54.77432,
+      "h": 1597
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.693,
-      "faceFrac": 0.214,
+      "faceDeg": 4.766,
+      "faceFrac": 0.217,
       "fit": 1,
       "open": 1,
-      "drama": 0.523,
+      "drama": 0.495,
       "peaks": 1,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 17116.025
+      "distanceM": 18367.724
      }
     },
     {
-     "score": 1.316,
+     "score": 1.368,
      "eye": {
-      "lon": -164.2555,
-      "lat": 54.87553,
-      "agl": 400,
-      "h": 407
+      "lon": -163.81204,
+      "lat": 54.62698,
+      "agl": 120,
+      "h": 121
      },
-     "heading": 125.9,
-     "pitch": -0.1,
+     "heading": 331.2,
+     "pitch": -1.1,
      "hfov": 38,
      "target": {
-      "lon": -163.92782,
-      "lat": 54.7383,
-      "h": 1262
+      "lon": -163.93293,
+      "lat": 54.7538,
+      "h": 1638
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.434,
-      "faceFrac": 0.202,
+      "faceDeg": 4.634,
+      "faceFrac": 0.211,
       "fit": 1,
       "open": 1,
-      "drama": 0.536,
-      "peaks": 2,
+      "drama": 0.476,
+      "peaks": 1,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 25986.495
+      "distanceM": 16118.415
      }
     },
     {
-     "score": 1.309,
+     "score": 1.319,
      "eye": {
-      "lon": -163.56479,
-      "lat": 54.61358,
+      "lon": -164.30718,
+      "lat": 54.86217,
       "agl": 400,
-      "h": 395
+      "h": 550
      },
-     "heading": 314.5,
-     "pitch": -0.6,
+     "heading": 119.9,
+     "pitch": -0.9,
      "hfov": 38,
      "target": {
-      "lon": -163.86733,
-      "lat": 54.78493,
-      "h": 731
+      "lon": -163.92542,
+      "lat": 54.73457,
+      "h": 1138
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.536,
-      "faceFrac": 0.207,
+      "faceDeg": 4.621,
+      "faceFrac": 0.211,
       "fit": 1,
       "open": 1,
-      "drama": 0.491,
+      "drama": 0.49,
       "peaks": 2,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 27250.481
+      "distanceM": 28318.306
      }
     }
    ]
@@ -1872,7 +1872,7 @@
     "reliefM": 2454
    },
    "demZoom": 10,
-   "evaluated": 1992,
+   "evaluated": 1968,
    "views": [
     {
      "score": 1.328,
@@ -1904,32 +1904,32 @@
      }
     },
     {
-     "score": 1.311,
+     "score": 1.162,
      "eye": {
-      "lon": -132.40725,
+      "lon": -132.41262,
       "lat": 57.77319,
       "agl": 2,
       "h": 279
      },
-     "heading": 79.6,
-     "pitch": 23.3,
+     "heading": 80.3,
+     "pitch": 15.2,
      "hfov": 56,
      "target": {
-      "lon": -132.29845,
-      "lat": 57.78374,
-      "h": 1539
+      "lon": -132.29846,
+      "lat": 57.78354,
+      "h": 1540
      },
      "features": {
-      "own": 1,
-      "faceDeg": 10.539,
-      "faceFrac": 0.316,
+      "own": 0.947,
+      "faceDeg": 14.967,
+      "faceFrac": 0.449,
       "fit": 1,
-      "open": 0.989,
-      "drama": 0.381,
+      "open": 1,
+      "drama": 0.277,
       "peaks": 2,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 6563.717
+      "distanceM": 6873.028
      }
     },
     {
@@ -2107,7 +2107,7 @@
       "h": 1023
      },
      "heading": 126.2,
-     "pitch": 2.5,
+     "pitch": -1.2,
      "hfov": 38,
      "target": {
       "lon": -122.19482,
@@ -2331,7 +2331,7 @@
       "h": 2298
      },
      "heading": 35,
-     "pitch": 6.6,
+     "pitch": 5.5,
      "hfov": 46,
      "target": {
       "lon": -119.94845,
@@ -2432,47 +2432,18 @@
     "reliefM": 2911
    },
    "demZoom": 10,
-   "evaluated": 2232,
+   "evaluated": 2136,
    "views": [
     {
-     "score": 1.288,
-     "eye": {
-      "lon": -152.90584,
-      "lat": 60.33738,
-      "agl": 120,
-      "h": 843
-     },
-     "heading": 18.7,
-     "pitch": -0.9,
-     "hfov": 46,
-     "target": {
-      "lon": -152.76583,
-      "lat": 60.54024,
-      "h": 595
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 7.263,
-      "faceFrac": 0.27,
-      "fit": 1,
-      "open": 1,
-      "drama": 0.323,
-      "peaks": 3,
-      "water": 1,
-      "summitVisible": 1,
-      "distanceM": 23855.124
-     }
-    },
-    {
-     "score": 1.215,
+     "score": 1.197,
      "eye": {
       "lon": -152.8974,
       "lat": 60.56591,
-      "agl": 120,
-      "h": 514
+      "agl": 2,
+      "h": 396
      },
      "heading": 135.6,
-     "pitch": 5.5,
+     "pitch": 6.1,
      "hfov": 38,
      "target": {
       "lon": -152.8248,
@@ -2481,11 +2452,11 @@
      },
      "features": {
       "own": 1,
-      "faceDeg": 6.864,
-      "faceFrac": 0.313,
+      "faceDeg": 5.771,
+      "faceFrac": 0.263,
       "fit": 1,
-      "open": 1,
-      "drama": 0.2,
+      "open": 0.978,
+      "drama": 0.201,
       "peaks": 2,
       "water": 1,
       "summitVisible": 1,
@@ -2519,6 +2490,35 @@
       "water": 1,
       "summitVisible": 1,
       "distanceM": 37786.888
+     }
+    },
+    {
+     "score": 1.059,
+     "eye": {
+      "lon": -152.62432,
+      "lat": 60.49338,
+      "agl": 120,
+      "h": 1108
+     },
+     "heading": 263.8,
+     "pitch": 9.2,
+     "hfov": 46,
+     "target": {
+      "lon": -152.83,
+      "lat": 60.48226,
+      "h": 1568
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 6.672,
+      "faceFrac": 0.248,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.563,
+      "peaks": 1,
+      "water": 0,
+      "summitVisible": 1,
+      "distanceM": 11346.844
      }
     }
    ]
@@ -2779,7 +2779,7 @@
       "h": 320
      },
      "heading": 132.6,
-     "pitch": -1.2,
+     "pitch": -2.2,
      "hfov": 46,
      "target": {
       "lon": -128.82381,
@@ -2880,7 +2880,7 @@
     "reliefM": 737
    },
    "demZoom": 10,
-   "evaluated": 1656,
+   "evaluated": 1632,
    "views": [
     {
      "score": 1.164,
@@ -2891,7 +2891,7 @@
       "h": 252
      },
      "heading": 132,
-     "pitch": -1.8,
+     "pitch": -2.5,
      "hfov": 56,
      "target": {
       "lon": -129.55814,
@@ -2912,61 +2912,61 @@
      }
     },
     {
-     "score": 1.132,
+     "score": 1.109,
      "eye": {
-      "lon": -129.66621,
-      "lat": 53.58,
-      "agl": 120,
-      "h": 122
+      "lon": -129.48788,
+      "lat": 53.46956,
+      "agl": 2,
+      "h": 2
      },
-     "heading": 155.5,
-     "pitch": 0.6,
-     "hfov": 38,
-     "target": {
-      "lon": -129.61154,
-      "lat": 53.50872,
-      "h": 55
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 5.455,
-      "faceFrac": 0.249,
-      "fit": 1,
-      "open": 1,
-      "drama": 0.059,
-      "peaks": 1,
-      "water": 1,
-      "summitVisible": 1,
-      "distanceM": 8720.06
-     }
-    },
-    {
-     "score": 1.13,
-     "eye": {
-      "lon": -129.41084,
-      "lat": 53.51654,
-      "agl": 120,
-      "h": 179
-     },
-     "heading": 301.2,
-     "pitch": 5.5,
+     "heading": 358.3,
+     "pitch": 7.5,
      "hfov": 46,
      "target": {
-      "lon": -129.53517,
-      "lat": 53.56117,
-      "h": 32
+      "lon": -129.49204,
+      "lat": 53.55393,
+      "h": 310
      },
      "features": {
       "own": 1,
-      "faceDeg": 5.175,
-      "faceFrac": 0.193,
+      "faceDeg": 5.749,
+      "faceFrac": 0.214,
       "fit": 1,
-      "open": 1,
-      "drama": 0.711,
+      "open": 0.998,
+      "drama": 0.501,
       "peaks": 2,
       "water": 1,
       "summitVisible": 0,
-      "distanceM": 9608.86
+      "distanceM": 9396.207
+     }
+    },
+    {
+     "score": 1.102,
+     "eye": {
+      "lon": -129.40882,
+      "lat": 53.51724,
+      "agl": 120,
+      "h": 179
+     },
+     "heading": 299.5,
+     "pitch": -0.6,
+     "hfov": 56,
+     "target": {
+      "lon": -129.53663,
+      "lat": 53.56009,
+      "h": 21
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 6.963,
+      "faceFrac": 0.209,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.504,
+      "peaks": 2,
+      "water": 1,
+      "summitVisible": 0,
+      "distanceM": 9708.687
      }
     }
    ]
@@ -2992,35 +2992,35 @@
     "reliefM": 2314
    },
    "demZoom": 10,
-   "evaluated": 2184,
+   "evaluated": 2112,
    "views": [
     {
-     "score": 1.154,
+     "score": 1.221,
      "eye": {
-      "lon": -113.59185,
-      "lat": 39.88126,
-      "agl": 120,
-      "h": 1437
+      "lon": -113.70067,
+      "lat": 39.91919,
+      "agl": 2,
+      "h": 1319
      },
-     "heading": 263.8,
-     "pitch": -1.6,
+     "heading": 247.9,
+     "pitch": 0.8,
      "hfov": 38,
      "target": {
-      "lon": -113.941,
-      "lat": 39.85182,
-      "h": 2449
+      "lon": -113.94779,
+      "lat": 39.84191,
+      "h": 2594
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.355,
-      "faceFrac": 0.199,
+      "faceDeg": 4.575,
+      "faceFrac": 0.209,
       "fit": 1,
       "open": 1,
-      "drama": 0.184,
+      "drama": 0.237,
       "peaks": 2,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 30011.313
+      "distanceM": 22795.661
      }
     },
     {
@@ -3053,32 +3053,32 @@
      }
     },
     {
-     "score": 0.978,
+     "score": 0.974,
      "eye": {
-      "lon": -114.28774,
-      "lat": 39.91511,
-      "agl": 400,
-      "h": 2131
+      "lon": -113.87859,
+      "lat": 39.79183,
+      "agl": 120,
+      "h": 2191
      },
-     "heading": 112.3,
-     "pitch": -2.2,
-     "hfov": 30,
+     "heading": 331.1,
+     "pitch": 12.2,
+     "hfov": 38,
      "target": {
-      "lon": -113.94069,
-      "lat": 39.80531,
-      "h": 3222
+      "lon": -113.91036,
+      "lat": 39.83603,
+      "h": 3240
      },
      "features": {
       "own": 1,
-      "faceDeg": 3.359,
-      "faceFrac": 0.196,
+      "faceDeg": 4.929,
+      "faceFrac": 0.225,
       "fit": 1,
-      "open": 0.997,
-      "drama": 0.191,
-      "peaks": 3,
-      "water": 1,
+      "open": 1,
+      "drama": 0.37,
+      "peaks": 1,
+      "water": 0,
       "summitVisible": 1,
-      "distanceM": 32075.844
+      "distanceM": 5619.722
      }
     }
    ]
@@ -3248,30 +3248,30 @@
      }
     },
     {
-     "score": 1.133,
+     "score": 1.063,
      "eye": {
       "lon": -137.63386,
       "lat": 58.74217,
       "agl": 120,
       "h": 1278
      },
-     "heading": 38.9,
-     "pitch": 0.5,
-     "hfov": 56,
+     "heading": 35.9,
+     "pitch": -9.2,
+     "hfov": 68,
      "target": {
-      "lon": -137.38685,
-      "lat": 58.90014,
-      "h": 2916
+      "lon": -137.40317,
+      "lat": 58.90663,
+      "h": 2780
      },
      "features": {
       "own": 1,
-      "faceDeg": 9.742,
-      "faceFrac": 0.293,
+      "faceDeg": 9.313,
+      "faceFrac": 0.224,
       "fit": 1,
-      "open": 0.98,
-      "drama": 0.361,
+      "open": 1,
+      "drama": 0.461,
       "peaks": 4,
-      "water": 0.526,
+      "water": 0.413,
       "summitVisible": 1,
       "distanceM": 22625
      }
@@ -3440,37 +3440,8 @@
     "reliefM": 2543
    },
    "demZoom": 10,
-   "evaluated": 2232,
+   "evaluated": 2088,
    "views": [
-    {
-     "score": 1.037,
-     "eye": {
-      "lon": -123.2036,
-      "lat": 49.65412,
-      "agl": 1000,
-      "h": 1143
-     },
-     "heading": 44.6,
-     "pitch": -4.3,
-     "hfov": 46,
-     "target": {
-      "lon": -122.81851,
-      "lat": 49.90526,
-      "h": 2029
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 6.094,
-      "faceFrac": 0.227,
-      "fit": 1,
-      "open": 1,
-      "drama": 0.185,
-      "peaks": 2,
-      "water": 1,
-      "summitVisible": 1,
-      "distanceM": 39342.743
-     }
-    },
     {
      "score": 1.011,
      "eye": {
@@ -3527,6 +3498,35 @@
       "water": 0.355,
       "summitVisible": 1,
       "distanceM": 25604.213
+     }
+    },
+    {
+     "score": 0.943,
+     "eye": {
+      "lon": -122.92662,
+      "lat": 50.01892,
+      "agl": 2,
+      "h": 834
+     },
+     "heading": 158.2,
+     "pitch": 5.2,
+     "hfov": 46,
+     "target": {
+      "lon": -122.86675,
+      "lat": 49.92231,
+      "h": 1517
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 7.205,
+      "faceFrac": 0.268,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.139,
+      "peaks": 2,
+      "water": 1,
+      "summitVisible": 0,
+      "distanceM": 11576.982
      }
     }
    ]
@@ -3776,35 +3776,35 @@
     "reliefM": 1331
    },
    "demZoom": 10,
-   "evaluated": 2160,
+   "evaluated": 2184,
    "views": [
     {
-     "score": 1.284,
+     "score": 1.293,
      "eye": {
-      "lon": -118.60723,
-      "lat": 41.40467,
+      "lon": -118.61303,
+      "lat": 41.40718,
       "agl": 120,
-      "h": 1341
+      "h": 1344
      },
-     "heading": 112.1,
-     "pitch": -0.5,
+     "heading": 117.7,
+     "pitch": -0.6,
      "hfov": 38,
      "target": {
-      "lon": -118.41176,
-      "lat": 41.345,
-      "h": 2195
+      "lon": -118.42052,
+      "lat": 41.33113,
+      "h": 2370
      },
      "features": {
       "own": 1,
-      "faceDeg": 5.207,
-      "faceFrac": 0.238,
+      "faceDeg": 4.883,
+      "faceFrac": 0.223,
       "fit": 1,
       "open": 1,
-      "drama": 0.317,
-      "peaks": 4,
+      "drama": 0.333,
+      "peaks": 3,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 17628.403
+      "distanceM": 18175.446
      }
     },
     {
@@ -3845,7 +3845,7 @@
       "h": 1337
      },
      "heading": 53.4,
-     "pitch": 1.1,
+     "pitch": -0.3,
      "hfov": 38,
      "target": {
       "lon": -118.46148,
@@ -3862,7 +3862,7 @@
       "peaks": 1,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 18361.903
+      "distanceM": 18361.918
      }
     }
    ]
@@ -5120,35 +5120,35 @@
     "reliefM": 1914
    },
    "demZoom": 10,
-   "evaluated": 1920,
+   "evaluated": 1944,
    "views": [
     {
-     "score": 1.226,
+     "score": 1.18,
      "eye": {
-      "lon": -123.33536,
-      "lat": 48.12029,
+      "lon": -123.37517,
+      "lat": 48.1212,
       "agl": 120,
-      "h": 108
+      "h": 103
      },
-     "heading": 209.2,
-     "pitch": 0.5,
+     "heading": 194.3,
+     "pitch": -2,
      "hfov": 38,
      "target": {
-      "lon": -123.52279,
-      "lat": 47.89526,
-      "h": 1397
+      "lon": -123.46986,
+      "lat": 47.87115,
+      "h": 440
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.807,
-      "faceFrac": 0.219,
+      "faceDeg": 4.904,
+      "faceFrac": 0.224,
       "fit": 1,
-      "open": 0.984,
-      "drama": 0.242,
+      "open": 0.981,
+      "drama": 0.168,
       "peaks": 2,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 28677.316
+      "distanceM": 28715.043
      }
     },
     {
@@ -5456,12 +5456,12 @@
     "reliefM": 3408
    },
    "demZoom": 10,
-   "evaluated": 2280,
+   "evaluated": 2304,
    "views": [
     {
      "score": 1.242,
      "eye": {
-      "lon": -117.27012,
+      "lon": -117.27011,
       "lat": 36.06572,
       "agl": 2,
       "h": 332
@@ -5476,7 +5476,7 @@
      },
      "features": {
       "own": 1,
-      "faceDeg": 7.246,
+      "faceDeg": 7.247,
       "faceFrac": 0.218,
       "fit": 1,
       "open": 1,
@@ -5484,7 +5484,7 @@
       "peaks": 3,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 20041.723
+      "distanceM": 20041.565
      }
     },
     {
@@ -5568,35 +5568,35 @@
     "reliefM": 2514
    },
    "demZoom": 10,
-   "evaluated": 2040,
+   "evaluated": 2088,
    "views": [
     {
-     "score": 1.035,
+     "score": 1.146,
      "eye": {
-      "lon": -117.69245,
-      "lat": 52.3742,
-      "agl": 1000,
-      "h": 2400
+      "lon": -117.6141,
+      "lat": 52.4165,
+      "agl": 2,
+      "h": 1880
      },
-     "heading": 217.5,
-     "pitch": -5.3,
-     "hfov": 56,
+     "heading": 235.2,
+     "pitch": -0.4,
+     "hfov": 38,
      "target": {
-      "lon": -117.84531,
-      "lat": 52.25226,
-      "h": 2633
+      "lon": -117.90535,
+      "lat": 52.29237,
+      "h": 1960
      },
      "features": {
       "own": 1,
-      "faceDeg": 10.226,
-      "faceFrac": 0.307,
+      "faceDeg": 7.998,
+      "faceFrac": 0.365,
       "fit": 1,
       "open": 1,
-      "drama": 0.181,
+      "drama": 0.251,
       "peaks": 3,
-      "water": 1,
+      "water": 0.692,
       "summitVisible": 1,
-      "distanceM": 17102.426
+      "distanceM": 24146.758
      }
     },
     {
@@ -5680,13 +5680,13 @@
     "reliefM": 1963
    },
    "demZoom": 11,
-   "evaluated": 2208,
+   "evaluated": 2232,
    "views": [
     {
      "score": 1.242,
      "eye": {
-      "lon": -112.62867,
-      "lat": 27.725,
+      "lon": -112.62868,
+      "lat": 27.72499,
       "agl": 400,
       "h": 400
      },
@@ -5708,7 +5708,7 @@
       "peaks": 3,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 27227.828
+      "distanceM": 27227.564
      }
     },
     {
@@ -6016,8 +6016,37 @@
     "reliefM": 2916
    },
    "demZoom": 10,
-   "evaluated": 2376,
+   "evaluated": 2400,
    "views": [
+    {
+     "score": 1.197,
+     "eye": {
+      "lon": -118.79514,
+      "lat": 53.25825,
+      "agl": 120,
+      "h": 2157
+     },
+     "heading": 255.7,
+     "pitch": -5.4,
+     "hfov": 56,
+     "target": {
+      "lon": -119.17783,
+      "lat": 53.19915,
+      "h": 2299
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 7.742,
+      "faceFrac": 0.232,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.17,
+      "peaks": 4,
+      "water": 1,
+      "summitVisible": 1,
+      "distanceM": 26336.78
+     }
+    },
     {
      "score": 1.116,
      "eye": {
@@ -6027,7 +6056,7 @@
       "h": 1300
      },
      "heading": 334.1,
-     "pitch": 4,
+     "pitch": 2.9,
      "hfov": 38,
      "target": {
       "lon": -119.10886,
@@ -6074,35 +6103,6 @@
       "water": 0.132,
       "summitVisible": 1,
       "distanceM": 7601.121
-     }
-    },
-    {
-     "score": 1.088,
-     "eye": {
-      "lon": -118.74106,
-      "lat": 53.30835,
-      "agl": 400,
-      "h": 1961
-     },
-     "heading": 228.3,
-     "pitch": -2,
-     "hfov": 38,
-     "target": {
-      "lon": -119.09988,
-      "lat": 53.11586,
-      "h": 2311
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 4.926,
-      "faceFrac": 0.225,
-      "fit": 1,
-      "open": 0.991,
-      "drama": 0.154,
-      "peaks": 3,
-      "water": 0.846,
-      "summitVisible": 1,
-      "distanceM": 32114.305
      }
     }
    ]
@@ -6160,29 +6160,29 @@
      }
     },
     {
-     "score": 1.301,
+     "score": 1.286,
      "eye": {
       "lon": -154.29772,
       "lat": 61.86971,
-      "agl": 120,
-      "h": 681
+      "agl": 2,
+      "h": 563
      },
-     "heading": 128,
-     "pitch": 4.1,
-     "hfov": 46,
+     "heading": 133,
+     "pitch": 6.1,
+     "hfov": 38,
      "target": {
-      "lon": -153.97109,
-      "lat": 61.74861,
-      "h": 1152
+      "lon": -153.99469,
+      "lat": 61.73564,
+      "h": 1400
      },
      "features": {
-      "own": 0.935,
-      "faceDeg": 5.8,
-      "faceFrac": 0.216,
+      "own": 0.923,
+      "faceDeg": 5.534,
+      "faceFrac": 0.252,
       "fit": 1,
       "open": 1,
-      "drama": 0.582,
-      "peaks": 3,
+      "drama": 0.597,
+      "peaks": 2,
       "water": 1,
       "summitVisible": 1,
       "distanceM": 21835.168
@@ -6576,64 +6576,35 @@
     "reliefM": 3104
    },
    "demZoom": 10,
-   "evaluated": 2400,
+   "evaluated": 2328,
    "views": [
     {
-     "score": 1.197,
+     "score": 1.186,
      "eye": {
       "lon": -116.45674,
       "lat": 33.82341,
-      "agl": 120,
-      "h": 232
+      "agl": 2,
+      "h": 114
      },
-     "heading": 251,
-     "pitch": -0.9,
-     "hfov": 56,
+     "heading": 258,
+     "pitch": 1.2,
+     "hfov": 46,
      "target": {
-      "lon": -116.66925,
-      "lat": 33.76237,
-      "h": 2520
+      "lon": -116.67664,
+      "lat": 33.78434,
+      "h": 2741
      },
      "features": {
       "own": 1,
-      "faceDeg": 7.229,
-      "faceFrac": 0.217,
+      "faceDeg": 6.836,
+      "faceFrac": 0.255,
       "fit": 1,
-      "open": 1,
-      "drama": 0.172,
+      "open": 0.998,
+      "drama": 0.155,
       "peaks": 1,
       "water": 1,
       "summitVisible": 1,
       "distanceM": 20800.686
-     }
-    },
-    {
-     "score": 1.062,
-     "eye": {
-      "lon": -116.23089,
-      "lat": 33.73698,
-      "agl": 400,
-      "h": 399
-     },
-     "heading": 266.9,
-     "pitch": -2.3,
-     "hfov": 38,
-     "target": {
-      "lon": -116.68064,
-      "lat": 33.71577,
-      "h": 1556
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 4.253,
-      "faceFrac": 0.194,
-      "fit": 1,
-      "open": 1,
-      "drama": 0.142,
-      "peaks": 2,
-      "water": 1,
-      "summitVisible": 1,
-      "distanceM": 41706.708
      }
     },
     {
@@ -6663,6 +6634,35 @@
       "water": 0,
       "summitVisible": 1,
       "distanceM": 16444.303
+     }
+    },
+    {
+     "score": 0.954,
+     "eye": {
+      "lon": -116.78295,
+      "lat": 33.68173,
+      "agl": 120,
+      "h": 1421
+     },
+     "heading": 40.6,
+     "pitch": 0.3,
+     "hfov": 38,
+     "target": {
+      "lon": -116.67523,
+      "lat": 33.78599,
+      "h": 2745
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 4.812,
+      "faceFrac": 0.219,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.323,
+      "peaks": 2,
+      "water": 0,
+      "summitVisible": 1,
+      "distanceM": 15301.531
      }
     }
    ]
@@ -7024,64 +7024,64 @@
     "reliefM": 1881
    },
    "demZoom": 10,
-   "evaluated": 1920,
+   "evaluated": 1992,
    "views": [
     {
-     "score": 1.177,
+     "score": 1.165,
      "eye": {
-      "lon": -105.88745,
+      "lon": -105.89134,
       "lat": 37.99903,
       "agl": 120,
-      "h": 2428
+      "h": 2427
      },
-     "heading": 75.4,
+     "heading": 75.5,
      "pitch": -1.3,
      "hfov": 38,
      "target": {
-      "lon": -105.62023,
-      "lat": 38.05372,
-      "h": 3955
+      "lon": -105.62025,
+      "lat": 38.05399,
+      "h": 3960
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.584,
-      "faceFrac": 0.209,
+      "faceDeg": 4.455,
+      "faceFrac": 0.203,
       "fit": 1,
       "open": 1,
-      "drama": 0.16,
+      "drama": 0.17,
       "peaks": 3,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 24209.833
+      "distanceM": 24546.89
      }
     },
     {
-     "score": 1.142,
+     "score": 1.088,
      "eye": {
-      "lon": -105.80392,
-      "lat": 37.85556,
+      "lon": -105.80587,
+      "lat": 37.85467,
       "agl": 120,
-      "h": 2420
+      "h": 2419
      },
-     "heading": 58.6,
-     "pitch": -1.4,
+     "heading": 58.7,
+     "pitch": -4.2,
      "hfov": 38,
      "target": {
-      "lon": -105.55141,
-      "lat": 37.97686,
-      "h": 4161
+      "lon": -105.55115,
+      "lat": 37.97631,
+      "h": 4145
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.429,
-      "faceFrac": 0.202,
+      "faceDeg": 4.444,
+      "faceFrac": 0.203,
       "fit": 1,
       "open": 1,
-      "drama": 0.139,
-      "peaks": 2,
-      "water": 1,
+      "drama": 0.099,
+      "peaks": 1,
+      "water": 0.885,
       "summitVisible": 1,
-      "distanceM": 25963.448
+      "distanceM": 26148.634
      }
     },
     {
@@ -7931,7 +7931,7 @@
       "h": 358
      },
      "heading": 314.2,
-     "pitch": 4.4,
+     "pitch": 3.9,
      "hfov": 38,
      "target": {
       "lon": -121.80674,
@@ -8032,37 +8032,8 @@
     "reliefM": 1721
    },
    "demZoom": 10,
-   "evaluated": 1800,
+   "evaluated": 1776,
    "views": [
-    {
-     "score": 1.094,
-     "eye": {
-      "lon": -129.78847,
-      "lat": 56.7237,
-      "agl": 400,
-      "h": 1087
-     },
-     "heading": 107.8,
-     "pitch": -0.3,
-     "hfov": 38,
-     "target": {
-      "lon": -129.54897,
-      "lat": 56.68124,
-      "h": 1502
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 8.952,
-      "faceFrac": 0.408,
-      "fit": 1,
-      "open": 1,
-      "drama": 0.091,
-      "peaks": 1,
-      "water": 0.962,
-      "summitVisible": 1,
-      "distanceM": 15381.297
-     }
-    },
     {
      "score": 1.016,
      "eye": {
@@ -8093,32 +8064,61 @@
      }
     },
     {
-     "score": 1.015,
+     "score": 0.969,
      "eye": {
-      "lon": -129.82669,
-      "lat": 56.55319,
-      "agl": 400,
-      "h": 1247
+      "lon": -129.83689,
+      "lat": 56.54994,
+      "agl": 120,
+      "h": 1223
      },
-     "heading": 55.7,
-     "pitch": -1.1,
-     "hfov": 38,
+     "heading": 54,
+     "pitch": -7.5,
+     "hfov": 46,
      "target": {
-      "lon": -129.54253,
-      "lat": 56.65928,
-      "h": 1509
+      "lon": -129.54922,
+      "lat": 56.66449,
+      "h": 1772
      },
      "features": {
       "own": 1,
-      "faceDeg": 5.48,
-      "faceFrac": 0.25,
+      "faceDeg": 6.393,
+      "faceFrac": 0.238,
       "fit": 1,
       "open": 1,
-      "drama": 0.109,
+      "drama": 0.093,
       "peaks": 2,
-      "water": 0.654,
+      "water": 0.387,
       "summitVisible": 1,
-      "distanceM": 21038.278
+      "distanceM": 21753.814
+     }
+    },
+    {
+     "score": 0.963,
+     "eye": {
+      "lon": -129.70214,
+      "lat": 56.61491,
+      "agl": 120,
+      "h": 696
+     },
+     "heading": 69.4,
+     "pitch": 2.6,
+     "hfov": 46,
+     "target": {
+      "lon": -129.53679,
+      "lat": 56.64895,
+      "h": 1568
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 7.197,
+      "faceFrac": 0.268,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.343,
+      "peaks": 3,
+      "water": 0,
+      "summitVisible": 1,
+      "distanceM": 10809.874
      }
     }
    ]
@@ -8512,32 +8512,32 @@
      }
     },
     {
-     "score": 1.222,
+     "score": 1.221,
      "eye": {
-      "lon": -117.14205,
+      "lon": -117.13797,
       "lat": 38.85252,
       "agl": 120,
       "h": 1807
      },
-     "heading": 111.3,
-     "pitch": -0.5,
+     "heading": 111.8,
+     "pitch": -2.9,
      "hfov": 38,
      "target": {
-      "lon": -116.91902,
-      "lat": 38.78442,
-      "h": 3047
+      "lon": -116.91898,
+      "lat": 38.78397,
+      "h": 3062
      },
      "features": {
       "own": 1,
-      "faceDeg": 5.06,
-      "faceFrac": 0.231,
+      "faceDeg": 5.137,
+      "faceFrac": 0.234,
       "fit": 1,
       "open": 1,
-      "drama": 0.213,
+      "drama": 0.21,
       "peaks": 1,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 20776.857
+      "distanceM": 20469.536
      }
     },
     {
@@ -8595,61 +8595,61 @@
    "evaluated": 2160,
    "views": [
     {
-     "score": 1.196,
+     "score": 1.194,
      "eye": {
-      "lon": -151.87225,
-      "lat": 61.49285,
+      "lon": -152.65551,
+      "lat": 61.1694,
       "agl": 120,
-      "h": 791
+      "h": 1549
      },
-     "heading": 246.4,
-     "pitch": -0.9,
-     "hfov": 38,
-     "target": {
-      "lon": -152.35614,
-      "lat": 61.39069,
-      "h": 2215
-     },
-     "features": {
-      "own": 1,
-      "faceDeg": 4.626,
-      "faceFrac": 0.211,
-      "fit": 1,
-      "open": 0.992,
-      "drama": 0.216,
-      "peaks": 3,
-      "water": 0.962,
-      "summitVisible": 1,
-      "distanceM": 28150.161
-     }
-    },
-    {
-     "score": 1.191,
-     "eye": {
-      "lon": -152.49369,
-      "lat": 61.19175,
-      "agl": 2,
-      "h": 799
-     },
-     "heading": 29.5,
-     "pitch": -0.9,
+     "heading": 37,
+     "pitch": -5.4,
      "hfov": 56,
      "target": {
-      "lon": -152.22394,
-      "lat": 61.41981,
-      "h": 1232
+      "lon": -152.26907,
+      "lat": 61.41401,
+      "h": 1785
      },
      "features": {
       "own": 1,
-      "faceDeg": 11.299,
-      "faceFrac": 0.339,
+      "faceDeg": 7.514,
+      "faceFrac": 0.226,
       "fit": 1,
       "open": 1,
-      "drama": 0.159,
+      "drama": 0.164,
       "peaks": 2,
       "water": 1,
       "summitVisible": 1,
-      "distanceM": 29195.987
+      "distanceM": 34182.111
+     }
+    },
+    {
+     "score": 1.193,
+     "eye": {
+      "lon": -151.86498,
+      "lat": 61.50486,
+      "agl": 400,
+      "h": 1165
+     },
+     "heading": 238.9,
+     "pitch": -8.1,
+     "hfov": 46,
+     "target": {
+      "lon": -152.32701,
+      "lat": 61.37051,
+      "h": 1824
+     },
+     "features": {
+      "own": 1,
+      "faceDeg": 5.803,
+      "faceFrac": 0.216,
+      "fit": 1,
+      "open": 1,
+      "drama": 0.251,
+      "peaks": 4,
+      "water": 1,
+      "summitVisible": 1,
+      "distanceM": 28781.287
      }
     },
     {
@@ -9376,35 +9376,35 @@
     "reliefM": 2949
    },
    "demZoom": 10,
-   "evaluated": 2400,
+   "evaluated": 2376,
    "views": [
     {
-     "score": 1.181,
+     "score": 1.158,
      "eye": {
-      "lon": -118.06054,
-      "lat": 37.7085,
+      "lon": -118.05902,
+      "lat": 37.7092,
       "agl": 120,
-      "h": 1583
+      "h": 1584
      },
-     "heading": 248.3,
-     "pitch": 2.2,
+     "heading": 248.2,
+     "pitch": -1.9,
      "hfov": 38,
      "target": {
-      "lon": -118.26576,
-      "lat": 37.64366,
-      "h": 3707
+      "lon": -118.26557,
+      "lat": 37.64344,
+      "h": 3715
      },
      "features": {
       "own": 1,
-      "faceDeg": 4.713,
-      "faceFrac": 0.215,
+      "faceDeg": 4.864,
+      "faceFrac": 0.222,
       "fit": 1,
       "open": 1,
-      "drama": 0.148,
+      "drama": 0.143,
       "peaks": 1,
-      "water": 1,
+      "water": 0.923,
       "summitVisible": 1,
-      "distanceM": 19469.355
+      "distanceM": 19615.543
      }
     },
     {
@@ -9433,7 +9433,7 @@
       "peaks": 2,
       "water": 0.839,
       "summitVisible": 1,
-      "distanceM": 17973.133
+      "distanceM": 17973.137
      }
     },
     {
