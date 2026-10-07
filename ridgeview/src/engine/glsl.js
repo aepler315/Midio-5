@@ -34,6 +34,20 @@ vec3 noised(vec2 x, float per) {
   return vec3(v * 2.0 - 1.0, 2.0 * du * vec2(k1 + k4 * u.y, k2 + k4 * u.x));
 }
 float vnoise(vec2 x, float per) { return noised(x, per).x; }
+// Periodic cellular noise: (F1, F2, id of the nearest cell in [0,1)).
+// F2 - F1 is ~0 on the joints between cells: rock blocks and their cracks.
+vec3 cellular(vec2 x, float per) {
+  vec2 i = floor(x), f = fract(x);
+  float d1 = 8.0, d2 = 8.0, id = 0.0;
+  for (int y = -1; y <= 1; y++) for (int xx = -1; xx <= 1; xx++) {
+    vec2 g = vec2(float(xx), float(y));
+    vec2 c = mod(i + g, per);
+    vec2 o = vec2(hash12(c), hash12(c + 19.19));
+    float d = length(g + o - f);
+    if (d < d1) { d2 = d1; d1 = d; id = hash12(c + 7.3); } else if (d < d2) d2 = d;
+  }
+  return vec3(d1, d2, id);
+}
 // Non-periodic 3D value noise in [0, 1] and its fbm.
 float vnoise3(vec3 p) {
   vec3 i = floor(p), f = fract(p);
@@ -122,6 +136,18 @@ void aerial(vec3 aKm, vec3 bKm, vec3 viewDir, out vec3 T, out vec3 L) {
   vec3 scatM = sR * phaseR(muM) + sM * phaseM(muM, 0.76);
   vec3 f = (1.0 - T) / max(tau, vec3(1e-5));
   L = f * (scat * sunT * uSunPower + scatM * moonT * uMoonPower + (sR + sM) * uAmbientTint);
+}
+
+// Underside of a thick cloud deck at uDeckH (m): lit by the sky and the
+// little sunlight that diffuses through. Shared by the deck mesh and the
+// terrain it hides, so a summit inside the cloud matches the cloud.
+uniform float uDeckH, uDeckDark;
+uniform vec3 uSkyIrr;
+vec3 deckUnderside(vec3 up) {
+  vec3 sunT = lightTransmittance(uDeckH * 0.001, dot(up, uSunDir));
+  vec3 moonT = lightTransmittance(uDeckH * 0.001, dot(up, uMoonDir));
+  vec3 e = uSkyIrr * 0.8 + uSunPower * sunT * max(dot(up, uSunDir) + 0.1, 0.0) * 0.25 + uMoonPower * moonT * 0.2;
+  return vec3(0.9) / PI * e * (1.0 - uDeckDark * 0.65);
 }
 
 vec2 raySphere(vec3 o, vec3 d, float r) {

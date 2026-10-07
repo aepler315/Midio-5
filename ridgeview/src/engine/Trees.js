@@ -80,7 +80,7 @@ const FS = /* glsl */ `
 precision highp float;
 ${NOISE}
 ${ATMOS}
-uniform vec3 uForestCol, uSnowCol, uAutumnCol, uSkyIrr, uSkyHorizon;
+uniform vec3 uForestCol, uSnowCol, uAutumnCol, uSkyHorizon;
 uniform float uAutumn, uBroadleaf, uStormDark, uClipOn, uReflH;
 uniform sampler2D uShadow0, uShadow1;
 uniform float uShadowOn;

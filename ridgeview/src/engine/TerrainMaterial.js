@@ -27,6 +27,7 @@ export function createGlobals() {
     uForestCol: c('#1d3a24'), uGrassCol: c('#5d7a3a'), uDryCol: c('#9a8a5c'), uRockCol: c('#77726c'), uRockCol2: c('#5d5853'),
     uSoilCol: c('#6b5a48'), uSnowCol: c('#eef3fa'), uWaterCol: c('#1b4656'), uAutumnCol: c('#b0602a'),
     uCloudOn: { value: 0 }, uCloudTop: { value: 2200 }, uCloudThick: { value: 500 }, uCloudCol: v3(),
+    uDeckOn: { value: 0 }, uDeckH: { value: 3000 }, uDeckDark: { value: 0 },
     uStormDark: { value: 0 },
     uTime: { value: 0 },
     uShadow0: { value: null }, uShadow1: { value: null }, uShadowM0: { value: new THREE.Matrix4() }, uShadowM1: { value: new THREE.Matrix4() },
@@ -72,12 +73,13 @@ uniform float uTexSize, uS;
 uniform vec2 uTileOrigin;     // mercator metres of the NW corner, mod 2048
 uniform float uTileSizeM;     // mercator metres across the tile
 uniform float uCosLat;
-uniform vec3 uSkyIrr, uSkyZenith, uSkyHorizon;
+uniform vec3 uSkyZenith, uSkyHorizon;
 uniform int uStyle, uOverlay;
 uniform float uOverlayMix;
 uniform float uAutumn, uWetness, uPlaya;
 uniform vec3 uForestCol, uGrassCol, uDryCol, uRockCol, uRockCol2, uSoilCol, uSnowCol, uWaterCol, uAutumnCol;
 uniform float uCloudOn, uCloudTop, uCloudThick;
+uniform float uDeckOn;
 uniform vec3 uCloudCol;
 uniform float uStormDark, uTime, uMicro;
 uniform float uClipOn, uReflOn, uReflH;
@@ -181,6 +183,18 @@ void main() {
     vec3 cr = noised(gp / 4.0, 512.0);
     acc += cr.yz * 0.55 * forest * (1.0 - snow * 0.5) * near;
     slopeEN += acc * uCosLat;
+    // Fractured rock: each block's face is tilted its own way (two scales).
+    float rockVis = rock * (1.0 - snow * 0.7);
+    if (rockVis > 0.01) {
+      for (int s = 0; s < 2; s++) {
+        float B = s == 0 ? 16.0 : 4.0;
+        float vis = smoothstep(1.5, 4.0, B / footM);
+        if (vis <= 0.0) continue;
+        vec3 cl = cellular(gp / B + warp * 0.5, 2048.0 / B);
+        float a = cl.z * 6.2831;
+        slopeEN += vec2(cos(a), sin(a)) * (0.35 + 0.5 * fract(cl.z * 7.0)) * rockVis * vis * (s == 0 ? 0.9 : 0.6);
+      }
+    }
   }
   vec3 n = normalize(-slopeEN.x * east - slopeEN.y * north + up);
   vec2 nh = vec2(dot(n, east), dot(n, north));
@@ -191,16 +205,19 @@ void main() {
   // Autumn: grass cures to tawny.
   meadow = mix(meadow, mix(uDryCol, uAutumnCol, 0.3), uAutumn * 0.65 * (1.0 - alpine));
   meadow = mix(meadow, vec3(0.16, 0.13, 0.08), alpine * 0.35); // tundra mat
-  // Rock: tone by region, strata, crack network, lichen.
-  float strata = sin(vH / 5.5 + fM * 3.0 + fS * 1.2) * 0.5 + 0.5;
-  float crackN = vnoise(gp / 16.0 + warp * 3.0, 128.0);
-  float crack = (1.0 - smoothstep(0.0, 0.07, abs(crackN))) * smoothstep(9.0, 3.0, footM);
-  vec3 rockC = mix(uRockCol, uRockCol2, clamp(0.5 + 0.6 * fL + 0.25 * strata - 0.1, 0.0, 1.0));
+  // Rock: tone by region; joints between fracture blocks; bedding only in
+  // dry (sedimentary) country; lichen.
+  float strata = (sin(vH / 9.0 + fM * 2.0 + fS * 4.0) * 0.5 + 0.5) * smoothstep(0.4, 0.8, uDryness);
+  vec3 blk = cellular(gp / 16.0 + warp * 0.5, 128.0);
+  vec3 blk2 = cellular(gp / 4.0 + warp * 0.5, 512.0);
+  float crack = (1.0 - smoothstep(0.0, 0.12, blk.y - blk.x)) * smoothstep(10.0, 3.0, footM)
+              + (1.0 - smoothstep(0.0, 0.15, blk2.y - blk2.x)) * smoothstep(3.0, 0.8, footM) * 0.7;
+  vec3 rockC = mix(uRockCol, uRockCol2, clamp(0.5 + 0.6 * fL + 0.25 * strata - 0.1 + (blk.z - 0.5) * 0.35 * smoothstep(12.0, 4.0, footM), 0.0, 1.0));
   // Water staining and lichen streaks running down the fall line of cliffs.
   vec2 fall2 = slope > 1e-3 ? tx.xy / slope : vec2(1.0, 0.0);
   float streak = vnoise(vec2(dot(gp, vec2(-fall2.y, fall2.x)) / 6.0, dot(gp, fall2) / 160.0) + warp * 0.3, 2048.0);
   rockC *= 1.0 - 0.32 * smoothstep(0.1, 0.7, streak) * smoothstep(30.0, 50.0, sdeg);
-  rockC *= (0.92 + 0.16 * strata) * (1.0 - 0.45 * crack) * (1.0 + 0.2 * nS * near) * (1.0 - 0.15 * smoothstep(0.0, -1.5, cvx));
+  rockC *= (0.92 + 0.16 * strata) * (1.0 - 0.5 * clamp(crack, 0.0, 1.0)) * (1.0 + 0.2 * nS * near) * (1.0 - 0.15 * smoothstep(0.0, -1.5, cvx));
   rockC = mix(rockC, vec3(0.11, 0.12, 0.07), 0.18 * smoothstep(0.15, 0.5, fS) * (1.0 - alpine * 0.6) * (1.0 - uDryness));
   // Low outcrops among the trees are weathered dark and half overgrown.
   rockC = mix(rockC * 0.72, rockC, alpine);
@@ -221,7 +238,7 @@ void main() {
   float snowOnForest = snow * forest;
   alb = mix(alb, snowC, snow * (1.0 - forest));
   // Under snow a forest stays dark: snow shows between and on the crowns.
-  alb = mix(alb, mix(forestC * 0.9, snowC, 0.22 + 0.18 * (1.0 - crown) * near), snowOnForest);
+  alb = mix(alb, mix(forestC * 0.9, snowC, 0.07 + 0.25 * (1.0 - crown) * near), snowOnForest);
   alb *= 1.0 - uWetness * 0.35 * (1.0 - snow);
   vec3 playa = vec3(0.86, 0.82, 0.74) * (0.95 + 0.05 * nS);
   float isLake = water * (1.0 - sea);
@@ -276,6 +293,17 @@ void main() {
   if (uCloudOn > 0.001) {
     float inCloud = smoothstep(uCloudTop + 30.0, uCloudTop - uCloudThick * 0.6, vH + fL * 60.0);
     col = mix(col, uCloudCol, inCloud * uCloudOn);
+  }
+  // A cloud deck between us and this ground hides it: summits lost in a
+  // storm's ceiling, valleys under a cloud sea seen from above.
+  float airFrac = 1.0; // share of the sight line that is clear air
+  if (uDeckOn > 0.001) {
+    float camH = (length(uCamKm) - RP) * 1000.0;
+    float across = step((camH - uDeckH) * (vH - uDeckH), 0.0);
+    float k = across * smoothstep(0.0, 80.0, abs(vH - uDeckH) + fM * 40.0) * uDeckOn;
+    vec3 deck = camH < uDeckH ? deckUnderside(up) : uCloudCol;
+    col = mix(col, deck, k);
+    airFrac = mix(1.0, clamp((uDeckH - camH) / (vH - camH), 0.0, 1.0), k);
   }
 
   // --- Styles ------------------------------------------------------------
@@ -372,7 +400,7 @@ void main() {
 
   // --- Air between us and the ground ------------------------------------
   if (uStyle == 0 || uStyle == 5) {
-    vec3 fragKm = uCamKm + vRel * 0.001;
+    vec3 fragKm = uCamKm + vRel * 0.001 * airFrac;
     vec3 T, L;
     aerial(uCamKm, fragKm, -V, T, L);
     col = col * T + L;

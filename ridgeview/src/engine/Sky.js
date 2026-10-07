@@ -16,7 +16,6 @@ ${ATMOS}
 uniform mat4 uInvViewProj;
 uniform int uStyle;
 uniform float uTime, uStars, uHighClouds;
-uniform vec3 uSkyIrr;
 uniform vec3 uSkyOrigin; // camera position in the mirrored pass (else 0)
 varying vec2 vNdc;
 

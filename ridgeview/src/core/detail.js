@@ -47,7 +47,7 @@ export function detailHeight(mx, my, rough, texelM) {
     const n = gradNoise(mx / lam + lam * 17.13, my / lam - lam * 7.71);
     // Ridged on rough ground: sharp crests read as rock ribs.
     const ridged = 0.5 - Math.abs(n);
-    const amp = lam * (0.045 + 0.075 * rough) * Math.min(1, w);
+    const amp = lam * (0.05 + 0.11 * rough) * Math.min(1, w);
     h += amp * (n * (1 - rough * 0.6) + ridged * rough * 0.9);
   }
   return h * rough;

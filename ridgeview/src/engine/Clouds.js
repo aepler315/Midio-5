@@ -14,6 +14,7 @@ uniform vec3 uCenterRel, uEast, uNorth, uUp;
 uniform float uRadiusEarth;
 varying vec3 vRel;
 varying float vEdge;
+varying float vW;
 ${LOGDEPTH_VS}
 void main() {
   vec2 q = position.xy;
@@ -22,6 +23,7 @@ void main() {
   vRel = wp;
   vEdge = length(q) / ${RADIUS.toFixed(1)};
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+  vW = gl_Position.w;
   applyLogDepth();
 }
 `;
@@ -31,14 +33,19 @@ precision highp float;
 ${NOISE}
 ${ATMOS}
 uniform float uCloudOn, uCloudTop, uCoverage, uDark;
-uniform vec3 uSkyIrr, uSkyHorizon;
+uniform vec3 uSkyHorizon;
 uniform float uTime;
 varying vec3 vRel;
 varying float vEdge;
+varying float vW;
+uniform float uLogDepthFC;
 
 float fbm(vec3 p) { return fbm3(p); }
 
 void main() {
+  // Per-fragment log depth: the deck's big triangles wrap around (and
+  // behind) the camera, where per-vertex log depth clips to garbage.
+  gl_FragDepth = log2(max(1e-6, 1.0 + vW)) * uLogDepthFC * 0.5;
   vec3 pKm = uCamKm + vRel * 0.001;
   vec3 drift = vec3(uTime * 0.004, uTime * 0.002, 0.0);
   float d = fbm(pKm * 0.55 + drift);
@@ -57,6 +64,8 @@ void main() {
   vec3 sun = uSunPower * sunT * max(dot(up, uSunDir) + 0.15, 0.0) * (0.75 - 0.35 * thick + fwd * (1.0 - thick) * 2.0);
   vec3 col = vec3(0.92) / PI * (sun + uMoonPower * moonT * 0.6 + uSkyIrr * (0.9 - 0.3 * thick));
   col *= 1.0 - uDark * (0.55 + 0.3 * thick);
+  // Seen from below, a deck shows its shaded underside (as the terrain does).
+  if ((length(uCamKm) - RP) * 1000.0 < uCloudTop) col = deckUnderside(up) * (0.9 + 0.2 * thick);
   vec3 T, L;
   aerial(uCamKm, pKm, -V, T, L);
   col = col * T + L;

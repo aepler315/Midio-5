@@ -91,15 +91,15 @@ export function lightPlacement(id, ctx) {
   switch (id) {
     case 'alpenglow': return { sunAz: feasibleAzimuth(front + 25, lat), sunEl: shadowLineElevation(line) + 0.15, moonEl: -20, moonAz: 0, exposure: 0.75 };
     case 'golden': return { sunAz: feasibleAzimuth(front + 35, lat), sunEl: 5.5, moonEl: -20, moonAz: 0, exposure: 1.0 };
-    case 'midday': return { sunAz: lat >= 0 ? 180 : 0, sunEl: clamp(90 - Math.abs(lat - 20), 25, 75), moonEl: -20, moonAz: 0, exposure: 1.0 };
+    case 'midday': return { sunAz: lat >= 0 ? 180 : 0, sunEl: clamp(90 - Math.abs(lat - 20), 25, 75), moonEl: -20, moonAz: 0, exposure: 1.35 };
     case 'raking': {
       const a = feasibleAzimuth(heading + 90, lat), b = feasibleAzimuth(heading - 90, lat);
       const off = (x) => Math.abs(((x - heading + 540) % 360) - 180);
       return { sunAz: Math.abs(off(a) - 90) <= Math.abs(off(b) - 90) ? a : b, sunEl: 14, moonEl: -20, moonAz: 0, exposure: 1.0 };
     }
     case 'backlit': return { sunAz: feasibleAzimuth(heading + 12, lat), sunEl: 3.5, moonEl: -20, moonAz: 0, exposure: 0.85 };
-    case 'bluehour': return { sunAz: feasibleAzimuth(front + 20, lat), sunEl: -6.5, moonEl: 12, moonAz: heading - 35, exposure: 0.4, satMul: 0.9, tint: [0.88, 0.95, 1.12] };
-    case 'moonlight': return { sunAz: feasibleAzimuth(front, lat), sunEl: -28, moonEl: 32, moonAz: front + 25, exposure: 0.22, satMul: 0.5, tint: [0.78, 0.9, 1.18] };
+    case 'bluehour': return { sunAz: feasibleAzimuth(front + 20, lat), sunEl: -6.5, moonEl: 12, moonAz: heading - 35, exposure: 0.75, satMul: 0.9, tint: [0.88, 0.95, 1.12] };
+    case 'moonlight': return { sunAz: feasibleAzimuth(front, lat), sunEl: -28, moonEl: 32, moonAz: front + 25, exposure: 0.45, satMul: 0.5, tint: [0.78, 0.9, 1.18] };
     default: return lightPlacement('golden', ctx);
   }
 }
@@ -115,7 +115,7 @@ function weatherParams(id, ctx) {
     case 'autumn': return { ...base, snowShift: -300, autumn: 1, sat: 1.08 };
     case 'winter': return { ...base, snowShift: -3300, mieMul: 0.7, sat: 0.94, contrast: 1.05 };
     // Summits vanish into a dark deck; snow falls.
-    case 'storm': return { ...base, highCloudMul: 0, snowShift: -1100, wetness: 0.8, mieMul: 9, rayMul: 1.3, deckOn: 1, deckCoverage: 0.9, deckDark: 0.75, stormDark: 0.45, sunMul: 0.2, sat: 0.62, contrast: 1.15, exposureMul: 1.5, deckH: ground + 0.62 * (summit - ground), precip: 1, tintMul: [0.88, 0.94, 1.04] };
+    case 'storm': return { ...base, highCloudMul: 0, snowShift: -1100, wetness: 0.8, mieMul: 9, rayMul: 1.3, deckOn: 1, deckCoverage: 0.9, deckDark: 0.75, stormDark: 0.45, sunMul: 0.1, sat: 0.55, contrast: 1.15, exposureMul: 1.5, deckH: ground + 0.62 * (summit - ground), precip: 1, tintMul: [0.88, 0.94, 1.04] };
     case 'cloudsea': {
       const top = clamp(ground + 0.33 * (summit - ground), ground + 150, summit - 500);
       return { ...base, cloudOn: 1, deckOn: 1, deckCoverage: 0.86, cloudTop: top, deckH: top, mieMul: 0.8, sat: 1.06 };

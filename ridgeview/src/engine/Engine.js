@@ -11,7 +11,7 @@ import { Shadows } from './Shadows.js';
 import { Post } from './Post.js';
 import { Reflection } from './Reflection.js';
 import { Trees } from './Trees.js';
-import { sampleSkyLight } from './AtmosphereCPU.js';
+import { sampleSkyLight, lightTransmittance } from './AtmosphereCPU.js';
 import { CameraRig } from '../scene/CameraRig.js';
 import { Looks } from '../scene/Looks.js';
 import { clamp, enuBasis } from '../core/geo.js';
@@ -129,12 +129,16 @@ export class Engine {
     // Multiple scattering stand-in: a faint sky glow that follows the sun, plus airglow at night.
     const sinEl = Math.sin((L.sunEl * Math.PI) / 180);
     const day = clamp((sinEl + 0.12) / 0.4, 0, 1);
-    g.uAmbientTint.value.set(0.0009 + 0.03 * day, 0.0012 + 0.036 * day, 0.002 + 0.046 * day).multiplyScalar(L.sunMul * 0.6 + 0.4);
+    // (Single scattering alone leaves a daytime sky ~3x too dark next to the sun.)
+    g.uAmbientTint.value.set(0.0009 + 0.09 * day, 0.0012 + 0.11 * day, 0.002 + 0.15 * day).multiplyScalar(L.sunMul * 0.6 + 0.4);
     const cu = this.clouds.uniforms;
     cu.uCloudOn.value = L.deckOn;
     cu.uCoverage.value = L.deckCoverage;
     cu.uDark.value = L.deckDark;
     this.deckH = L.deckH;
+    g.uDeckOn.value = L.deckOn;
+    g.uDeckH.value = L.deckH;
+    g.uDeckDark.value = L.deckDark;
     this.sky.uniforms.uHighClouds.value = L.highClouds ?? 0;
     const p = this.post.uniforms;
     p.uStyle.value = this.looks.styleCode;
@@ -170,7 +174,13 @@ export class Engine {
     const moonUp = Math.max(0, up[0] * params.moonDir[0] + up[1] * params.moonDir[1] + up[2] * params.moonDir[2]);
     const face = (u) => (u > 0 ? 0.35 + 0.65 * u : 0);
     const E = s.sunAtGround.map((v, i) => v * params.sunPower * face(sunUp) + s.moonAtGround[i] * params.moonPower * face(moonUp) + s.irradiance[i]);
-    const lum = (0.2 / Math.PI) * (0.2126 * E[0] + 0.7152 * E[1] + 0.0722 * E[2]);
+    // The summits may still be in sunlight when the valley is not (alpenglow):
+    // expose for whichever is brighter so the glow reads against a dark valley.
+    const peakKm = Math.max(hEval, this.looks.ctx.summit ?? 0) / 1000;
+    const peakT = lightTransmittance(peakKm, sunUp, params);
+    const Ep = peakT.map((v, i) => v * params.sunPower * 0.6 + s.irradiance[i]);
+    const lumOf = (e) => (0.2 / Math.PI) * (0.2126 * e[0] + 0.7152 * e[1] + 0.0722 * e[2]);
+    const lum = Math.max(lumOf(E), lumOf(Ep) * 0.8);
     let exposure = clamp((0.42 / Math.max(lum, 1e-6)) * this.looks.cur.exposure, 0.02, 60);
     // From high up, the eye adapts to the sunlit planet, not the ground below.
     const space = clamp((Math.log10(Math.max(h, 1)) - Math.log10(25000)) / (Math.log10(400000) - Math.log10(25000)), 0, 1);
