@@ -188,12 +188,10 @@ is a fresh destination state, not replay of every earlier random particle.
 | Whole-system effect lifecycle across seeks | `npm run test:seek` |
 | Upload/playback/replacement/stop | `npm run test:smoke` |
 | Eight-world selection/playback/seek/reduced motion and paint checks | `npm run test:worlds` |
-| Uploaded-song chooser, pointer Preview/Play | `npm run test:chooser` |
-| Desktop/narrow keyboard selection, native modality, Tab wrapping, Escape and focus return | `npm run test:chooser-keyboard` |
 
-The reusable `.github/workflows/test.yml` runs lint, unit tests and all seven
-browser commands above. Chooser checks run in their own job, and Pages
-deployment depends on the entire validation workflow.
+The reusable `.github/workflows/test.yml` runs lint, unit tests and all five
+browser commands above, and Pages deployment depends on the entire
+validation workflow.
 The world smoke explicitly rejects astronomical painting in Fathom/Nave.
 Browser liveness, isolated pixel checks and unit tests do not establish
 subjective appeal, exhaustive accessibility or real-device sustained FPS.

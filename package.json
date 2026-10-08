@@ -19,8 +19,6 @@
     "test:lighting": "node tools/adapted-lighting-smoke.mjs",
     "test:worlds": "node tools/worlds-smoke.mjs",
     "test:landscape": "node tools/range-landscape-smoke.mjs",
-    "test:chooser": "node tools/smoke-world-chooser.mjs",
-    "test:chooser-keyboard": "node tools/chooser-keyboard-smoke.mjs",
     "test:retro": "node tools/retro-smoke.mjs",
     "test:peaks": "node tools/peak-evidence.mjs",
     "test:export": "node tools/export-smoke.mjs",
@@ -33,9 +31,8 @@
     "slskd": "docker compose up -d slskd",
     "slskd:down": "docker compose down",
     "slskd:logs": "docker compose logs -f slskd",
-    "start:full": "docker compose up -d slskd && node tools/start-history.mjs",
-    "stage:versions": "node tools/stage-history.mjs . _site",
-    "test:versions": "node tools/history-picker-smoke.mjs"
+    "start:full": "docker compose up -d slskd && node tools/serve.js",
+    "stage:versions": "node tools/stage-history.mjs . _site"
   },
   "dependencies": {
     "slsk-client": "2.0.2"

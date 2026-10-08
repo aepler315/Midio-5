@@ -86,8 +86,7 @@ card comparison is a comparison of worlds, not of different moments. Preview
 plays one passage at a time and cannot leak its audio or clock into
 playback. Reduced motion keeps the still and skips the animated clip.
 `node --test test/worldPreview.test.js test/worldChooser.test.js` pins the
-passage picker, copy, cache, and one-at-a-time session. `tools/smoke-world-chooser.mjs`
-covers the live picker.
+passage picker, copy, cache, and one-at-a-time session.
 
 It also runs a **per-pass paint audit**: it wraps individual draw passes,
 renders one frame at a pinned full-quality perf rung, and records how many

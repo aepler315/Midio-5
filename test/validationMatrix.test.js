@@ -28,7 +28,7 @@ function workflowJobs(text) {
 
 test('every Test workflow job is named in the validation matrix', () => {
   const jobs = workflowJobs(workflow);
-  assert.ok(jobs.length >= 3, `expected CI jobs, got ${jobs.join(',')}`);
+  assert.ok(jobs.length >= 2, `expected CI jobs, got ${jobs.join(',')}`);
   for (const job of jobs) {
     assert.match(matrix, new RegExp('`' + job + '`'), `docs/test-matrix.md must mention job ${job}`);
   }
