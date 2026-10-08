@@ -1,7 +1,7 @@
 {
   "fixture": "six minutes, thirteen roles, 100ms samples",
   "node": "v24.19.0",
-  "commit": "8e519fc1621e592a67e0eb92be7802321174b89d",
+  "commit": "c75c64bbe625d2fcf248f912f298affe263ef9bb",
   "tunables": {
     "pMinM": 15,
     "isoMinM": 120,
@@ -115,8 +115,8 @@
     "maxSpeedMps": 60,
     "timelineBeamWidth": 60
   },
-  "planMs": 65.86970399999996,
-  "timelineMs": 8804.251188,
+  "planMs": 79.81308899999999,
+  "timelineMs": 6700.865580000001,
   "meanQualityRatio": 0.8171777767613836,
   "heroCount": 13,
   "passedAtRange": 13,

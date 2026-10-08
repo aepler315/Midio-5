@@ -50,7 +50,7 @@ junction geometry. Full measured point properties remain in
 
 ## Verification
 
-The final whole suite passed **3,840 tests, zero failures or skips** (52.86 s). Site staging passed. Lint and site staging passed. Five-song browser evidence is recorded separately below.
+The final whole suite passed **3,840 tests, zero failures or skips**. Lint and site staging passed. Five-song browser evidence is recorded separately below.
 
 ## Runtime evidence
 
@@ -61,8 +61,8 @@ height as a substitute for ground. The latest recorded measurements are:
 
 | Check | Measurement | Result |
 | --- | --- | --- |
-| Cold planner | 65.87 ms; target ≤60 ms | Target unmet |
-| Joint height/aim solve, worker | 8.80 s | Recorded, no device claim |
+| Cold planner | 79.81 ms; target ≤60 ms | Target unmet |
+| Joint height/aim solve, worker | 6.70 s | Recorded, no device claim |
 | Mean field-quality ratio | 0.81718; target ≥0.8 | Pass |
 | Optical speed within 0.03–0.3 rad/s | 100%; target ≥98% | Pass |
 | Maximum climb | 30 m/s | Pass |
@@ -84,7 +84,21 @@ hero time and the longest-section midpoint, checks active terrain,
 finite poses, conservative clearance, shader/page errors, and identical
 settled pause pixels. Its report also checks that switching off restores
 the original geography inputs and switching on rebuilds the CONIFER
-chapter schedule. The report and PNGs are in `docs/evidence/teton-tour/`.
+chapter schedule. All **57 captures** passed those browser checks; the source-content hash
+matches committed implementation `c75c64b`. The report and PNGs are in
+`docs/evidence/teton-tour/`. The browser harness records quality without
+asserting its target. Three fixtures remain below 0.8:
+
+| BPM / duration | Mean field-quality ratio |
+| --- | --- |
+| 120 / 96 s | 0.9300 |
+| 80 / 150 s | 0.6692 — target unmet |
+| 150 / 120 s | 0.7865 — target unmet |
+| 174 / 100 s | 0.7169 — target unmet |
+| 100 / 180 s | 0.9851 |
+
+The six-minute quality pass therefore does not establish quality acceptance
+across the five browser songs.
 
 Review `/src/dev/teton-tour-review.html` locally for the highway/role map,
 example route and 44 neutral station views. `map.png` and `primaries.jpg`
@@ -112,6 +126,8 @@ The review's Minor readability finding (dense runtime modules) is deferred.
 
 Remaining limitations:
 
+- Three of five browser songs fall below the 0.8 field-quality target;
+  further route/aim tuning remains necessary.
 - Cold planning exceeds 60 ms in the recorded run. The metric checker
   reports this failure; it is not waived by worker execution.
 - Some windows relax the requested 1 px desktop / 2 px mobile error to
@@ -214,4 +230,23 @@ that were superseded are identified explicitly.
     Dijkstra: nonnegative remaining costs make the pruning valid; timing
     is still measured cold rather than claimed from warm caches.
 
+33. Retain planner/pixel failures as explicit candidate limits: the checks
+    establish gaps rather than acceptance; further performance/detail work
+    is required before approval.
+34. Limit corner evidence to sampled routes: no reviewer validated every
+    directional join; other routes may reject turns or need corrections.
+35. Keep field-quality measurements separate from aesthetic approval:
+    scores do not establish rendered beauty; all 44 views need human review.
+36. Treat browser captures as software-renderer evidence: physical devices
+    were not tested; GPU and phone behavior may differ.
+37. Require real moving-route tests as well as finite synthetic poses:
+    finiteness concealed stops; other song combinations may need coverage.
+
 The mode-switch fix also prevents reuse of a cancelled residency generation. Unreachable section proposals remain visible as passed-at-range entries rather than disappearing from the timeline metadata.
+
+## Delivery
+
+The implementation branch is pushed to `origin/teton-song-highway-resume`.
+Draft PR creation returned `Forbidden` from `https://api.github.com/graphql`;
+`gh auth status` also reported an invalid token. The prepared description
+is saved in `docs/teton-tour-pr-description.md`. No merge or deployment was performed.
