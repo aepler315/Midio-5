@@ -708,7 +708,8 @@ export async function bakeTerrain(grid, view, options = {}) {
       // shipped (options.keepHidden keeps it, coarsest, for diagnostics).
       if (!visible && !options.keepHidden) continue;
       const lod = Object.fromEntries(Object.keys(budgets).map((k) => [k, pick(k)]));
-      const stride = allTiles ? 1 : Math.min(...Object.values(lod));
+      const stride = allTiles ? (options.tileStride?.({ ix, iz, x0, y0, cells, grid }) ?? 1) : Math.min(...Object.values(lod));
+      if (!STRIDES.includes(stride) || stride > cells) throw new Error('Invalid authored tile stride');
       for (const k of Object.keys(lod)) {
         if (framing === 'core') achieved[k] = Math.max(achieved[k], errorsM[lod[k]] * focal[k] / dist);
       }

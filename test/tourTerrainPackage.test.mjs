@@ -158,3 +158,15 @@ test('summit verification uses the maximum within 200 metres and rejects missing
   grid.points = {};
   assert.equal(checkSummits(grid, summits).ok, false);
 });
+
+test('final tour repack stores authored near tiles at stride1 and far tiles at stride2', async () => {
+  const { grid, view } = fixture();
+  const baked = await bakeTerrain(grid, view, { allTiles: true, tileStride: ({ ix }) => ix ? 2 : 1 });
+  for (const t of baked.manifest.tiles) {
+    assert.equal(t.stride, t.ix ? 2 : 1);
+    assert.equal(t.samples, 64 / t.stride + 1);
+    assert.ok(Object.keys(t.errorsM).every(s => Number(s) >= t.stride));
+  }
+  assert.ok(validateTerrainManifest(baked.manifest).ok);
+  await assert.rejects(bakeTerrain(grid, view, { allTiles: true, tileStride: () => 3 }), /Invalid authored tile stride/);
+});

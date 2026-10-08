@@ -211,7 +211,7 @@ function unionFind(ids) {
   return { find, join: (a, b) => { a = find(a); b = find(b); if (a === b) return false; parent.set(b, a); return true; } };
 }
 
-function mergeStations(points, clearance, grid, water) {
+export function mergeStations(points, clearance, grid, water) {
   const stationed = points.filter(p => p.station && p.tier !== 'scenery').sort((a, b) => String(a.id).localeCompare(String(b.id)));
   if (!stationed.length) throw new Error('No highway stations');
   const uf = unionFind(stationed.map(p => p.id));
@@ -219,7 +219,20 @@ function mergeStations(points, clearance, grid, water) {
   const groups = new Map();
   for (const point of stationed) { const id = uf.find(point.id); if (!groups.has(id)) groups.set(id, []); groups.get(id).push(point); }
   const nodes = [], mapped = new Map();
+  const safeGroups = [];
   for (const group of groups.values()) {
+    const pos = [0, 1].map(k => group.reduce((s, p) => s + p.station.posM[k], 0) / group.length);
+    const band = clearanceAt(clearance, ...pos);
+    const safe = group.every(p => {
+      const ring = distance(pos, [p.localM[0], p.localM[2]]);
+      return Number.isFinite(band.floorY) && p.station.yM >= band.floorY && p.station.yM <= band.ceilY
+        && (!['drop', 'chorus'].includes(p.role) || ring >= 300 && ring <= 600)
+        && stationFlyability(clearance, pos, p.station.yM).count >= 2;
+    });
+    // Merging is an optimization, never authority to relocate a locked hero.
+    safeGroups.push(...(safe ? [group] : group.map(p => [p])));
+  }
+  for (const group of safeGroups) {
     const posM = [0, 1].map(k => group.reduce((s, p) => s + p.station.posM[k], 0) / group.length);
     const node = { id: `n${nodes.length}`, posM, pointId: group[0].id, pointIds: group.map(p => p.id) }; nodes.push(node);
     for (const point of group) {

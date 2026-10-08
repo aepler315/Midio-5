@@ -233,3 +233,23 @@ Highest twenty peaks (DEM elevation / prominence / isolation, metres; * means tr
 The first real station run rejected `col-3432475` (backup post-chorus): its 3,406.31 m col has a 3,603.3 m conservative floor, and none of the +80/+150/+250 m candidates supplies two safe opposite 800 m directions. Role assignment now retries after recording an unusable `(point, role)` pair, retaining the original spacing/spread constraints and four primaries per role. Rejected points remain scenery or may qualify for another role; the build still rejects insufficient pools. Grand Teton may not be silently dropped from the drop pool. Stations use the graph's existing 1 km boundary margin. This changes selection, not clearance or hero-height rules.
 
 Repeated successful station scores are memoized within one build, with fixed terrain, points and material settings. The scorer sorts subjects once and only computes visibility for subjects actually chosen by a heading. On a real Grand Teton eye, all 72 aims and features remained byte-identical and cold scoring improved from **82.9 ms to 36.3 ms**. Focused station/role regressions first failed and then passed **14/14**; fresh full suite **3,810/3,810**, lint passed. Final real station/role tables remain pending the ongoing source build.
+
+Final station and asset candidate
+
+The initial primary table above is superseded by station-feasibility selection. Unsafe assignments were vetoed without reducing clearance, ring, spacing or through-flight constraints. A reviewed allowlist retains 77 backups, including connecting stations, under the original maximum14 per role. Uniform caps4 and8 disconnected the network and were discarded.
+
+| Role | Four primaries | Backups |
+| --- | --- | --- |
+| intro | -110.65400, 43.89873 (2089 m) · -110.67079, 43.85735 (2096 m) · -110.68808, 43.80661 (2145 m) · -110.74049, 43.66158 (2065 m) | 12 |
+| verse | -110.61503, 44.00558 (2433 m) · -110.56719, 43.99792 (2654 m) · -110.81802, 44.04610 (2685 m) · -110.61843, 43.53865 (2416 m) | 10 |
+| pre-chorus | -110.78499, 43.83459 (3577 m) · -110.78729, 43.74567 (3501 m) · -110.80018, 43.80364 (3258 m) · -110.98935, 43.53460 (2952 m) | 4 |
+| chorus | Doane Peak · Teewinot Mountain · Middle Teton · Housetop Mountain | 7 |
+| post-chorus | -110.78528, 43.77861 (3375 m) · -110.86554, 43.80436 (3200 m) · -110.84688, 43.74568 (3351 m) · -110.94299, 43.61908 (3110 m) | 7 |
+| bridge | -110.92000, 43.82071 (2852 m) · -110.84516, 43.80256 (3195 m) · -110.53287, 43.57789 (3007 m) · -111.12553, 43.50426 (2696 m) | 7 |
+| solo | -110.79392, 43.87114 (3288 m) · -110.77355, 43.83747 (3791 m) · -110.77885, 43.74891 (3569 m) · Cloudveil Dome | 7 |
+| interlude | -110.86115, 43.96726 (2974 m) · -110.86035, 43.85368 (2997 m) · -110.80988, 43.78330 (3222 m) · -110.95630, 43.58918 (3084 m) | 6 |
+| breakdown | -110.90225, 43.74494 (2174 m) · -110.59185, 43.62825 (2040 m) · -110.71772, 43.50657 (1925 m) · -110.80775, 43.49312 (1915 m) | 7 |
+| drop | Traverse Peak · Mount Moran · Mount Woodring · Grand Teton | 6 |
+| outro | -110.64568, 43.93237 (2073 m) · -110.64752, 43.90322 (2085 m) · -110.66854, 43.86347 (2092 m) · -110.67785, 43.82100 (2135 m) | 4 |
+
+Final highway: 154 nodes,256 roads,5 orbits,633.7km; one connected component, minimum turn radius405.47m, minimum vertical band414.1m, maximum stretch1.33912. Final field: 4885 samples,23451 tiers,100m spacing (150m on edges longer than3km), subject IDs at10degrees. Exact hero heights and best aims retained separately. Assets remain candidate until visual review. See docs/evidence/teton-tour/asset-budgets.json for measured download sizes.

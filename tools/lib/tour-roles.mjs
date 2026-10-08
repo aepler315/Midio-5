@@ -89,6 +89,7 @@ function choosePrimaries(candidates, role, count, spacing) {
 
 /** Scarce-first primary pools; remaining points get one backup/scenery role. */
 export function assignRoles(input, { grid = null, tunables = {}, excludedStationPairs = new Set() } = {}) {
+  const backupAllowlist = tunables.backupPointIds ? new Set(tunables.backupPointIds) : null;
   if (new Set(input.map(p => p.id)).size !== input.length) throw new Error('duplicate tour point id');
   const primaryCount = tunables.primariesPerRole ?? 4, maxBackups = tunables.maxBackupsPerRole ?? 14;
   if (!(Number.isInteger(primaryCount) && primaryCount >= 2 && Number.isInteger(maxBackups) && maxBackups >= 0)) throw new Error('bad tour tier counts');
@@ -127,6 +128,7 @@ export function assignRoles(input, { grid = null, tunables = {}, excludedStation
       .sort((a, b) => b.suit[role] - a.suit[role] || compareId(a, b));
     for (const p of candidates) {
       if (roles[role].backups.length >= maxBackups) break;
+      if (backupAllowlist && !backupAllowlist.has(p.id)) continue;
       if (!selected.every(other => distance(p, other) >= 800)) continue;
       p.tier = 'backup'; selected.push(p); roles[role].backups.push(p.id);
     }

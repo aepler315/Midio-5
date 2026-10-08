@@ -87,3 +87,12 @@ test('station-rejected role pairs cannot return as primaries or backups, without
   const all=new Set(source.filter(p=>p.suit.verse>0).map(p=>'verse:'+p.id));
   assert.throws(()=>assignRoles(source,{excludedStationPairs:all}),/verse.*primary/);
 });
+
+test('reviewed backup allowlists trim surplus stations while retaining primary constraints', () => {
+  const input=rolePool(),full=assignRoles(input);
+  const backupPointIds=full.points.filter(p=>p.tier==='backup').filter((_,i)=>i%4===0).map(p=>p.id);
+  const trimmed=assignRoles(input,{tunables:{backupPointIds}});
+  assert.equal(trimmed.stats.primaries,44);
+  assert.ok(trimmed.points.filter(p=>p.tier==='backup').every(p=>backupPointIds.includes(p.id)));
+  assert.ok(trimmed.stats.backups<full.stats.backups);
+});

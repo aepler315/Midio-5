@@ -1,0 +1,34 @@
+{
+  "nodes": 154,
+  "edgeCount": 261,
+  "roadCount": 256,
+  "orbitCount": 5,
+  "candidateCount": 385,
+  "totalLengthM": 633704.6029036745,
+  "degreeHistogram": {
+    "1": 5,
+    "2": 40,
+    "3": 38,
+    "4": 52,
+    "5": 10,
+    "6": 8,
+    "7": 1
+  },
+  "longestEdgeM": 10745.358745373404,
+  "minTurnRadiusM": 405.4661151621734,
+  "minBandHeightM": 414.10000000000036,
+  "mergedStations": 1,
+  "junctions": 34,
+  "components": 1,
+  "maxStretch": 1.3391163934749037,
+  "rejectedEdges": 2,
+  "rejected": [
+    "n9→n48: Dropped road: turn radius 359.8 m",
+    "n9→n48: no safe smooth path"
+  ],
+  "provenance": {
+    "demSha256": "79ed04ec6df77cbda81f9c11c0d709e8e1926d4a7e69b7bbcd748405a91d10b7",
+    "namesSha256": "a1d8f91f2f739ab219906b1253b2561a12d6df11e9a64711308ecae8d093d588",
+    "builtWith": "tools/build-teton-tour.mjs"
+  }
+}

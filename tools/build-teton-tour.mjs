@@ -10,7 +10,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeDem, readDemGrid } from './lib/terrain-source.mjs';
-import { bakeTerrain, despikeGrid, validateDemGrid, validateTerrainManifest, waterMask } from './lib/terrain-bake.mjs';
+import { bakeTerrain, viewSkyline, despikeGrid, validateDemGrid, validateTerrainManifest, waterMask } from './lib/terrain-bake.mjs';
+import { skylineFeatures, characterFromFeatures, archetypeOf } from '../src/world/terrain/RangeCharacter.js';
 import { findPoints } from './lib/tour-points.mjs';
 import { transformTourCoordinates } from './lib/tour-coordinates.mjs';
 import { buildTourNames } from './build-tour-names.mjs';
@@ -19,6 +20,7 @@ import { assignFlyableStations } from './lib/tour-stations.mjs';
 import { buildHighway, highwayFieldSamples } from './lib/tour-highway.mjs';
 import { buildViewQualityField } from './lib/view-quality.mjs';
 import { serialize } from 'node:v8';
+import { packTour } from './lib/tour-pack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sha = data => createHash('sha256').update(data).digest('hex');
@@ -165,7 +167,7 @@ export async function buildTourTerrain({
     provenance: grid.provenance };
   await fs.writeFile(path.join(dir, `${view.id}.build.json`), JSON.stringify(report, null, 2) + '\n');
   log(`Provisional terrain: ${report.tiles} tiles, ${(report.compressedBytes / 1024 ** 2).toFixed(2)} MiB gz`);
-  return { grid, ...baked, report, manifestFile };
+  return { view, grid, ...baked, report, manifestFile };
 }
 
 /** Review data only; no point/station package is shipped by this stage. */
@@ -280,12 +282,12 @@ export async function buildTourField({
   const view = JSON.parse(await fs.readFile(authoringFile, 'utf8'));
   const result = await buildTourHighway({ ...options, authoringFile, outDir, log });
   const geometry = highwayFieldSamples(result.highway, { clearance: result.clearance,
-    spacingM: fieldSpacingM ?? view.tour.tunables.fieldSpacingM, longEdgeSpacingM });
+    spacingM: fieldSpacingM ?? view.tour.tunables.fieldSpacingM, longEdgeSpacingM: longEdgeSpacingM ?? view.tour.tunables.longEdgeFieldSpacingM });
   const started = performance.now();
   const evaluated = await buildViewQualityField({ grid: result.grid, points: result.points.points, samples: geometry.samples,
     water: result.water, aglTiersM: view.tour.tunables.aglTiersM, workerCount, cacheDir: path.join(root, '.cache/teton-tour'), log });
   const field = { ...evaluated, spacingM: fieldSpacingM ?? view.tour.tunables.fieldSpacingM,
-    longEdgeSpacingM, edges: geometry.edges, stations: geometry.stations };
+    longEdgeSpacingM: longEdgeSpacingM ?? view.tour.tunables.longEdgeFieldSpacingM ?? null, edges: geometry.edges, stations: geometry.stations };
   const ranked = field.samples.map((s, i) => ({ sampleId: i, posM: s.posM,
     meanQuality: s.tiers.reduce((n, t) => n + [...t.score].reduce((n, v) => n + v, 0) / (72 * 255), 0) / s.tiers.length }))
     .sort((a, b) => b.meanQuality - a.meanQuality || a.sampleId - b.sampleId);
@@ -298,13 +300,71 @@ export async function buildTourField({
   return { ...result, field, fieldReport: report };
 }
 
+/** Only portable, verified packages cross the authoring/runtime boundary. */
+export async function buildTourPack({ result = null, outDir = path.join(root, '.terrain-cache/teton-tour'),
+  publish = false, log = console.log, ...options } = {}) {
+  result ||= await buildTourField({ ...options, outDir, log });
+  const { view, grid, highway, field, clearance } = result;
+  const road = highway.edges.flatMap(e => e.samples);
+  const terrain = await bakeTerrain(grid, view, { allTiles: true, tileStride: ({ x0, y0, cells }) => {
+    const x = grid.originM[0] + x0 * grid.cellSizeM, z = grid.originM[1] + y0 * grid.cellSizeM;
+    const size = cells * grid.cellSizeM;
+    return road.some(p => Math.hypot(Math.max(x - p[0], 0, p[0] - x - size), Math.max(z - p[1], 0, p[1] - z - size)) <= 6000) ? 1 : 2;
+  } });
+  let tour = packTour({ view, source: result.points, highway, field, clearance });
+  if (tour.payload.length > 4e6) tour = packTour({ view, source: result.points, highway, field, clearance, subjectStep: 2 });
+  if (tour.payload.length > 4e6) throw new Error('Tour exceeds 4 MB: rebuild long-edge field at 150 m spacing');
+  if (terrain.payload.length > 18e6 || terrain.payload.length + tour.payload.length > 22e6) throw new Error('Teton asset budget exceeded');
+  if (result.points.provenance.demSha256 !== terrain.manifest.source.demSha256) throw new Error('Tour source DEM identity mismatch');
+  const destination = publish ? path.join(root, 'src/assets/range/v2') : outDir;
+  const treeBytes = async dir => {
+    let total = 0;
+    for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+      const file = path.join(dir, e.name);
+      if (e.isDirectory()) total += await treeBytes(file);
+      else if (!file.includes(view.id)) total += (await fs.stat(file)).size;
+    }
+    return total;
+  };
+  const terrainJson = JSON.stringify(terrain.manifest, null, 2) + '\n', tourJson = JSON.stringify(tour.manifest) + '\n';
+  const total = await treeBytes(path.join(root, 'src/assets/range/v2')) + terrain.payload.length + tour.payload.length + Buffer.byteLength(terrainJson) + Buffer.byteLength(tourJson);
+  if (total > 60e6) throw new Error('Range v2 total asset budget exceeded');
+  // Complete validation and budget checks precede all published writes.
+  await fs.mkdir(path.join(destination, 'terrain'), { recursive: true });
+  await fs.mkdir(path.join(destination, 'tour'), { recursive: true });
+  await fs.writeFile(path.join(destination, 'terrain', `${view.id}.terrain.json`), terrainJson);
+  await fs.writeFile(path.join(destination, 'terrain', `${view.id}.terrain.bin.gz`), terrain.payload);
+  await fs.writeFile(path.join(destination, 'tour', `${view.id}.tour.json`), tourJson);
+  await fs.writeFile(path.join(destination, 'tour', `${view.id}.tour.bin.gz`), tour.payload);
+  const characterScores = { energy: 0, rawness: 0, grandeur: 0, dominance: 0 };
+  const representative = highway.points.filter(p => p.tier === 'primary' && ['drop', 'chorus'].includes(p.role)).slice(0, 3);
+  for (const p of representative) {
+    const { posM, yM, bestAim } = p.station, h = bestAim.headingDeg * Math.PI / 180, pitch = bestAim.pitchDeg * Math.PI / 180;
+    const eyeM = [posM[0], yM, posM[1]], targetM = [eyeM[0] + Math.sin(h) * Math.cos(pitch) * 12000, yM + Math.sin(pitch) * 12000, eyeM[2] - Math.cos(h) * Math.cos(pitch) * 12000];
+    const fovYDeg = 2 * Math.atan(Math.tan(bestAim.hfovDeg * Math.PI / 360) / (16 / 9)) * 180 / Math.PI;
+    const sky = viewSkyline(grid, { eyeM, targetM, fovYDeg });
+    const scores = characterFromFeatures(skylineFeatures(sky.elevationsM, sky.spacingM));
+    for (const key of Object.keys(characterScores)) characterScores[key] += scores[key] / representative.length;
+  }
+  await fs.writeFile(path.join(destination, 'terrain', `${view.id}.build.json`), JSON.stringify({ view, characterScores,
+    archetype: archetypeOf(characterScores).archetype, credit: 'Elevation: USGS 3DEP; names: GeoNames',
+    manifestSha256: sha(terrainJson), payloadSha256: terrain.manifest.payload.sha256,
+    sourceSha256: grid.provenance?.sha256 || [], stats: terrain.stats }, null, 2) + '\n');
+  const report = { terrainBytes: terrain.payload.length, tourBytes: tour.payload.length, totalRangeBytes: total,
+    subjectStepDeg: tour.manifest.field.subjectStepDeg, fieldSpacingM: field.spacingM,
+    terrainStrideCounts: terrain.manifest.tiles.reduce((a, t) => (a[t.stride] = (a[t.stride] || 0) + 1, a), {}) };
+  await fs.writeFile(path.join(outDir, `${view.id}.pack.build.json`), JSON.stringify(report, null, 2) + '\n');
+  log(`portable assets: terrain ${(report.terrainBytes / 1024 ** 2).toFixed(2)} MiB, tour ${(report.tourBytes / 1024 ** 2).toFixed(2)} MiB, Range ${(total / 1024 ** 2).toFixed(2)} MiB`);
+  return { ...result, terrain, tour, packReport: report };
+}
+
 async function main(args) {
   const options = { inputs: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--publish') options.publish = true;
     else if (arg === '--help') {
-      console.log('node tools/build-teton-tour.mjs --stage terrain|points|stations|highway|field [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--names FILE] [--points FILE] [--workers N] [--publish]');
+      console.log('node tools/build-teton-tour.mjs --stage terrain|points|stations|highway|field|pack [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--names FILE] [--points FILE] [--workers N] [--publish]');
       return;
     } else if (['--stage', '--out', '--dem-grid', '--input', '--authoring', '--names', '--points', '--workers'].includes(arg)) {
       const value = args[++i];
@@ -314,7 +374,8 @@ async function main(args) {
       else options[{ '--stage': 'stage', '--out': 'outDir', '--dem-grid': 'demGrid', '--authoring': 'authoringFile', '--names': 'namesFile', '--points': 'pointsFile' }[arg]] = value;
     } else throw new Error(`unknown option ${arg}`);
   }
-  if (options.stage === 'field') await buildTourField(options);
+  if (options.stage === 'pack') await buildTourPack(options);
+  else if (options.stage === 'field') await buildTourField(options);
   else if (options.stage === 'highway') await buildTourHighway(options);
   else if (options.stage === 'stations') await buildTourStations(options);
   else if (options.stage === 'points') await buildTourPoints(options);

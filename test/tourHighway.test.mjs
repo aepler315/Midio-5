@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildClearanceField, clearanceAt } from '../tools/lib/tour-stations.mjs';
-import { buildHighway, smoothRoad, minimumTurnRadius, splitRoadCrossings, highwayFieldSamples } from '../tools/lib/tour-highway.mjs';
+import { buildHighway, mergeStations, smoothRoad, minimumTurnRadius, splitRoadCrossings, highwayFieldSamples } from '../tools/lib/tour-highway.mjs';
 
 function threeValleys() {
   const width = 301, height = 401, cellSizeM = 100, originM = [-15000, -20000];
@@ -103,6 +103,16 @@ test('nearby stations share one node and their stored positions match that node'
   assert.equal(a.station.nodeId, b.station.nodeId);
   const node = result.nodes.find(n => n.id === a.station.nodeId);
   assert.deepEqual(a.station.posM, node.posM); assert.deepEqual(b.station.posM, node.posM);
+});
+
+test('a nearby station merge cannot move a chorus viewpoint outside its summit ring', () => {
+  const { clearance, points } = threeValleys();
+  const a = structuredClone(points[2]), b = structuredClone(points[0]);
+  a.station.posM = [0, 0]; a.localM = [0, 2250, -600];
+  b.station.posM = [0, 100]; b.localM = [0, 2250, -400];
+  const result = mergeStations([a, b], clearance);
+  assert.equal(result.nodes.length, 2);
+  assert.deepEqual(result.points.find(p => p.id === a.id).station.posM, [0, 0]);
 });
 
 test('crossing roads split at a shared junction without losing endpoints', () => {
