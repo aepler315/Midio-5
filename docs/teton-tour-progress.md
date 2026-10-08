@@ -112,8 +112,42 @@ lyric and cue precedence, missing bass evidence, lead-lane selection,
 cross-section stops, determinism and input preservation. The full suite
 passes **3,786 tests, 0 failures** (42.70 s); lint and site staging pass.
 
+## Tasks 4 and 6: clearance, stations and view scoring (in progress)
+
+The exact-height view scorer is ported to local metres, with curvature and
+refraction, skyline ownership, face, fit, openness, drama, water and summit
+visibility. It adds the plan's skyline lift, depth layers, relative subject
+height and foreground terms. Field authoring evaluates all headings and
+height tiers, normalizes over the whole field and packs the heading lanes.
+Workers share read-only DEM arrays and preserve sample order; one-worker and
+two-worker output matches. The content-addressed cache covers heights,
+validity, water, subjects, geometry and scoring settings.
+
+The clearance field uses 60 m cells and Uint16 decimetres. Maximum filters
+include the cell footprint so narrow summits cannot disappear between cells;
+arbitrary-position queries use the maximum floor and minimum ceiling of the
+four corners. Floors include up to 35 m of trees, 10 m slack and 40 m margin.
+The existing forest can produce taller trees, so Task 11 must cap tour-mode
+tree height at 35 m. This does not change the default forest in this checkpoint.
+
+Station candidates are scored at their exact height and require opposite,
+safe 800 m flight directions. Drop and chorus candidates outside the required
+300–600 m ring or −120…+80 m height offsets receive zero preference. Authoring
+rejects a point with no safe positive-quality pass. `--stage stations` reads
+the material rules, updates the review points and saves the clearance cache.
+
+The **12 focused tests** pass: best views over the lake face west; high and
+plateau views score lower; higher eyes reveal more ridge layers; clearance is
+conservative across a narrow summit; chosen stations are safe; malformed
+workers and unsafe stations reject authoring. The full suite passes
+**3,798 tests, 0 failures** (41.20 s); lint and site staging pass.
+
+The latest cloud snapshot is revision 28, still restricted with an empty
+custom host allowlist. USGS and GeoNames probes still return HTTP 403. No real
+stations, road field, timings, budgets or imagery have been produced.
+
 ## Remaining work
 
-Tasks 4–7 and 9–13 have not started. The real terrain/summit checks, points and roles,
+Tasks 5, 7 and 9–13 have not started. The real terrain/summit checks, points and roles,
 highway, view field, asset budgets, planner and timeline, mode integration,
 windowed terrain/forest, visual evidence and the PR remain unverified.

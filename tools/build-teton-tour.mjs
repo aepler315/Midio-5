@@ -10,11 +10,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeDem, readDemGrid } from './lib/terrain-source.mjs';
-import { bakeTerrain, despikeGrid, validateDemGrid, validateTerrainManifest } from './lib/terrain-bake.mjs';
+import { bakeTerrain, despikeGrid, validateDemGrid, validateTerrainManifest, waterMask } from './lib/terrain-bake.mjs';
 import { findPoints } from './lib/tour-points.mjs';
 import { transformTourCoordinates } from './lib/tour-coordinates.mjs';
 import { buildTourNames } from './build-tour-names.mjs';
 import { assignRoles, TOUR_ROLES } from './lib/tour-roles.mjs';
+import { chooseStations } from './lib/tour-stations.mjs';
+import { serialize } from 'node:v8';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sha = data => createHash('sha256').update(data).digest('hex');
@@ -214,13 +216,44 @@ export async function buildTourPoints({
   return { ...terrain, points: output };
 }
 
+/** Stations remain review data until highway and package validation pass. */
+export async function buildTourStations({
+  authoringFile = path.join(root, 'data/terrain/teton-tour.json'),
+  pointsFile = path.join(root, 'data/terrain/teton-tour-points.json'),
+  outDir = path.join(root, '.terrain-cache/teton-tour'), log = console.log, ...terrainOptions
+} = {}) {
+  const view = JSON.parse(await fs.readFile(authoringFile, 'utf8'));
+  const terrain = await buildTourTerrain({ ...terrainOptions, authoringFile, outDir, publish: false, log });
+  let source;
+  try { source = JSON.parse(await fs.readFile(pointsFile, 'utf8')); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    source = (await buildTourPoints({ ...terrainOptions, demGrid: terrain.grid, authoringFile, pointsFile, outDir, log })).points;
+  }
+  if (source.schema !== 'midio.tour-points' || source.version !== 1 || source.terrainViewId !== view.id
+    || source.provenance?.demSha256 !== terrain.manifest.source.demSha256
+    || source.horizontalCrs !== terrain.grid.horizontalCrs || !Array.isArray(source.points)) {
+    throw new Error('Teton points file does not match the requested DEM');
+  }
+  const material = JSON.parse(await fs.readFile(path.join(root, 'src/assets/range/v2', view.materialManifestUrl), 'utf8'));
+  const water = waterMask(terrain.grid);
+  const result = chooseStations(terrain.grid, source.points, { water, rules: material.rules, log });
+  const output = { ...source, points: result.points, stationStats: result.stats };
+  await fs.writeFile(pointsFile, JSON.stringify(output, null, 2) + '\n');
+  await fs.mkdir(outDir, { recursive: true });
+  await fs.writeFile(path.join(outDir, `${view.id}.clearance`), serialize(result.clearance));
+  await fs.writeFile(path.join(outDir, `${view.id}.stations.build.json`), JSON.stringify({ stations: result.stations, stats: result.stats,
+    clearance: { cellM: result.clearance.cellM, width: result.clearance.width, height: result.clearance.height,
+      treeHeightBoundM: result.clearance.treeHeightBoundM, filterFootprintM: result.clearance.filterFootprintM } }, null, 2) + '\n');
+  return { ...terrain, points: output, clearance: result.clearance, water };
+}
+
 async function main(args) {
   const options = { inputs: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--publish') options.publish = true;
     else if (arg === '--help') {
-      console.log('node tools/build-teton-tour.mjs --stage terrain|points [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--names FILE] [--points FILE] [--publish]');
+      console.log('node tools/build-teton-tour.mjs --stage terrain|points|stations [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--names FILE] [--points FILE] [--publish]');
       return;
     } else if (['--stage', '--out', '--dem-grid', '--input', '--authoring', '--names', '--points'].includes(arg)) {
       const value = args[++i];
@@ -229,7 +262,8 @@ async function main(args) {
       else options[{ '--stage': 'stage', '--out': 'outDir', '--dem-grid': 'demGrid', '--authoring': 'authoringFile', '--names': 'namesFile', '--points': 'pointsFile' }[arg]] = value;
     } else throw new Error(`unknown option ${arg}`);
   }
-  if (options.stage === 'points') await buildTourPoints(options);
+  if (options.stage === 'stations') await buildTourStations(options);
+  else if (options.stage === 'points') await buildTourPoints(options);
   else if (!options.stage || options.stage === 'terrain') await buildTourTerrain(options);
   else throw new Error(`stage ${options.stage} is not implemented yet`);
 }
