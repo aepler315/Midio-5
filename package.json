@@ -32,7 +32,8 @@
     "slskd:down": "docker compose down",
     "slskd:logs": "docker compose logs -f slskd",
     "start:full": "docker compose up -d slskd && node tools/serve.js",
-    "stage:versions": "node tools/stage-history.mjs . _site"
+    "stage:versions": "node tools/stage-history.mjs . _site",
+    "visual:eval": "node tools/visual-evaluate.mjs"
   },
   "dependencies": {
     "slsk-client": "2.0.2"
