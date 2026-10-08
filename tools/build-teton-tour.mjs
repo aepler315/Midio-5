@@ -11,6 +11,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeDem, readDemGrid } from './lib/terrain-source.mjs';
 import { bakeTerrain, despikeGrid, validateDemGrid, validateTerrainManifest } from './lib/terrain-bake.mjs';
+import { findPoints } from './lib/tour-points.mjs';
+import { transformTourCoordinates } from './lib/tour-coordinates.mjs';
+import { buildTourNames } from './build-tour-names.mjs';
+import { assignRoles, TOUR_ROLES } from './lib/tour-roles.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sha = data => createHash('sha256').update(data).digest('hex');
@@ -160,23 +164,74 @@ export async function buildTourTerrain({
   return { grid, ...baked, report, manifestFile };
 }
 
+/** Review data only; no point/station package is shipped by this stage. */
+export async function buildTourPoints({
+  authoringFile = path.join(root, 'data/terrain/teton-tour.json'),
+  namesFile = path.join(root, 'data/terrain/teton-tour-names.json'),
+  pointsFile = path.join(root, 'data/terrain/teton-tour-points.json'),
+  log = console.log, ...terrainOptions
+} = {}) {
+  const view = JSON.parse(await fs.readFile(authoringFile, 'utf8'));
+  const terrain = await buildTourTerrain({ ...terrainOptions, authoringFile, publish: false, log });
+  let namesText;
+  try { namesText = await fs.readFile(namesFile, 'utf8'); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    await buildTourNames({ authoring: authoringFile, out: namesFile, log });
+    namesText = await fs.readFile(namesFile, 'utf8');
+  }
+  const names = JSON.parse(namesText);
+  if (names.schema !== 'midio.tour-names' || names.version !== 1
+    || JSON.stringify(names.centerLonLat) !== JSON.stringify(view.dem.centerLonLat)
+    || JSON.stringify(names.extentM) !== JSON.stringify(view.dem.extentM) || !Array.isArray(names.names)) {
+    throw new Error('Teton names file does not match the requested region');
+  }
+  log('Finding points and measuring terrain properties');
+  const result = findPoints(terrain.grid, { pMin: view.tour.tunables.pMinM,
+    isoMin: view.tour.tunables.isoMinM, names: names.names });
+  if (result.stats.unmatchedProminentPeaks.length) {
+    throw new Error(`Unmatched GeoNames peaks with prominence ≥30 m: ${result.stats.unmatchedProminentPeaks.map(n => n.name).join(', ')}`);
+  }
+  const geographic = await transformTourCoordinates(result.points.map(p => [p.localM[0], p.localM[2]]),
+    { centerLonLat: view.dem.centerLonLat, inverse: true });
+  result.points.forEach((p, i) => { p.lonLat = geographic[i]; });
+  const assigned = assignRoles(result.points, { grid: terrain.grid, tunables: view.tour.tunables });
+  result.points = assigned.points;
+  result.roles = assigned.roles;
+  result.stats = { ...result.stats, ...assigned.stats };
+  const output = { schema: 'midio.tour-points', version: 1, terrainViewId: view.id,
+    horizontalCrs: terrain.grid.horizontalCrs, axes: 'X east, Y up, Z south (metres)', ...result,
+    provenance: { demSha256: terrain.manifest.source.demSha256, namesSha256: sha(namesText), builtWith: 'tools/build-teton-tour.mjs' } };
+  await fs.mkdir(path.dirname(path.resolve(pointsFile)), { recursive: true });
+  await fs.writeFile(pointsFile, JSON.stringify(output, null, 2) + '\n');
+  log(`Points: ${result.stats.peaks} peaks, ${result.stats.cols} cols, ${result.stats.lakes} lakes, ${result.stats.canyons} canyons`);
+  for (const p of result.points.filter(p => ['summit', 'subpeak', 'butte'].includes(p.type)).sort((a, b) => b.elevationM - a.elevationM).slice(0, 20)) {
+    log(`${p.name || p.id}: ${p.elevationM.toFixed(1)} m, prominence ${p.prominenceM.toFixed(1)} m${p.prominenceTruncated ? ' (truncated)' : ''}, isolation ${p.isolationM.toFixed(1)} m`);
+  }
+  for (const role of TOUR_ROLES) log(`${role}: ${assigned.roles[role].primaries.map(id => {
+    const p = result.points.find(p => p.id === id);
+    return p.name || `unnamed (${p.lonLat[1].toFixed(5)}, ${p.lonLat[0].toFixed(5)}, ${Math.round(p.elevationM)} m)`;
+  }).join(' | ')}`);
+  return { ...terrain, points: output };
+}
+
 async function main(args) {
   const options = { inputs: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--publish') options.publish = true;
     else if (arg === '--help') {
-      console.log('node tools/build-teton-tour.mjs --stage terrain [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--publish]');
+      console.log('node tools/build-teton-tour.mjs --stage terrain|points [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--names FILE] [--points FILE] [--publish]');
       return;
-    } else if (['--stage', '--out', '--dem-grid', '--input', '--authoring'].includes(arg)) {
+    } else if (['--stage', '--out', '--dem-grid', '--input', '--authoring', '--names', '--points'].includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`${arg} needs a value`);
       if (arg === '--input') options.inputs.push(value);
-      else options[{ '--stage': 'stage', '--out': 'outDir', '--dem-grid': 'demGrid', '--authoring': 'authoringFile' }[arg]] = value;
+      else options[{ '--stage': 'stage', '--out': 'outDir', '--dem-grid': 'demGrid', '--authoring': 'authoringFile', '--names': 'namesFile', '--points': 'pointsFile' }[arg]] = value;
     } else throw new Error(`unknown option ${arg}`);
   }
-  if (options.stage && options.stage !== 'terrain') throw new Error(`stage ${options.stage} is not implemented yet`);
-  await buildTourTerrain(options);
+  if (options.stage === 'points') await buildTourPoints(options);
+  else if (!options.stage || options.stage === 'terrain') await buildTourTerrain(options);
+  else throw new Error(`stage ${options.stage} is not implemented yet`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

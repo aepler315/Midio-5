@@ -66,8 +66,38 @@ stopped at the USGS source request with `Tunnel connection failed: 403
 Forbidden`. Task 1 remains incomplete: the real four-tile package, summit
 acceptance results and asset size have not been produced.
 
+## Tasks 2–3: offline points and roles (in progress)
+
+Source access is still blocked after the continuation request. The active
+cloud configuration now reports revision 27, still with an empty custom
+allowlist. A retry after the user said "now try" again returned HTTP 403
+for USGS and GeoNames.
+
+The independent point and role authoring code is implemented:
+
+- Highest-first 8-neighbour union-find prominence, plateau merging, coverage
+  edge truncation and exact distance to the nearest higher cell, capped at
+  20 km; retained peaks supply their key cols and parent links.
+- Lakes of at least 2 ha, shoreline and cirque measurements, an exact
+  Euclidean interior fallback for concave lakes, high-flow canyon breaks,
+  low buttes away from the crest, and the plan's measured point properties.
+- GeoNames filtering, streamed local/remote dump input, NAD83 projection,
+  source hashes, name matching and an audit for unmatched prominent peaks.
+- Role suitability formulas, scarce-first assignment, four primaries per
+  role with spacing and range-third constraints, and at most fourteen
+  spread-out backups per role. The points build prints the primary table.
+
+The point suite passes **17 tests**, including a local GeoNames/GDAL build
+fixture. The role suite passes **5 tests**, including 44 unique primaries,
+spacing, range spread, named drop/chorus pools, backup caps and determinism.
+These are synthetic contracts. The real point files, named-peak acceptance,
+and the 44-primary table cannot be produced until Task 1 has source data.
+`node tools/build-teton-tour.mjs --stage points` connects these stages.
+After this checkpoint the full suite passes **3,774 tests, 0 failures**
+(46.16 s), with lint and site staging also passing.
+
 ## Remaining work
 
-Tasks 2–13 have not started. Real summit checks, points and roles, highway,
-view field, asset budgets, planner and timeline, mode integration, windowed
-terrain/forest, visual evidence and the PR remain unverified.
+Tasks 4–13 have not started. The real terrain/summit checks, points and roles,
+highway, view field, asset budgets, planner and timeline, mode integration,
+windowed terrain/forest, visual evidence and the PR remain unverified.
