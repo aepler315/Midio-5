@@ -22,11 +22,22 @@ export const SEA_EDGE_FRAC = 0.45;
 export const SEA_MIN_SPAN = 0.15;
 export const SEA_BRIEF_PCT = 0.01;
 /** A passage must stay quiet this long before the cloud starts to rise: a
- *  single soft bar between hits is not a breakdown. */
-export const SEA_HOLD_MS = 1500;
-/** The cloud rises over RISE and drains over FALL. */
-export const SEA_RISE_MS = 5000;
-export const SEA_FALL_MS = 3000;
+ *  single soft bar, or a short lull between hits, is not a breakdown. */
+export const SEA_HOLD_MS = 4000;
+/** Once up, the song must stay loud this long before the cloud drains, so
+ *  a fill or a single hit inside a breakdown does not tear it open. */
+export const SEA_RELEASE_MS = 4000;
+/** The cloud wells up over RISE and drains over FALL: weather, not a cue. */
+export const SEA_RISE_MS = 14000;
+export const SEA_FALL_MS = 10000;
+/** After the valley has drained it stays clear at least this long before
+ *  it may fill again, so alternating soft and loud sections do not pump
+ *  the cloud in and out. */
+export const SEA_REST_MS = 20000;
+/** The curve is compiled ahead from the whole song, so it can look forward:
+ *  the cloud only starts to rise when the quiet will last at least this
+ *  much longer. A lull that is about to end gets no half-risen flicker. */
+export const SEA_AHEAD_MS = 6000;
 /** The opening belongs to the scene's own arrival. */
 export const SEA_OPENING_MS = 8000;
 
@@ -63,13 +74,30 @@ export function compileCloudSea({ energyCurves = null, durationMs = 0 } = {}) {
   if (!(span >= SEA_MIN_SPAN)) return Object.freeze({ at: () => 0, durationMs });
   const lo = floor + SEA_QUIET_FRAC * span, hi = floor + SEA_EDGE_FRAC * span;
   const env = new Float32Array(n);
-  let quietRun = 0, level = 0;
+  const release = Math.round(SEA_RELEASE_MS / SEA_STEP_MS);
+  const rest = Math.round(SEA_REST_MS / SEA_STEP_MS);
+  const ahead = Math.round(SEA_AHEAD_MS / SEA_STEP_MS);
+  // How many more steps each quiet stretch lasts (0 where it is loud).
+  const quietLeft = new Int32Array(n + 1);
+  for (let i = n - 1; i >= 0; i--) quietLeft[i] = 1 - smoothstep(lo, hi, avg[i]) > 0.5 ? quietLeft[i + 1] + 1 : 0;
+  let quietRun = 0, loudRun = 0, level = 0, target = 0, clearedAt = -Infinity;
   for (let i = 0; i < n; i++) {
     const tMs = i * SEA_STEP_MS;
     const quiet = 1 - smoothstep(lo, hi, avg[i]);
-    quietRun = quiet > 0.5 ? quietRun + 1 : 0;
-    const target = quietRun >= hold && tMs >= SEA_OPENING_MS ? quiet : 0;
+    const isQuiet = quiet > 0.5;
+    quietRun = isQuiet ? quietRun + 1 : 0;
+    loudRun = isQuiet ? 0 : loudRun + 1;
+    if (target > 0) {
+      // Up: deepen with the passage, never thin inside it; a loud
+      // stretch only lets go once it has held for SEA_RELEASE_MS.
+      if (isQuiet) target = Math.max(target, quiet);
+      else if (loudRun >= release) target = 0;
+    } else if (quietRun >= hold && quietLeft[i] >= ahead && tMs >= SEA_OPENING_MS && i - clearedAt >= rest) {
+      target = quiet;
+    }
+    const was = level;
     level += Math.max(-fall, Math.min(rise, target - level));
+    if (was > 0 && level <= 0) clearedAt = i;
     env[i] = level;
   }
   return Object.freeze({

@@ -29,7 +29,7 @@ import { RockStageGL } from './RockStageGL.js';
 import { cameraPoseAt } from '../terrain/SceneTravel.js';
 import { applyCameraMoves, rangeUserCamera } from './RangeCamera.js';
 import { BANDS, terrainFringeBytes, terrainHeightAt } from './TerrainMesh.js';
-import { mistParams } from './RangeAtmosphere.js';
+import { mistParams, mistDrift } from './RangeAtmosphere.js';
 import { mirrorSize, mirrorLevelFor, mirrorCameraFor, mirrorTextureMatrix, MIRROR_CLIP_M, MIRROR_LIFT } from './WaterMirror.js';
 import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors, glacierSample } from './GlacierField.js';
@@ -879,6 +879,7 @@ export class RangeScene {
     u.uMistBase.value = mp.baseM;
     u.uMistHeight.value = mp.heightM;
     u.uMistTime.value = mp.tSec;
+    mistDrift(mp.tSec).forEach((d, i) => u.uMistDrift.value[i].set(d[0], d[1]));
     u.uMistTop.value = mp.topM;
     u.uMistFill.value = mp.fill;
     // Lit mist: the air's colour lifted toward the key light (display domain).
