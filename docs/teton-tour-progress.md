@@ -178,3 +178,9 @@ for transfer instructions, task status, source setup and resume commands.
 Tasks 7 and 9–13 have not started. The real terrain/summit checks, points and roles,
 highway, view field, asset budgets, planner and timeline, mode integration,
 windowed terrain/forest, visual evidence and the PR remain unverified.
+
+## Resume: actual sources and Task 1 acceptance (2026-10-08)
+
+The supplied archive was checksum-verified and its bundle restored at `73f733d` on `teton-song-highway-resume`. The existing plan remains the implementation brief. Fresh checkpoint validation: **3,806 tests passed**, no skips; lint and site staging passed.
+
+USGS and GeoNames are reachable through the managed proxy in the new instance. Downloaded all four USGS windows and the GeoNames US dump (248 regional features). Normalized **2,401 × 3,801** cells at 20 m, with the specified NAD83 east/up/south frame. All ten published-summit checks passed; maximum absolute difference **17.2 m** (Teewinot). The provisional all-stride-1 bake has **2,280 tiles**, **14.56 MiB gz**. Source hashes and individual checks are recorded in [terrain-provisional.json](evidence/teton-tour/terrain-provisional.json). Final road-distance repacking and total asset budgets remain Task 7.
