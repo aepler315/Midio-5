@@ -96,8 +96,24 @@ and the 44-primary table cannot be produced until Task 1 has source data.
 After this checkpoint the full suite passes **3,774 tests, 0 failures**
 (46.16 s), with lint and site staging also passing.
 
+## Task 8: section roles (complete)
+
+The pure runtime classifier maps sections to the eleven tour roles, with
+trusted lyric kinds and explicit conductor role cues taking precedence.
+Repeated form labels identify choruses; energy, bass share, transition,
+duration and rising-energy evidence distinguish drops and linking sections.
+Repeated verse labels stay verses unless they supply build or link evidence.
+Active `MIDIO` note onsets provide lead density for solo/interlude decisions.
+Qualifying silent spans are measured across the song before clipping them to
+individual sections, and the last actual chorus carries `finalChorus`.
+
+All **12 classifier tests** pass, including verse/chorus and EDM sequences,
+lyric and cue precedence, missing bass evidence, lead-lane selection,
+cross-section stops, determinism and input preservation. The full suite
+passes **3,786 tests, 0 failures** (42.70 s); lint and site staging pass.
+
 ## Remaining work
 
-Tasks 4–13 have not started. The real terrain/summit checks, points and roles,
+Tasks 4–7 and 9–13 have not started. The real terrain/summit checks, points and roles,
 highway, view field, asset budgets, planner and timeline, mode integration,
 windowed terrain/forest, visual evidence and the PR remain unverified.
