@@ -80,3 +80,32 @@ test('a station with no safe through pass rejects authoring instead of accepting
   const points = [{ id: 'unsafe', role: 'chorus', tier: 'primary', type: 'summit', localM: [0, 800, 0], grandeur: 1 }];
   assert.throws(() => chooseStations(grid, points, { log: () => {} }), /unsafe.*safe/i);
 });
+
+test('unavailable stations identify the rejected point and role for constrained re-assignment', () => {
+  const grid = terrain();
+  const points = [{ id: 'unsafe', role: 'chorus', tier: 'backup', type: 'summit', localM: [0, 800, 0], grandeur: 1 }];
+  assert.throws(() => chooseStations(grid, points, { log: () => {} }), error =>
+    error.code === 'TOUR_STATION_UNAVAILABLE' && error.pointId === 'unsafe' && error.role === 'chorus');
+});
+
+test('flyable role assignment replaces a rejected primary and preserves four safe primaries per role', async () => {
+  const { assignFlyableStations }=await import('../tools/lib/tour-stations.mjs');
+  const { TOUR_ROLES }=await import('../tools/lib/tour-roles.mjs');
+  const points=TOUR_ROLES.flatMap((role,r)=>Array.from({length:6},(_,i)=>({
+    id:role+'-'+i,role,tier:'scenery',type:['drop','chorus'].includes(role)?'summit':'col',
+    localM:[r*3000,role==='interlude'&&i===0?600:1200,i*3000],
+    elevationM:role==='interlude'&&i===0?600:1200,prominenceM:200,grandeur:.8,
+    suit:Object.fromEntries(TOUR_ROLES.map(k=>[k,k===role?1-i*.01:0])),
+  })));
+  const grid=terrain(()=>1000,151,600);
+  const clearance=buildClearanceField(grid,{cellM:600});
+  const result=assignFlyableStations(grid,points,{clearance,scoreEyeFn:()=>({score:1,headingDeg:270,pitchDeg:0,hfovDeg:55}),log:()=>{}});
+  assert.equal(result.roleStats.primaries,44);
+  assert.ok(result.rejections.some(r=>r.pointId==='interlude-0'));
+  assert.equal(result.points.find(p=>p.id==='interlude-0').tier,'scenery');
+  for(const role of TOUR_ROLES)assert.equal(result.roles[role].primaries.length,4);
+  for(const p of result.points.filter(p=>p.tier!=='scenery')){
+    assert.ok(p.station.flyability>=2);
+    assert.ok(p.station.yM>=clearanceAt(clearance,...p.station.posM).floorY);
+  }
+});

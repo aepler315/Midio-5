@@ -165,15 +165,18 @@ export function scoreEye(grid, points, eyeM, { headings = HEADINGS, rayStepDeg =
   for (const entry of nearby) {
     const p = entry.point.localM;
     entry.heading = (Math.atan2(p[0] - eyeM[0], -(p[2] - eyeM[2])) / DEG + 360) % 360;
-    entry.visible = subjectVisibility(grid, eyeM, entry.point, buf, water);
   }
+  // Visibility only contributes for the subject selected by an aim. Keep
+  // the same total ordering, but avoid marching rays to every incidental
+  // point (1,866 real Teton points) for every candidate eye.
+  nearby.sort((a, b) => b.point.grandeur - a.point.grandeur || a.index - b.index);
   const aims = headings.map(heading => {
     let best = null;
     for (const hfov of HFOVS) {
       const frame = rays.filter(r => Math.abs(angleDiff(r.az, heading)) <= hfov / 2)
         .sort((a, b) => angleDiff(a.az, heading) - angleDiff(b.az, heading));
-      const subject = nearby.filter(p => Math.abs(angleDiff(p.heading, heading)) <= hfov * .2)
-        .sort((a, b) => b.point.grandeur - a.point.grandeur || a.index - b.index)[0];
+      const subject = nearby.find(p => Math.abs(angleDiff(p.heading, heading)) <= hfov * .2);
+      if (subject && subject.visible === undefined) subject.visible = subjectVisibility(grid, eyeM, subject.point, buf, water);
       const result = { ...frameScore(frame, hfov, eyeM, subject, heading), headingDeg: (heading + 360) % 360,
         subjectId: subject?.point.id ?? null, subjectIndex: subject?.index ?? 65535 };
       if (!best || result.score > best.score) best = result;

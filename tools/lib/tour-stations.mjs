@@ -4,6 +4,7 @@
 import { validateDemGrid, waterMask } from './terrain-bake.mjs';
 import { sampleHeight } from './terrain-source.mjs';
 import { scoreEye } from './view-quality.mjs';
+import { assignRoles } from './tour-roles.mjs';
 
 const DEG = Math.PI / 180;
 const RULES = { treelineM: 3100, forestFloorM: -100000, forestMaxSlopeDeg: 36, forestDensity: .7 };
@@ -176,16 +177,26 @@ function rolePreference(point, candidate) {
 }
 
 export function chooseStations(grid, points, { clearance = null, forestMask = null, water = null, rules = RULES,
-  scoreEyeFn = scoreEye, log = console.log } = {}) {
+  scoreEyeFn = scoreEye, log = console.log, stationCache = null, boundaryMarginM = 0 } = {}) {
   clearance ??= buildClearanceField(grid, { forestMask, water, rules });
   const stats = { candidates: 0, belowFloor: 0, noThroughPass: 0, noView: 0 }, stations = [];
   const output = points.map(point => {
     if (point.tier === 'scenery') { const copy = { ...point }; delete copy.station; return copy; }
+    const cacheKey = `${point.role}:${point.id}`;
+    if (stationCache?.has(cacheKey)) {
+      const cached = structuredClone(stationCache.get(cacheKey));
+      stations.push({ pointId: point.id, ...cached });
+      return { ...point, station: cached };
+    }
     let best = null;
     for (const candidate of stationCandidates(point)) {
       const pref = rolePreference(point, candidate);
       if (!pref) continue;
       stats.candidates++;
+      if (candidate.posM[0] < clearance.originM[0] + boundaryMarginM
+        || candidate.posM[1] < clearance.originM[1] + boundaryMarginM
+        || candidate.posM[0] > clearance.originM[0] + (clearance.width - 1) * clearance.cellM - boundaryMarginM
+        || candidate.posM[1] > clearance.originM[1] + (clearance.height - 1) * clearance.cellM - boundaryMarginM) continue;
       const band = clearanceAt(clearance, ...candidate.posM);
       if (point.type === 'canyon') candidate.yM = band.floorY + candidate.offsetM;
       if (!Number.isFinite(band.floorY) || candidate.yM < band.floorY || candidate.yM > band.ceilY) { stats.belowFloor++; continue; }
@@ -204,10 +215,42 @@ export function chooseStations(grid, points, { clearance = null, forestMask = nu
           ringM: candidate.ringM, offsetM: candidate.offsetM, flyability: fly.count, bestAim, score };
       }
     }
-    if (!best) throw new Error(`${point.name || point.id}: no safe station with a through pass and positive view score`);
+    if (!best) throw Object.assign(new Error(`${point.name || point.id}: no safe station with a through pass and positive view score`),
+      { code: 'TOUR_STATION_UNAVAILABLE', pointId: point.id, role: point.role });
+    stationCache?.set(cacheKey, structuredClone(best));
     stations.push({ pointId: point.id, ...best });
     return { ...point, station: best };
   });
   log(`stations: ${stations.length}, ${stats.candidates} candidates; rejected ${stats.belowFloor} by clearance, ${stats.noThroughPass} by flyability, ${stats.noView} by view`);
   return { points: output, stations, clearance, stats };
+}
+
+/** Terrain-only roles precede station feasibility. Reject unusable pairs and
+ * re-run the same spacing/spread-constrained assignment; never lower floors
+ * or publish a pool with fewer than four primaries. Successful station scores
+ * are memoized only inside this build, where terrain and scoring inputs stay
+ * fixed. Incidental role/tier changes do not affect scoreEye. */
+export function assignFlyableStations(grid, source, options = {}) {
+  const clearance = options.clearance ?? buildClearanceField(grid, options);
+  const excludedStationPairs = new Set(), rejections = [], stationCache = new Map();
+  for (const p of source) for (const role of p.stationRejectedRoles || []) excludedStationPairs.add(`${role}:${p.id}`);
+  for (;;) {
+    const assigned = assignRoles(source, { grid, tunables: options.tunables, excludedStationPairs });
+    try {
+      const stations = chooseStations(grid, assigned.points, { ...options, clearance, stationCache });
+      return { ...stations, roles: assigned.roles, roleStats: assigned.stats, rejections,
+        points: stations.points.map(p => ({ ...p, stationRejectedRoles: [...excludedStationPairs]
+          .filter(pair => pair.endsWith(`:${p.id}`)).map(pair => pair.slice(0, pair.indexOf(':'))) })) };
+    } catch (error) {
+      if (error.code !== 'TOUR_STATION_UNAVAILABLE') throw error;
+      const pair = `${error.role}:${error.pointId}`;
+      if (excludedStationPairs.has(pair)) throw error;
+      // Grand Teton is binding for the drop pool; an unsafe Grand Teton must
+      // reject the build, rather than disappear from the acceptance check.
+      if (error.role === 'drop' && source.find(p => p.id === error.pointId)?.name === 'Grand Teton') throw error;
+      excludedStationPairs.add(pair);
+      rejections.push({ pointId: error.pointId, role: error.role, reason: error.message });
+      options.log?.(`reassigning unsafe ${pair}`);
+    }
+  }
 }

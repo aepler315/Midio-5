@@ -15,7 +15,7 @@ import { findPoints } from './lib/tour-points.mjs';
 import { transformTourCoordinates } from './lib/tour-coordinates.mjs';
 import { buildTourNames } from './build-tour-names.mjs';
 import { assignRoles, TOUR_ROLES } from './lib/tour-roles.mjs';
-import { chooseStations } from './lib/tour-stations.mjs';
+import { assignFlyableStations } from './lib/tour-stations.mjs';
 import { buildHighway, highwayFieldSamples } from './lib/tour-highway.mjs';
 import { buildViewQualityField } from './lib/view-quality.mjs';
 import { serialize } from 'node:v8';
@@ -191,7 +191,7 @@ export async function buildTourPoints({
   }
   log('Finding points and measuring terrain properties');
   const result = findPoints(terrain.grid, { pMin: view.tour.tunables.pMinM,
-    isoMin: view.tour.tunables.isoMinM, names: names.names });
+    isoMin: view.tour.tunables.isoMinM, nameElevationToleranceM: view.tour.tunables.nameElevationToleranceM ?? 60, names: names.names });
   if (result.stats.unmatchedProminentPeaks.length) {
     throw new Error(`Unmatched GeoNames peaks with prominence ≥30 m: ${result.stats.unmatchedProminentPeaks.map(n => n.name).join(', ')}`);
   }
@@ -238,8 +238,11 @@ export async function buildTourStations({
   }
   const material = JSON.parse(await fs.readFile(path.join(root, 'src/assets/range/v2', view.materialManifestUrl), 'utf8'));
   const water = waterMask(terrain.grid);
-  const result = chooseStations(terrain.grid, source.points, { water, rules: material.rules, log });
-  const output = { ...source, points: result.points, stationStats: result.stats };
+  const result = assignFlyableStations(terrain.grid, source.points, { water, rules: material.rules, log,
+    tunables: view.tour.tunables, boundaryMarginM: 1000 });
+  const output = { ...source, points: result.points, roles: result.roles,
+    stats: { ...source.stats, ...result.roleStats }, stationStats: result.stats,
+    stationRejections: [...(source.stationRejections || []), ...result.rejections] };
   await fs.writeFile(pointsFile, JSON.stringify(output, null, 2) + '\n');
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(path.join(outDir, `${view.id}.clearance`), serialize(result.clearance));

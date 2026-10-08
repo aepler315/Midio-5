@@ -216,3 +216,21 @@ test('the names build projects and clips a local dump, and records its actual co
   assert.match(result.provenance.sha256, /^[a-f\d]{64}$/);
   assert.deepEqual(JSON.parse(await fs.readFile(out, 'utf8')), result);
 });
+
+// The real West Horn record is 87 m below a 3DEP peak just 30 m away.
+// A region-specific tolerance must be explicit and audited; ordinary callers
+// retain the 60 m rule, and a genuinely wrong height must still reject.
+test('a documented regional name-height tolerance preserves and audits the source discrepancy', () => {
+  const names = [{ id: 'west-horn', name: 'West Horn', featureCode: 'MT', localM: [410, 300], elevationM: 713 }];
+  const options = { names, nameElevationToleranceM: 100 };
+  const result = findPoints(joinedCones(), options);
+  const p = peaksOf(result).find(p => p.elevationM === 800);
+  assert.equal(p.name, 'West Horn');
+  assert.equal(p.nameElevationM, 713);
+  assert.equal(p.nameElevationDeltaM, 87);
+  assert.equal(result.stats.unmatchedProminentPeaks.length, 0);
+  assert.deepEqual(result.stats.nameHeightDiscrepancies, [{ pointId: p.id, geonamesId: 'west-horn', name: 'West Horn', sourceElevationM: 713, demElevationM: 800, deltaM: 87 }]);
+  assert.equal(peaksOf(findPoints(joinedCones(), { names })).find(p => p.elevationM === 800).name, undefined);
+  assert.equal(peaksOf(findPoints(joinedCones(), { ...options, names: [{ ...names[0], elevationM: 699 }] })).find(p => p.elevationM === 800).name, undefined);
+  assert.throws(() => findPoints(joinedCones(), { nameElevationToleranceM: Infinity }), /name.*tolerance/i);
+});

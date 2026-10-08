@@ -88,7 +88,7 @@ function choosePrimaries(candidates, role, count, spacing) {
 }
 
 /** Scarce-first primary pools; remaining points get one backup/scenery role. */
-export function assignRoles(input, { grid = null, tunables = {} } = {}) {
+export function assignRoles(input, { grid = null, tunables = {}, excludedStationPairs = new Set() } = {}) {
   if (new Set(input.map(p => p.id)).size !== input.length) throw new Error('duplicate tour point id');
   const primaryCount = tunables.primariesPerRole ?? 4, maxBackups = tunables.maxBackupsPerRole ?? 14;
   if (!(Number.isInteger(primaryCount) && primaryCount >= 2 && Number.isInteger(maxBackups) && maxBackups >= 0)) throw new Error('bad tour tier counts');
@@ -107,7 +107,7 @@ export function assignRoles(input, { grid = null, tunables = {} } = {}) {
   for (const p of points) p.northSouthThird = Math.max(0, Math.min(2, Math.floor((p.localM[2] - lowZ) / Math.max(1, highZ - lowZ) * 3)));
   const taken = new Set(), roles = {};
   for (const role of SCARCE_FIRST) {
-    const candidates = points.filter(p => !taken.has(p.id) && p.suit[role] > 0).sort((a, b) =>
+    const candidates = points.filter(p => !taken.has(p.id) && p.suit[role] > 0 && !excludedStationPairs.has(`${role}:${p.id}`)).sort((a, b) =>
       (role === 'drop' ? +(b.name === 'Grand Teton') - +(a.name === 'Grand Teton') : 0)
       || b.suit[role] - a.suit[role] || compareId(a, b));
     const spacing = role === 'drop' ? tunables.dropSpacingM ?? 1500 : tunables.primarySpacingM ?? 2500;
@@ -123,7 +123,7 @@ export function assignRoles(input, { grid = null, tunables = {} } = {}) {
   for (const role of TOUR_ROLES) {
     const primary = points.filter(p => p.role === role && p.tier === 'primary');
     const minimum = .5 * Math.min(...primary.map(p => p.suit[role])), selected = [...primary];
-    const candidates = points.filter(p => p.role === role && p.tier === 'scenery' && p.suit[role] >= minimum)
+    const candidates = points.filter(p => p.role === role && p.tier === 'scenery' && p.suit[role] >= minimum && !excludedStationPairs.has(`${role}:${p.id}`))
       .sort((a, b) => b.suit[role] - a.suit[role] || compareId(a, b));
     for (const p of candidates) {
       if (roles[role].backups.length >= maxBackups) break;

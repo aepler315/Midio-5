@@ -198,7 +198,7 @@ function lakePoints(grid, water) {
   return points;
 }
 
-function matchNames(points, names) {
+function matchNames(points, names, elevationToleranceM) {
   const unmatchedNames = [];
   for (const name of names) {
     const peakName = ['PK', 'PKS', 'MT', 'MTS'].includes(name.featureCode);
@@ -206,12 +206,14 @@ function matchNames(points, names) {
       : ['GAP', 'PASS'].includes(name.featureCode) ? ['col'] : ['canyon'];
     let chosen = null, best = Infinity;
     if (name.localM?.length === 2 && name.localM.every(Number.isFinite)) for (const p of points) {
-      if (!types.includes(p.type) || peakName && Number.isFinite(name.elevationM) && Math.abs(p.elevationM - name.elevationM) > 60) continue;
+      if (!types.includes(p.type) || peakName && Number.isFinite(name.elevationM) && Math.abs(p.elevationM - name.elevationM) > elevationToleranceM) continue;
       const d = Math.hypot(p.localM[0] - name.localM[0], p.localM[2] - name.localM[1]);
       if (d <= 250 && d < best) { chosen = p; best = d; }
     }
     if (!chosen) { unmatchedNames.push(name); continue; }
-    if (!chosen.name) Object.assign(chosen, { name: name.name, geonamesId: name.id, nameLonLat: name.lonLat || null });
+    if (!chosen.name) Object.assign(chosen, { name: name.name, geonamesId: name.id, nameLonLat: name.lonLat || null,
+      nameElevationM: name.elevationM ?? null,
+      nameElevationDeltaM: Number.isFinite(name.elevationM) ? chosen.elevationM - name.elevationM : null });
     else (chosen.aliases ||= []).push({ name: name.name, geonamesId: name.id });
   }
   return unmatchedNames;
@@ -387,7 +389,8 @@ function prominencePeaks(grid) {
 }
 
 /** Identify peaks and their key cols in the normalized local metric grid. */
-export function findPoints(grid, { pMin = 15, isoMin = 120, names = [], hydrology = null } = {}) {
+export function findPoints(grid, { pMin = 15, isoMin = 120, names = [], hydrology = null, nameElevationToleranceM = 60 } = {}) {
+  if (!(Number.isFinite(nameElevationToleranceM) && nameElevationToleranceM >= 0)) throw new Error('Invalid name elevation tolerance');
   const check = validateDemGrid(grid);
   if (!check.ok) throw new Error(`tour points DEM rejected: ${check.errors.join('; ')}`);
   if (!(pMin >= 0 && Number.isFinite(pMin) && isoMin >= 0 && isoMin <= ISOLATION_LIMIT_M)) throw new Error('bad peak thresholds');
@@ -426,7 +429,10 @@ export function findPoints(grid, { pMin = 15, isoMin = 120, names = [], hydrolog
     Object.assign(p, pointProperties(grid, p, { water, crest }));
     if (['summit', 'subpeak'].includes(p.type) && p.elevationM < 2500 && p.distanceToCrestM > 3000) p.type = 'butte';
   }
-  const unmatchedNames = matchNames(points, names);
+  const unmatchedNames = matchNames(points, names, nameElevationToleranceM);
+  const nameHeightDiscrepancies = points.filter(p => Number.isFinite(p.nameElevationDeltaM) && Math.abs(p.nameElevationDeltaM) > 60)
+    .map(p => ({ pointId: p.id, geonamesId: p.geonamesId, name: p.name,
+      sourceElevationM: p.nameElevationM, demElevationM: p.elevationM, deltaM: p.nameElevationDeltaM }));
   const unmatchedProminentPeaks = unmatchedNames.filter(name => {
     if (!['PK', 'PKS', 'MT', 'MTS'].includes(name.featureCode) || !name.localM?.every(Number.isFinite)) return false;
     for (const peak of raw.values()) {
@@ -446,7 +452,7 @@ export function findPoints(grid, { pMin = 15, isoMin = 120, names = [], hydrolog
   for (const p of points) p.grandeur = maximumG ? p.grandeur / maximumG : 0;
   return { points, stats: { rawPeaks: [...raw.values()].filter(p => !p.plateauAlias).length, peaks: kept.size, cols: cols.size,
     lakes: points.filter(p => p.type === 'lake').length, canyons: points.filter(p => p.type === 'canyon').length,
-    unmatchedNames, unmatchedProminentPeaks,
+    unmatchedNames, unmatchedProminentPeaks, nameElevationToleranceM, nameHeightDiscrepancies,
     truncatedPeaks: [...kept.values()].filter(p => p.prominenceTruncated).length,
     isolationCappedPeaks: [...kept.values()].filter(p => p.isolationCapped).length,
     windowMinM: minimum, inputNames: names.length } };

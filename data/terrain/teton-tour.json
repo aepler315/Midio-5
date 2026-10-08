@@ -19,6 +19,7 @@
     "tunables": {
       "pMinM": 15,
       "isoMinM": 120,
+      "nameElevationToleranceM": 100,
       "primariesPerRole": 4,
       "maxBackupsPerRole": 14,
       "primarySpacingM": 2500,

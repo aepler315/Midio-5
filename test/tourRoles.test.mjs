@@ -76,3 +76,14 @@ test('role formulas are bounded, distinguish prominence and approach, and preser
   assert.ok(scored.find(p => p.id === 'approach').suit['post-chorus'] > 0);
   assert.equal(scored.find(p => p.id === 'above').suit['post-chorus'], 0);
 });
+
+test('station-rejected role pairs cannot return as primaries or backups, without weakening pool constraints', () => {
+  const source=rolePool(), pair='verse:verse-00';
+  assert.equal(assignRoles(source).points.find(p=>p.id==='verse-00').tier,'primary');
+  const result=assignRoles(source,{excludedStationPairs:new Set([pair])});
+  assert.equal(result.points.find(p=>p.id==='verse-00').tier,'scenery');
+  assert.equal(result.stats.primaries,44);
+  assert.deepEqual(result,assignRoles([...source].reverse(),{excludedStationPairs:new Set([pair])}));
+  const all=new Set(source.filter(p=>p.suit.verse>0).map(p=>'verse:'+p.id));
+  assert.throws(()=>assignRoles(source,{excludedStationPairs:all}),/verse.*primary/);
+});

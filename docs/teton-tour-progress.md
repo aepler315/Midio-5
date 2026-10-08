@@ -184,3 +184,52 @@ windowed terrain/forest, visual evidence and the PR remain unverified.
 The supplied archive was checksum-verified and its bundle restored at `73f733d` on `teton-song-highway-resume`. The existing plan remains the implementation brief. Fresh checkpoint validation: **3,806 tests passed**, no skips; lint and site staging passed.
 
 USGS and GeoNames are reachable through the managed proxy in the new instance. Downloaded all four USGS windows and the GeoNames US dump (248 regional features). Normalized **2,401 × 3,801** cells at 20 m, with the specified NAD83 east/up/south frame. All ten published-summit checks passed; maximum absolute difference **17.2 m** (Teewinot). The provisional all-stride-1 bake has **2,280 tiles**, **14.56 MiB gz**. Source hashes and individual checks are recorded in [terrain-provisional.json](evidence/teton-tour/terrain-provisional.json). Final road-distance repacking and total asset budgets remain Task 7.
+
+## Tasks 2–3: real point and role acceptance
+
+Identified **1,208 peaks**, **237 cols**, **389 hydro-flattened lake/flat components**, and **32 canyon breaks**. Assigned **44 primaries** and **137 backups**, with one role per point, all same-role spacing and N–S spread constraints checked on the actual output. Grand Teton is a drop primary; the chorus pool includes Middle Teton and Teewinot. No known prominent GeoNames peak remains unmatched. This is candidate review data, not role approval. The water mask is derived from DEM flatness; components are not independently surveyed lake boundaries.
+
+Tuning: the GeoNames West Horn record (5842614) reports 3,427 m, while a 3DEP summit only 30 m away is 3,514.161 m (48.912 m prominence, 240.832 m isolation). Teton-specific `nameElevationToleranceM` is **100 m**; the general default remains 60 m. Original heights and discrepancies over 60 m are retained in [name-audit.json](evidence/teton-tour/name-audit.json). Cost if this match is wrong: a nearby summit within 250 m and the wider height band could acquire the wrong name. No source coordinates or heights were rewritten.
+
+| Role | Four primary points |
+| --- | --- |
+| intro | unnamed (43.63344, -110.73500, 1957 m); unnamed (43.66467, -110.71754, 1974 m); unnamed (43.89348, -110.67503, 2055 m); unnamed (43.85735, -110.67079, 2096 m) |
+| verse | unnamed (43.53865, -110.61843, 2416 m); unnamed (44.04610, -110.81802, 2685 m); unnamed (44.00558, -110.61503, 2433 m); unnamed (43.99792, -110.56719, 2654 m) |
+| pre-chorus | unnamed (43.80364, -110.80018, 3258 m); unnamed (43.71832, -110.80469, 3470 m); unnamed (43.83459, -110.78499, 3577 m); unnamed (43.53460, -110.98935, 2952 m) |
+| chorus | Doane Peak; Housetop Mountain; Teewinot Mountain; Middle Teton |
+| post-chorus | unnamed (43.77861, -110.78528, 3375 m); unnamed (43.74568, -110.84688, 3351 m); unnamed (43.80436, -110.86554, 3200 m); unnamed (43.61908, -110.94299, 3110 m) |
+| bridge | unnamed (43.57789, -110.53287, 3007 m); unnamed (43.82071, -110.92000, 2852 m); unnamed (43.80256, -110.84516, 3195 m); unnamed (43.50426, -111.12553, 2696 m) |
+| solo | unnamed (43.83747, -110.77355, 3791 m); unnamed (43.74891, -110.77885, 3569 m); Cloudveil Dome; unnamed (43.87114, -110.79392, 3288 m) |
+| interlude | unnamed (43.85368, -110.86035, 2997 m); unnamed (43.58918, -110.95630, 3084 m); unnamed (43.96726, -110.86115, 2974 m); unnamed (43.78330, -110.80988, 3222 m) |
+| breakdown | unnamed (43.51704, -110.74634, 1896 m); unnamed (43.49312, -110.80775, 1915 m); Upper Palisades Lake; unnamed (43.87205, -110.74620, 2068 m) |
+| drop | Grand Teton; Mount Moran; Mount Woodring; Traverse Peak |
+| outro | unnamed (43.86347, -110.66854, 2092 m); unnamed (43.89873, -110.65400, 2089 m); unnamed (43.96035, -110.67615, 2056 m); unnamed (43.82100, -110.67785, 2135 m) |
+
+Highest twenty peaks (DEM elevation / prominence / isolation, metres; * means truncated prominence):
+
+- Grand Teton: 4191.8 / 2427.7* / 20000.0
+- peak-4676044: 4054.8 / 37.0 / 145.6
+- Mount Owen: 3931.8 / 239.2 / 644.0
+- Middle Teton: 3893.0 / 343.0 / 1066.8
+- Mount Moran: 3841.7 / 815.1 / 9781.9
+- South Teton: 3806.8 / 329.5 / 1208.3
+- peak-3396441: 3790.8 / 21.0 / 184.4
+- peak-4841703: 3765.5 / 40.0 / 140.0
+- peak-4966534: 3759.4 / 53.4 / 291.2
+- peak-4748095: 3744.6 / 79.7 / 161.2
+- Teewinot Mountain: 3739.8 / 238.5 / 1220.0
+- peak-3434797: 3666.3 / 89.5 / 501.6
+- East Prong: 3665.3 / 56.3 / 160.0
+- Thor Peak: 3660.9 / 125.3 / 696.6
+- Cloudveil Dome: 3657.7 / 53.5 / 272.0
+- Buck Mountain: 3629.6 / 393.5 / 3060.1
+- Nez Perce: 3618.1 / 147.8 / 760.3
+- peak-4623303: 3602.4 / 59.9 / 367.7
+- peak-3458791: 3591.2 / 49.5 / 240.8
+- peak-3336426: 3582.3 / 51.1 / 141.4
+
+## Real station feasibility corrections
+
+The first real station run rejected `col-3432475` (backup post-chorus): its 3,406.31 m col has a 3,603.3 m conservative floor, and none of the +80/+150/+250 m candidates supplies two safe opposite 800 m directions. Role assignment now retries after recording an unusable `(point, role)` pair, retaining the original spacing/spread constraints and four primaries per role. Rejected points remain scenery or may qualify for another role; the build still rejects insufficient pools. Grand Teton may not be silently dropped from the drop pool. Stations use the graph's existing 1 km boundary margin. This changes selection, not clearance or hero-height rules.
+
+Repeated successful station scores are memoized within one build, with fixed terrain, points and material settings. The scorer sorts subjects once and only computes visibility for subjects actually chosen by a heading. On a real Grand Teton eye, all 72 aims and features remained byte-identical and cold scoring improved from **82.9 ms to 36.3 ms**. Focused station/role regressions first failed and then passed **14/14**; fresh full suite **3,810/3,810**, lint passed. Final real station/role tables remain pending the ongoing source build.
