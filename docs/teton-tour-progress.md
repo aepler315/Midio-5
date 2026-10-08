@@ -148,6 +148,33 @@ stations, road field, timings, budgets or imagery have been produced.
 
 ## Remaining work
 
-Tasks 5, 7 and 9–13 have not started. The real terrain/summit checks, points and roles,
+## Task 5: highway graph (synthetic implementation verified)
+
+The authoring graph has a directional 100 m A* search with the plan's floor
+gradient, climb and turn costs. Roads use 30 m simplification, centripetal
+Catmull-Rom smoothing and 25 m samples. Validation rejects roads with turns
+tighter than 400 m, vertical bands below 150 m or positions outside the
+1 km boundary margin. The graph retains the south-to-north spine, a minimum
+spanning tree and the 1.35 spanner, merges close stations, creates shared
+crossing junctions and gives degree-one stations safe turnaround loops.
+Orbit orientation accepts both arrival and reverse departure with joins of
+at most 120 degrees; runtime circular fillets remain Tasks 9–10.
+
+All **8 highway tests** pass on synthetic terrain. They check connectivity,
+spine direction, clearance, radius, station-pair stretch, redundant-road
+pruning, deterministic ordering, merging, crossing junctions, orbits and
+100 m field sampling with every station included. Spanner stretch is measured
+against the safe unpruned candidate graph; it does not bound straight-line
+flights across terrain. `--stage highway` and `--stage field` connect authoring
+and write real evidence only after the source and summit gates pass.
+
+The full suite passes **3,806 tests, 0 failures, 0 skipped** (44.77 s); lint
+and site staging pass. No real Teton highway or field has been generated.
+Source access still fails with an empty custom allowlist at revision 30.
+The user requested a pause here and a portable handoff for a new environment.
+
+## Remaining implementation and real acceptance
+
+Tasks 7 and 9–13 have not started. The real terrain/summit checks, points and roles,
 highway, view field, asset budgets, planner and timeline, mode integration,
 windowed terrain/forest, visual evidence and the PR remain unverified.

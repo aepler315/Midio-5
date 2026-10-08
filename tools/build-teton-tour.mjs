@@ -16,6 +16,8 @@ import { transformTourCoordinates } from './lib/tour-coordinates.mjs';
 import { buildTourNames } from './build-tour-names.mjs';
 import { assignRoles, TOUR_ROLES } from './lib/tour-roles.mjs';
 import { chooseStations } from './lib/tour-stations.mjs';
+import { buildHighway, highwayFieldSamples } from './lib/tour-highway.mjs';
+import { buildViewQualityField } from './lib/view-quality.mjs';
 import { serialize } from 'node:v8';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -247,22 +249,71 @@ export async function buildTourStations({
   return { ...terrain, points: output, clearance: result.clearance, water };
 }
 
+export async function buildTourHighway({
+  authoringFile = path.join(root, 'data/terrain/teton-tour.json'),
+  pointsFile = path.join(root, 'data/terrain/teton-tour-points.json'),
+  outDir = path.join(root, '.terrain-cache/teton-tour'),
+  evidenceDir = path.join(root, 'docs/evidence/teton-tour'), log = console.log, ...options
+} = {}) {
+  const view = JSON.parse(await fs.readFile(authoringFile, 'utf8'));
+  const stations = await buildTourStations({ ...options, authoringFile, pointsFile, outDir, log });
+  const highway = buildHighway(stations.points.points, { clearance: stations.clearance, grid: stations.grid, water: stations.water,
+    turnRadiusM: view.tour.tunables.turnRadiusM, spannerStretch: view.tour.tunables.spannerStretch,
+    southAnchorM: stations.grid.points['Rendezvous Mountain'].localM, northAnchorM: stations.grid.points['Survey Peak'].localM, log });
+  const output = { ...stations.points, points: highway.points, highwayStats: highway.stats };
+  await fs.writeFile(pointsFile, JSON.stringify(output, null, 2) + '\n');
+  await fs.writeFile(path.join(outDir, `${view.id}.highway`), serialize(highway));
+  await fs.mkdir(evidenceDir, { recursive: true });
+  await fs.writeFile(path.join(evidenceDir, 'highway-stats.json'), JSON.stringify({ ...highway.stats,
+    provenance: output.provenance, rejected: highway.rejected }, null, 2) + '\n');
+  return { ...stations, points: output, highway };
+}
+
+export async function buildTourField({
+  authoringFile = path.join(root, 'data/terrain/teton-tour.json'),
+  outDir = path.join(root, '.terrain-cache/teton-tour'), workerCount = null,
+  fieldSpacingM = null, longEdgeSpacingM = null, log = console.log, ...options
+} = {}) {
+  const view = JSON.parse(await fs.readFile(authoringFile, 'utf8'));
+  const result = await buildTourHighway({ ...options, authoringFile, outDir, log });
+  const geometry = highwayFieldSamples(result.highway, { clearance: result.clearance,
+    spacingM: fieldSpacingM ?? view.tour.tunables.fieldSpacingM, longEdgeSpacingM });
+  const started = performance.now();
+  const evaluated = await buildViewQualityField({ grid: result.grid, points: result.points.points, samples: geometry.samples,
+    water: result.water, aglTiersM: view.tour.tunables.aglTiersM, workerCount, cacheDir: path.join(root, '.cache/teton-tour'), log });
+  const field = { ...evaluated, spacingM: fieldSpacingM ?? view.tour.tunables.fieldSpacingM,
+    longEdgeSpacingM, edges: geometry.edges, stations: geometry.stations };
+  const ranked = field.samples.map((s, i) => ({ sampleId: i, posM: s.posM,
+    meanQuality: s.tiers.reduce((n, t) => n + [...t.score].reduce((n, v) => n + v, 0) / (72 * 255), 0) / s.tiers.length }))
+    .sort((a, b) => b.meanQuality - a.meanQuality || a.sampleId - b.sampleId);
+  const report = { samples: field.samples.length, tiers: field.samples.reduce((n, s) => n + s.tiers.length, 0),
+    elapsedMs: performance.now() - started, normalization: field.normalization, cacheKey: field.cacheKey,
+    best: ranked.slice(0, 5), worst: ranked.slice(-5).reverse(), provenance: result.points.provenance };
+  await fs.writeFile(path.join(outDir, `${view.id}.field`), serialize(field));
+  await fs.writeFile(path.join(outDir, `${view.id}.field.build.json`), JSON.stringify(report, null, 2) + '\n');
+  log(`field best: ${report.best.map(s => `${s.sampleId} (${s.meanQuality.toFixed(3)})`).join(', ')}; worst: ${report.worst.map(s => `${s.sampleId} (${s.meanQuality.toFixed(3)})`).join(', ')}`);
+  return { ...result, field, fieldReport: report };
+}
+
 async function main(args) {
   const options = { inputs: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--publish') options.publish = true;
     else if (arg === '--help') {
-      console.log('node tools/build-teton-tour.mjs --stage terrain|points|stations [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--names FILE] [--points FILE] [--publish]');
+      console.log('node tools/build-teton-tour.mjs --stage terrain|points|stations|highway|field [--out DIR] [--dem-grid PREFIX | --input TILE.tif ...] [--names FILE] [--points FILE] [--workers N] [--publish]');
       return;
-    } else if (['--stage', '--out', '--dem-grid', '--input', '--authoring', '--names', '--points'].includes(arg)) {
+    } else if (['--stage', '--out', '--dem-grid', '--input', '--authoring', '--names', '--points', '--workers'].includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`${arg} needs a value`);
       if (arg === '--input') options.inputs.push(value);
+      else if (arg === '--workers') { options.workerCount = Number(value); if (!Number.isInteger(options.workerCount) || options.workerCount < 1) throw new Error('--workers must be a positive integer'); }
       else options[{ '--stage': 'stage', '--out': 'outDir', '--dem-grid': 'demGrid', '--authoring': 'authoringFile', '--names': 'namesFile', '--points': 'pointsFile' }[arg]] = value;
     } else throw new Error(`unknown option ${arg}`);
   }
-  if (options.stage === 'stations') await buildTourStations(options);
+  if (options.stage === 'field') await buildTourField(options);
+  else if (options.stage === 'highway') await buildTourHighway(options);
+  else if (options.stage === 'stations') await buildTourStations(options);
   else if (options.stage === 'points') await buildTourPoints(options);
   else if (!options.stage || options.stage === 'terrain') await buildTourTerrain(options);
   else throw new Error(`stage ${options.stage} is not implemented yet`);
