@@ -238,6 +238,8 @@ async function handleRequest(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
   handleRequest(req, res).catch((err) => {
     console.error('[request failed]', err);
     if (res.headersSent) res.destroy();

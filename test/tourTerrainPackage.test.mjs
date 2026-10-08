@@ -170,3 +170,8 @@ test('final tour repack stores authored near tiles at stride1 and far tiles at s
   assert.ok(validateTerrainManifest(baked.manifest).ok);
   await assert.rejects(bakeTerrain(grid, view, { allTiles: true, tileStride: () => 3 }), /Invalid authored tile stride/);
 });
+
+test('tour surface downsampling quarters texture storage while retaining extent and finite material lanes',async()=>{
+ const {buildSurfaceTexture}=await import('../src/world/alpine/TerrainMesh.js');const {grid,view}=fixture(),baked=await bakeTerrain(grid,view,{allTiles:true}),data=decodeTerrain(baked.manifest,baked.decoded);
+ const surface=buildSurfaceTexture(data,{stride:2});assert.equal(surface.width,65);assert.equal(surface.height,65);assert.equal(surface.data.length,65*65*4);assert.ok(surface.data.some(v=>v!==0));
+});

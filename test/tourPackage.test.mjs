@@ -40,3 +40,10 @@ test('loader verifies both compressed and transfer-decoded identities', async ()
   const decoded = gunzipSync(payload);
   assert.equal((await loadTourPackage('http://localhost/test.json', { fetchImpl: async url => new Response(url.endsWith('.json') ? manifestBytes : decoded) })).data.nodes.length, 1);
 });
+
+test('portable metadata keeps runtime point identity and omits authoring-only score inputs',()=>{
+ const input=fixture();input.highway.points[0].suit={drop:.9};input.highway.points[0].propertiesTruncated=false;
+ const {manifest}=packTour(input);
+ assert.equal(manifest.points[0].suit,undefined);assert.equal(manifest.points[0].id,'p');
+ assert.ok(manifest.junctions&&typeof manifest.junctions==='object');
+});

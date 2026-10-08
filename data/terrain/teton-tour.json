@@ -143,7 +143,9 @@
         "peak-974046"
       ],
       "longEdgeFieldSpacingM": 150,
-      "viewQualityWeight": 6
+      "viewQualityWeight": 100,
+      "maxSpeedMps": 60,
+      "timelineBeamWidth": 60
     }
   }
 }

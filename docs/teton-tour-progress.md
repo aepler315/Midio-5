@@ -1,5 +1,7 @@
 # Teton Song Highway progress
 
+Current implementation: branch `teton-song-highway-resume`; real assets and runtime are implemented. See [current validation, evidence and limitations](teton-tour-validation.md). The dated entries below preserve the earlier blocked-source history and do not describe the current source-access state.
+
 Plan: [2026-10-08-teton-song-highway.md](superpowers/plans/2026-10-08-teton-song-highway.md).
 
 The plan was added to main in `bb098a3`, after this workspace's initial
@@ -253,3 +255,7 @@ The initial primary table above is superseded by station-feasibility selection. 
 | outro | -110.64568, 43.93237 (2073 m) · -110.64752, 43.90322 (2085 m) · -110.66854, 43.86347 (2092 m) · -110.67785, 43.82100 (2135 m) | 4 |
 
 Final highway: 154 nodes,256 roads,5 orbits,633.7km; one connected component, minimum turn radius405.47m, minimum vertical band414.1m, maximum stretch1.33912. Final field: 4885 samples,23451 tiers,100m spacing (150m on edges longer than3km), subject IDs at10degrees. Exact hero heights and best aims retained separately. Assets remain candidate until visual review. See docs/evidence/teton-tour/asset-budgets.json for measured download sizes.
+
+## Runtime and fresh review, 2026-10-08
+
+Tasks 9–12 are implemented behind the mode preference: oriented planning, worker height/aim timeline, committed-prefix refinement, sky/camera integration and bounded worker terrain windows. One fresh review found five Important defects, all addressed in one fix pass with published-data regression checks. Final five-song browser evidence and full-suite verification are recorded in the validation report. Strict cold-planner and some pixel-error targets remain unmet; candidate role approval and physical-device performance remain pending.

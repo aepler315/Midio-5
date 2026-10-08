@@ -24,9 +24,12 @@ import { SunShaftGL, SHAFT_KEY, shaftSize, shaftSource } from './SunShaftGL.js';
 import { rangeQuality } from './RangeQuality.js';
 import { hashSeed } from '../../utils/math.js';
 import { createForest } from './ForestGL.js';
+import { planTerrainWindow, TourWindowCache } from './TerrainWindow.js';
+import { TerrainWindowWorker, shareTerrainLanes } from './TerrainWindowWorker.js';
+import { buildTerrainGeometry } from './TerrainMesh.js';
 import { buildRockStage } from './RockStage.js';
 import { RockStageGL } from './RockStageGL.js';
-import { cameraPoseAt } from '../terrain/SceneTravel.js';
+import { scenePoseAt } from '../terrain/SceneTravel.js';
 import { applyCameraMoves, rangeUserCamera } from './RangeCamera.js';
 import { BANDS, terrainFringeBytes, terrainHeightAt } from './TerrainMesh.js';
 import { mistParams, mistDrift } from './RangeAtmosphere.js';
@@ -379,6 +382,119 @@ export class RangeScene {
 
   isReady(viewId) { return this.prepared.has(viewId) && !this.contextLost; }
 
+  replaceTour(view) {
+    const p=this.prepared.get(view.id);if(!p?.windowCache)return;
+    p.view=view;p.windowWorker.setTour(view.tour);p.windowCache.generation++;
+    for(const [index,window]of p.windowCache.resident)if(window!==p.activeWindow){window.dispose();p.windowCache.resident.delete(index);}
+    for(const entry of p.rawAhead?.values()||[])this.residency?.release(entry.key);
+    p.rawAhead?.clear();p.prefetchAttempted=null;
+    if(p.activeWindow)p.activeWindow.coarse=true;
+  }
+
+  _tourWindowResource(p, index, geos, forest, key, coarse = false) {
+    let disposed = false;
+    const resource = { index, geos, forest, key, coarse,
+      destroy: () => {
+        if (disposed) return; disposed = true;
+        if (p.windowCache?.resident.get(index) === resource) p.windowCache.resident.delete(index);
+        for (const g of Object.values(geos.geometries)) g.dispose();
+        for (const g of Object.values(geos.fringes)) g.dispose();
+        forest.dispose();
+      },
+      dispose: () => { if (this.residency && key) this.residency.release(key); else resource.destroy(); },
+    };
+    return resource;
+  }
+
+  async _buildTourWindow(p, index) {
+    const generation=p.windowCache.generation;
+    const ahead = p.rawAhead?.get(index);
+    const raw = await (ahead?.job || p.windowWorker.build(index, p.windowOptions));
+    if (p.windowCache.closed || generation!==p.windowCache.generation || !this.prepared.has(p.view.id)) {
+      if (ahead) this.residency?.release(ahead.key);
+      throw new RangeAssetError('stale', 'Tour window generation ended');
+    }
+    const key = `range:tour-window:${p.view.id}:${generation}:${index}`;
+    const bytes = Object.values(raw.built.bands).reduce((n, b) => n + b.positions.byteLength + b.indices.byteLength + b.fringe.byteLength, 0) + raw.placed.count * 7 * 4;
+    const reservation = this.residency?.reserve({ key, bytes, owner: 'range-tour-window', generation: p.generation,
+      protect: [p.gpuKey, p.cpuKey, p.workerKey, p.activeWindow?.key].filter(Boolean) });
+    if (this.residency && !reservation) throw new RangeAssetError('budget', `No room for tour window ${index}`);
+    const geos = createBandGeometries(this.THREE, p.data, { built: raw.built }), forest = createForest(this.THREE, raw.placed, p.uniforms);
+    const window = this._tourWindowResource(p, index, geos, forest, key);
+    window.detail = raw.plan;
+    if (reservation && !this.residency.commit(reservation, window, w => w.destroy())) throw new RangeAssetError('stale', 'Tour window cancelled');
+    if (ahead) { this.residency?.release(ahead.key); p.rawAhead.delete(index); }
+    return window;
+  }
+
+  _swapTourWindow(p, window) {
+    if (p.windowIndex !== window.index || p.mistRouteCap === undefined) {
+      let minimumEye = Infinity;
+      for (let t = window.index * 8000; t <= Math.min(p.view.tour.durationMs, (window.index + 1) * 8000); t += 500) minimumEye = Math.min(minimumEye, p.view.tour.poseAt(t).eyeM[1]);
+      p.mistRouteCap = minimumEye - 120;
+    }
+    if (p.activeWindow === window) return;
+    const replacements = new Map();
+    for (const band of BANDS) {
+      replacements.set(p.geometries[band], window.geos.geometries[band]);
+      if (p.fringes[band]) replacements.set(p.fringes[band], window.geos.fringes[band]);
+      for (const m of p.forest.byBand[band]) p.scenes[band].remove(m);
+      for (const m of window.forest.byBand[band]) p.scenes[band].add(m);
+      for (const m of p.forest.depthByBand[band]) p.depthScenes[band].remove(m);
+      for (const m of window.forest.depthByBand[band]) p.depthScenes[band].add(m);
+    }
+    for (const m of p.forest.depth) p.depthScene.remove(m);
+    for (const m of window.forest.depth) p.depthScene.add(m);
+    for (const scene of [...Object.values(p.scenes), p.depthScene, ...Object.values(p.depthScenes)]) {
+      for (const object of scene.children) if (replacements.has(object.geometry)) object.geometry = replacements.get(object.geometry);
+    }
+    p.geometries = window.geos.geometries; p.fringes = window.geos.fringes; p.forest = window.forest;
+    p.activeWindow = window; p.windowIndex = window.index;
+    p.stats = { ...p.stats, ...window.geos.stats, trees: window.forest.counts, windowIndex: window.index, coarse: window.coarse, pixelLimit: window.detail?.pixelLimit, detailNote: window.detail?.detailNote };
+  }
+
+  _ensureTourWindow(p, timeMs) {
+    if (!p?.windowCache) return;
+    const index = Math.max(0, Math.floor(Math.min(timeMs, Math.max(0, p.view.tour.durationMs - 1)) / 8000));
+    p.windowCache.current = index;
+    let window = p.windowCache.resident.get(index);
+    if (!window) {
+      const plan = planTerrainWindow(p.data, p.view.tour, index, { ...p.windowOptions, bias: 2 });
+      const key = `range:tour-window:${p.view.id}:${index}:coarse`, bytes = plan.triangles * 36 + 256 * 1024;
+      const reservation = this.residency?.reserve({ key, bytes, owner: 'range-tour-window', generation: p.generation, protect: [p.gpuKey, p.cpuKey, p.workerKey, p.activeWindow?.key].filter(Boolean) });
+      if (this.residency && !reservation) return;
+      const built = buildTerrainGeometry(p.data, { strides: plan.strides });
+      const geos = createBandGeometries(this.THREE, p.data, { built });
+      const forest = createForest(this.THREE, { mesh: new Float32Array(), billboard: new Float32Array(), stride: 8, count: 0 }, p.uniforms);
+      window = this._tourWindowResource(p, index, geos, forest, key, true);
+      if (reservation && !this.residency.commit(reservation, window, w => w.destroy())) return;
+      p.windowCache.resident.set(index, window);
+    }
+    this._swapTourWindow(p, window);
+    p.windowCache.prune();
+    const fail = error => { if (error?.reason !== 'stale' && error?.name !== 'AbortError') p.windowNote = error.message; };
+    if (window.coarse) p.windowCache.request(index, { replace: true }).catch(fail);
+    if ((index + 1) * 8000 < p.view.tour.durationMs) p.windowCache.request(index + 1).catch(fail);
+    // The second-ahead result remains CPU data until it is needed on GPU.
+    p.rawAhead ||= new Map();
+    for (const [old, entry] of p.rawAhead) if (old < index || old > index + 2) { this.residency?.release(entry.key); p.rawAhead.delete(old); }
+    const aheadIndex = index + 2;
+    if (aheadIndex * 8000 < p.view.tour.durationMs && !p.rawAhead.has(aheadIndex) && p.prefetchAttempted !== aheadIndex) {
+      p.prefetchAttempted = aheadIndex;
+      const key = `range:tour-window-cpu:${p.view.id}:${aheadIndex}`;
+      const reservation = this.residency?.reserve({ key, bytes: 64 * 1024 ** 2, owner: 'range-tour-window-cpu', generation: p.generation,
+        protect: [p.gpuKey, p.cpuKey, p.workerKey, window.key] });
+      if (!this.residency || reservation) {
+        const job = p.windowWorker.build(aheadIndex, p.windowOptions).then(raw => {
+          if (p.windowCache.closed || !p.rawAhead.has(aheadIndex)) { this.residency?.release(key); return raw; }
+          if (reservation) this.residency.commit(reservation, raw);
+          return raw;
+        }).catch(error => { this.residency?.release(key); p.rawAhead.delete(aheadIndex); throw error; });
+        job.catch(fail); p.rawAhead.set(aheadIndex, { key, job });
+      }
+    }
+  }
+
   /**
    * Prepare one view (CPU package + GPU objects). Resolves PreparedView or
    * rejects with RangeAssetError; a stale generation never publishes.
@@ -402,6 +518,7 @@ export class RangeScene {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
       let surface, geos, material, forest, stageGL, featureMaterial, actors;
+      let windowWorker = null, initialWindow = null, workerKey = null, windowReservation = null;
       const featureGeometries = {};
       const stale = () => {
         if (this.contextEpoch !== epoch) throw new RangeAssetError('context-lost', `GPU context changed while preparing ${view.id}`);
@@ -422,7 +539,19 @@ export class RangeScene {
         if (!waterCheck.ok) throw new RangeAssetError('manifest', `material rules rejected for ${view.id}: ${waterCheck.errors.join('; ')}`);
         // Placement yields to the event loop as it goes: a view prepared
         // during playback must not freeze frames while its forest is laid.
-        const placed = await placeForestAsync(cpu.data, view, rules, { seed: hashSeed(view.terrainSourceId || view.id), signal });
+        let rawWindow = null;
+        const windowOptions = { budget: this.budget, heightPx: this.budget === 'mobile' ? 720 : 1080, aspect: 16 / 9 };
+        if (view.tour) {
+          const shared = await shareTerrainLanes(cpu.data);
+          workerKey = `range:tour-worker:${view.id}`;
+          const workerBytes = shared ? 1024 ** 2 : [...cpu.data.tiles.values()].reduce((n, t) => n + t.heightsM.byteLength + t.flowBytes.byteLength + (t.validMask?.byteLength || 0), 0);
+          const workerReservation = this.residency?.reserve({ key: workerKey, bytes: workerBytes, owner: 'range-tour-worker', generation });
+          if (this.residency && !workerReservation) throw new RangeAssetError('budget', 'No room for tour window worker');
+          windowWorker = new TerrainWindowWorker({ data: cpu.data, tour: view.tour, view, rules, seed: hashSeed(view.terrainSourceId || view.id) });
+          if (workerReservation && !this.residency.commit(workerReservation, windowWorker, w => w.dispose())) throw new RangeAssetError('stale', 'Tour worker cancelled');
+          rawWindow = await windowWorker.build(0, windowOptions);
+        }
+        const placed = rawWindow?.placed || await placeForestAsync(cpu.data, view, rules, { seed: hashSeed(view.terrainSourceId || view.id), signal });
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const forestBytes = placed.count * 7 * 4;
         // Building the surface texture needs temporary height and flow
@@ -430,22 +559,29 @@ export class RangeScene {
         // uploaded at once and drops its RGBA copy after the upload (see
         // createSurfaceTexture), so all eleven bytes are scratch, reserved
         // only while it is built: the view owns both GPU textures.
-        const gridPx = cpu.data.grid.width * cpu.data.grid.height;
+        const textureStride = view.tour ? (this.budget === 'mobile' ? 4 : 2) : 1;
+        const gridPx = ((cpu.data.grid.width - 1) / textureStride + 1) * ((cpu.data.grid.height - 1) / textureStride + 1);
         const featureBudgetBytes = 3 * 768 * 6 * 4;
         // The bake's mesh estimate does not know the seam-fill index
         // buffers; their exact size is counted from the tile plan (no
         // geometry built), so the one reservation covers them and a view
         // that cannot fit is denied before the mesh is built.
-        const fringeBytes = terrainFringeBytes(cpu.data, { budget: this.budget });
-        const bytes = (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes();
+        const fringeBytes = view.tour ? 0 : terrainFringeBytes(cpu.data, { budget: this.budget });
+        const bytes = view.tour ? Math.ceil(gridPx * (4 * 4 / 3 + 1)) + featureBudgetBytes + ActorsGL.bytes()
+          : (est?.meshBytes || 0) + fringeBytes + (est?.surfaceTextureBytes || 0) + gridPx + forestBytes + featureBudgetBytes + ActorsGL.bytes();
         res = this.residency?.reserve({ key: gpuKey, bytes, owner: 'range-terrain-gpu', generation }) || null;
         if (this.residency && !res) throw new RangeAssetError('budget', `no GPU room for ${view.id}`);
-        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget });
+        if (rawWindow) {
+          const windowBytes = Object.values(rawWindow.built.bands).reduce((n, b) => n + b.positions.byteLength + b.indices.byteLength + b.fringe.byteLength, 0) + forestBytes;
+          windowReservation = this.residency?.reserve({ key: `range:tour-window:${view.id}:0`, bytes: windowBytes, owner: 'range-tour-window', generation, protect: [cpu.key, gpuKey, workerKey] });
+          if (this.residency && !windowReservation) throw new RangeAssetError('budget', 'No room for initial tour window');
+        }
+        geos = createBandGeometries(THREE, cpu.data, { budget: this.budget, ...(rawWindow ? { built: rawWindow.built } : {}) });
         const scratchKey = `range:surface-scratch:${view.id}`;
         const scratch = this.residency?.reserve({ key: scratchKey, bytes: gridPx * 11, owner: 'range-scratch', generation }) || null;
         if (this.residency && !scratch) throw new RangeAssetError('budget', `no room to build ${view.id} surface`);
         try {
-          surface = createSurfaceTexture(THREE, cpu.data);
+          surface = createSurfaceTexture(THREE, cpu.data, { stride: textureStride });
           this.renderer?.initTexture?.(surface.texture);
           this.renderer?.initTexture?.(surface.receiverTexture);
         } finally { if (scratch) this.residency.release(scratchKey); }
@@ -526,13 +662,25 @@ export class RangeScene {
         this.renderer.compile(scenes.far, this.camera);
         this.renderer.compile(depthScene, this.camera);
         const prepared = {
-          view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity,
+          view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity, tourCpuKey: opts.tourCpuKey,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
           forest, stageGL, featureGeometries, featureMaterial,
           stats: { ...geos.stats, trees: forest.counts, featureBytes: featureBudgetBytes }, gpuKey, cpuKey: cpu.key,
           giantLayout: giantLayout(cpu.data, view, [uniforms.uHeightRange.value.x, uniforms.uHeightRange.value.y], waterLevelM),
           rules, waterLevelM, mirrorLevelM: mirrorLevelFor(cpu.data, waterLevelM), materialKey: mat.key, actors, actorRoutes: routes,
         };
+        if (windowWorker) {
+          prepared.windowWorker = windowWorker;
+          prepared.workerKey = workerKey;
+          prepared.windowOptions = windowOptions;
+          initialWindow = this._tourWindowResource(prepared, 0, geos, forest, windowReservation?.key);
+          initialWindow.detail = rawWindow.plan;
+          if (windowReservation && !this.residency.commit(windowReservation, initialWindow, w => w.destroy())) throw new RangeAssetError('stale', 'Initial window cancelled');
+          prepared.windowCache = new TourWindowCache({ build: index => this._buildTourWindow(prepared, index) });
+          prepared.windowCache.resident.set(0, initialWindow);
+          prepared.windowIndex = 0;
+          prepared.activeWindow = initialWindow;
+        }
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         // Eviction (or any release) of the GPU entry also retires the view
         // from the cache, so no frame can draw disposed resources.
@@ -544,12 +692,15 @@ export class RangeScene {
         return prepared;
       } catch (err) {
         if (!published) {
+          if (windowReservation) this.residency?.release(windowReservation.key);
+          if (workerKey) this.residency?.release(workerKey);
+          if (!this.residency) windowWorker?.dispose();
           if (res) this.residency.release(res.key);
           if (mat) this._releaseMaterial(view.id);
           // The decoded terrain is only worth its ledger charge to a view
           // that publishes.
           this.residency?.release(cpu.key);
-          forest?.dispose();
+          if (!initialWindow) forest?.dispose();
           actors?.dispose();
           stageGL?.dispose();
           material?.dispose();
@@ -557,8 +708,8 @@ export class RangeScene {
           for (const g of Object.values(featureGeometries)) g.dispose();
           surface?.texture?.dispose();
           surface?.receiverTexture?.dispose();
-          for (const g of Object.values(geos?.geometries || {})) g.dispose();
-          for (const g of Object.values(geos?.fringes || {})) g.dispose();
+          if (!initialWindow) for (const g of Object.values(geos?.geometries || {})) g.dispose();
+          if (!initialWindow) for (const g of Object.values(geos?.fringes || {})) g.dispose();
         }
         throw err;
       }
@@ -632,7 +783,7 @@ export class RangeScene {
     const keys = ['range:render-target', 'range:ground-target', 'range:render-target-B', ...extraKeys];
     for (const id of [].concat(viewIds)) {
       const p = this.prepared.get(id);
-      if (p) keys.push(p.gpuKey, p.cpuKey, p.materialKey);
+      if (p) keys.push(p.gpuKey, p.cpuKey, p.materialKey, p.workerKey, p.tourCpuKey, ...[...(p.windowCache?.resident.values() || [])].map(w => w.key));
     }
     this.residency.pin(keys);
   }
@@ -684,11 +835,14 @@ export class RangeScene {
   _disposePrepared(p) {
     p.featureMaterial?.dispose();
     for (const g of Object.values(p.featureGeometries || {})) g.dispose();
-    p.forest?.dispose();
+    p.windowCache?.dispose();
+    for (const entry of p.rawAhead?.values() || []) this.residency?.release(entry.key);
+    if (p.workerKey && this.residency) this.residency.release(p.workerKey); else p.windowWorker?.dispose();
+    if (!p.windowCache) p.forest?.dispose();
     p.actors?.dispose();
     p.stageGL?.dispose();
-    for (const g of Object.values(p.geometries || {})) g.dispose();
-    for (const g of Object.values(p.fringes || {})) g.dispose();
+    if (!p.windowCache) for (const g of Object.values(p.geometries || {})) g.dispose();
+    if (!p.windowCache) for (const g of Object.values(p.fringes || {})) g.dispose();
     p.surface?.texture?.dispose();
     p.surface?.receiverTexture?.dispose();
     p.material?.dispose();
@@ -725,7 +879,8 @@ export class RangeScene {
    *  rendered ground. Computed once per frame and view and shared by the
    *  partition passes and the sky (RangePresentation._skyPan). */
   movedPose(view, frame, p = this.prepared.get(view.id) || null) {
-    const rail = cameraPoseAt(view, view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+    this._ensureTourWindow(p, frame.timeMs);
+    const rail = scenePoseAt(view, { progress01: view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01, timeMs: frame.timeMs });
     const proj = scenicProjection(rail.fovYDeg, frame.scenicViewport);
     // This view's VISIBLE frustum (the overscan margin excluded): the
     // pointer is normalised against the visible stage, and the zoom must
@@ -793,7 +948,7 @@ export class RangeScene {
     const c = frame.light.celestial;
     // Unproject the celestial's stage position into a world direction.
     const ndcX = c.xFrac * 2 - 1, ndcY = 1 - c.yFrac * 2;
-    const dir = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.camera).sub(this.camera.position).normalize();
+    const dir = c.worldDirection ? new THREE.Vector3(...c.worldDirection) : new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.camera).sub(this.camera.position).normalize();
     u.uLightDir.value.copy(dir.normalize());
     const night = frame.light.night01;
     const storm = frame.storm || { amount: 0, flash: 0, wet01: 0, break01: 0 };
@@ -874,6 +1029,10 @@ export class RangeScene {
       tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0),
       sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .3, u.uMidioCloud.value * amounts[0] * .3), cameraY: this.camera.position.y });
     const quality = rangeQuality(frame.qualityLevel);
+    if (p.view.tour) {
+      mp.topM = Math.min(mp.topM, this.camera.position.y - 120, p.mistRouteCap ?? Infinity);
+      if (mp.topM - mp.baseM < 40) { mp.fill = 0; mp.density = 0; }
+    }
     u.uMistDensity.value = mp.density * (n?.atmosphere ?? 1);
     u.uMistSteps.value = quality.mistSteps;
     u.uMistBase.value = mp.baseM;
@@ -888,6 +1047,8 @@ export class RangeScene {
     u.uMistColor.value.g = Math.min(0.9, u.uMistColor.value.g);
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
     u.uCameraPos.value.copy(this.camera.position);
+    u.uTourEnabled.value = p.view.tour ? 1 : 0;
+    u.uTourEye.value.copy(this.camera.position);
     this._setActors(p, frame);
   }
 
@@ -1165,6 +1326,7 @@ export class RangeScene {
   snapshot() {
     return {
       prepared: [...this.prepared.keys()], pending: [...this.pending.keys()], contextLost: this.contextLost,
+      windows: [...this.prepared.values()].filter(p=>p.windowCache).map(p=>({id:p.view.id,index:p.windowIndex,resident:[...p.windowCache.resident.keys()],detail:p.activeWindow?.detail,note:p.windowNote,stats:p.stats})),
       size: { ...this.size }, stats: { ...this.stats }, sideB: !!this.sideTargets.B,
     };
   }

@@ -171,3 +171,8 @@ test('the high-water mark catches ownership that peaks and falls between samples
   r.adopt({ key: 'strip', bytes: 5 * MiB, owner: 'legacy' });
   assert.equal(r.snapshot().peakBytes, 35 * MiB, 'adopted memory counts too');
 });
+
+test('releasing decode scratch lowers a live charge without allowing unreserved growth', () => {
+ const r=ledger(10),slot=r.reserve({key:'cpu',bytes:8*MiB,owner:'terrain',generation:1});r.commit(slot,{});
+ assert.equal(r.shrink('cpu',3*MiB),true);assert.equal(r.liveBytes,3*MiB);assert.equal(r.shrink('cpu',12*MiB),false);assert.equal(r.liveBytes,3*MiB);assert.equal(r.snapshot().peakBytes,8*MiB);
+});

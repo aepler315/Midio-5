@@ -154,6 +154,10 @@ export async function prepareTerrainAssets(view, {
     if (reservation && !residency.commit(reservation, prepared, null)) {
       throw new RangeAssetError('stale', `generation ${generation} cancelled during ${view.id}`);
     }
+    if (view.tourManifestUrl && reservation) {
+      const liveBytes = [...pkg.data.tiles.values()].reduce((n, t) => n + t.heightsM.byteLength + t.flowBytes.byteLength + (t.validMask?.byteLength || 0), 0);
+      residency.shrink(key, liveBytes);
+    }
     return prepared;
   } catch (err) {
     if (reservation) residency.release(key);

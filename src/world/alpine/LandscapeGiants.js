@@ -2,7 +2,7 @@
 // screen-space actors. One small RGBA texture per prepared view, charged to
 // the view's GPU reservation and disposed with its actors.
 import { MIDIO_BODY, MIDIO_EYE_CY, MIDIO_EYE_SOCKET_R, BROSHI_BODY, BROSHI_HEAD, BROSHI_TAIL, MIDASUS_MESH } from '../../render/meshes.js';
-import { cameraPoseAt, projectPoint } from '../terrain/SceneTravel.js';
+import { scenePoseAt, projectPoint } from '../terrain/SceneTravel.js';
 import { terrainHeightAt } from './TerrainMesh.js';
 import { MIRROR_LEVEL_TOLERANCE_M } from './WaterMirror.js';
 const MASK_SIZE = 128;
@@ -81,7 +81,7 @@ function seenFrom(data, eye, p) {
 /** Anchors chosen from real samples visible at the reference rail station.
  * Metre sizes follow relief and viewing distance; resizing cannot move them. */
 export function giantLayout(data, view, heightRange, waterLevelM) {
-  const pose = cameraPoseAt(view, .5), d = pose.targetM.map((v,i) => v - pose.eyeM[i]);
+  const pose = scenePoseAt(view, { progress01: .5 }), d = pose.targetM.map((v,i) => v - pose.eyeM[i]);
   const l = Math.hypot(d[0], d[2]) || 1, forward = [d[0]/l,0,d[2]/l], right = [-forward[2],0,forward[0]];
   let mountain = null, water = null, best = Infinity;
   const shore = [];

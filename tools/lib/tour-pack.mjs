@@ -2,7 +2,8 @@
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { TOUR_ROLES } from './tour-roles.mjs';
-import { tourPackageErrors } from '../../src/world/terrain/TourPackage.js';
+import { TourGraph } from '../../src/world/terrain/TourGraph.js';
+import { tourPackageErrors, decodeTour } from '../../src/world/terrain/TourPackage.js';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 export function packTour({ view, source, highway, field, clearance, subjectStep = 1 }) {
   const chunks = []; let length = 0;
@@ -38,13 +39,18 @@ export function packTour({ view, source, highway, field, clearance, subjectStep 
       'pre-chorus': ['verse', 'post-chorus', 'chorus'], chorus: ['drop', 'post-chorus', 'pre-chorus'],
       'post-chorus': ['chorus', 'pre-chorus', 'verse'], bridge: ['solo', 'interlude', 'verse'],
       solo: ['bridge', 'chorus', 'interlude'], interlude: ['verse', 'breakdown', 'bridge'],
-      breakdown: ['interlude', 'intro', 'outro'], drop: ['chorus', 'solo'], outro: ['intro', 'breakdown', 'interlude'] }, points: highway.points, nodes: highway.nodes, edges,
+      breakdown: ['interlude', 'intro', 'outro'], drop: ['chorus', 'solo'], outro: ['intro', 'breakdown', 'interlude'] }, points: highway.points.map(p=>Object.fromEntries(['id','name','type','role','tier','prominenceM','elevationM','isolationM','lonLat','localM','grandeur','station'].filter(k=>p[k]!==undefined).map(k=>[k,p[k]]))), nodes: highway.nodes, edges,
     field: { spacingM: field.spacingM, tiers: [0, 120, 300, 600, 1000], headingStepDeg: 5,
       subjectStepDeg: subjectStep * 5, layout: 'score:u8[72],pitch:i8[36],fov:u2[72],subject:u16[72/step]',
       normalization: field.normalization, sampleCount: field.samples.length, tierCount: rows.length, offsets, edges: field.edges, stations: field.stations },
     clearance: clear, tunables: view.tour.tunables, provenance: { ...source.provenance, builtWith: 'build-teton-tour.mjs portable-v1' },
     payload: { url: `${view.id}.tour.bin.gz`, sha256: sha(payload), byteLength: payload.length,
       decodedSha256: sha(decoded), decodedByteLength: decoded.length } };
+  // Junction fitting is authoring work, pinned by the manifest hash.
+  // Runtime routes reuse these exact decoded-grid curves.
+  const graph=new TourGraph(decodeTour(manifest,decoded));
+  for(const [node,outgoing]of graph.adj)for(const incoming of graph.oriented.values())if(incoming.to===node)for(const next of outgoing)graph.join(incoming,next);
+  manifest.junctions=Object.fromEntries(graph.joins);
   const errors = tourPackageErrors(manifest);
   if (errors.length) throw new Error(`Tour pack rejected: ${errors.slice(0, 5).join('; ')}`);
   return { manifest, payload, decoded };

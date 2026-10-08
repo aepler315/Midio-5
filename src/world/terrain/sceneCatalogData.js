@@ -1966,7 +1966,7 @@ export default {
    "terrainManifestUrl": "terrain/teton-range-tour.terrain.json",
    "terrainManifestSha256": "4a8a1d086f4ae520b244c65416df8742806385fc6c0f72d6e2fe0116dad3cf28",
    "tourManifestUrl": "tour/teton-range-tour.tour.json",
-   "tourManifestSha256": "ba5a3368236081e0ce3f52f7d2828016342d069064c16cd2d04163e01defd8f7",
+   "tourManifestSha256": "82cd0767dfd32ef69840e8aff4d9e910b3946d4f10600d9c1e3e06d39437f86c",
    "materialManifestUrl": "materials/dry-conifer.json",
    "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
    "materialRules": {},

@@ -33,6 +33,8 @@ export const DEFORM_GLSL = /* glsl */`
   uniform float uMelodyK;
   uniform vec2 uMelodyDir;
   uniform float uMelodyPhase;
+  uniform float uTourEnabled;
+  uniform vec3 uTourEye;
   float deformField(float h, float along, float across) {
     return h * h * (uDeformAmp * sin(along * uDeformK - uDeformPhase)
       + uDeformKick + uDeformStructural + uDeformMelodic * sin(across * uMelodyK - uMelodyPhase)
@@ -42,7 +44,8 @@ export const DEFORM_GLSL = /* glsl */`
     vec2 uv = (p.xz - uGridOrigin) / uGridExtent;
     float receiver = texture(uReceiver, uv * (1.0 - uTexel) + 0.5 * uTexel).r;
     float h = clamp((p.y - uHeightRange.x) / max(1.0, uHeightRange.y - uHeightRange.x), 0.0, 1.0);
-    return receiver * deformField(h, dot(p.xz, uDeformDir), dot(p.xz, uMelodyDir));
+    float tourFade = mix(1.0, smoothstep(1500.0, 4000.0, distance(p, uTourEye)), uTourEnabled);
+    return receiver * tourFade * deformField(h, dot(p.xz, uDeformDir), dot(p.xz, uMelodyDir));
   }
   // Full field derivatives include the receiver shoulder and height lift.
   // The inverse Jacobian carries terrain normals through the same field.
@@ -496,6 +499,7 @@ export function sceneUniforms(THREE, base) {
     uGlacierEnabled: { value: 0 }, uGlacierStart: { value: new THREE.Vector2() }, uGlacierEnd: { value: new THREE.Vector2(0, -100) },
     uGlacierWidth: { value: 1 }, uGlacierSurface: { value: new THREE.Vector2() }, uGlacierMaxThickness: { value: 0 }, uGlacierRetreat: { value: 0 },
     uDeformAmp: { value: 0 }, uDeformKick: { value: 0 }, uDeformK: { value: 0 },
+    uTourEnabled: { value: 0 }, uTourEye: { value: new THREE.Vector3() },
     uDeformGesture: { value: 0 }, uDeformMelodic: { value: 0 }, uDeformStructural: { value: 0 },
     uMelodyK: { value: 0 }, uMelodyDir: { value: new THREE.Vector2(1, 0) }, uMelodyPhase: { value: 0 },
     uDeformDir: { value: new THREE.Vector2(0.8, -0.6) }, uDeformPhase: { value: 0 },

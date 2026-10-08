@@ -13,9 +13,11 @@
 // reason; the cast and music never wait on the GPU.
 import { travelSpans } from '../TravelSeam.js';
 import { buildRangeFrame, viewportState, scenicProjection } from './RangeFrame.js';
-import { cameraPoseAt, cameraBasis } from '../terrain/SceneTravel.js';
+import { scenePoseAt, cameraBasis } from '../terrain/SceneTravel.js';
+import { loadTourPackage } from '../terrain/TourPackage.js';
+import { prepareTourTimeline } from '../terrain/TourRuntime.js';
 import { applyCameraMoves } from './RangeCamera.js';
-import { skyTurn } from './RangeSkyComposition.js';
+import { skyTurn, tourSkyDirection, projectSkyDirection } from './RangeSkyComposition.js';
 import { forcedSceneChoice } from '../terrain/SceneCatalog.js';
 import SCENE_CATALOG from '../terrain/sceneCatalogData.js';
 import { noteViewShown } from '../terrain/RangeHistory.js';
@@ -26,15 +28,18 @@ const ASSET_BASE = new URL('../../assets/range/v2/', import.meta.url).href;
 const RUNTIME_URL = new URL('../../vendor/range/three-range.module.js', import.meta.url).href;
 
 /** ?rangeRenderer=v2|legacy and ?rangeView=<id>. Default v2. */
-export function resolveRangeMode(search = (typeof location !== 'undefined' ? location.search : '')) {
+export function resolveRangeMode(search = (typeof location !== 'undefined' ? location.search : ''), storage = null) {
   try {
     const q = new URLSearchParams(String(search || '').replace(/^\?/, ''));
     const raw = (q.get('rangeRenderer') || RANGE_DEFAULT_MODE).toLowerCase();
     const forcedViewId = q.get('rangeView') || null;
     const diag = q.get('rangeDiag') === 'markers' ? 'markers' : null;
-    return { mode: RANGE_RENDERER_MODES.includes(raw) ? raw : RANGE_DEFAULT_MODE, forcedViewId, diag };
+    let saved = null;
+    try { saved = (storage || globalThis.localStorage)?.getItem('range-tour'); } catch { /* Private-mode storage can be unavailable. */ }
+    const tour = (q.has('rangeTour') ? q.get('rangeTour') : saved) === 'tetons' ? 'tetons' : null;
+    return { mode: tour ? 'v2' : RANGE_RENDERER_MODES.includes(raw) ? raw : RANGE_DEFAULT_MODE, forcedViewId: tour ? 'teton-range-tour' : forcedViewId, diag, tour };
   } catch {
-    return { mode: RANGE_DEFAULT_MODE, forcedViewId: null, diag: null };
+    return { mode: RANGE_DEFAULT_MODE, forcedViewId: null, diag: null, tour: null };
   }
 }
 
@@ -65,11 +70,15 @@ function defaultCanvas(w, h) {
 }
 
 export class RangePresentation {
-  constructor({ mode = 'legacy', forcedViewId = null, diag = null, residency = null, budget = 'desktop',
+  constructor({ mode = 'legacy', forcedViewId = null, tour = null, diag = null, residency = null, budget = 'desktop',
     loadRuntime = () => import(RUNTIME_URL), sceneFactory = null, catalog = SCENE_CATALOG, assetBase = ASSET_BASE,
     makeCanvas = defaultCanvas } = {}) {
     this.mode = mode;
     this.forcedViewId = forcedViewId;
+    this.tourMode = tour;
+    this.tour = null;
+    this.tourData = null;
+    this._tourAbort = null;
     this.diag = diag;
     this.residency = residency;
     this.budget = budget;
@@ -121,12 +130,29 @@ export class RangePresentation {
 
   get enabled() { return this.mode === 'v2'; }
 
+  setTourMode(tour, { terrain = null, mgr = null } = {}) {
+    this.dispose();
+    this.tourMode = tour;
+    this.forcedViewId = tour ? 'teton-range-tour' : null;
+    this.forced = tour ? forcedSceneChoice(this.catalog, this.forcedViewId) : null;
+    this.setSong({ terrain, mgr, generation: this.generation + 1 });
+  }
+
   /** A new song (or world): new generation, new assignments. Pending work
    *  of the previous generation is cancelled; its late results never land. */
-  setSong({ terrain = null, generation = this.generation + 1, exportMode = false } = {}) {
+  setSong({ terrain = null, mgr = null, generation = this.generation + 1, exportMode = false } = {}) {
     this.stage = null;
+    if (this.tourMode || this.residency?.cancelled?.has(generation)) generation = Math.max(generation, this.generation + 1);
     const previous = this.generation;
+    if (this._tourCpuKey) this.residency?.release(this._tourCpuKey);
+    if (this.tourMode) this.scene?.release('teton-range-tour');
     this.generation = generation;
+    this._tourAbort?.abort();
+    this.tour = null;
+    this.tourData = null;
+    this._tourSections = mgr?.sections;
+    this._tourManager = mgr;
+    this._replanAbort?.abort();
     // Export draws frames on request and waits for readiness: never fades,
     // never counts as the listener having seen a view.
     this.exportMode = !!exportMode;
@@ -143,12 +169,38 @@ export class RangePresentation {
     this.arrival = 1;
     this._legacyShown = false;
     this._arrivalStartSec = null;
+    if (this.tourMode && this.forced?.view?.tourManifestUrl) {
+      const view = this.forced.view, controller = new AbortController();
+      this._tourAbort = controller;
+      this._tourCpuKey = `range:tour-cpu:${generation}`;
+      const reservation = this.residency?.reserve({ key: this._tourCpuKey, bytes: 80 * 1024 ** 2, owner: 'range-tour-cpu', generation });
+      const load = this.residency && !reservation ? Promise.reject(new Error('No room to plan the tour')) : loadTourPackage(new URL(view.tourManifestUrl, this.assetBase).href,
+        { signal: controller.signal, expectManifestSha256: view.tourManifestSha256, terrainViewId: view.id })
+      ;
+      this._tourPromise = load
+        .then(async pkg => {
+          const tour = await prepareTourTimeline(pkg.data, mgr, { signal: controller.signal });
+          if (controller.signal.aborted || this.generation !== generation) return;
+          this.tour = tour; this.tourData = pkg.data;
+          if (reservation) {
+            if (!this.residency.commit(reservation, { data: pkg.data, tour })) return;
+            this.residency.shrink(reservation.key, 32 * 1024 ** 2);
+          }
+          this.forced = { ...this.forced, view: { ...view, tour } };
+          this.scene?.release(view.id);
+        }).catch(error => {
+          if (controller.signal.aborted || this.generation !== generation) return;
+          if (reservation) this.residency?.release(reservation.key);
+          this.failures.set(view.id, `tour: ${error.message}`);
+          console.warn('[range tour] preparation failed', error);
+        });
+    }
     // Views the new song still wants move to its generation before the old
     // one is cancelled; everything else of the old song is released.
     const keep = new Set(this._wantedViewIds());
     if (this.scene) {
       for (const [id, p] of [...this.scene.prepared]) {
-        if (keep.has(id)) {
+        if (keep.has(id) && !p.view?.tour) {
           p.generation = generation;
           this.residency?.retag(p.gpuKey, generation);
           this.residency?.retag(p.cpuKey, generation);
@@ -201,12 +253,14 @@ export class RangePresentation {
   }
 
   _prepare(view, now = Date.now()) {
+    if (view.tourManifestUrl && !this.tour) return;
+    if (view.tourManifestUrl) { view = { ...view, tour: this.tour }; this._tourManager?.dropCoveredStrips?.(); }
     if (!this.scene || this.failures.has(view.id) || this.scene.isReady(view.id)) return;
     const retryAt = this.deferred.get(view.id);
     if (retryAt != null && now < retryAt) return;
     this.deferred.delete(view.id);
     const gen = this.generation;
-    this.scene.prepare(view, { generation: gen, baseUrl: this.assetBase, isCurrent: (g) => g === this.generation })
+    this.scene.prepare(view, { generation: gen, baseUrl: this.assetBase, tourData: this.tourData, tourCpuKey: this._tourCpuKey, isCurrent: (g) => g === this.generation })
       .catch((err) => {
         if (gen !== this.generation) return; // stale: the new song decides again
         if (err?.reason === 'context-lost') {
@@ -249,6 +303,7 @@ export class RangePresentation {
     if (this.runtimeState === 'idle') await this._ensureRuntime();
     else while (this.runtimeState === 'loading') await new Promise((r) => setTimeout(r, 20));
     if (this.runtimeState !== 'ready') return this.snapshot();
+    if (this.tourMode) await this._tourPromise;
     const unique = this._songViews();
     const deadline = Date.now() + timeoutMs;
     const ready = [];
@@ -399,6 +454,19 @@ export class RangePresentation {
     const inputs = this.frameInputs;
     if (!inputs?.sim?.biomes) { this.reason = 'no-frame-inputs'; return false; }
     const mgr = inputs.sim.biomes;
+    if (this.tourMode && this.tour && mgr.sections !== this._tourSections) {
+      this._tourSections = mgr.sections;
+      this._replanAbort?.abort();
+      const controller = new AbortController(), generation = this.generation;
+      this._replanAbort = controller;
+      this._replanPromise = prepareTourTimeline(this.tourData, mgr, { signal: controller.signal, previous: this.tour, committedThroughMs: (mgr.tSec || 0) * 1000 })
+        .then(tour => {
+          if (controller.signal.aborted || generation !== this.generation) return;
+          this.tour = tour;
+          this.forced = { ...this.forced, view: { ...this.forced.view, tour } };
+          this.scene.replaceTour?.(this.forced.view);
+        }).catch(error => { if (!controller.signal.aborted) this.tour.notes.push(`Refinement held: ${error.message}`); });
+    }
     const blend = mgr.currentBlend || {};
     const name = (p) => (typeof p === 'string' ? p : p?.name ?? null);
     const from = this._choiceFor(name(blend.from) ?? mgr.sections?.[0]?.profile?.name);
@@ -494,6 +562,18 @@ export class RangePresentation {
     this.timings.frameId = this.frameId + 1;
     this.timings.frameRenderMs = 0;
     this.timings.frameCopyMs = 0;
+    if (view.tour && mgr.celestialState) {
+      const pose=view.tour.poseAt((mgr.tSec||0)*1000),projection=scenicProjection(pose.fovYDeg,inputs.scenicViewport);
+      const state=mgr.celestialState,morning=(state.dawn01||0)>(state.dusk01||0),bodies={};
+      for(const body of ['sun','moon']){
+        const source=state[body],altitude=Math.asin(Math.max(-1,Math.min(1,source.altitude01??.2)))*180/Math.PI;
+        const worldDirection=tourSkyDirection((morning?100:250)+(body==='moon'?180:0),altitude);
+        bodies[body]={...source,...projectSkyDirection({...pose,fovYDeg:projection.fovYDeg},worldDirection,projection.aspect),worldDirection};
+      }
+      mgr.celestialState={...state,...bodies};
+      const active=bodies[state.activeBody];
+      if(active&&mgr._scenicLight)mgr._scenicLight={...mgr._scenicLight,x:active.xFrac*inputs.scenicViewport.logicalWidth,y:active.yFrac*inputs.scenicViewport.logicalHeight};
+    }
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
@@ -527,15 +607,17 @@ export class RangePresentation {
       let rail, proj, pose;
       if (typeof this.scene.movedPose === 'function') ({ rail, proj, pose } = this.scene.movedPose(v, frame));
       else {
-        rail = cameraPoseAt(v, v.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01);
+        rail = scenePoseAt(v, { progress01: v.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01, timeMs: frame.timeMs });
         proj = scenicProjection(rail.fovYDeg, vp);
         pose = applyCameraMoves(rail, frame.cameraMove, null);
       }
+      if (v.tour) return { tourPose: { ...pose, fovYDeg: proj.fovYDeg, aspect: proj.aspect } };
       const turn = skyTurn(pose, cameraBasis(rail).forward);
       return { ...turn, tanY: Math.tan((proj.fovYDeg * Math.PI) / 360), aspect: proj.aspect };
     };
     try {
       const a = one(view);
+      if (a.tourPose) return { x: 0, y: 0, tourPose: a.tourPose };
       const b = incoming ? one(incoming) : a;
       const k = incoming ? Math.min(1, Math.max(0, (this.seamP ?? 0) * (this.incomingFade ?? 1))) : 0;
       const mix = (key) => a[key] + (b[key] - a[key]) * k;
@@ -799,6 +881,7 @@ export class RangePresentation {
 
   snapshot() {
     return {
+      tourMode: this.tourMode, tour: this.tour ? { durationMs: this.tour.durationMs, heroes: this.tour.heroes, notes: this.tour.notes, meanQualityRatio: this.tour.meanQualityRatio } : null,
       mode: this.mode, active: this.active, reason: this.reason, viewId: this.active ? this.viewId : null,
       forcedCandidate: !!this.forced?.forcedCandidate, forcedViewId: this.forcedViewId, diag: this.diag,
       generation: this.generation, runtime: this.runtimeState, arrival: this.arrival, incomingFade: this.incomingFade, incomingViewId: this.active ? this.incomingViewId : null, seamP: this.seamP ?? null,
@@ -810,6 +893,8 @@ export class RangePresentation {
   }
 
   dispose() {
+    this._tourAbort?.abort();
+    this._replanAbort?.abort();
     this._releaseScratch();
     if (this.residency && this.generation) this.residency.cancelGeneration(this.generation);
     this.scene?.dispose();

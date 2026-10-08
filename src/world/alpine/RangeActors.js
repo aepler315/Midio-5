@@ -11,7 +11,7 @@
 // terrain the rail actually sees. ActorsGL draws them.
 import { MIDIO_IDENTITY_HUE } from '../../render/ColorLaw.js';
 import { MIDIO_BODY, BROSHI_BODY, BROSHI_HEAD, BROSHI_TAIL, MIDASUS_MESH } from '../../render/meshes.js';
-import { cameraPoseAt, projectPoint } from '../terrain/SceneTravel.js';
+import { scenePoseAt, projectPoint } from '../terrain/SceneTravel.js';
 import { terrainHeightAt } from './TerrainMesh.js';
 
 export const ACTOR_IDS = Object.freeze(['midio', 'broshi', 'midasus']);
@@ -232,7 +232,7 @@ function pickAnchors(pool, seed) {
  * station.
  */
 export function actorRoutes(data, view, { waterLevelM = null, seed = 0 } = {}) {
-  const poses = ROUTE_STATIONS.map((u) => cameraPoseAt(view, u));
+  const poses = ROUTE_STATIONS.map((u) => scenePoseAt(view, { progress01: u }));
   const mid = poses[1];
   const t = Math.tan((mid.fovYDeg * Math.PI) / 360);
   const { grid, cells } = data;

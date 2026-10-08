@@ -132,3 +132,29 @@ export function drawRangeClouds(ctx, banks, { dark = [52, 60, 78], lit = [196, 1
   }
   ctx.restore();
 }
+
+/** Compass azimuth: east +X, north -Z. Celestial directions stay in world space. */
+export function tourSkyDirection(azimuthDeg, altitudeDeg) {
+  const az=azimuthDeg*Math.PI/180,alt=altitudeDeg*Math.PI/180,c=Math.cos(alt);
+  return [Math.sin(az)*c,Math.sin(alt),-Math.cos(az)*c];
+}
+export function projectSkyDirection(pose,direction,aspect=16/9) {
+  const {forward,right,up}=cameraBasis(pose),dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+  const depth=dot(direction,forward),tan=Math.tan(pose.fovYDeg*Math.PI/360);
+  if(depth<=0)return {xFrac:-10,yFrac:-10,visible:false};
+  const x=dot(direction,right)/(depth*tan*aspect),y=dot(direction,up)/(depth*tan);
+  return {xFrac:(x+1)/2,yFrac:(1-y)/2,visible:Math.abs(x)<1.2&&Math.abs(y)<1.2};
+}
+/** A complete sky cylinder: camera yaw exposes different persistent banks. */
+export function tourCloudBanks({pose,width,height,tSec=0,seed=0,count=36}) {
+  const banks=[];
+  for(let i=0;i<count;i++){
+    const az=hash(i,seed+2)*360+tSec*CLOUD_DRIFT_W_PER_SEC*40;
+    const direction=tourSkyDirection(az,8+hash(i,seed+3)*25);
+    const p=projectSkyDirection(pose,direction,width/height);
+    if(!p.visible)continue;
+    const w=width*(.12+.16*hash(i,seed+4));
+    banks.push({id:`worldBank${i}`,x:p.xFrac*width,y:p.yFrac*height,w,h:w*(.1+.06*hash(i,seed+5)),alpha:.28+.14*hash(i,seed+6),puffs:7});
+  }
+  return banks;
+}

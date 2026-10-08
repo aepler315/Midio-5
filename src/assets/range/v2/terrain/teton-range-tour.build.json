@@ -144,7 +144,9 @@
           "peak-974046"
         ],
         "longEdgeFieldSpacingM": 150,
-        "viewQualityWeight": 6
+        "viewQualityWeight": 100,
+        "maxSpeedMps": 60,
+        "timelineBeamWidth": 60
       }
     }
   },
@@ -163,5 +165,20 @@
     "20c2f204396112b9cc77a19d8e54c73ce7ffe6588a5ed74b70a3f0aa1e2bd93a",
     "221b1a3d54aa25ac9b9073a9e273f1ad2be2eeb0497d82a13aadf402eff69f86",
     "fd9897bc9e6658e8491b1af07a18a7322cdb22efd968b08d76fea68d27d8fc38"
-  ]
+  ],
+  "stats": {
+    "tiles": 2280,
+    "desktop": {
+      "vertices": 8033640,
+      "triangles": 15544320,
+      "meshBytes": 282935520,
+      "surfaceTextureBytes": 48673072
+    },
+    "mobile": {
+      "vertices": 8033640,
+      "triangles": 15544320,
+      "meshBytes": 282935520,
+      "surfaceTextureBytes": 48673072
+    }
+  }
 }

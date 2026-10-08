@@ -20,7 +20,7 @@
   import * as THREE from '../vendor/range/three-range.module.js';
   import { loadTerrainPackage } from '../world/alpine/RangeAssets.js';
   import { createSurfaceTexture, terrainUniforms, createBandGeometries, createReviewMaterial, REVIEW_MODES } from '../world/alpine/TerrainGL.js';
-  import { cameraPoseAt } from '../world/terrain/SceneTravel.js';
+  import { scenePoseAt } from '../world/terrain/SceneTravel.js';
   import { terrainHeightAt } from '../world/alpine/TerrainMesh.js';
   import { sceneUniforms, createSceneMaterial, createMaterialTextures, applyMaterial, setLinearFromHex } from '../world/alpine/TerrainMaterial.js';
   import { loadMaterialPack } from '../world/alpine/MaterialPackage.js';
@@ -80,7 +80,7 @@
       renderer.setPixelRatio(1);
       renderer.setSize(width, height, false);
       canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
-      const pose = cameraPoseAt(view, progress);
+      const pose = scenePoseAt(view, { progress01: progress });
       camera.aspect = width / height;
       camera.fov = pose.fovYDeg;
       camera.position.set(...pose.eyeM);

@@ -147,6 +147,14 @@ export class GraphicsResidency {
     return true;
   }
 
+  /** Drop a charge for temporary bytes that no longer have an owner. */
+  shrink(key, bytes) {
+    const entry = this.entries.get(key), next = Math.ceil(bytes);
+    if (!entry || !Number.isFinite(next) || next < 0 || next > entry.bytes) return false;
+    entry.bytes = next;
+    return true;
+  }
+
   /** Move a live or pending entry to another generation (a resource the
    *  next song keeps must not fall with the previous song's cancellation). */
   retag(key, generation) {

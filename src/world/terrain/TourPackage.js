@@ -40,6 +40,14 @@ export function tourPackageErrors(m, { terrainViewId = null, decodedByteLength =
     if (!e.samples || e.samples.count < 8 || e.samples.count % 4) fail('road sample count');
     lane(e.samples, 'f32', e.samples?.count);
   }
+  if(m.junctions){
+    if(typeof m.junctions!=='object'||Array.isArray(m.junctions))fail('junction cache');
+    else for(const [key,join]of Object.entries(m.junctions)){
+      const parts=key.split(':');
+      if(parts.length!==4||!edges.has(parts[0])||!edges.has(parts[2])||![parts[1],parts[3]].every(v=>v==='true'||v==='false'))fail('junction reference');
+      if(join!==null&&(!(join.trimM>=0)||!(join.lengthM>=0)||!(join.radiusM>=(m.tunables?.turnRadiusM||400))||!Array.isArray(join.samples)||join.samples.some(s=>!vec(s,4)||s[2]>s[3])))fail('junction geometry');
+    }
+  }
   const f = m.field, c = m.clearance;
   if (!f || f.headingStepDeg !== 5 || ![5, 10].includes(f.subjectStepDeg) || !Number.isInteger(f.sampleCount) || f.sampleCount < 1
     || !Number.isInteger(f.tierCount) || f.tierCount < f.sampleCount || f.tierCount > 5 * f.sampleCount || !Array.isArray(f.edges) || !Array.isArray(f.stations)) return [...errors, 'field'];
@@ -133,4 +141,18 @@ export function tourClearanceAt(c, x, z) {
     ceilY = Math.min(ceilY, c.offsetY + c.ceil[i + d] / 10);
   }
   return { floorY, ceilY };
+}
+
+/** Every clearance cell traversed by a line, including corner crossings. */
+export function tourClearanceAlong(c,a,b) {
+  const times=[0,1];
+  for(let axis=0;axis<2;axis++){
+    const da=b[axis]-a[axis];if(!da)continue;
+    const low=Math.min(a[axis],b[axis]),high=Math.max(a[axis],b[axis]);
+    for(let k=Math.floor((low-c.originM[axis])/c.cellM)+1;k*c.cellM+c.originM[axis]<high;k++)times.push((k*c.cellM+c.originM[axis]-a[axis])/da);
+  }
+  times.sort((x,y)=>x-y);let floorY=-Infinity,ceilY=Infinity;
+  const query=t=>{const band=tourClearanceAt(c,a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t);floorY=Math.max(floorY,band.floorY);ceilY=Math.min(ceilY,band.ceilY);};
+  for(let i=0;i<times.length;i++){query(times[i]);if(i)query((times[i-1]+times[i])/2);}
+  return{floorY,ceilY};
 }
