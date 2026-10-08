@@ -189,9 +189,9 @@ is a fresh destination state, not replay of every earlier random particle.
 | Upload/playback/replacement/stop | `npm run test:smoke` |
 | Eight-world selection/playback/seek/reduced motion and paint checks | `npm run test:worlds` |
 
-The reusable `.github/workflows/test.yml` runs lint, unit tests and all seven
-browser commands above, and Pages
-deployment depends on the entire validation workflow.
+The reusable `.github/workflows/test.yml` runs lint, unit tests and all five
+browser commands above, and Pages deployment depends on the entire
+validation workflow.
 The world smoke explicitly rejects astronomical painting in Fathom/Nave.
 Browser liveness, isolated pixel checks and unit tests do not establish
 subjective appeal, exhaustive accessibility or real-device sustained FPS.
