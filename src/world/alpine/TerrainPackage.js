@@ -26,7 +26,7 @@ export function decodeResiduals(r, n) {
 // ---------------------------------------------------------------------------
 // Validation.
 
-const TILE_KEYS = ['id', 'ix', 'iz', 'stride', 'samples', 'heights', 'flow', 'validity', 'minY', 'maxY', 'lod'];
+const TILE_KEYS = ['id', 'ix', 'iz', 'stride', 'samples', 'heights', 'flow', 'validity', 'minY', 'maxY'];
 
 /** Validate a terrain manifest against the decoded payload length. Checks
  *  schema, required fields, finite numbers, strides, sample counts and that
@@ -69,6 +69,15 @@ export function validateTerrainManifest(manifest, byteLengths = {}) {
       if (t.validity.byteLength !== Math.ceil(count / 8) || !inRange(t.validity.byteOffset, t.validity.byteLength)) fail(`tile ${t.id} validity range`);
     } else if (t.validity?.mode !== 'all') fail(`tile ${t.id} validity mode`);
     if (!Number.isFinite(t.minY) || !Number.isFinite(t.maxY) || t.minY > t.maxY) fail(`tile ${t.id} bounds`);
+    if (!t.lod && !t.errorsM) fail(`tile ${t.id} needs lod or errorsM`);
+    if (!t.lod && t.errorsM) {
+      for (const s of STRIDES.filter(s => s >= t.stride && s <= cells)) {
+        if (!Number.isFinite(t.errorsM[s]) || t.errorsM[s] < 0) fail(`tile ${t.id} error for stride ${s}`);
+      }
+      for (const s of Object.keys(t.errorsM)) {
+        if (!STRIDES.includes(Number(s)) || Number(s) < t.stride || Number(s) > cells) fail(`tile ${t.id} error stride ${s}`);
+      }
+    }
     for (const s of Object.values(t.lod || {})) if (!STRIDES.includes(s) || s < t.stride || s > cells) fail(`tile ${t.id} lod ${s}`);
     if (errors.length > 20) break;
   }

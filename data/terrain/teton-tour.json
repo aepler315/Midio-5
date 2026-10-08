@@ -1,0 +1,40 @@
+{
+  "id": "teton-range-tour",
+  "regionId": "tetons",
+  "biome": "CONIFER",
+  "status": "candidate",
+  "title": "Teton Range",
+  "place": "Teton Range, Wyoming and Idaho",
+  "dem": {
+    "source": "3dep13",
+    "fill": "terrarium",
+    "fillZoom": 12,
+    "centerLonLat": [-110.83, 43.75],
+    "extentM": [48000, 76000],
+    "cellM": 20
+  },
+  "materialManifestUrl": "materials/dry-conifer.json",
+  "tour": {
+    "roles": ["intro", "verse", "pre-chorus", "chorus", "post-chorus", "bridge", "solo", "interlude", "breakdown", "drop", "outro"],
+    "tunables": {
+      "pMinM": 15,
+      "isoMinM": 120,
+      "primariesPerRole": 4,
+      "maxBackupsPerRole": 14,
+      "primarySpacingM": 2500,
+      "dropSpacingM": 1500,
+      "turnRadiusM": 400,
+      "spannerStretch": 1.35,
+      "fieldSpacingM": 100,
+      "aglTiersM": [0, 120, 300, 600, 1000],
+      "omegaMin": 0.03,
+      "omegaMax": 0.3,
+      "dwellMaxSec": 22,
+      "yawRateDegSec": 25,
+      "calmYawRateDegSec": 12,
+      "climbRateMps": 30,
+      "deformNearFadeM": [1500, 4000],
+      "windowSec": 8
+    }
+  }
+}
