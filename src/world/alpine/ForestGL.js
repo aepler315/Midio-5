@@ -7,6 +7,7 @@
 // frame: crowns bend and catch light as it passes (gustAt). Light, sky
 // fill and aerial perspective match the terrain so trees sit in the same
 // air.
+import { STORM_GLSL } from './RangeStorm.js';
 import { DEFORM_GLSL, gustUniforms } from './TerrainMaterial.js';
 import { GUST_FRONTS, GUST_SWEEP_SEC } from './Gust.js';
 
@@ -144,9 +145,13 @@ const SHADE = /* glsl */`
   uniform vec3 pForestFar;
   uniform float uDiag;
   uniform vec4 uNarrative;
+  uniform vec4 uStorm;
+  uniform mat4 uViewProj;
+  uniform float uTime;
   in float vGust;
   ${ACTOR_GLSL}
   ${MIST_GLSL}
+  ${STORM_GLSL}
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   vec4 shadeTree(vec3 n, vec3 world, float core) {
     float dist = length(world - uCameraPos);
@@ -160,7 +165,12 @@ const SHADE = /* glsl */`
     vec3 hemi = mix(uSkyHorizon * 0.55, uSkyZenith, 0.5 + 0.5 * n.y) * uAmbientScale;
     vec3 lit = base * (hemi * (0.55 + 0.45 * core) + uLightColor * key);
     lit += base * actorLight(world, n);
-    lit *= 1.0 - broshiShadow(world) * .78;
+    float giantShade = broshiShadow(world);
+    lit *= 1.0 - giantShade * .78;
+    // As the storm breaks, the same sunlit swathes as the ground beneath.
+    float opening = stormOpening(world);
+    lit *= 1.0 - uStorm.z * (1.0 - opening) * 0.5;
+    lit += base * uLightColor * key * uStorm.z * opening * 0.85;
     // Thin crown edges transmit a solar backlight. Both real conifers and
     // alpha-tested silhouettes use their own normal/core with this shared
     // response; key radiance already contains visibility exactly once.
@@ -177,8 +187,11 @@ const SHADE = /* glsl */`
     float air = 1.0 - exp(-dist * uAirDensity * (0.35 + 0.65 * heightTerm));
     vec3 color = mix(tonemap(lit * uExposure), mistColorAt(uCameraPos, world), mistAmount(uCameraPos, world));
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96));
+    color = mix(color, rainColor(), rainVeil(world, dist) * 0.8);
     if (uDiag > 0.5) return vec4(1.0, 0.0, 1.0, 1.0);
     color = mix(uSkyHorizon, color, uNarrative.z);
+    // As on the ground: his shadow dims the haze in front of the trees too.
+    color *= 1.0 - giantShade * (.5 + .3 * clamp(air, 0.0, 1.0));
     return vec4(pow(max(color, 0.0), vec3(1.0 / 2.2)), 1.0);
   }
 `;
@@ -310,6 +323,8 @@ function instanced(THREE, base, instances, stride, indices) {
  */
 export function createForest(THREE, placed, uniforms, { partitioned = true } = {}) {
   const u = { ...uniforms, uTime: uniforms.uTime || { value: 0 }, uForestKeep: uniforms.uForestKeep || { value: 1 },
+    uStorm: uniforms.uStorm || { value: new THREE.Vector4() }, uRainShift: uniforms.uRainShift || { value: 0 },
+    uViewProj: uniforms.uViewProj || { value: new THREE.Matrix4() },
     ...(uniforms.uGustAge ? {} : gustUniforms()), ...(uniforms.uActorPos ? {} : actorUniforms(THREE)) };
   const mat = (vert, frag, depth = false) => {
     const m = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vert, fragmentShader: frag, uniforms: u });

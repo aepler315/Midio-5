@@ -1,7 +1,9 @@
 // Range v2 Task 13: valley mist and local light.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mistAmount, mistMask, mistParams, emitterStrength, MIST_GLSL, MIST_NOISE_M } from '../src/world/alpine/RangeAtmosphere.js';
+import {
+  mistAmount, mistMask, mistParams, mistDrift, emitterStrength, MIST_GLSL, MIST_NOISE_M, MIST_DRIFT, SEA_DENSITY,
+} from '../src/world/alpine/RangeAtmosphere.js';
 
 const cam = [0, 1500, 0];
 const params = { density: 4e-4, baseM: 480, heightM: 250, tSec: 12 };
@@ -69,6 +71,16 @@ test('a cloud sea floods the valley below a flat top that stays under the eye', 
   assert.ok(full.topM > 800 && full.topM < 2200, `top ${full.topM} between floor and eye`);
   assert.ok(full.density > calm.density);
   assert.ok(mistParams({ ...view, sea01: 0.5 }).topM < full.topM, 'it rises as it fills');
+  // It wells up out of the valley: a thin sea sits near the floor and the
+  // density blends in with no step where the sea takes over.
+  const thin = mistParams({ ...view, sea01: 0.05 });
+  assert.ok(thin.topM - 800 < 0.1 * (2200 - 800), `a thin sea's top ${thin.topM} sits near the floor`);
+  let last = calm.density;
+  for (let k = 1; k <= 20; k++) {
+    const d = mistParams({ ...view, sea01: k / 20 }).density;
+    assert.ok(d >= last && d - last <= (SEA_DENSITY - calm.density) / 20 + 1e-12, `density steps at ${k / 20}`);
+    last = d;
+  }
   assert.equal(mistParams({ ...view, sea01: 1, cameraY: 700 }).fill, 0, 'never with the eye below the floor');
   // Looking down into it: thick below the top, clear above it.
   const p = { ...full, tSec: 0 };
@@ -87,9 +99,25 @@ test('local light is bounded, softened for reduced flash and height', () => {
 });
 
 test('the shader twin uses the same constants', () => {
-  for (const k of ['uMistTime * 1.6', 'uMistTime * 0.7', `${MIST_NOISE_M.toFixed(1)}`, 'smoothstep(0.35, 0.75, n)', '2.0 * (1.0 - s)']) {
+  for (const k of ['uniform vec2 uMistDrift[3]', `${MIST_NOISE_M.toFixed(1)}`, 'smoothstep(0.35, 0.75, n)', '2.0 * (1.0 - s)',
+    '(xz + uMistDrift[0])', '(xz + uMistDrift[1])', '(xz + uMistDrift[2])']) {
     assert.ok(MIST_GLSL.includes(k), `GLSL lacks ${k}`);
   }
+});
+
+test('the banks do not slide as one sheet: each octave drifts on its own heading, with a sway', () => {
+  assert.equal(MIST_DRIFT.length, 3);
+  const heading = ({ v }) => Math.atan2(v[1], v[0]);
+  for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {
+    assert.ok(Math.abs(heading(MIST_DRIFT[i]) - heading(MIST_DRIFT[j])) > 0.5, `octaves ${i} and ${j} share a heading`);
+  }
+  // Velocity changes over time (a sway), but stays at metres per second.
+  const vel = (t) => mistDrift(t + 0.5).map((d, i) => Math.hypot(d[0] - mistDrift(t - 0.5)[i][0], d[1] - mistDrift(t - 0.5)[i][1]));
+  const speeds = [0, 20, 40, 60, 80].map((t) => vel(t)[0]);
+  assert.ok(Math.max(...speeds) - Math.min(...speeds) > 0.5, `octave 0 speed is constant: ${speeds.map((v) => v.toFixed(2))}`);
+  for (let t = 0; t < 600; t += 7) for (const v of vel(t)) assert.ok(v < 6, `${v.toFixed(2)} m/s at ${t}s`);
+  // A pure function of heard time.
+  assert.deepEqual(mistDrift(42), mistDrift(42));
 });
 
 test('sky hierarchy: a secondary moon and sparse clouds that drift together, purely in time', async () => {

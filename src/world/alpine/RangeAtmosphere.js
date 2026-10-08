@@ -4,8 +4,10 @@
 //
 // Model. An exponential height layer anchored at the view's valley floor
 // (its hydro-flattened water level): density(y) = d0 * exp(-(y - base) / H),
-// masked by a slowly drifting 2D noise so it lies in irregular banks rather
-// than a uniform sheet or oval stamps. The optical depth is integrated along
+// masked by a 2D noise so it lies in irregular banks rather than a uniform
+// sheet or oval stamps. Each of the noise's three octaves drifts on its own
+// heading and speed, with a slow sway, so banks thin, merge and re-form as
+// they go instead of sliding past as one rigid sheet. The optical depth is integrated along
 // the ray from the camera to the shaded point, so a nearer ridge stops the
 // ray before the mist behind it: closer objects occlude farther mist by
 // construction. Drift is a pure function of heard time (pause holds it,
@@ -20,11 +22,19 @@
 
 export const MIST_SAMPLES = 6;
 export const MIST_NOISE_M = 900;
+/** Per-octave drift (m), largest banks first: [vx, vz] m/s of steady wind,
+ *  then a sway of [ax, az] m with periods [px, pz] s and phases. Different
+ *  headings per octave make the banks change shape while they move. */
+export const MIST_DRIFT = Object.freeze([
+  Object.freeze({ v: [1.3, 0.6], a: [160, 120], p: [97, 71], ph: [0, 1.1] }),
+  Object.freeze({ v: [2.2, -0.5], a: [110, 140], p: [53, 61], ph: [0.4, 2.3] }),
+  Object.freeze({ v: [0.4, 2.1], a: [70, 60], p: [37, 29], ph: [1.7, 0.6] }),
+]);
 /** Cloud sea: density (1/m) when full, its top as a fraction of the way
  *  from the valley floor to the eye, the soft edge of that top (m), and
  *  the size of the billows on it (m). */
 export const SEA_DENSITY = 1.5e-3;
-export const SEA_TOP_FROM = 0.3;
+export const SEA_TOP_FROM = 0.04;
 export const SEA_TOP_TO = 0.65;
 export const SEA_TOP_SOFT_BELOW_M = 60;
 export const SEA_TOP_SOFT_ABOVE_M = 30;
@@ -46,15 +56,28 @@ function vnoise(x, y) {
   const a = hash21(ix, iy), b = hash21(ix + 1, iy), c = hash21(ix, iy + 1), d = hash21(ix + 1, iy + 1);
   return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
 }
-function fbm(x, y) {
-  return 0.55 * vnoise(x, y) + 0.3 * vnoise(x * 2.03 + 17.1, y * 2.03 - 5.3) + 0.15 * vnoise(x * 4.1 - 3.7, y * 4.1 + 9.2);
+/** Each octave's drift offset (m) at heard time t: [[x, z] x 3]. The
+ *  shaders receive these as uMistDrift, so both sides read one value. */
+export function mistDrift(tSec) {
+  const t = Number.isFinite(tSec) ? tSec : 0;
+  return MIST_DRIFT.map(({ v, a, p, ph }) => [
+    v[0] * t + a[0] * Math.sin(t / p[0] + ph[0]),
+    v[1] * t + a[1] * Math.sin(t / p[1] + ph[1]),
+  ]);
+}
+
+function maskAt(x, z, d) {
+  const M = MIST_NOISE_M;
+  const n = 0.55 * vnoise((x + d[0][0]) / M, (z + d[0][1]) / M)
+    + 0.3 * vnoise((x + d[1][0]) / M * 2.03 + 17.1, (z + d[1][1]) / M * 2.03 - 5.3)
+    + 0.15 * vnoise((x + d[2][0]) / M * 4.1 - 3.7, (z + d[2][1]) / M * 4.1 + 9.2);
+  const t = Math.min(1, Math.max(0, (n - 0.35) / 0.4));
+  return t * t * (3 - 2 * t);
 }
 
 /** Mist mask (0..1) at world (x, z) and heard time t. */
 export function mistMask(x, z, tSec) {
-  const n = fbm((x + tSec * 1.6) / MIST_NOISE_M, (z + tSec * 0.7) / MIST_NOISE_M);
-  const t = Math.min(1, Math.max(0, (n - 0.35) / 0.4));
-  return t * t * (3 - 2 * t);
+  return maskAt(x, z, mistDrift(tSec));
 }
 
 /**
@@ -66,6 +89,7 @@ export function mistAmount(cam, p, { density = 0, baseM = 0, heightM = 220, tSec
   const n = Math.max(1, Math.min(MIST_SAMPLES, Math.round(steps)));
   const dx = p[0] - cam[0], dy = p[1] - cam[1], dz = p[2] - cam[2];
   const L = Math.hypot(dx, dy, dz);
+  const drift = mistDrift(tSec);
   let od = 0;
   for (let i = 0; i < n; i++) {
     // Samples crowd toward the shaded point, where rays meet the valley air.
@@ -75,8 +99,8 @@ export function mistAmount(cam, p, { density = 0, baseM = 0, heightM = 220, tSec
     const y = cam[1] + dy * t;
     const x = cam[0] + dx * t, z = cam[2] + dz * t;
     const layer = mix(Math.exp(-Math.max(0, y - baseM) / heightM), 1 - smoothstep(topM - SEA_TOP_SOFT_BELOW_M, topM + SEA_TOP_SOFT_ABOVE_M, y), fill);
-    let mask = mistMask(x, z, tSec);
-    if (fill > 0) mask = mix(mask, 0.6 + 0.4 * mistMask(x * 0.5, z * 0.5, tSec), fill);
+    let mask = maskAt(x, z, drift);
+    if (fill > 0) mask = mix(mask, 0.6 + 0.4 * maskAt(x * 0.5, z * 0.5, drift), fill);
     od += w * layer * mask;
   }
   od *= density * L / n;
@@ -86,8 +110,11 @@ export function mistAmount(cam, p, { density = 0, baseM = 0, heightM = 220, tSec
 /**
  * Per-view mist parameters from the material rules and frame state.
  * `sea01` is how full the cloud sea is (CloudSea.js); its top rises from
- * SEA_TOP_FROM to SEA_TOP_TO of the way from the valley floor to the eye
- * at `cameraY`, so the camera always looks down on it.
+ * just above the valley floor (SEA_TOP_FROM) to SEA_TOP_TO of the way to
+ * the eye at `cameraY`, so it wells up out of the valley rather than
+ * appearing as a sheet at mid-height, and the camera always looks down on
+ * it. Its density blends from the valley mist's toward SEA_DENSITY on the
+ * same curve, with no step where the sea takes over.
  */
 export function mistParams({ rules = {}, waterLevelM = null, heightRange = [0, 1000], tSec = 0, calm01 = 0, sea01 = 0, cameraY = null } = {}) {
   const wet = Math.max(0, Math.min(1, rules.wetness ?? 0.5));
@@ -96,7 +123,7 @@ export function mistParams({ rules = {}, waterLevelM = null, heightRange = [0, 1
   // Wet ranges hold valley mist; calm passages let it settle thicker.
   const density = 3.2e-4 * wet * (0.8 + 0.4 * Math.max(0, Math.min(1, calm01)));
   return {
-    density: Math.max(density, SEA_DENSITY * sea),
+    density: mix(density, Math.max(density, SEA_DENSITY), sea),
     baseM: base,
     heightM: 160 + 160 * wet,
     tSec,
@@ -111,6 +138,7 @@ export const MIST_GLSL = /* glsl */`
   uniform float uMistBase;
   uniform float uMistHeight;
   uniform float uMistTime;
+  uniform vec2 uMistDrift[3]; // mistDrift(heard time): each octave's offset (m)
   uniform vec3 uMistColor;
   uniform float uMistTop;  // the cloud sea's top (m); far above when none
   uniform float uMistFill; // 0..1 how full the cloud sea is
@@ -122,8 +150,9 @@ export const MIST_GLSL = /* glsl */`
     return a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y;
   }
   float mistMask(vec2 xz) {
-    vec2 p = (xz + vec2(uMistTime * 1.6, uMistTime * 0.7)) / ${MIST_NOISE_M.toFixed(1)};
-    float n = 0.55 * mistVnoise(p) + 0.3 * mistVnoise(p * 2.03 + vec2(17.1, -5.3)) + 0.15 * mistVnoise(p * 4.1 + vec2(-3.7, 9.2));
+    float n = 0.55 * mistVnoise((xz + uMistDrift[0]) / ${MIST_NOISE_M.toFixed(1)})
+      + 0.3 * mistVnoise((xz + uMistDrift[1]) / ${MIST_NOISE_M.toFixed(1)} * 2.03 + vec2(17.1, -5.3))
+      + 0.15 * mistVnoise((xz + uMistDrift[2]) / ${MIST_NOISE_M.toFixed(1)} * 4.1 + vec2(-3.7, 9.2));
     return smoothstep(0.35, 0.75, n);
   }
   float mistAmount(vec3 cam, vec3 p) {
@@ -155,8 +184,11 @@ export const MIST_GLSL = /* glsl */`
     // A point above the top is seen without crossing it: plain haze.
     if (uMistFill <= 0.0 || cam.y <= uMistTop || p.y >= uMistTop) return uMistColor;
     vec3 hit = cam + (p - cam) * clamp((cam.y - uMistTop) / (cam.y - p.y), 0.0, 1.0);
-    vec2 q = (hit.xz + vec2(uMistTime * 3.0, uMistTime * 1.2)) / ${SEA_BILLOW_M.toFixed(1)};
-    float b = 0.55 * mistVnoise(q) + 0.3 * mistVnoise(q * 2.3 + vec2(5.1, 1.7)) + 0.15 * mistVnoise(q * 5.1 + vec2(-2.3, 8.4));
+    // The billows ride the mist's own octave drifts, so they roll and
+    // reshape rather than scroll as one sheet.
+    float b = 0.55 * mistVnoise((hit.xz + 1.8 * uMistDrift[0]) / ${SEA_BILLOW_M.toFixed(1)})
+      + 0.3 * mistVnoise((hit.xz + 1.8 * uMistDrift[1]) / ${SEA_BILLOW_M.toFixed(1)} * 2.3 + vec2(5.1, 1.7))
+      + 0.15 * mistVnoise((hit.xz + 1.8 * uMistDrift[2]) / ${SEA_BILLOW_M.toFixed(1)} * 5.1 + vec2(-2.3, 8.4));
     vec3 color=uMistColor * mix(1.0, 0.5 + 0.9 * b * b, uMistFill);
     float giant=giantCloud(hit);
     // Billowing crowns and shaded troughs form the figure on the cloud

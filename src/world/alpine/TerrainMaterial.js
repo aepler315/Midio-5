@@ -3,6 +3,7 @@ import { GUST_FRONTS, GUST_IDLE_SEC, GUST_SWEEP_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
 import { MIRROR_LIFT } from './WaterMirror.js';
 import { ACTOR_GLSL, WAKE_GLSL, actorUniforms } from './ActorsGL.js';
+import { STORM_GLSL } from './RangeStorm.js';
 // Range v2 production terrain material (GLSL3 via the local Three.js
 // bundle). Task 8 ships the neutral-material pilot: real geometry, the
 // surface texture's full-grid normals, the frame's resolved celestial light
@@ -142,6 +143,7 @@ export const SCENE_FRAG = /* glsl */`
   // instead of clipping; the dark blue-hour body keeps its separation.
   vec3 tonemap(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
   ${MIST_GLSL}
+  ${STORM_GLSL}
   float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
   // Smooth value noise: a per-cell hash alone steps at every cell edge,
   // which a threshold (snow line, tree line) turns into a visible grid.
@@ -349,15 +351,24 @@ export const SCENE_FRAG = /* glsl */`
     lit += albedo * actorLight(vRenderedWorld, nShade);
     // Broken cloud transmits the real solar key in broad moving swathes
     // across wet receivers; world coordinates keep them fixed to the land.
-    float opening=smoothstep(.35,.72,vnoise12(vRenderedWorld.xz/1100.0+vec2(uTime*.02,0.0)));
+    // Between the swathes the last of the cloud still shades the land, and
+    // wet rock and grass shine back toward the sun.
+    float opening=stormOpening(vRenderedWorld);
+    if (!water) lit *= 1.0 - uStorm.z*(1.0-opening)*.5;
     lit += albedo*uLightColor*key*uStorm.z*opening*.85;
+    if (!water && uStorm.w > 0.0) {
+      vec3 sheenH = normalize(uLightDir + normalize(uCameraPos - vRenderedWorld));
+      lit += uLightColor * pow(max(dot(nShade, sheenH), 0.0), 48.0) * uStorm.w * (0.12 + 0.6*uStorm.z*opening) * (1.0 - 0.75*uStorm.y);
+    }
+    float giantShade = 0.0;
     if (!water && uGiantPeak[1] > 0.0) {
+      giantShade = broshiShadow(vRenderedWorld);
       vec3 delta=vRenderedWorld-uGiantCenter[1];
       float lantern=1.0-smoothstep(uGiantSpan[1]*.45,uGiantSpan[1]*.85,length(vec2(dot(delta,uGiantRight),delta.y)));
       // A broad spill from Broshi's lantern gives his shadow contrast in
       // dark dawn. In daylight the scene's key remains dominant.
       lit += albedo * max(vec3(.3,.22,.16)-hemi*.08,vec3(0.0))*lantern*uGiantPeak[1];
-      lit *= 1.0 - broshiShadow(vRenderedWorld)*.96;
+      lit *= 1.0 - giantShade*.96;
     }
     if (uDebugMask == 3) { outColor = vec4(albedo * 4.0, 1.0); return; }
     if (uDebugMask == 4) { outColor = vec4(hemi * ao * 0.5, 1.0); return; }
@@ -368,7 +379,8 @@ export const SCENE_FRAG = /* glsl */`
     if (water && uHasMaterial > 0.5) {
       // Midio's wake roughens the water as a cat's paw does.
       wake = wakeAt(vWorld.xz);
-      paw = max(catsPaw(vWorld.xz), wake);
+      // Rain stipples the whole lake while the squall is over it.
+      paw = max(max(catsPaw(vWorld.xz), wake), uStorm.x * 0.75);
       vec2 ripple = vec2(sin(vWorld.x * 0.012 + uTime * 0.45), cos(vWorld.z * 0.017 - uTime * 0.32)) * (0.025 + 0.05 * paw);
       vec3 waterNormal = normalize(vec3(ripple.x, 1.0, ripple.y));
       waterN = waterNormal;
@@ -403,6 +415,12 @@ export const SCENE_FRAG = /* glsl */`
     // Under a cloud sea the lake's mirror and glints are hidden with it.
     float clear = 1.0 - mist * uMistFill;
     color = mix(color, uAirColor, clamp(air, 0.0, 0.96) * uNarrative.y);
+    // What reaches the eye from his shadow is dimmed too: the air and mist
+    // in front of the slope lie in it, and the opening's neutral land must
+    // not wash his outline out of the range.
+    float veil = 1.0 - (1.0 - clamp(air, 0.0, 1.0)) * (1.0 - mist);
+    color *= 1.0 - giantShade * (.5 + .3 * veil);
+    color = mix(color, rainColor(), rainVeil(vRenderedWorld, dist) * 0.8 * uNarrative.y);
     // The lake mirrors the ground above it. The mirror image already holds
     // the air along its own (longer) path, so it replaces the water's colour
     // by the water's reflectance, as the sky reflection did in lit. Groove
@@ -435,7 +453,8 @@ export const SCENE_FRAG = /* glsl */`
       // Lanterns over the water lay a path of glints; Midio's wake catches
       // his light. Over the mirror, through the air.
       vec3 glow = actorGlint(vRenderedWorld, V, waterN) * 0.6 + uActorColor[0] * wake * 0.12;
-      color += glow * clear * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0));
+      // Rain on the lake breaks the path up, so it fades with the squall.
+      color += glow * clear * uNarrative.z * (1.0 - 0.85 * clamp(air, 0.0, 1.0)) * (1.0 - 0.75 * uStorm.x);
     }
     // A narrow physical silhouette supplies the main opening ink. Sparse
     // source-space hints are drawn separately against this same depth.
@@ -491,11 +510,12 @@ export function sceneUniforms(THREE, base) {
     // Valley mist (RangeAtmosphere): off until the scene sets it per frame.
     uMistDensity: { value: 0 }, uMistBase: { value: 0 }, uMistHeight: { value: 220 }, uMistTime: { value: 0 },
     uMistSteps: { value: MIST_SAMPLES }, uMistTop: { value: 1e9 }, uMistFill: { value: 0 },
+    uMistDrift: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
     uMistColor: { value: new THREE.Color(0.4, 0.43, 0.48) },
     uCameraPos: { value: new THREE.Vector3() },
     uDiag: { value: 0 },
     uHasMaterial: { value: 0 },
-    uStorm: { value: new THREE.Vector4() },
+    uStorm: { value: new THREE.Vector4() }, uRainShift: { value: 0 },
     uAmbientScale: { value: 2.5 },
     uDebugMask: { value: 0 },
     uTime: { value: 0 },
