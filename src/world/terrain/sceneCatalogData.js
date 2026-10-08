@@ -1953,6 +1953,42 @@ export default {
      "9a60ac6d2118690f9c0db529cdad9ca52c6a75d731b813df25496dfc640df677"
     ]
    }
+  },
+  {
+   "id": "teton-range-tour",
+   "regionId": "tetons",
+   "biome": "CONIFER",
+   "status": "candidate",
+   "catalogVersion": 19,
+   "title": "Teton Range",
+   "place": "Teton Range, Wyoming and Idaho",
+   "credit": "Elevation: USGS 3DEP; names: GeoNames",
+   "terrainManifestUrl": "terrain/teton-range-tour.terrain.json",
+   "terrainManifestSha256": "4a8a1d086f4ae520b244c65416df8742806385fc6c0f72d6e2fe0116dad3cf28",
+   "tourManifestUrl": "tour/teton-range-tour.tour.json",
+   "tourManifestSha256": "82cd0767dfd32ef69840e8aff4d9e910b3946d4f10600d9c1e3e06d39437f86c",
+   "materialManifestUrl": "materials/dry-conifer.json",
+   "materialManifestSha256": "6afff55ebe7762475b09f09fa8f60627714d051f9f117ffffd8e124894281175",
+   "materialRules": {},
+   "characterScores": {
+    "energy": 0.14336880794093415,
+    "rawness": 0.1675266153894669,
+    "grandeur": 0.22422144458912036,
+    "dominance": 0.4699418409781161
+   },
+   "archetype": "serene",
+   "evidence": {
+    "reviewPath": "docs/teton-tour-progress.md",
+    "review": null,
+    "approval": null,
+    "sourceHashes": [
+     "91e822afefea0ebcf9faf182f043395ef213d33add7acb15a0f3747dd7a55666",
+     "20c2f204396112b9cc77a19d8e54c73ce7ffe6588a5ed74b70a3f0aa1e2bd93a",
+     "221b1a3d54aa25ac9b9073a9e273f1ad2be2eeb0497d82a13aadf402eff69f86",
+     "fd9897bc9e6658e8491b1af07a18a7322cdb22efd968b08d76fea68d27d8fc38",
+     "cb0fdded8919a7c7ecf7075aa7c715a525c4784375744cfbb7a1ffa09a671e52"
+    ]
+   }
   }
  ]
 };

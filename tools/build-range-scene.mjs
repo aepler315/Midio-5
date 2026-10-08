@@ -184,7 +184,7 @@ export async function buildCatalog(doc) {
     let status = v.status;
     if (status === 'approved') {
       const a = v.approval || {};
-      const keys = [...APPROVAL_KEYS, ...(v.glacier || a.glacierSha256 ? ['glacierSha256'] : []), ...(Object.hasOwn(v, 'composition') || a.compositionSha256 ? ['compositionSha256'] : [])];
+      const keys = [...APPROVAL_KEYS, ...(v.tourManifestUrl || a.tourManifestSha256 ? ['tourManifestSha256'] : []), ...(v.glacier || a.glacierSha256 ? ['glacierSha256'] : []), ...(Object.hasOwn(v, 'composition') || a.compositionSha256 ? ['compositionSha256'] : [])];
       const stale = keys.filter((k) => !a[k] || a[k] !== hashes[k]);
       if (stale.length) {
         console.warn(`${v.id}: approval is stale (${stale.join(', ')} changed); shipping as candidate`);
@@ -197,6 +197,7 @@ export async function buildCatalog(doc) {
       credit: build.credit || null,
       terrainManifestUrl: `terrain/${v.terrainSourceId || v.id}.terrain.json`,
       terrainManifestSha256: hashes.terrainManifestSha256,
+      ...(v.tourManifestUrl ? { tourManifestUrl: v.tourManifestUrl, tourManifestSha256: hashes.tourManifestSha256 } : {}),
       materialManifestUrl: `materials/${v.materialPack || DEFAULT_PACKS[v.biome]}.json`,
       materialManifestSha256: hashes.materialManifestSha256,
       materialRules: v.materialRules || {},
@@ -234,7 +235,8 @@ export async function approvalHashes(v, build) {
   const terrain = await fs.readFile(path.join(RUNTIME_DIR, 'terrain', `${v.terrainSourceId || v.id}.terrain.json`));
   return {
     terrainManifestSha256: sha(terrain), materialManifestSha256: sha(mat),
-    materialRulesSha256: sha(canonical(v.materialRules || {})), cameraSha256: sha(JSON.stringify(build.view.camera)),
+    materialRulesSha256: sha(canonical(v.materialRules || {})), cameraSha256: sha(JSON.stringify(build.view.camera ?? null)),
+    ...(v.tourManifestUrl ? { tourManifestSha256: sha(await fs.readFile(path.join(RUNTIME_DIR, v.tourManifestUrl))) } : {}),
     ...(Object.hasOwn(v, 'composition') || v.approval?.compositionSha256 ? { compositionSha256: sha(canonical(v.composition ?? null)) } : {}),
     ...(v.glacier ? { glacierSha256: sha(canonical(v.glacier)) } : {}),
   };

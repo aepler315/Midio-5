@@ -25,5 +25,8 @@ _site/
 # Elevation tiles fetched by tools/fetch-terrain-grid.mjs
 /.terrain-cache/
 
+# Content-addressed offline tour field authoring results
+/.cache/teton-tour/
+
 # Downloaded history used by source ZIP previews
 .midio-history/

@@ -169,7 +169,7 @@ help assign the notes.
 
 The world registry contains eight landscape styles. Cathode has been retired; old playback IDs resolve to The Range.
 
-- **The Range** — mountains that breathe with the mix.
+- **The Range** — mountains that breathe with the mix. The Display preference **Range: Tetons only** (or `?rangeTour=tetons`) enables a song-timed flight through real Teton terrain. Use `?rangeTour=off` to override the saved preference. The tour remains a candidate; [validation and review evidence](docs/teton-tour-validation.md) record its limits.
 - **After Hours** — a city that glows with the groove.
 - **Far Side** — a lunar landscape. No air. Nothing softens.
 - **The Fathom** — an underwater world, slow on purpose.

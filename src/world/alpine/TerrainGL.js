@@ -72,8 +72,8 @@ const FRAG_REVIEW = /* glsl */`
 `;
 
 /** Upload the grid-resolution surface texture (normals/curvature/flow). */
-export function createSurfaceTexture(THREE, data) {
-  const surface = buildSurfaceTexture(data);
+export function createSurfaceTexture(THREE, data, options = {}) {
+  const surface = buildSurfaceTexture(data, options);
   const receiver = buildReceiverMask(surface);
   const receiverTexture = new THREE.DataTexture(receiver.data, surface.width, surface.height, THREE.RedFormat, THREE.UnsignedByteType);
   receiverTexture.colorSpace = THREE.NoColorSpace;
@@ -121,7 +121,7 @@ export function terrainUniforms(THREE, data, surface) {
 
 /** One BufferGeometry per depth band. */
 export function createBandGeometries(THREE, data, options = {}) {
-  const built = buildTerrainGeometry(data, options);
+  const built = options.built || buildTerrainGeometry(data, options);
   const geometries = {}, fringes = {};
   let bytes = 0;
   for (const band of BANDS) {

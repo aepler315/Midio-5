@@ -144,3 +144,13 @@ test('without an approved view a biome falls back to legacy scenery explicitly',
   assert.equal(c.view, null);
   assert.ok(c.fallbackReason);
 });
+
+test('a tour candidate uses its verified package identity instead of a legacy rail', () => {
+  const view = { ...mk('tour', 'CONIFER', 'candidate'), tourManifestUrl: 'tour/tour.tour.json', tourManifestSha256: 'a'.repeat(64) };
+  delete view.camera;
+  const catalog = { catalogVersion: 3, views: [view] };
+  assert.equal(forcedSceneChoice(catalog, 'tour').view?.id, 'tour');
+  assert.equal(chooseSceneForBiome('CONIFER', profile(), 1, opts([view])).view, null);
+  const bad = { ...view, tourManifestSha256: '' };
+  assert.equal(forcedSceneChoice({ ...catalog, views: [bad] }, 'tour').view, null);
+});

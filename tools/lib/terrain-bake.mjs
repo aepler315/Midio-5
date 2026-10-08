@@ -552,13 +552,18 @@ export function encodeResiduals(q, n) {
  * Bake one view's terrain package.
  *   grid     DemGrid (tools/lib/terrain-source.mjs)
  *   view     SceneView (camera rail, bands, id)
- *   options  { tileCells, budgets, visibility, dataUrl, quantStepM, landmarks }
+ *   options  { tileCells, budgets, visibility, dataUrl, quantStepM, landmarks,
+ *              allTiles?: boolean (requires complete source coverage) }
  * Returns { manifest, payload (gzip Buffer), decoded (Buffer), stats }.
  */
 export async function bakeTerrain(grid, view, options = {}) {
+  const allTiles = options.allTiles === true;
   const check = validateDemGrid(grid);
   if (!check.ok) throw new Error(`DEM rejected: ${check.errors.join('; ')}`);
-  const railErrors = cameraRailErrors(view?.camera);
+  if (allTiles && grid.valid.some(v => !v)) {
+    throw new Error('allTiles DEM contains no-data; normalize with complete source/fill coverage before baking');
+  }
+  const railErrors = allTiles ? [] : cameraRailErrors(view?.camera);
   if (railErrors.length) throw new Error(`view ${view?.id}: ${railErrors.join('; ')}`);
   const cells = options.tileCells || TILE_CELLS;
   const budgets = options.budgets || LOD_BUDGETS;
@@ -598,7 +603,7 @@ export async function bakeTerrain(grid, view, options = {}) {
   const flowByte = (i) => (water[i] ? WATER_FLOW : Math.min(254, Math.round(Math.log2(Math.max(1, acc[i])) * 16)));
 
   const tilesX = Math.ceil((w - 1) / cells), tilesZ = Math.ceil((hgt - 1) / cells);
-  const stations = railStations(view, vis.stations);
+  const stations = allTiles ? [] : railStations(view, vis.stations);
   // Occlusion buffers per station and framing, built once.
   const occluders = {
     core: stations.map((pose) => occlusionBuffer(grid, pose, vis.core, vis.occlusion)),
@@ -607,14 +612,14 @@ export async function bakeTerrain(grid, view, options = {}) {
   // Each tile's highest valid sample: narrow summits must not slip between
   // the coarse occlusion samples.
   const peak = new Map();
-  for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+  if (!allTiles) for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
     if (!valid[i]) continue;
     const key = `${Math.min(Math.floor(x / cells), Math.ceil((w - 1) / cells) - 1)},${Math.min(Math.floor(y / cells), Math.ceil((hgt - 1) / cells) - 1)}`;
     const cur = peak.get(key);
     if (!cur || h[i] > cur[1]) peak.set(key, [originM[0] + x * cell, h[i], originM[1] + y * cell]);
   }
-  const focal = Object.fromEntries(Object.entries(budgets).map(([k, b]) => [k, focalPx(view.camera.fovYDeg, b.heightPx)]));
+  const focal = allTiles ? {} : Object.fromEntries(Object.entries(budgets).map(([k, b]) => [k, focalPx(view.camera.fovYDeg, b.heightPx)]));
   const tiles = [];
   const chunks = [];
   let byteOffset = 0;
@@ -645,7 +650,7 @@ export async function bakeTerrain(grid, view, options = {}) {
       // the tile is on screen and not hidden behind nearer terrain.
       const samplePts = [];
       const R = vis.occlusion.stride;
-      for (let v = 0; v <= cells; v += R) for (let u = 0; u <= cells; u += R) {
+      if (!allTiles) for (let v = 0; v <= cells; v += R) for (let u = 0; u <= cells; u += R) {
         const X = Math.min(w - 1, x0 + u), Y = Math.min(hgt - 1, y0 + v);
         const i = Y * w + X;
         if (valid[i]) samplePts.push([originM[0] + X * cell, h[i], originM[1] + Y * cell]);
@@ -668,10 +673,10 @@ export async function bakeTerrain(grid, view, options = {}) {
         });
         reach[name] = dmin;
       }
-      const framing = Number.isFinite(reach.core) ? 'core' : Number.isFinite(reach.extended) ? 'extended' : null;
+      const framing = allTiles ? 'route' : Number.isFinite(reach.core) ? 'core' : Number.isFinite(reach.extended) ? 'extended' : null;
       const visible = framing !== null;
-      const dist = Math.max(vis.minDistanceM, visible ? reach[framing] : Infinity);
-      const budgetScale = visible ? vis[framing].budgetScale : 1;
+      const dist = allTiles ? Infinity : Math.max(vis.minDistanceM, visible ? reach[framing] : Infinity);
+      const budgetScale = allTiles ? 1 : visible ? vis[framing].budgetScale : 1;
       const errorsM = {};
       for (const s of STRIDES) if (s <= cells) errorsM[s] = tileStrideError(h, valid, w, hgt, x0, y0, cells, s);
       // A shoreline tile keeps a fine stride whatever its height error: a
@@ -703,7 +708,8 @@ export async function bakeTerrain(grid, view, options = {}) {
       // shipped (options.keepHidden keeps it, coarsest, for diagnostics).
       if (!visible && !options.keepHidden) continue;
       const lod = Object.fromEntries(Object.keys(budgets).map((k) => [k, pick(k)]));
-      const stride = Math.min(...Object.values(lod));
+      const stride = allTiles ? (options.tileStride?.({ ix, iz, x0, y0, cells, grid }) ?? 1) : Math.min(...Object.values(lod));
+      if (!STRIDES.includes(stride) || stride > cells) throw new Error('Invalid authored tile stride');
       for (const k of Object.keys(lod)) {
         if (framing === 'core') achieved[k] = Math.max(achieved[k], errorsM[lod[k]] * focal[k] / dist);
       }
@@ -736,9 +742,10 @@ export async function bakeTerrain(grid, view, options = {}) {
         heights: { byteOffset: hAt, byteLength: residual.byteLength, count: n * n, type: 'uint16', predictor: 'planar', planes: 'lo-hi' },
         flow: { byteOffset: fAt, byteLength: flow.byteLength, count: n * n, type: 'uint8', water: WATER_FLOW },
         validity: allValid ? { mode: 'all' } : { mode: 'bits', byteOffset: pushChunk(vbits), byteLength: vbits.byteLength },
-        minY, maxY, visible, framing, closestM: visible ? Math.round(dist) : null,
+        minY, maxY, visible, framing, closestM: allTiles ? null : visible ? Math.round(dist) : null,
         band: !visible ? 'far' : dist < bands.nearM ? 'near' : dist < bands.midM ? 'mid' : 'far',
-        lod, errorsM: Object.fromEntries(Object.entries(errorsM).filter(([s]) => Number(s) >= stride).map(([s, e]) => [s, Math.round(e * 1000) / 1000])),
+        ...(!allTiles ? { lod } : {}),
+        errorsM: Object.fromEntries(Object.entries(errorsM).filter(([s]) => Number(s) >= stride).map(([s, e]) => [s, Math.round(e * 1000) / 1000])),
       };
       tiles.push(tile);
       for (let a = 0; a < 3; a++) { bounds.min[a] = Math.min(bounds.min[a], box.min[a]); bounds.max[a] = Math.max(bounds.max[a], box.max[a]); }
@@ -753,7 +760,7 @@ export async function bakeTerrain(grid, view, options = {}) {
     let vertices = 0, triangles = 0;
     for (const t of tiles) {
       if (!t.visible) continue;
-      const s = t.lod[budget];
+      const s = allTiles ? t.stride : t.lod[budget];
       const m = cells / s;
       vertices += (m + 1) * (m + 1);
       triangles += 2 * m * m;
@@ -783,13 +790,13 @@ export async function bakeTerrain(grid, view, options = {}) {
     quantization: { offsetM, stepM },
     boundsM: bounds,
     bands,
-    lod: {
+    ...(!allTiles ? { lod: {
       budgets, fovYDeg: view.camera.fovYDeg, visibility: vis,
       framings: 'core tiles meet the pixel budget at their closest unoccluded approach; extended-only tiles at budgetScale x; hidden tiles are not drawn',
       achievedErrorPx: Object.fromEntries(Object.entries(achieved).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
       ...(glacier ? { glacierGrid: 'uniform stride 2 for all tiles and quality budgets; nonlinear ice displacement requires shared edge samples' } : {}),
       triangulation: 'quads split along the (0,0)-(1,1) diagonal; finer edges snap to the coarser neighbour',
-    },
+    } } : {}),
     hydrology: {
       flow: 'log2(D8 accumulation over depression-filled heights) * 16, capped 254',
       water: options.water === false ? 'none: the view declares its flats are not water' : 'hydro-flattened components (3x3 range <= 0.35 m, >= 60 cells) = 255',

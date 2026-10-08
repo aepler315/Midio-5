@@ -194,6 +194,7 @@ function groundAt(heightAt, waterLevelM, x, z) {
  * how much of the user offset the terrain allowed.
  */
 export function applyCameraMoves(pose, move, user, { heightAt = null, waterLevelM = null, sampleStepM = DEFAULT_SAMPLE_STEP_M, cone = null, heightRangeM = null } = {}) {
+  if (pose?.tour) return pose;
   const T0 = pose.targetM;
   const d0 = sub(T0, pose.eyeM);
   const D = Math.hypot(...d0);

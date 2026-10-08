@@ -9,7 +9,7 @@ import { ridgeAdvectionPxAt } from '../RidgeMotionHistory.js';
 // reach back into mutable state and the same instant always yields the
 // same snapshot (forward seek, backward seek, pause, repeated draws).
 import { hashSeed, smoothstep } from '../../utils/math.js';
-import { cameraPoseAt, focalPx, sceneProgressAt, SCENE_PREVIEW_PROGRESS } from '../terrain/SceneTravel.js';
+import { scenePoseAt, focalPx, sceneProgressAt, SCENE_PREVIEW_PROGRESS } from '../terrain/SceneTravel.js';
 import { sampleWorldMusic, boundaryLift01 } from '../WorldMusic.js';
 import { ridgeEnvelope } from './Ridge.js';
 import { ridgeKickEnv } from '../MountainChoreo.js';
@@ -237,7 +237,7 @@ export function gustFrontsAt(mgr, timeMs, seed = 0) {
  * view cannot safely attain the activity-dependent projected budget. */
 export function calibrateRangeMusic(music, { view = null, progress01 = .5, depthM = null,
   fovYDeg = view?.camera?.fovYDeg ?? 40, nominalHeight = 720, heightRange = [0, 2000] } = {}) {
-  if (view && !(depthM > 0)) { const pose = cameraPoseAt(view, progress01); depthM = Math.hypot(...pose.eyeM.map((v, i) => v - pose.targetM[i])); }
+  if (view && !(depthM > 0)) { const pose = scenePoseAt(view, { progress01 }); depthM = Math.hypot(...pose.eyeM.map((v, i) => v - pose.targetM[i])); }
   const metresPerPixel = Math.max(1, depthM || 10000) / focalPx(fovYDeg, nominalHeight);
   const cap = Math.min(180, Math.max(0, heightRange[1] - heightRange[0]) * .065);
   const targetPx = 8 + 12 * smoothstep(.25, .90, unit(music.calibrationActivity01 ?? music.activity01));

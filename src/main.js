@@ -450,9 +450,37 @@ paramBus.rendererMode = rendererMode;
 // opts out, and any v2 failure falls back to legacy per frame on its own.
 // ?rangeView=<id> forces one catalog view for diagnostics. One presentation (and one GPU context) per page.
 const rangeMode = resolveRangeMode();
-const rangePresentation = rangeMode.mode === 'v2'
-  ? new RangePresentation({ mode: 'v2', forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
+let rangePresentation = rangeMode.mode === 'v2'
+  ? new RangePresentation({ mode: 'v2', tour: rangeMode.tour, forcedViewId: rangeMode.forcedViewId, diag: rangeMode.diag, residency: sharedResidency(), budget: residencyBudgetFor().name })
   : null;
+
+const rangeTourToggle = document.getElementById('range-tour-toggle');
+if (rangeTourToggle) {
+  rangeTourToggle.checked = rangeMode.tour === 'tetons';
+  rangeTourToggle.addEventListener('change', () => {
+    const tour = rangeTourToggle.checked ? 'tetons' : null;
+    try { if (tour) localStorage.setItem('range-tour', tour); else localStorage.removeItem('range-tour'); } catch { /* Storage may be blocked. */ }
+    const url = new URL(location.href); url.searchParams.set('rangeTour', tour || 'off'); history.replaceState(null, '', url);
+    rangePresentation ||= new RangePresentation({ mode: 'v2', residency: sharedResidency(), budget: residencyBudgetFor().name });
+    if (renderer) renderer.rangePresentation = rangePresentation;
+    const terrain = lastTimelineData?.terrain;
+    if (terrain) {
+      if (tour && getWorld(lastTimelineData.worldId)?.kind === 'alpine') { terrain._rangeTourOriginalBiomes ||= [...terrain.biomes]; terrain.biomes = ['CONIFER']; }
+      else if (terrain._rangeTourOriginalBiomes) { terrain.biomes = terrain._rangeTourOriginalBiomes; delete terrain._rangeTourOriginalBiomes; }
+    }
+    rangePresentation.setTourMode(tour);
+    if (running && sim && audioEngine && lastTimelineData) {
+      const wasPaused=paused;
+      delete lastTimelineData.chapterState;
+      startTimeline(lastTimelineData, {
+        ...lastStartExtra, songSeed:sim.songSeed,
+        startAtMs:Math.max(1,audioEngine.nowMs), keepAudio:true,
+        keepUserCamera:true, preservePause:wasPaused, chapterState:null,
+      });
+      if(wasPaused){paused=true;updatePauseButtonUI();}
+    }
+  });
+}
 
 // The title screen is alive from the very first frame: a living backdrop
 // (starfield + nebula) runs on its own rAF loop until a song
@@ -1751,7 +1779,7 @@ function applyRangeCaptions(timelineData, exportMode) {
       // Range v2 draws this biome from a curated view: name that place.
       const scene = rangePresentation?.captionViewFor?.(name);
       const caption = scene
-        ? sceneCaptionFor(scene, i === 0 ? { horizon: terrain.horizon?.range, massif: terrain.massif?.range } : {},
+        ? sceneCaptionFor(scene, i === 0 && !rangePresentation?.tourMode ? { horizon: terrain.horizon?.range, massif: terrain.massif?.range } : {},
           info ? { title: info.title, ecoregion: scene.place } : null)
         : captionFor(entry.ranges.far, ridges, entry.profiles, info && own ? {
           title: info.title,
@@ -1847,6 +1875,10 @@ function startTimeline(timelineData, extra = {}) {
   // Seed: explicit override (replay), else pinned UI/URL input, else auto.
   const pinned = seedOverride !== undefined ? seedOverride : readPinnedSeed();
   try {
+    if (rangePresentation?.tourMode && timelineData.terrain && getWorld(timelineData.worldId)?.kind === 'alpine') {
+      timelineData.terrain._rangeTourOriginalBiomes ||= [...timelineData.terrain.biomes];
+      timelineData.terrain.biomes = ['CONIFER'];
+    }
     sim = new Simulation(conductor, paramBus, {
       bpm: timelineData.bpm || 120,
       rangeListening,
@@ -1946,7 +1978,7 @@ function startTimeline(timelineData, extra = {}) {
   // it. Created here, per song, which is after the world is known.
   renderer = createPresentingRenderer({ canvas, mode: rendererMode, presentation: effectivePresentation(), residency: sharedResidency() });
   if (rangePresentation) {
-    rangePresentation.setSong({ terrain: timelineData.terrain || null, generation: loadGen, exportMode });
+    rangePresentation.setSong({ terrain: timelineData.terrain || null, mgr: sim.biomes, generation: loadGen, exportMode });
     renderer.rangePresentation = rangePresentation;
   }
   // An exported frame is the picture, not the player: no seekbar strip.
@@ -2014,7 +2046,7 @@ function startTimeline(timelineData, extra = {}) {
   // first frame), so strips for biomes Range v2 covers are adopted as
   // evictable fallback from the start.
   if (rangePresentation?.enabled && sim.biomes) sim.biomes.rangePresentation = rangePresentation;
-  try { sim.biomes.preparePlaybackStrips(); }
+  try { if (!rangePresentation?.tourMode) sim.biomes.preparePlaybackStrips(); }
   catch (err) { console.warn('[strip prepare]', err); }
   running = true;
   syncKeepAwake();
@@ -3621,7 +3653,7 @@ function stopTitleBackdrop() {
 // 1280x720 stage space the sim draws in.
 const rangeZoomInput = attachRangeZoomInput(canvas, {
   camera: rangeUserCamera,
-  enabled: () => !!(running && sim?.userCameraEnabled),
+  enabled: () => !!(running && sim?.userCameraEnabled && !rangePresentation?.tourMode),
   toStage: (e) => clientToStage(e),
   stageW: STAGE_W, stageH: STAGE_H,
 });

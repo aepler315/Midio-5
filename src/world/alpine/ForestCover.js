@@ -15,7 +15,7 @@
 // land cover.
 import { terrainHeightAt } from './TerrainMesh.js';
 import { RULE_DEFAULTS } from './MaterialPackage.js';
-import { cameraPoseAt } from '../terrain/SceneTravel.js';
+import { scenePoseAt, pathStations } from '../terrain/SceneTravel.js';
 
 export const LATTICE_M = 13;
 export const FOREST_RINGS = Object.freeze({ meshM: 1200, billboardM: 8000 });
@@ -75,9 +75,14 @@ function railDistance(a, b, p) {
  * each of 32 chords deviates by at most |arc|/32² metres; subtracting that
  * bound keeps stands at a ring's edge while retaining straight-rail parity. */
 function forestRail(view) {
+  if(view.tour){
+    const start=view.tourWindowStartMs||0,end=Math.min(view.tour.durationMs,start+8000);
+    const poses=pathStations({tour:{durationMs:end-start,poseAt:t=>view.tour.poseAt(start+t)}},17).map(p=>p.eyeM);
+    return p=>Math.min(...poses.slice(1).map((b,i)=>railDistance(poses[i],b,p)));
+  }
   const arc = view.camera.eyeArcM;
   const steps = arc && Math.hypot(...arc) > 0 ? 32 : 1;
-  const poses = Array.from({ length: steps + 1 }, (_, i) => cameraPoseAt(view, i / steps).eyeM);
+  const poses = Array.from({ length: steps + 1 }, (_, i) => scenePoseAt(view, { progress01: i / steps }).eyeM);
   if (steps === 1) return p => railDistance(poses[0], poses[1], p);
   const segments = poses.slice(1).map((b, i) => {
     const a = poses[i], d = b.map((v, k) => v - a[k]);
@@ -174,7 +179,8 @@ function* placeForestSteps(data, view, rules, { seed = 0, rings = FOREST_RINGS, 
         if (d > rings.billboardM) continue;
         // Height tapers toward the treeline and on steep ground.
         const vigor = Math.min(1, Math.max(0.35, (edge - y) / 400)) * (1 - 0.3 * Math.max(0, slope - 25) / 25);
-        const height = (18 + 30 * u01(h3)) * vigor * scale;
+        const authoredHeight = (18 + 30 * u01(h3)) * vigor * scale;
+        const height = view.tour ? Math.min(35, authoredHeight) : authoredHeight;
         const width = height * (0.42 + 0.16 * u01(h1 ^ h2));
         const band = d < b.nearM ? 2 : d < b.midM ? 1 : 0;
         const rec = [x, y, z, height, width, (h2 >>> 8) % 4, u01(hash2(ix, iz, seed + 4)), band];

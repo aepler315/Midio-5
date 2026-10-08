@@ -232,9 +232,10 @@ export function buildTerrainGeometry(data, { budget = 'desktop', bias = 1, inclu
  * Heights come from the stored samples at each tile's baked stride, so a
  * coarse distant tile shades as smoothly as it is shaped.
  */
-export function buildSurfaceTexture(data) {
+export function buildSurfaceTexture(data, { stride = 1 } = {}) {
   const { grid, cells } = data;
-  const W = grid.width, H = grid.height;
+  if (![1, 2, 4].includes(stride) || (grid.width - 1) % stride || (grid.height - 1) % stride) throw new Error('Invalid surface sampling stride');
+  const W = (grid.width - 1) / stride + 1, H = (grid.height - 1) / stride + 1;
   const heights = new Float32Array(W * H).fill(NaN);
   const flow = new Uint8Array(W * H);
   // Each cell's stored sample spacing: coarse tiles on gentle ground keep
@@ -242,14 +243,14 @@ export function buildSurfaceTexture(data) {
   const spacing = new Uint8Array(W * H).fill(1);
   for (const t of data.tiles.values()) {
     const x0 = t.ix * cells, z0 = t.iz * cells;
-    for (let gz = 0; gz <= cells; gz++) {
+    for (let gz = 0; gz <= cells; gz += stride) {
       const Z = z0 + gz;
-      if (Z >= H) break;
+      if (Z >= grid.height) break;
       const fv = gz / t.stride;
       const v0 = Math.min(t.samples - 2, Math.floor(fv)), tv = fv - v0;
-      for (let gx = 0; gx <= cells; gx++) {
+      for (let gx = 0; gx <= cells; gx += stride) {
         const X = x0 + gx;
-        if (X >= W) break;
+        if (X >= grid.width) break;
         const fu = gx / t.stride;
         const u0 = Math.min(t.samples - 2, Math.floor(fu)), tu = fu - u0;
         const a = sampleAt(t, u0, v0), b = sampleAt(t, u0 + 1, v0);
@@ -258,9 +259,9 @@ export function buildSurfaceTexture(data) {
         // are flat facets, and normals taken from them light up as a
         // diamond grid across gentle ground.
         const hh = a + (b - a) * tu + (c - a) * tv + (a - b - c + d) * tu * tv;
-        const i = Z * W + X;
+        const i = Z / stride * W + X / stride;
         heights[i] = hh;
-        spacing[i] = Math.min(255, t.stride);
+        spacing[i] = Math.max(1, Math.min(255, t.stride / stride));
         // Water is the bilinear half-coverage contour of the four samples,
         // not the nearest sample: a coarse tile's nearest lookup draws a
         // shoreline in stride-sized stairs. Flow blends the dry samples.
@@ -275,7 +276,7 @@ export function buildSurfaceTexture(data) {
     }
   }
   const out = new Uint8Array(W * H * 4);
-  const cell = grid.cellSizeM;
+  const cell = grid.cellSizeM * stride;
   const at = (x, z) => {
     const cx = x < 0 ? 0 : x >= W ? W - 1 : x;
     const cz = z < 0 ? 0 : z >= H ? H - 1 : z;

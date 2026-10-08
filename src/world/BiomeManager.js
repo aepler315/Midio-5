@@ -20,7 +20,7 @@ import { VisualMusicHistory } from './VisualMusicHistory.js';
 import { ridgeEnvelope, boundaryLift01 } from './alpine/Ridge.js';
 import { travelSeam, TRAVEL_FEATHER, TRAVEL_BANDS } from './TravelSeam.js';
 import { landscapeLayerColor, landscapePasses, landscapePolicy, landscapeBudget, landscapeSnowAllowed, resolveLandscapePalette, resolveRangePresentation } from './alpine/LandscapePolicy.js';
-import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
+import { createRangeSkyComposition, rangeMoonRadius, rangeV2MoonRadius, drawMoonMaria, rangeCloudBanks, tourCloudBanks, drawRangeClouds } from './alpine/RangeSkyComposition.js';
 import { rangeSkyState } from './alpine/RangeFrame.js';
 import { withNarrativeAlpha, drawNarrativeMarks } from '../render/NarrativeDraw.js';
 import { buildRidgeSurface } from './alpine/RidgeSurface.js';
@@ -822,6 +822,7 @@ export class BiomeManager {
     this.nearField = new NearField(songSeed, this.world);
     this.groundScatter = new GroundScatter(songSeed);
 
+    this.conductorSchedule = conductorSchedule;
     this._buildSchedule(conductor.barGrid, energyCurves, durationMs, songSeed, lyricSections, structure, conductorSchedule);
     if (chapterState?.previous) this.refineChapterPlan(chapterState.previous, chapterState.committedThroughMs || 0);
     // The sections the show was playing on before a live re-analysis: the
@@ -2712,7 +2713,7 @@ export class BiomeManager {
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
       const pan = this.rangePresentation?.skyPan;
       const panPx = (pan?.x || 0) * canvas.width / 2, panYPx = -(pan?.y || 0) * canvas.height / 2;
-      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, panPx, panYPx }), {
+      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, pan?.tourPose ? tourCloudBanks({ pose: pan.tourPose, width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973 }) : rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, panPx, panYPx }), {
         dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
         lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
         light: this._scenicLight, directGain: this._scenicLight.intensity,
@@ -4309,7 +4310,7 @@ export class BiomeManager {
   }
 
   _drawCelestial(ctx, canvas, A, B, t, cyFrac = 0.22, alpha = 1, cxFrac = CELESTIAL_DEFAULT_XFRAC, resolved = null) {
-    if (!identityAllows(this.world, 'celestialBodies')) return;
+    if (!identityAllows(this.world, 'celestialBodies') || resolved?.visible === false) return;
     // The body is closing over the length of the song: its arc climbs higher
     // above the sea and its disc grows as 1/distance, so the size
     // accelerates while the path barely seems to change. See
@@ -4463,7 +4464,7 @@ export class BiomeManager {
    */
   _drawMoon(ctx, canvas, cyFrac, alpha, tidalOffsetPx = 0, cxFrac = CELESTIAL_DEFAULT_XFRAC,
     sunXFrac = null, sunYFrac = null, phase01 = 0.5, resolved = null) {
-    if (!identityAllows(this.world, 'celestialBodies')) return;
+    if (!identityAllows(this.world, 'celestialBodies') || resolved?.visible === false) return;
     if (alpha <= 0.02) return;
     // Same approach the sun is on (CelestialApproach.js): both bodies are
     // closing on the convergence point, so the moon grows through the night

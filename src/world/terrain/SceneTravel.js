@@ -22,6 +22,14 @@ export const SCENE_PREVIEW_PROGRESS = 0.5;
 export const FOV_MIN_DEG = 5;
 export const FOV_MAX_DEG = 120;
 
+/** One pose provider for heard-time tours and ordinary authored rails. */
+export function scenePoseAt(view, { progress01 = .5, timeMs = null, tour = view?.tour } = {}) {
+  return tour ? tour.poseAt(timeMs ?? progress01 * tour.durationMs) : cameraPoseAt(view, progress01);
+}
+export function pathStations(view, count = 32, tour = view?.tour) {
+  return Array.from({ length: count }, (_, i) => scenePoseAt(view, { progress01: count > 1 ? i / (count - 1) : .5, tour }));
+}
+
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
 

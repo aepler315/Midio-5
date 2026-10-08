@@ -1,0 +1,5 @@
+Add an opt-in song-timed Teton flight to The Range. `?rangeTour=tetons` and the Display preference select published USGS terrain, named station roles, joined highway routing, a worker-built camera timeline and bounded worker terrain windows. Switching off rebuilds normal geography without resetting the audio clock.
+
+Validation: full npm tests, lint and site staging; published-data regressions for moving openings, long sections, legal orbit entry, committed refinement, resource replacement and cancelled generations. Five-song Chromium/SwiftShader evidence, a highway map and 44-station contact sheet are in docs/evidence/teton-tour. See docs/teton-tour-validation.md for measurements and every implementation ruling.
+
+Keep this as a draft candidate. Three of five browser songs miss the 0.8 field-quality target, cold planning still exceeds 60 ms, some windows relax the pixel target to meet triangle caps, and infeasible station deadlines pass at range. Physical GPU/phone performance and aesthetic role approval remain unverified. No merge or deployment is included.
