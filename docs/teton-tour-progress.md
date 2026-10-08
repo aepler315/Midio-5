@@ -146,8 +146,6 @@ The latest cloud snapshot is revision 28, still restricted with an empty
 custom host allowlist. USGS and GeoNames probes still return HTTP 403. No real
 stations, road field, timings, budgets or imagery have been produced.
 
-## Remaining work
-
 ## Task 5: highway graph (synthetic implementation verified)
 
 The authoring graph has a directional 100 m A* search with the plan's floor
@@ -172,6 +170,8 @@ The full suite passes **3,806 tests, 0 failures, 0 skipped** (44.77 s); lint
 and site staging pass. No real Teton highway or field has been generated.
 Source access still fails with an empty custom allowlist at revision 30.
 The user requested a pause here and a portable handoff for a new environment.
+The code checkpoint is `0f5adb2`. See [the environment handoff](teton-tour-handoff.md)
+for transfer instructions, task status, source setup and resume commands.
 
 ## Remaining implementation and real acceptance
 
