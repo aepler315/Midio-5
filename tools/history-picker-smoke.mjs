@@ -150,9 +150,13 @@ try {
         await page.waitForFunction(() => !!document.getElementById('versionEngine').contentDocument.fullscreenElement);
         const fullscreen = current.locator('#historyFullscreenOverlay');
         await fullscreen.locator('#versionPicker').click();
-        await fullscreen.locator('#versionSearch').pressSequentially('valley');
-        assert.equal(await fullscreen.locator('#versionSearch').inputValue(), 'valley', 'fullscreen search owns its letter keys');
-        await fullscreen.locator(`[data-version-id="${manifest.entries.at(-2).id}"]`).click();
+        // Search by a plain-letter word from the target's own label, so the
+        // check holds whatever the newest commits are called.
+        const target = manifest.entries.at(-2);
+        const word = target.label.toLowerCase().match(/[a-z]+/g).sort((a, b) => b.length - a.length)[0];
+        await fullscreen.locator('#versionSearch').pressSequentially(word);
+        assert.equal(await fullscreen.locator('#versionSearch').inputValue(), word, 'fullscreen search owns its letter keys');
+        await fullscreen.locator(`[data-version-id="${target.id}"]`).click();
         await page.waitForFunction(() => !document.fullscreenElement && !!document.getElementById('versionNavigation'));
         await page.waitForFunction(currentEngineReady, null, { timeout: 90000 });
         await page.locator('#versionNext').click();
