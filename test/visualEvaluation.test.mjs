@@ -28,21 +28,22 @@ test('continuous mode draws from zero instead of silently skipping earlier frame
   assert.deepEqual(frames.map(f => f.timeMs), [0, 250, 500, 750, 1000]);
   assert.equal(frames.filter(f => f.save).length, 1);
 });
-const report = () => ({ version: 1, status: 'passed', browser: 'chromium-1', environment: { gl: 'software' },
-  settings: { seed: 315 }, songs: [{ id: 'a', audioSha256: 'hash', durationMs: 4000,
-    schedule: [{ timeMs: 1000, save: true }], frames: [{ timeMs: 1000, png: 'x.png', sha256: 'same', thumbnail: [0, 0, 0, 255] }] }] });
+const report = () => ({ version: 1, status: 'passed', browser: 'chromium-1',
+  source: { commit: 'a'.repeat(40), digest: 'a'.repeat(64), hashes: { 'index.html': 'a'.repeat(64), 'src/main.js': 'b'.repeat(64) }, changedDuringRun: false }, environment: { gl: 'software', vendor: 'test', deviceMemory: 8, dpr: 1 },
+  settings: { width: 640, height: 360, seed: 315, quality: 0, view: 'teton-jackson-lake', biome: 'CONIFER', fps: 12, mode: 'sparse', intervalMs: 10000 }, songs: [{ id: 'a', audioSha256: 'a'.repeat(64), durationMs: 4000,
+    schedule: [{ timeMs: 1000, save: true }], frames: [{ timeMs: 1000, actualTimeMs: 1000, png: 'x.png', sha256: 'b'.repeat(64), thumbnail: [0, 0, 0, 255] }] }] });
 test('comparison rejects missing evidence and mismatched inputs, settings and browser', () => {
   for (const change of [r => { r.status = 'failed'; }, r => { r.browser = 'other'; },
-    r => { r.settings.seed = 9; }, r => { r.songs[0].audioSha256 = 'other'; },
+    r => { r.settings.seed = 9; }, r => { r.songs[0].audioSha256 = 'c'.repeat(64); },
     r => { r.songs[0].frames = []; }, r => { r.songs = []; },
     r => { r.songs[0].schedule[0].timeMs = 2; }]) {
     const after = report(); change(after);
-    assert.throws(() => compareReports(report(), after), /incompatible|missing/i);
+    assert.throws(() => compareReports(report(), after), /incompatible|missing|invalid/i);
   }
 });
 test('comparison reports changed pixels without assigning a quality verdict', () => {
   const a = report(), b = report();
-  b.songs[0].frames[0].sha256 = 'changed'; b.songs[0].frames[0].thumbnail = [255, 0, 0, 255];
+  b.songs[0].frames[0].sha256 = 'c'.repeat(64); b.songs[0].frames[0].thumbnail = [255, 0, 0, 255];
   const diff = compareReports(a, b);
   assert.equal(diff.frames[0].identical, false);
   assert.equal(diff.frames[0].difference.changedFraction, 1);
@@ -54,4 +55,10 @@ test('comparison refuses frames drawn at different actual musical times', () => 
   a.songs[0].frames[0].actualTimeMs = 1000;
   b.songs[0].frames[0].actualTimeMs = 1008;
   assert.throws(() => compareReports(a, b), /incompatible.*time/i);
+});
+test('paired missing provenance cannot masquerade as compatible evidence', () => {
+  const deletions = [r => { delete r.browser; }, r => { delete r.environment; }, r => { delete r.settings; },
+    r => { delete r.songs[0].durationMs; }, r => { delete r.songs[0].audioSha256; },
+    r => { delete r.songs[0].frames[0].actualTimeMs; }, r => { delete r.settings.seed; }, r => { delete r.source; }, r => { r.source.changedDuringRun = true; }];
+  for (const remove of deletions) { const a = report(), b = report(); remove(a); remove(b); assert.throws(() => compareReports(a, b), /missing|invalid/i); }
 });

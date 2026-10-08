@@ -88,7 +88,45 @@ export function imageDifference(a, b) {
   return { changedFraction: changed / (a.length / 4), meanAbsoluteError: total / (a.length / 4 * 3 * 255) };
 }
 
+function validateReport(report) {
+  assert.ok(report && typeof report === 'object', 'missing report');
+  assert.ok(typeof report.browser === 'string' && report.browser.length, 'missing browser');
+  const source = report.source;
+  assert.ok(source && /^[a-f0-9]{40}$/.test(source.commit) && /^[a-f0-9]{64}$/.test(source.digest)
+    && source.changedDuringRun === false && source.hashes && /^[a-f0-9]{64}$/.test(source.hashes['index.html'])
+    && /^[a-f0-9]{64}$/.test(source.hashes['src/main.js'])
+    && Object.values(source.hashes).every(h => typeof h === 'string' && /^[a-f0-9]{64}$/.test(h)), 'missing or invalid source provenance');
+  for (const key of Object.keys(DEFAULT_SETTINGS)) assert.ok(report.settings && Object.hasOwn(report.settings, key), `missing setting ${key}`);
+  normalizeManifest({ version: 1, settings: report.settings, songs: [{ id: 'validation', fixture: 'silence' }] });
+  const env = report.environment;
+  assert.ok(env && typeof env.gl === 'string' && env.gl.length && typeof env.vendor === 'string'
+    && env.vendor.length && env.dpr === 1 && Object.hasOwn(env, 'deviceMemory')
+    && (env.deviceMemory === null || (Number.isFinite(env.deviceMemory) && env.deviceMemory > 0)), 'missing or invalid render environment');
+  assert.ok(Array.isArray(report.songs) && report.songs.length, 'missing songs');
+  const ids = new Set();
+  for (const song of report.songs) {
+    assert.ok(typeof song.id === 'string' && song.id.length && !ids.has(song.id), 'invalid song id'); ids.add(song.id);
+    assert.ok(Number.isFinite(song.durationMs) && song.durationMs > 0, 'missing or invalid duration');
+    assert.ok(typeof song.audioSha256 === 'string' && /^[a-f0-9]{64}$/.test(song.audioSha256), 'missing or invalid audio hash');
+    assert.ok(Array.isArray(song.schedule) && song.schedule.length && Array.isArray(song.frames) && song.frames.length, 'missing captures');
+    let prior = -1;
+    for (const point of song.schedule) {
+      assert.ok(Number.isFinite(point.timeMs) && point.timeMs >= 0 && point.timeMs < song.durationMs
+        && point.timeMs > prior && typeof point.save === 'boolean', 'invalid capture schedule'); prior = point.timeMs;
+    }
+    for (const frame of song.frames) {
+      assert.ok(Number.isFinite(frame.timeMs) && Number.isFinite(frame.actualTimeMs) && frame.actualTimeMs >= 0
+        && frame.actualTimeMs < song.durationMs && Math.abs(frame.actualTimeMs - frame.timeMs) <= 1000 / 60 + .01, 'missing or invalid actual time');
+      assert.ok(typeof frame.sha256 === 'string' && /^[a-f0-9]{64}$/.test(frame.sha256), 'missing or invalid image hash');
+      assert.ok(typeof frame.png === 'string' && frame.png.length, 'missing image path');
+      assert.ok(Array.isArray(frame.thumbnail) && frame.thumbnail.length > 0 && frame.thumbnail.length % 4 === 0
+        && frame.thumbnail.every(v => Number.isInteger(v) && v >= 0 && v <= 255), 'missing or invalid thumbnail');
+    }
+  }
+}
+
 export function compareReports(before, after) {
+  validateReport(before); validateReport(after);
   const same = (a, b, label) => assert.deepEqual(a, b, `incompatible ${label}`);
   same(before.version, 1, 'report version'); same(after.version, 1, 'report version');
   same(before.status, 'passed', 'baseline status'); same(after.status, 'passed', 'candidate status');
