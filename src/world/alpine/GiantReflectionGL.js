@@ -2,11 +2,13 @@
 // radiance sheet has no object in the normal scene to cast the reflection.
 import { GIANT_GLSL } from './LandscapeGiants.js';
 const VERT = /* glsl */`
-  uniform vec3 uGiantCenter[3]; uniform float uGiantSpan[3]; uniform vec3 uGiantRight;
+  uniform vec3 uGiantCenter[3]; uniform float uGiantSpan[3]; uniform vec3 uGiantRight; uniform float uMirrorAspect;
   out vec2 vUv; out vec3 vWorld;
   void main() {
     vUv=position.xy+.5;
-    vWorld=uGiantCenter[0]+uGiantRight*position.x*uGiantSpan[0]+vec3(0.0,vUv.y*uGiantSpan[0],0.0);
+    // The lowered mirror eye stretches heights; widening by the same factor
+    // keeps Midio's proportions in the water.
+    vWorld=uGiantCenter[0]+uGiantRight*position.x*uGiantSpan[0]*uMirrorAspect+vec3(0.0,vUv.y*uGiantSpan[0],0.0);
     gl_Position=projectionMatrix*viewMatrix*vec4(vWorld,1.0);
   }
 `;
@@ -28,7 +30,8 @@ const FRAG = /* glsl */`
     // The same sky and celestial light as the land; a lantern-lit floor
     // preserves the reflection's facets through dark dawn and sunset.
     vec3 light=max(uSkyHorizon*uAmbientScale*.5+uLightColor*key,vec3(.065,.09,.13));
-    vec3 color=light*(.7+grain*.75)+uActorColor[0]*.035;
+    // His own lantern colour stays in him, so he never reads as moonglade.
+    vec3 color=light*(.7+grain*.75)+uActorColor[0]*.22;
     color+=vec3(.14,.22,.25)*pow(wisps,14.0)*.4;
     outColor=vec4(pow(clamp(color,0.0,1.0),vec3(1.0/2.2)),a);
   }

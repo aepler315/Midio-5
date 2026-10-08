@@ -1,4 +1,4 @@
-import { giantLayout, giantAmounts } from './LandscapeGiants.js';
+import { giantLayout, giantAmounts, mirrorGiantSpan, aheadOfEye } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
 // here, renders transparent terrain partitions that RangePresentation copies
@@ -35,6 +35,9 @@ import { scenicProjection, calibrateRangeMusic } from './RangeFrame.js';
 import { applyGlacierUniforms, glacierErrors, glacierSample } from './GlacierField.js';
 import { ActorsGL } from './ActorsGL.js';
 import { ACTOR_IDS, ACTOR_HUES, ACTOR_LOOK, ACTOR_START, actorRoutes, routePosition } from './RangeActors.js';
+// Storm light, linear: the deck's underside, the rain-dimmed horizon, the rain air.
+// STORM_AIR meets the slate the sky paints at the horizon (drawStormSky) once displayed.
+const STORM_ZENITH = { r: .02, g: .026, b: .036 }, STORM_HORIZON = { r: .03, g: .038, b: .05 }, STORM_AIR = { r: .028, g: .036, b: .048 };
 
 const BACKDROP_KEY = 'range:water-backdrop';
 
@@ -71,6 +74,9 @@ function waterLevel(data) {
   hs.sort((a, b) => a - b);
   return hs[hs.length >> 1];
 }
+
+/** Midio's mirrored sheet keeps this far ahead of a zoomed-in eye. */
+const MIDIO_MIN_AHEAD_M = 600;
 
 export class RangeScene {
   /** `THREE` is the local bundle; `residency` the shared ledger. */
@@ -324,7 +330,14 @@ export class RangeScene {
       mirrorTextureMatrix(THREE, this.mirrorCamera, m.matrix);
       for (const fm of p.fringeMeshes || []) fm.visible = false;
       u.uMirrorAmount.value = 0;
+      // A disabled reflection still has an active sampler. Unbind the
+      // previous image before drawing into it to avoid framebuffer feedback.
+      u.uMirror.value = null;
       u.uClipBelow.value = level + MIRROR_CLIP_M;
+      // Rain over the reflected land stands where the mirror camera sees it;
+      // the main camera's matrix is restored below, before the partitions.
+      this.mirrorCamera.updateMatrixWorld();
+      u.uViewProj.value.multiplyMatrices(this.mirrorCamera.projectionMatrix, this.mirrorCamera.matrixWorldInverse);
       r.setRenderTarget(m.target);
       r.setClearColor(0x000000, 0);
       r.clear(true, true, false);
@@ -790,9 +803,21 @@ export class RangeScene {
     // reflection, so it keeps the frame's authored environment colors.
     u.uAmbientScale.value = 2.5 * (frame.light.ambientMultiplier ?? 1);
     u.uStorm.value.set(storm.amount, storm.flash, storm.break01, storm.wet01);
-    u.uLightColor.value.multiplyScalar(1 - storm.amount * .8);
-    u.uLightColor.value.add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * 1.3));
-    u.uAmbientScale.value *= 1 - storm.amount * .55;
+    // Under the squall the sun is gone behind the deck; the sky's own
+    // (darkened, below) radiance is most of what lights the land.
+    u.uLightColor.value.multiplyScalar(1 - storm.amount * .92);
+    u.uLightColor.value.add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * 1.6));
+    u.uAmbientScale.value *= 1 - storm.amount * .15;
+    // Lightning lights the land from inside the deck, where the sky draws it.
+    // The rain veil projects through the main camera on every view, mirror or not.
+    u.uViewProj.value.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    const skyPan = this.skyPan || { x: 0, y: 0 };
+    u.uRainShift.value = (skyPan.x || 0) / 2;
+    if (storm.flash > 0) {
+      const fx = ((storm.flashU ?? .5) + u.uRainShift.value) * 2 - 1;
+      const flashDir = new THREE.Vector3(fx, .7, 0.5).unproject(this.camera).sub(this.camera.position).normalize();
+      u.uLightDir.value.lerp(flashDir, Math.min(1, storm.flash * 3)).normalize();
+    }
     u.uSolarTransmission.value = c.body === 'sun' && strength > 0 ? .18 : 0;
     if (frame.light.sky) {
       hexToLinear(THREE, frame.light.sky.top, u.uSkyZenith.value).multiplyScalar(0.9);
@@ -811,27 +836,43 @@ export class RangeScene {
       u.uAirColor.value.multiply(tint);
     }
     u.uAirDensity.value = (1 / 55000) * (1 + 0.6 * night) * (p.rules?.airScale ?? RULE_DEFAULTS.airScale);
+    if (storm.amount > 0 || storm.break01 > 0) {
+      // Slate storm light in the sky, the air and the water's reflection;
+      // thick rain air under the squall, then rain-washed clarity after it.
+      const k = storm.amount * .95;
+      u.uSkyZenith.value.lerp(STORM_ZENITH, k);
+      u.uSkyHorizon.value.lerp(STORM_HORIZON, k);
+      u.uAirColor.value.lerp(STORM_AIR, k).add(new THREE.Color(.65, .77, 1).multiplyScalar(storm.flash * .35));
+      u.uAirDensity.value *= 1 + storm.amount * .6 - storm.break01 * .35;
+    }
     const amounts = giantAmounts(frame);
     const layout = p.giantLayout;
     if (layout) {
       u.uGiantPeak.value = amounts;
       layout.centers.forEach((center, i) => u.uGiantCenter.value[i].set(...center));
       layout.skyCenters.forEach((center, i) => u.uSkyGiantCenter.value[i].set(...center));
-      if (layout.hasLake) u.uGiantCenter.value[0].y = p.waterLevelM;
       u.uGiantSpan.value = layout.spans;
+      if (layout.hasLake) {
+        const eye = this.camera.position.toArray();
+        const center = aheadOfEye(layout.centers[0], eye, layout.forward, MIDIO_MIN_AHEAD_M);
+        u.uGiantCenter.value[0].set(center[0], p.waterLevelM, center[2]);
+        const bottom = new THREE.Vector3(0, -.92, .5).unproject(this.camera).sub(this.camera.position);
+        u.uGiantSpan.value = [mirrorGiantSpan(eye, bottom.toArray(), center,
+          p.waterLevelM, MIRROR_LIFT, layout.spans[0]), ...layout.spans.slice(1)];
+      }
+      u.uMirrorAspect.value = layout.hasLake ? 1 / MIRROR_LIFT : 1;
+      u.uSkyGiantSpan.value = layout.skySpan;
       u.uGiantRight.value.set(...layout.right); u.uGiantForward.value.set(...layout.forward);
-      // Project from the sun when its angle meets the caster plane. At
-      // grazing angles, the actor's lantern takes over without singularities.
-      const sunRay = u.uLightDir.value;
-      u.uShadowRay.value.copy(Math.abs(sunRay.dot(u.uGiantForward.value)) > .25 && c.body === 'sun'
-        ? sunRay : u.uGiantForward.value.clone().add(new THREE.Vector3(0,.25,0)).normalize());
+      // Broshi's lantern is carried just behind the viewer, so his shadow
+      // lands on the range in his own proportions (a Brocken spectre).
+      u.uShadowEye.value.copy(this.camera.position);
       u.uMidioCloud.value = layout.hasLake && Number.isFinite(p.mirrorLevelM) ? 0 : 1;
       u.uGiantTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     }
     // Valley mist: anchored at the view's water level, thicker in calm.
     const mp = mistParams({ rules: p.rules, waterLevelM: p.waterLevelM, heightRange: [u.uHeightRange.value.x, u.uHeightRange.value.y],
       tSec: frame.reducedMotion ? 0 : frame.timeMs / 1000, calm01: 1 - (frame.music?.groove ?? 0),
-      sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .88, u.uMidioCloud.value * amounts[0] * .88), cameraY: this.camera.position.y });
+      sea01: Math.max(frame.cloudSea01 ?? 0, amounts[2] * .3, u.uMidioCloud.value * amounts[0] * .3), cameraY: this.camera.position.y });
     const quality = rangeQuality(frame.qualityLevel);
     u.uMistDensity.value = mp.density * (n?.atmosphere ?? 1);
     u.uMistSteps.value = quality.mistSteps;
@@ -847,10 +888,6 @@ export class RangeScene {
     u.uMistColor.value.b = Math.min(0.9, u.uMistColor.value.b);
     u.uCameraPos.value.copy(this.camera.position);
     this._setActors(p, frame);
-    if (layout && (c.body !== 'sun' || Math.abs(u.uLightDir.value.dot(u.uGiantForward.value)) <= .25)) {
-      const lantern = u.uActorPos.value[1].clone().sub(u.uGiantCenter.value[1]).normalize();
-      if (Math.abs(lantern.dot(u.uGiantForward.value)) > .25) u.uShadowRay.value.copy(lantern);
-    }
   }
 
   /**
@@ -1071,7 +1108,10 @@ export class RangeScene {
     // The scene's key light, re-expressed for the stage: from behind and
     // above, on the celestial's side of the frame.
     const THREE = this.THREE;
-    const key = frame.light.ground;
+    // A lightning flash lights the stage from its strike, as it does the land.
+    const storm = frame.storm, strike = Math.min(1, (storm?.flash || 0) * 3);
+    const key = strike > 0 ? { x: frame.light.ground.x + (((storm.flashU ?? .5) + (u.uRainShift?.value || 0)) * vp.logicalWidth - frame.light.ground.x) * strike,
+      y: frame.light.ground.y + (vp.logicalHeight * .15 - frame.light.ground.y) * strike } : frame.light.ground;
     // Stage normals use +Y upward; the recorded ground anchor is Canvas
     // +Y downward. Keep the existing shallow depth/rock calibration.
     const lightDir = new THREE.Vector3((key.x - vp.logicalWidth * .5) / vp.logicalHeight,
