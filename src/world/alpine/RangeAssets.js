@@ -10,7 +10,7 @@ export class RangeAssetError extends Error {
   constructor(reason, message) {
     super(message);
     this.name = 'RangeAssetError';
-    this.reason = reason; // 'http' | 'hash' | 'manifest' | 'decode' | 'aborted' | 'stale' | 'budget' | 'context-lost'
+    this.reason = reason; // 'http' | 'hash' | 'manifest' | 'decode' | 'shader' | 'aborted' | 'stale' | 'budget' | 'context-lost'
   }
 }
 
