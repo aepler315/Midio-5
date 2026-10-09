@@ -45,6 +45,18 @@ const pose = { worldX: 1000, midioX: 400, midioDrawX: 402, midioY: 500 };
 const vp = (w, h, bw, bh) => viewportState({ logicalWidth: w, logicalHeight: h, backingWidth: bw, backingHeight: bh, overscanPx: 64 });
 const scenes = new Map([['RAINFOREST', { view: { id: 'nc-ross-lake-north' }, fallbackReason: null }]]);
 
+test('camera lens respects both accessibility settings in the shared frame', () => {
+  const at = (flags = {}) => {
+    const sim = fakeSim(20, flags);
+    sim.reducedMotion = !!flags.reducedMotion;
+    sim.biomes.sections = [{ startMs: 0, relEnergy01: .3 }, { startMs: 20000, role: 'chorus', relEnergy01: .9 }];
+    return buildRangeFrame({ frameId: 1, sim, pose }).cameraEffects;
+  };
+  assert.ok(at().halfAngleScale < .95);
+  assert.equal(at({ reducedFlash: true }).halfAngleScale, 1);
+  assert.equal(at({ reducedMotion: true }).halfAngleScale, 1);
+});
+
 test('glacier journey spans the song and reconstructs independently of quality and DPR', () => {
   const at = (t, quality = 0) => {
     const sim = fakeSim(t); sim.perf.level = quality;

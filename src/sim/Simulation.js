@@ -1,3 +1,4 @@
+import { cameraLensAt } from '../render/CameraLens.js';
 // Listening simulation owns transport, musical context, scenery and tap calibration.
 // Stage coordinates are independent of any performer or presentation backend.
 import { Role } from '../core/NoteEvent.js';
@@ -403,7 +404,7 @@ export class Simulation {
     const period = Math.max(1, this.beatAnchor.periodMs);
     const tau = ((this.heardTimeMs - this.beatAnchor.anchorMs) % period + period) % period;
     this.camera.update(dtSec, this.calm.level, this.reducedFlash || this.reducedMotion, tau,
-      this.songBeat.freeTime ? 0 : Math.max(this.vibe.epic, this.hype.surge), this.parallelUniverse.pulse);
+      this.songBeat.freeTime ? 0 : Math.max(this.vibe.epic, this.hype.surge), cameraLensAt({ sections: this.biomes.sections, timeMs: this.heardTimeMs, durationMs: this.biomes.durationMs, reducedMotion: this.reducedFlash || this.reducedMotion }).zoomPulse);
     this.paramBus.step();
     this.curr = this._snapshot();
   }

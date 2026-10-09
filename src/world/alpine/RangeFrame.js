@@ -1,3 +1,4 @@
+import { cameraLensAt } from '../../render/CameraLens.js';
 import { stormAt } from './RangeStorm.js';
 import { resolveRangeComposition } from './RangeComposition.js';
 import { sampleHorizonRidge, sampleSpaceRidge } from './RidgeMotion.js';
@@ -335,9 +336,13 @@ export function buildRangeFrame({
   const light = mgr._scenicLight || computeLight({ canvasWidth: scenicViewport?.logicalWidth || 1280,
     canvasHeight: scenicViewport?.logicalHeight || 720, celestialState: state });
   const active = state[state.activeBody] || state.sun;
+  const lens = cameraLensAt({ sections: mgr.sections, timeMs, durationMs: mgr.durationMs, reducedMotion: reducedMotion || reducedFlash, preview: mgr.terrainPreview });
+  const skyScale = mgr.rangePresentation?.tourMode ? 1 : lens.halfAngleScale;
+  const celestial = skyScale === 1 ? active : { ...active, xFrac: .5 + ((active.xFrac ?? .5) - .5) / skyScale,
+    yFrac: .5 + ((active.yFrac ?? .5) - .5) / skyScale };
   const lightState = {
     space: 'scenic-stage logical px; ground anchor converted through recorded view transforms',
-    state, celestial: { ...active, body: state.activeBody, intensity: light.intensity },
+    state, celestial: { ...celestial, body: state.activeBody, intensity: light.intensity },
     ground: mgr._groundLight || convertLightBetween(light, scenicViewport?.transform, groundViewport?.transform),
     ambientMultiplier: state.ambientMultiplier,
     night01: state.night01, dawn01: state.dawn01 || 0, dusk01: state.dusk01 || 0,
@@ -407,6 +412,7 @@ export function buildRangeFrame({
     storm: stormAt(mgr, timeMs),
     // The cast as lights in the land: brightness, travel and peaks per lane.
     actors: rangeActorsAt(sim, timeMs),
+    cameraEffects: lens,
     // Camera: this section's slow cinematic move, and the listener's zoom.
     cameraMove: rangeCameraMoveAt({ timeMs, sections: mgr.sections, durationMs: mgr.durationMs,
       seed: sim.songSeed ?? 0, reducedMotion, preview: !!mgr.terrainPreview }),

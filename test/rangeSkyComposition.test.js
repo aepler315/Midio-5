@@ -1,10 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SpaceRidge } from '../src/world/SpaceRidge.js';
-import { createRangeSkyComposition, rangeMoonRadius } from '../src/world/alpine/RangeSkyComposition.js';
+import { createRangeSkyComposition, rangeMoonRadius, tourCloudBanks } from '../src/world/alpine/RangeSkyComposition.js';
 import { BiomeManager } from '../src/world/BiomeManager.js';
 import * as catalogue from '../src/world/StarCatalogue.js';
 import { ParticleField } from '../src/world/ParticleField.js';
+
+test('tour lens magnifies cloud bodies along with their sky positions', () => {
+  const pose = { eyeM: [0, 1000, 0], targetM: [0, 1000, -10000], fovYDeg: 35 };
+  const options = { pose, width: 1280, height: 720, seed: 315 };
+  const ordinary = tourCloudBanks(options);
+  const zoomed = tourCloudBanks({ ...options, lensScale: .82 });
+  assert.ok(ordinary.length > 0);
+  for (const bank of ordinary) {
+    const zoom = zoomed.find(b => b.id === bank.id);
+    assert.ok(Math.abs(zoom.w * .82 - bank.w) < 1e-8);
+    assert.ok(Math.abs(zoom.h * .82 - bank.h) < 1e-8);
+  }
+});
 
 test('Range attenuates stars locally behind the aurora and keeps the rest of the field', () => {
   const canvas = { width: 1280, height: 720 };

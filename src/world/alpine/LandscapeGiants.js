@@ -1,6 +1,5 @@
-// The cast's silhouettes become masks in world materials, never enlarged
-// screen-space actors. One small RGBA texture per prepared view, charged to
-// the view's GPU reservation and disposed with its actors.
+// Legacy silhouette geometry and neutral shader uniforms. Runtime peaks
+// belong to local cast motes; prepared views no longer allocate giant masks.
 import { MIDIO_BODY, MIDIO_EYE_CY, MIDIO_EYE_SOCKET_R, BROSHI_BODY, BROSHI_HEAD, BROSHI_TAIL, MIDASUS_MESH } from '../../render/meshes.js';
 import { scenePoseAt, projectPoint } from '../terrain/SceneTravel.js';
 import { terrainHeightAt } from './TerrainMesh.js';
@@ -8,11 +7,9 @@ import { MIRROR_LEVEL_TOLERANCE_M } from './WaterMirror.js';
 const MASK_SIZE = 128;
 export const giantMaskBytes = () => MASK_SIZE * MASK_SIZE * 4;
 const clamp = x => Math.max(0, Math.min(1, x));
-export function giantAmounts(frame) {
-  if ((frame.qualityLevel ?? 0) >= 4 || !frame.actors) return [0, 0, 0];
-  const presence = (frame.actors.presence ?? 0) * (frame.narrative?.materials ?? 1);
-  return ['midio', 'broshi', 'midasus'].map(id => clamp(frame.actors[id]?.peak || 0) * presence);
-}
+// Peaks now belong to the cast's local lanterns and motes.
+export function giantAmounts() { return [0, 0, 0]; }
+
 function polygons(meshes) {
   return meshes.map(m => m.vertices.slice(1).map(v => [v.x, -v.y]));
 }
