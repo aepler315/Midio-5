@@ -830,7 +830,7 @@ export class RangePresentation {
   drawGround(ctx, stage) {
     this.stage = null;
     if (!this.active || !this.frame) return false;
-    const needsGround = id => this.frame.compositions?.[id]?.foreground !== 'none';
+    const needsGround = id => this.frame.compositions?.[id]?.foreground === 'ledge';
     const needsA = needsGround(this.viewId), needsB = this.incomingViewId && needsGround(this.incomingViewId);
     if (!needsA && !needsB) { this.scene.releaseGroundTarget?.(); return true; }
     const render = id => needsGround(id) ? this.scene.renderGround(this.frame, id) : null;

@@ -548,11 +548,11 @@ test('diagnostics separate style affinity, analysis confidence, and predicted pr
 
 test('manual-only worlds and explicit exclusions stay out of Choose-for-me', () => {
   const feat = baseFeat();
-  const withCathode = scoreWorlds(feat, [...listWorlds(), { ...getWorld('alpine'), id: 'manual-fixture', manualOnly: true }]);
-  const cathode = withCathode.find((r) => r.id === 'manual-fixture');
-  assert.equal(cathode.eligible, false);
-  assert.ok(cathode.parts.problems.some((p) => p.code === 'manual-only'));
-  assert.notEqual(pickRecommended(withCathode).id, 'manual-fixture');
+  const withManualOnly = scoreWorlds(feat, [...listWorlds(), { ...getWorld('alpine'), id: 'manual-fixture', manualOnly: true }]);
+  const manualOnly = withManualOnly.find((r) => r.id === 'manual-fixture');
+  assert.equal(manualOnly.eligible, false);
+  assert.ok(manualOnly.parts.problems.some((p) => p.code === 'manual-only'));
+  assert.notEqual(pickRecommended(withManualOnly).id, 'manual-fixture');
 
   const excluded = scoreWorlds(feat, undefined, { exclude: ['alpine'] });
   assert.equal(excluded.find((r) => r.id === 'alpine').eligible, false);

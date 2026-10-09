@@ -4,9 +4,13 @@ import { resolveRangeComposition, compositionErrors, compositionBars } from '../
 import { buildRockStage } from '../src/world/alpine/RockStage.js';
 
 const ledge = { foreground: 'ledge', nearLedgeMaxFrac: .12 };
+test('saved ledge metadata resolves to no foreground while tour ownership remains unspecified', () => {
+  assert.deepEqual(resolveRangeComposition({ composition: ledge }), { foreground: 'none', nearLedgeMaxFrac: 0 });
+  assert.equal(resolveRangeComposition({ id: 'teton-range-tour' }), null);
+});
 test('composition is optional, strict and deterministic', () => {
   assert.equal(resolveRangeComposition({}), null);
-  assert.deepEqual(resolveRangeComposition({ composition: ledge }), ledge);
+  assert.deepEqual(resolveRangeComposition({ composition: ledge }), { foreground: 'none', nearLedgeMaxFrac: 0 });
   for (const value of [null, {}, { ...ledge, foreground: 'sea' }, { ...ledge, nearLedgeMaxFrac: NaN }, { ...ledge, nearLedgeMaxFrac: .13 }, { ...ledge, nearLedgeMaxFrac: -.1 }]) {
     assert.ok(compositionErrors({ composition: value }).length);
     assert.throws(() => resolveRangeComposition({ composition: value }));

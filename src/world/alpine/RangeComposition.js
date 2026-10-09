@@ -1,4 +1,7 @@
-// View-owned foreground policy. Missing metadata preserves existing views.
+// No fixed foreground stage is painted. Keep missing metadata distinct:
+// scenic ownership also controls weather overlays and foreground ambience.
+// Accept old ledge metadata so saved views remain readable.
+const NO_FOREGROUND = Object.freeze({ foreground: 'none', nearLedgeMaxFrac: 0 });
 export function compositionErrors(view) {
   if (!view || !Object.hasOwn(view, 'composition')) return [];
   const c = view.composition;
@@ -13,7 +16,7 @@ export function compositionErrors(view) {
 export function resolveRangeComposition(view) {
   const errors = compositionErrors(view);
   if (errors.length) throw new RangeError(errors.join(', '));
-  return view?.composition ? Object.freeze({ foreground: view.composition.foreground, nearLedgeMaxFrac: view.composition.nearLedgeMaxFrac }) : null;
+  return view?.composition ? NO_FOREGROUND : null;
 }
 
 /** Reframe the rendered support only. Physics remains in GroundField.

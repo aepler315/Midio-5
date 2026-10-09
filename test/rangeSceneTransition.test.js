@@ -162,13 +162,15 @@ test('no room for the incoming target: the outgoing view carries on, and the tar
   void scene;
 });
 
-test('the rock stage travels too, and its pools come from the side holding the centre', async () => {
+test('travel never restores a foreground rock stage or its pools', async () => {
   const { p } = await presentation();
-  for (const [t, want] of [[0.1, 'a'], [0.9, 'b']]) {
+  for (const t of [0.1, 0.9]) {
     p.setFrameInputs(inputs(t));
     p.beginScenic();
     p.drawGround(recordingCtx(), { width: W, height: H });
-    assert.equal(p.stage.id, want);
+    assert.equal(p.stage, null);
+    assert.equal(p.groundReceivers(), null);
+    assert.equal(p.hasViewComposition, false, 'removing the stage cannot claim weather ownership for an uncomposed view');
   }
 });
 
@@ -327,7 +329,7 @@ test('a budget-denied incoming view that gets room later still joins as late and
   assert.equal(p.incomingFade, 0, 'joins late, not at the advanced seam');
 });
 
-test('during a held handoff the ground receivers stay with the side that is visible', async () => {
+test('a held handoff cannot restore foreground ground receivers', async () => {
   let release;
   const gate = new Promise((r) => { release = r; });
   const scene = fakeScene();
@@ -346,7 +348,8 @@ test('during a held handoff the ground receivers stay with the side that is visi
   p.beginScenic();
   assert.ok(p.incomingFade < 0.5);
   p.drawGround(recordingCtx(), { width: W, height: H });
-  assert.equal(p.stage.id, 'a', 'B is still invisible: its pools must not answer yet');
+  assert.equal(p.stage, null);
+  assert.equal(p.groundReceivers(), null);
 });
 
 test('the composition buffer is reallocated when either dimension outgrows it', async () => {
@@ -431,25 +434,22 @@ test('intentional no-stage owns ground without rendering, stale receivers or tar
   assert.ok(releases > 0);
 });
 
-test('none and ledge travel use ground backing dimensions and never borrow the other side receivers', async () => {
+test('saved ledge metadata on either travel side cannot restore the removed foreground', async () => {
   for (const reverse of [false, true]) {
     const { p, scene } = await presentation();
     const noneId = reverse ? 'b' : 'a';
     for (const v of catalog.views) p.sceneByBiome.set(v.biome, { view: { ...v, composition: { foreground: v.id === noneId ? 'none' : 'ledge', nearLedgeMaxFrac: v.id === noneId ? 0 : .12 } } });
     let releases = 0;
     scene.releaseGroundTarget = () => releases++;
-    scene.renderGround = (frame, id) => {
-      assert.notEqual(id, noneId);
-      return { canvas: { id, width: 700, height: 400 }, stage: { id, wetMasks: [], pools: [] } };
-    };
+    scene.renderGround = () => { throw new Error('saved ledges must not be rendered'); };
     for (const t of [.1, .9]) {
       const i = inputs(t);
       i.groundViewport = { logicalWidth: 1400, logicalHeight: 800, backingWidth: 700, backingHeight: 400 };
       p.setFrameInputs(i); p.beginScenic();
       assert.equal(p.drawGround(recordingCtx(), { width: 1400, height: 800 }), true);
-      assert.equal(p.stage?.id ?? null, (t < .5 ? 'a' : 'b') === noneId ? null : (t < .5 ? 'a' : 'b'));
-      for (const d of scratches.at(-1).ctx.draws) assert.deepEqual(d.args, [0, 0, 700, 400], 'incoming ledge keeps ground backing size when A is empty');
+      assert.equal(p.stage, null);
+      assert.equal(p.groundReceivers(), null);
     }
-    assert.equal(releases, 0, 'one side still requires the shared ground target');
+    assert.ok(releases > 0, 'neither side retains a foreground target');
   }
 });
