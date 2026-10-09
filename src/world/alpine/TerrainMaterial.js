@@ -1,3 +1,4 @@
+import { cloudUniforms, CLOUD_OCCLUSION_GLSL } from './CloudOcclusion.js';
 import { hexToLinear, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { GUST_FRONTS, GUST_IDLE_SEC, GUST_SWEEP_SEC } from './Gust.js';
 import { RangeAssetError } from './RangeAssets.js';
@@ -79,6 +80,7 @@ export const SCENE_VERT = /* glsl */`
 `;
 
 export const SCENE_FRAG = /* glsl */`
+  ${CLOUD_OCCLUSION_GLSL}
   precision highp float;
   uniform sampler2D uSurface;
   ${DEFORM_GLSL}
@@ -349,7 +351,8 @@ export const SCENE_FRAG = /* glsl */`
     // Sky radiance: the displayed sky colours are radiance, and a surface
     // integrates the hemisphere, hence the scale.
     vec3 hemi = mix(uSkyHorizon * 0.55, uSkyZenith, 0.5 + 0.5 * nShade.y) * uAmbientScale;
-    vec3 lit = albedo * (hemi * ao + uLightColor * key * mix(0.85, 1.0, ao));
+    float moonTransmission = moonCloudTransmission(vRenderedWorld, uLightDir);
+    vec3 lit = albedo * (hemi * ao + uLightColor * moonTransmission * key * mix(0.85, 1.0, ao));
     // The cast's lanterns light the ground around them.
     lit += albedo * actorLight(vRenderedWorld, nShade);
     // Broken cloud transmits the real solar key in broad moving swathes
@@ -358,10 +361,10 @@ export const SCENE_FRAG = /* glsl */`
     // wet rock and grass shine back toward the sun.
     float opening=stormOpening(vRenderedWorld);
     if (!water) lit *= 1.0 - uStorm.z*(1.0-opening)*.5;
-    lit += albedo*uLightColor*key*uStorm.z*opening*.85;
+    lit += albedo*uLightColor*moonTransmission*key*uStorm.z*opening*.85;
     if (!water && uStorm.w > 0.0) {
       vec3 sheenH = normalize(uLightDir + normalize(uCameraPos - vRenderedWorld));
-      lit += uLightColor * pow(max(dot(nShade, sheenH), 0.0), 48.0) * uStorm.w * (0.12 + 0.6*uStorm.z*opening) * (1.0 - 0.75*uStorm.y);
+      lit += uLightColor * moonTransmission * pow(max(dot(nShade, sheenH), 0.0), 48.0) * uStorm.w * (0.12 + 0.6*uStorm.z*opening) * (1.0 - 0.75*uStorm.y);
     }
     float giantShade = 0.0;
     if (!water && uGiantPeak[1] > 0.0) {
@@ -400,7 +403,7 @@ export const SCENE_FRAG = /* glsl */`
       vec3 skyReflect = mix(uSkyZenith, uSkyHorizon, 0.3) * 0.5;
       // With the backdrop to reflect, the sky arrives with the mirror below.
       float skyHere = fres * (1.0 - uBackdropAmount * uMirrorAmount);
-      lit = mix(lit, skyReflect * rWaterSkyMix, skyHere) + uLightColor * glint;
+      lit = mix(lit, skyReflect * rWaterSkyMix, skyHere) + uLightColor * glint * moonTransmission;
     }
     // Aerial perspective, applied once here and nowhere else.
     float heightTerm = exp(-max(0.0, vRenderedWorld.y - uCameraPos.y * 0.25) * uAirHeightFalloff);
@@ -496,6 +499,7 @@ export function sceneUniforms(THREE, base) {
   return {
     ...base,
     ...actorUniforms(THREE),
+    ...cloudUniforms(THREE),
     uGlacierEnabled: { value: 0 }, uGlacierStart: { value: new THREE.Vector2() }, uGlacierEnd: { value: new THREE.Vector2(0, -100) },
     uGlacierWidth: { value: 1 }, uGlacierSurface: { value: new THREE.Vector2() }, uGlacierMaxThickness: { value: 0 }, uGlacierRetreat: { value: 0 },
     uDeformAmp: { value: 0 }, uDeformKick: { value: 0 }, uDeformK: { value: 0 },

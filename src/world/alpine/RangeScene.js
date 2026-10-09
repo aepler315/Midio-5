@@ -1,3 +1,5 @@
+import { cloudPuffs } from './CloudOcclusion.js';
+import { applyLensFov } from '../../render/CameraLens.js';
 import { giantLayout, giantAmounts, mirrorGiantSpan, aheadOfEye } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
 // Range v2 GPU scene (plan §6, §7.2). One reusable WebGL2 context, owned
@@ -880,7 +882,8 @@ export class RangeScene {
    *  partition passes and the sky (RangePresentation._skyPan). */
   movedPose(view, frame, p = this.prepared.get(view.id) || null) {
     this._ensureTourWindow(p, frame.timeMs);
-    const rail = scenePoseAt(view, { progress01: view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01, timeMs: frame.timeMs });
+    const baseRail = scenePoseAt(view, { progress01: view.glacier && !frame.reducedMotion ? (frame.glacier?.journey01 ?? frame.progress01) : frame.progress01, timeMs: frame.timeMs });
+    const rail = { ...baseRail, fovYDeg: applyLensFov(baseRail.fovYDeg, frame.cameraEffects) };
     const proj = scenicProjection(rail.fovYDeg, frame.scenicViewport);
     // This view's VISIBLE frustum (the overscan margin excluded): the
     // pointer is normalised against the visible stage, and the zoom must
@@ -1049,7 +1052,27 @@ export class RangeScene {
     u.uCameraPos.value.copy(this.camera.position);
     u.uTourEnabled.value = p.view.tour ? 1 : 0;
     u.uTourEye.value.copy(this.camera.position);
+    this._setCloudUniforms(p, frame);
     this._setActors(p, frame);
+  }
+
+  _setCloudUniforms(p, frame) {
+    const u = p.uniforms;
+    if (!u.uCloudCount) return;
+    u.uMoonClouds.value = frame.light?.celestial?.body === 'moon' ? 1 : 0;
+    u.uCloudCount.value = 0;
+    if (!this.skyClouds || !u.uMoonClouds.value) return;
+    const e = this.camera.matrixWorld.elements;
+    const right = [e[0], e[1], e[2]], up = [e[4], e[5], e[6]], forward = [-e[8], -e[9], -e[10]];
+    const eyeM = this.camera.position.toArray();
+    const pose = { eyeM, targetM: eyeM.map((v,k) => v + forward[k]), fovYDeg: this.camera.fov };
+    const puffs = cloudPuffs(this.skyClouds.banks, { ...this.skyClouds.options, pose });
+    u.uCloudRight.value.set(...right); u.uCloudUp.value.set(...up); u.uCloudForward.value.set(...forward);
+    u.uCloudCount.value = puffs.length;
+    puffs.forEach((puff,i) => {
+      u.uCloudCenterRadius.value[i].set(...puff.centerM, puff.radiusXM);
+      u.uCloudShape.value[i].set(puff.radiusYM, puff.opacity);
+    });
   }
 
   /**
@@ -1109,7 +1132,7 @@ export class RangeScene {
       v.uColor.value.copy(display);
       v.uGlow.value = s.glow;
       v.uPresence.value = presence * (0.55 + 0.45 * dark);
-      v.uCohere.value = rangeQuality(frame.qualityLevel).landscapeGiants ? 0 : peak;
+      v.uCohere.value = peak;
       v.uTime.value = tSec + k * 37;
       v.uWanderPx.value = look.wanderPx * (1 + 0.5 * s.glow);
       v.uShapePx.value = look.shapePx;
@@ -1150,30 +1173,7 @@ export class RangeScene {
 
   // Atmosphere has its own copy boundary. It must never enter the terrain
   // alpha mask consumed by crest light and the sampled mountain skyline.
-  renderSkyGiants(frame, viewId, { side = 'A', bandColumns = null } = {}) {
-    const p = this.prepared.get(viewId);
-    const amounts = giantAmounts(frame);
-    const mirrored = p?.giantLayout.hasLake && Number.isFinite(p.mirrorLevelM);
-    if (!p || this.contextLost || !rangeQuality(frame.qualityLevel).landscapeGiants
-      || !(amounts[2] > .001 || amounts[0] > .001 && !mirrored)) return null;
-    const target = side === 'B' ? this.sideTargets.B : this.target;
-    if (!target) return null;
-    this._setCamera(p.view, frame, p); this._setUniforms(p, frame);
-    const r = this.renderer;
-    if (bandColumns && p.depthScenes) this._travelDepth(p, target, 'far', bandColumns);
-    else {
-      r.setRenderTarget(target); r.setClearColor(0x000000, 0); r.clear(true, true, false);
-      r.render(p.depthScene, this.camera);
-    }
-    if (amounts[2] > .001) r.render(p.actors.clouds.midasus.scene, this.camera);
-    if (amounts[0] > .001 && p.uniforms.uMidioCloud.value > .5) r.render(p.actors.clouds.midio.scene, this.camera);
-    this.depthCache[side].frame = -1;
-    this._setCanvasSize(this.size.width, this.size.height);
-    r.setRenderTarget(null); r.setClearColor(0x000000, 0); r.clear(true, true, false);
-    this._copy.mesh.material.uniforms.uColor.value = target.texture;
-    r.render(this._copy.scene, this._copy.camera);
-    return this.canvas;
-  }
+  renderSkyGiants() { return null; }
 
   /**
    * Render one scenic partition ('far' | 'mid' | 'near') of `frame` and

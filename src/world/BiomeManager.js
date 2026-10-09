@@ -2606,6 +2606,14 @@ export class BiomeManager {
       return;
     }
 
+    // The infinite sky shares the ordinary Range lens. Tour bodies already
+    // use its projected world directions, so they must not be scaled twice.
+    const skyLens = v2 && !this.rangePresentation?.tourMode
+      ? this.rangePresentation?.frame?.cameraEffects?.halfAngleScale || 1 : 1;
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.scale(1 / skyLens, 1 / skyLens);
+    ctx.translate(-canvas.width / 2, -canvas.height / 2);
     this._drawSky(ctx, canvas, A, B, t, dn.night);
     // The Range's sky is real sky: the narrative's coloured glyph arcs read
     // as marks on a chart, so they only draw where there is no Range sky.
@@ -2713,7 +2721,13 @@ export class BiomeManager {
       const top = hexToRgb(this._rotated(this.lerpCache.get(A.sky[0], B.sky[0], t)));
       const pan = this.rangePresentation?.skyPan;
       const panPx = (pan?.x || 0) * canvas.width / 2, panYPx = -(pan?.y || 0) * canvas.height / 2;
-      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, pan?.tourPose ? tourCloudBanks({ pose: pan.tourPose, width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973 }) : rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, panPx, panYPx }), {
+      const banks = pan?.tourPose ? tourCloudBanks({ pose: pan.tourPose, width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, lensScale: this.rangePresentation?.frame?.cameraEffects.halfAngleScale || 1 }) : rangeCloudBanks({ width: canvas.width, height: canvas.height, tSec: this.tSec, seed: (this.songSeed || 0) % 9973, panPx, panYPx });
+      if (this.rangePresentation?.scene) this.rangePresentation.scene.skyClouds = { banks, options: {
+        width: canvas.width, height: canvas.height, light: this._scenicLight,
+        allowPoint: this._rangeSky?.allowPoint || null,
+        alpha: this.rangeNarrative?.atmosphere ?? 1, lensScale: skyLens,
+      } };
+      withNarrativeAlpha(ctx, this.rangeNarrative?.atmosphere ?? 1, c => drawRangeClouds(c, banks, {
         dark: [Math.round(top.r * 0.8 + 18), Math.round(top.g * 0.8 + 22), Math.round(top.b * 0.8 + 30)],
         lit: [Math.round(halo.r * 0.7 + 60), Math.round(halo.g * 0.7 + 50), Math.round(halo.b * 0.7 + 45)],
         light: this._scenicLight, directGain: this._scenicLight.intensity,
@@ -2781,6 +2795,8 @@ export class BiomeManager {
     if (this._pass('beams') && !this._rangeSky) {
       this.lightRig.draw(ctx, canvas, cx, cy, mandalaColor, particleMul * (this.world?.kind === 'alpine' ? 0.25 : 1), this.reducedFlash, this._rangePresentation?.beams ?? 1);
     }
+
+    ctx.restore();
 
     // Scenic partitions. Range v2 (RangePresentation) replaces the legacy
     // ranges, their haze, connector hills and cast shadows with the real

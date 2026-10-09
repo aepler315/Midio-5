@@ -89,12 +89,9 @@ export function beatSwayOffset(tauMs, sign, energy01, motionMul = 1) {
   return { x: env * lateral * (sign < 0 ? -1 : 1), y: env * dip };
 }
 
-// Universe-shift reframe (ParallelUniverseDirector): a brief, gentle pull-
-// back + tilt right at a section boundary, riding that director's own
-// pulse envelope (0..1, rises then settles over ~0.9s). Reads as the camera
-// catching its breath as the world resettles into its next "parallel"
-// variant -- small enough to never compete with an impact shake, and it
-// composes additively so a landing mid-reframe still reads correctly.
+// Musical reframe: a small pull-back and tilt riding CameraLens's selected
+// phrase accents. Anticipation, hold and recovery share the terrain lens's
+// envelope; unrelated section boundaries no longer trigger this motion.
 export const UNIVERSE_ZOOM_DIP = 0.05;   // fraction pulled back at full pulse
 export const UNIVERSE_ROLL_MAX = 0.025;  // radians of extra tilt at full pulse
 
@@ -155,8 +152,8 @@ export class CameraDirector {
    *    BeatAnchor), or null if no beat clock is available yet (e.g. the
    *    very first frame). @param beatEnergy 0..1 how much the current
    *    section musically justifies extra motion (vibe.epic/hype.surge).
-   *  @param universePulse 0..1, ParallelUniverseDirector.pulse -- rises then
-   *    settles right at a section boundary. */
+   *  @param universePulse 0..1, CameraLens.zoomPulse -- a selected musical
+   *    accent with anticipation, hold and eased recovery. */
   update(dtSec, calmLevel = 0, reducedMotion = false, beatTauMs = null, beatEnergy = 0, universePulse = 0) {
     // Reduced-motion keeps the harder shake comfortable: half amplitude on
     // both the translational shake and the rotational roll.

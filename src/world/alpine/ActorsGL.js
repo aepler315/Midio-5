@@ -6,9 +6,7 @@
 // them, and the lake mirror (which renders the same band scenes) reflects
 // them. Their light reaches the ground, trees and water through the
 // shared uniforms below (ACTOR_GLSL).
-import { giantMaskData, giantMaskBytes, giantUniforms, GIANT_GLSL } from './LandscapeGiants.js';
-import { GiantCloudGL } from './GiantCloudGL.js';
-import { GiantReflectionGL } from './GiantReflectionGL.js';
+import { giantUniforms, GIANT_GLSL } from './LandscapeGiants.js';
 import { ACTOR_IDS, ACTOR_MOTES, ACTOR_OUTLINES } from './RangeActors.js';
 
 export const ACTOR_COUNT = 3;
@@ -191,13 +189,6 @@ export class ActorsGL {
     this.companions = {};
     this._geometries = [];
     this._materials = [];
-    this.mask = new THREE.DataTexture(giantMaskData(), 128, 128, THREE.RGBAFormat, THREE.UnsignedByteType);
-    this.mask.minFilter = this.mask.magFilter = THREE.LinearFilter;
-    this.mask.needsUpdate = true;
-    this.mask.onUpdate = () => { this.mask.image.data = null; this.mask.onUpdate = null; };
-    shared.uGiantMask.value = this.mask;
-    this.reflection = new GiantReflectionGL(THREE, shared);
-    this.clouds = { midio: new GiantCloudGL(THREE, shared, 0), midasus: new GiantCloudGL(THREE, shared, 2) };
     const blend = {
       transparent: true, depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth,
       blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
@@ -254,12 +245,9 @@ export class ActorsGL {
   }
 
   /** Bytes of the instance buffers (residency accounting). */
-  static bytes() { return ACTOR_IDS.length * ACTOR_MOTES * 6 * 4 + giantMaskBytes() + 180; }
+  static bytes() { return ACTOR_IDS.length * ACTOR_MOTES * 6 * 4 + 180; }
 
   dispose() {
-    this.mask.dispose();
-    this.reflection.dispose();
-    for (const cloud of Object.values(this.clouds)) cloud.dispose();
     for (const g of Object.values(this.groups)) g.removeFromParent();
     for (const m of this._materials) m.dispose();
     for (const g of this._geometries) g.dispose();

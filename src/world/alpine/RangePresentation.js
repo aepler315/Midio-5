@@ -1,3 +1,4 @@
+import { cameraLensAt, applyLensFov } from '../../render/CameraLens.js';
 // Range v2 presentation boundary (plan §6.2, §7.4). Owns the choice between
 // the GPU scene and the legacy painters for each frame, the song's scene
 // assignments, the frame snapshot, and the synchronous copy of each GPU
@@ -563,17 +564,18 @@ export class RangePresentation {
     this.timings.frameRenderMs = 0;
     this.timings.frameCopyMs = 0;
     if (view.tour && mgr.celestialState) {
-      const pose=view.tour.poseAt((mgr.tSec||0)*1000),projection=scenicProjection(pose.fovYDeg,inputs.scenicViewport);
+      const pose=view.tour.poseAt((mgr.tSec||0)*1000),lens=cameraLensAt({ sections:mgr.sections,timeMs:(mgr.tSec||0)*1000,durationMs:mgr.durationMs,reducedMotion:inputs.sim.reducedMotion || mgr.reducedMotion || mgr.reducedFlash,preview:mgr.terrainPreview }),projection=scenicProjection(applyLensFov(pose.fovYDeg,lens),inputs.scenicViewport);
       const state=mgr.celestialState,morning=(state.dawn01||0)>(state.dusk01||0),bodies={};
       for(const body of ['sun','moon']){
         const source=state[body],altitude=Math.asin(Math.max(-1,Math.min(1,source.altitude01??.2)))*180/Math.PI;
         const worldDirection=tourSkyDirection((morning?100:250)+(body==='moon'?180:0),altitude);
-        bodies[body]={...source,...projectSkyDirection({...pose,fovYDeg:projection.fovYDeg},worldDirection,projection.aspect),worldDirection};
+        bodies[body]={...source,radiusFrac:source.radiusFrac/lens.halfAngleScale,...projectSkyDirection({...pose,fovYDeg:projection.fovYDeg},worldDirection,projection.aspect),worldDirection};
       }
       mgr.celestialState={...state,...bodies};
       const active=bodies[state.activeBody];
       if(active&&mgr._scenicLight)mgr._scenicLight={...mgr._scenicLight,x:active.xFrac*inputs.scenicViewport.logicalWidth,y:active.yFrac*inputs.scenicViewport.logicalHeight};
     }
+    this.scene.skyClouds = null;
     this.frame = buildRangeFrame({
       frameId: ++this.frameId, generation: this.generation, sim: inputs.sim, pose: inputs.pose,
       scenicViewport: inputs.scenicViewport, groundViewport: inputs.groundViewport,
@@ -613,7 +615,7 @@ export class RangePresentation {
       }
       if (v.tour) return { tourPose: { ...pose, fovYDeg: proj.fovYDeg, aspect: proj.aspect } };
       const turn = skyTurn(pose, cameraBasis(rail).forward);
-      return { ...turn, tanY: Math.tan((proj.fovYDeg * Math.PI) / 360), aspect: proj.aspect };
+      return { ...turn, tanY: Math.tan((proj.fovYDeg * Math.PI) / 360) / (frame.cameraEffects?.halfAngleScale || 1), aspect: proj.aspect };
     };
     try {
       const a = one(view);

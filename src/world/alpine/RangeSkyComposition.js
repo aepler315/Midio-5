@@ -110,7 +110,7 @@ export function drawRangeClouds(ctx, banks, { dark = [52, 60, 78], lit = [196, 1
     for (let p = 0; p < b.puffs; p++) {
       const u = b.puffs === 1 ? 0.5 : p / (b.puffs - 1);
       const px = b.x - b.w / 2 + u * b.w;
-      const py = b.y + Math.sin(u * 9 + b.w) * b.h * 0.25;
+      const py = b.y + Math.sin(u * 9 + (b.phaseWidth ?? b.w)) * b.h * 0.25;
       if (allowPoint && !allowPoint(px, py)) continue;
       const rx = b.h * (1.3 + 0.9 * Math.sin(u * Math.PI)), ry = b.h * (0.55 + 0.35 * Math.sin(u * Math.PI));
       for (const [col, off, a] of [[lit, 0.2, 0.75 * directGain], [dark, -0.06, 1]]) {
@@ -146,7 +146,7 @@ export function projectSkyDirection(pose,direction,aspect=16/9) {
   return {xFrac:(x+1)/2,yFrac:(1-y)/2,visible:Math.abs(x)<1.2&&Math.abs(y)<1.2};
 }
 /** A complete sky cylinder: camera yaw exposes different persistent banks. */
-export function tourCloudBanks({pose,width,height,tSec=0,seed=0,count=36}) {
+export function tourCloudBanks({pose,width,height,tSec=0,seed=0,count=36,lensScale=1}) {
   const banks=[];
   for(let i=0;i<count;i++){
     const az=hash(i,seed+2)*360+tSec*CLOUD_DRIFT_W_PER_SEC*40;
@@ -154,7 +154,7 @@ export function tourCloudBanks({pose,width,height,tSec=0,seed=0,count=36}) {
     const p=projectSkyDirection(pose,direction,width/height);
     if(!p.visible)continue;
     const w=width*(.12+.16*hash(i,seed+4));
-    banks.push({id:`worldBank${i}`,x:p.xFrac*width,y:p.yFrac*height,w,h:w*(.1+.06*hash(i,seed+5)),alpha:.28+.14*hash(i,seed+6),puffs:7});
+    banks.push({id:`worldBank${i}`,x:p.xFrac*width,y:p.yFrac*height,phaseWidth:w,w:w/lensScale,h:w*(.1+.06*hash(i,seed+5))/lensScale,alpha:.28+.14*hash(i,seed+6),puffs:7});
   }
   return banks;
 }
