@@ -136,3 +136,11 @@ test('no foreground never builds ground, and shared target release clears owners
   assert.equal(disposed, 1);
   assert.equal(s.residency.snapshot().liveBytes, 0);
 });
+
+test('uncomposed tour views without a foreground stage never allocate a ground target', () => {
+  const s = bareScene();
+  s.prepared.set('tour', { view: { id: 'tour' }, stageGL: null });
+  s.contextLost = false;
+  assert.equal(s.renderGround({ compositions: { tour: null } }, 'tour'), null);
+  assert.equal(s.residency.snapshot().liveBytes, 0);
+});

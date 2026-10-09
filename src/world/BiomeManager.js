@@ -54,7 +54,6 @@ import { farShoreRecipe, farShoreHeight01, farShorePulse01, FAR_SHORE_PARALLAX, 
 import { mirageRecipe, mirageHeight01, mirageShimmerPx, miragePresence01, mirageDriftPx, mirageStretch01, MIRAGE_TILE_PX } from './FataMorgana.js';
 import { buildWaveComponents, waveFieldSample, windSpeedForSeaState, easeSeaState, shouldRebuildSpectrum } from './WaveField.js';
 import { generateCatalogue, subPixelDraw, twinkleAmplitude, galacticBandCenterY, GALACTIC_BAND, extinction01, reddening01, generateDustLanes, generateDeepSky, generatePlanets, generateOpenClusters, generateGalacticGranules, perceptualStretch } from './StarCatalogue.js';
-import { drawRockStageShade } from './alpine/RockStage.js';
 import { CHARACTER_SCHEMES } from './dna/ShapeGrammar.js';
 import { islands, tsunamiSchedule, tsunamiActive, tsunamiProgress, tsunamiRowFrac, tsunamiPerspectiveScale, tsunamiCenterX, tsunamiLift, tsunamiDepthLift, tsunamiProfile, sprayFlecks, fishArcY, serpentHumpY, wrappedOffset, OCEAN_LIFE_RATIO, TSUNAMI_WIDTH_PX, tsunamiHeightScale, TSUNAMI_OVERTOP_SCALE, tsunamiWithdrawalActive, tsunamiWithdrawal01 } from './OceanLife.js';
 import { ConstellationWeaver } from './ConstellationWeaver.js';
@@ -2823,26 +2822,11 @@ export class BiomeManager {
     if (this.world?.kind === 'alpine' && this._scenicLight && this._scenicTransform && ctx.getTransform) {
       this.light = this._groundLight || convertLightBetween(this._scenicLight, this._scenicTransform, ctx.getTransform());
     }
-    // Range v2: the rock stage on the rendered support curve replaces the
-    // legacy ground fill, footing and ground materials; the ground's musical
-    // signatures still draw over it. Legacy ground otherwise.
-    if (v2Arriving && !this.rangePresentation.hasViewComposition) {
-      // Legacy ground under the arriving rock stage; receivers stay legacy
-      // until the fade completes.
-      this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-      this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-      if (this.groundField) this.rangePresentation.drawGround(ctx, groundCanvas);
-    } else if (v2 && this.groundField && (this.rangePresentation.drawGround(ctx, groundCanvas) || this.rangePresentation.hasViewComposition)) {
-      const bars = this.rangePresentation.stage?.bars || [];
-      this._groundReceivers = this.rangePresentation.groundReceivers();
-      this._lakeReflectGroundY = null;
-      if (bars.length && !this.rangePresentation.hasViewComposition) withNarrativeAlpha(ctx, this.rangeNarrative?.relief ?? 1, c => drawRockStageShade(c, { bars, width: groundCanvas.width, height: groundCanvas.height }));
-      if (bars.length && !this.rangePresentation.hasViewComposition) withNarrativeAlpha(ctx, this.rangeNarrative?.materials ?? 1, c => this._drawGroundSignatures(c, groundCanvas, bars, this._terrainTopPath(bars, groundCanvas.height, false, groundCanvas.width), worldX, A, B, t));
-    } else {
-      this._drawGround(ctx, groundCanvas, worldX, originX, A, B, t, tint);
-      // Light contact seam only — keep ranges readable (heavy mist/AO massacred them).
-      this._drawTerrainFooting(ctx, groundCanvas, worldX, originX, A, B, t);
-    }
+    // The physical terrain and lake fill the frame. Never lay a fixed
+    // ground bar over them, including during arrival or legacy fallback.
+    // Physics still uses GroundField, but it has no painted receivers.
+    this._groundReceivers = null;
+    this._lakeReflectGroundY = null;
     // The inhabited shore paints over the bottom third after this pass, so
     // the Renderer draws the flood itself, above the shore, when deferred.
     if (!this.inhabitedShore && !this.rangePresentation?.hasViewComposition) this._drawFlood(ctx, groundCanvas);

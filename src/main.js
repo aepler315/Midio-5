@@ -1973,9 +1973,7 @@ function startTimeline(timelineData, extra = {}) {
   // the estimate it is rather than as a measurement.
   sim.estimatedDuration = !!timelineData.estimatedDuration;
   // Canvas is always the scene compositor; 'webgl' adds a non-destructive
-  // overlay. The world is passed too: one that brings its own pipeline
-  // (Cathode) replaces the renderer outright rather than branching inside
-  // it. Created here, per song, which is after the world is known.
+  // overlay. Created here per song, after the world is known.
   renderer = createPresentingRenderer({ canvas, mode: rendererMode, presentation: effectivePresentation(), residency: sharedResidency() });
   if (rangePresentation) {
     rangePresentation.setSong({ terrain: timelineData.terrain || null, mgr: sim.biomes, generation: loadGen, exportMode });

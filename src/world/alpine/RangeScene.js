@@ -641,7 +641,7 @@ export class RangeScene {
         material.depthFunc = THREE.LessEqualDepth;
         material.depthWrite = false;
         forest = createForest(THREE, placed, uniforms);
-        if (resolveRangeComposition(view)?.foreground !== 'none') stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
+        if (resolveRangeComposition(view)?.foreground === 'ledge') stageGL = new RockStageGL(THREE, { textures: mat.textures, palette: mat.pack.manifest.palette, rules });
         for (const band of BANDS) for (const m of forest.byBand[band]) scenes[band].add(m);
         for (const d of forest.depth) depthScene.add(d);
         // The cast: lanterns and swarms, moved between band scenes as they
@@ -1260,7 +1260,7 @@ export class RangeScene {
   renderGround(frame, viewId = frame.viewFromId) {
     if (frame.compositions?.[viewId]?.foreground === 'none') return null;
     const p = this.prepared.get(viewId);
-    if (!p || this.contextLost) return null;
+    if (!p?.stageGL || this.contextLost) return null;
     const composition = frame.compositions?.[viewId] ?? resolveRangeComposition(p.view);
     if (composition?.foreground === 'none') return null;
     const vp = frame.groundViewport;

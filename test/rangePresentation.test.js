@@ -65,7 +65,7 @@ test('v2 draws its partitions at the retained pass boundaries, legacy scenery no
   m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
   const seq = calls.filter((c) => /gpu:|_draw(HorizonEQ|CrestLight|SpectrumMassif|FarVignettes|MidDepthLife|Ground|LegacyScenic)|spaceRidge|_drawSky/.test(c));
   assert.deepEqual(seq, ['_drawSky', 'spaceRidge', '_drawSpectrumMassif', 'gpu:far', '_drawCrestLight', '_drawFarVignettes',
-    'gpu:mid', '_drawMidDepthLife', 'gpu:near', '_drawGround']);
+    'gpu:mid', '_drawMidDepthLife', 'gpu:near']);
   assert.ok(!calls.includes('_drawLegacyScenic'), 'no double-painted terrain');
   assert.equal(calls.filter((c) => c === '_drawCrestLight').length, 1, 'the Dancing Ridge lights the far range exactly once');
   assert.ok(!calls.includes('_drawHorizonEQ'), 'its drawn line belongs to the legacy stack only');
@@ -78,7 +78,7 @@ test('when v2 is not ready the legacy stack draws, with the ridge in its origina
   m.rangePresentation = fakePresentation({ ready: false });
   m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
   const seq = calls.filter((c) => /gpu:|_draw(HorizonEQ|SpectrumMassif|LegacyScenic|Ground)/.test(c));
-  assert.deepEqual(seq, ['_drawHorizonEQ', '_drawSpectrumMassif', '_drawLegacyScenic', '_drawGround']);
+  assert.deepEqual(seq, ['_drawHorizonEQ', '_drawSpectrumMassif', '_drawLegacyScenic']);
   assert.equal(m._rangeV2Active, false);
   m.dispose();
 });
@@ -422,7 +422,7 @@ test('frame timings sum every pass of a frame and restart with the next frame', 
   const spin = (ms) => { const end = performance.now() + ms; while (performance.now() < end) { /* busy */ } };
   const scene = fakeScene();
   scene.renderPartition = () => { spin(3); return { width: 2, height: 2 }; };
-  scene.renderGround = () => { spin(3); return { canvas: { width: 2, height: 2 }, stage: null }; };
+  scene.renderGround = () => { throw new Error('the removed ground pass cannot contribute frame time'); };
   const p = presentationWith(scene);
   p.setSong({ terrain: { sceneByBiome: new Map([['RAINFOREST', { view: catalog.views[0], fallbackReason: null }]]) }, generation: 1 });
   await p.whenReady();
@@ -436,7 +436,7 @@ test('frame timings sum every pass of a frame and restart with the next frame', 
     return { ...p.timings };
   };
   const a = frame();
-  assert.ok(a.frameRenderMs >= 12, `four 3 ms passes summed, got ${a.frameRenderMs}`);
+  assert.ok(a.frameRenderMs >= 9, `three 3 ms terrain passes summed, got ${a.frameRenderMs}`);
   assert.ok(a.lastPartitionMs < a.frameRenderMs, 'the last pass alone is not the frame');
   const b = frame();
   assert.equal(b.frameId, a.frameId + 1);
@@ -487,6 +487,25 @@ test('migrated no-stage final manager path suppresses opaque foreground painters
     assert.equal(m._groundReceivers, null);
     assert.equal(m._lakeReflectGroundY, null);
     assert.equal(calls.filter(c => c === '_drawTransitionOverlays').length, 1);
+    m.dispose();
+  }
+});
+
+test('Range never paints a foreground ground bar, including fallback and uncomposed views', () => {
+  for (const ready of [false, true]) for (const arriving of [false, true]) {
+    const { m, calls } = manager();
+    m.groundField = { visibleBars: () => [{ x: 0, width: 1408, y: 500 }] };
+    m._groundReceivers = { wetMasks: ['stale'] };
+    m._lakeReflectGroundY = 500;
+    let gpuGroundDraws = 0;
+    m.rangePresentation = { ...fakePresentation({ ready }), arriving, hasViewComposition: false,
+      drawGround: () => { gpuGroundDraws++; return true; }, groundReceivers: () => null };
+    m.draw(anyCtx(), { width: 1408, height: 848 }, 0, 0, null, 1, null, groundView);
+    assert.equal(calls.includes('_drawGround'), false, `legacy ground: ready=${ready}, arriving=${arriving}`);
+    assert.equal(calls.includes('_drawTerrainFooting'), false);
+    assert.equal(gpuGroundDraws, 0);
+    assert.equal(m._groundReceivers, null);
+    assert.equal(m._lakeReflectGroundY, null);
     m.dispose();
   }
 });
