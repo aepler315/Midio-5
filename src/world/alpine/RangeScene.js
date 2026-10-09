@@ -519,7 +519,7 @@ export class RangeScene {
     const job = (async () => {
       const cpu = await prepareTerrainAssets(view, { baseUrl, residency: this.residency, generation, signal, isCurrent });
       let mat = null, res = null, published = false;
-      let surface, geos, material, forest, stageGL, featureMaterial, actors;
+      let surface, geos, material, depthMaterial, forest, stageGL, featureMaterial, actors;
       let windowWorker = null, initialWindow = null, workerKey = null, windowReservation = null;
       const featureGeometries = {};
       const stale = () => {
@@ -595,7 +595,7 @@ export class RangeScene {
         featureMaterial = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms,
           vertexShader: SCENE_VERT, fragmentShader: FEATURE_FRAG, transparent: true,
           depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth });
-        const depthMaterial = createDepthMaterial(THREE, uniforms);
+        depthMaterial = createDepthMaterial(THREE, uniforms);
         await yieldToMain();
         if (stale()) throw new RangeAssetError('stale', `stale ${view.id}`);
         const meshes = {}, depthMeshes = {}, scenes = {};
@@ -660,9 +660,21 @@ export class RangeScene {
           depthScenes[band].add(dm);
           for (const d of forest.depthByBand?.[band] || []) depthScenes[band].add(d);
         }
-        // Compile now, not in the first playing frame.
-        this.renderer.compile(scenes.far, this.camera);
-        this.renderer.compile(depthScene, this.camera);
+        // Three's compile() creates programs but does not reject a failed
+        // link. Check before publishing: otherwise trees draw over empty
+        // terrain, while presentation incorrectly suppresses its fallback.
+        const gl = this.renderer.getContext();
+        for (const scene of [scenes.far, depthScene]) {
+          const compiled = this.renderer.compile(scene, this.camera);
+          for (const m of compiled) {
+            for (const program of this.renderer.properties.get(m).programs.values()) {
+              if (gl.getProgramParameter(program.program, gl.LINK_STATUS)) continue;
+              if (gl.isContextLost()) throw new RangeAssetError('context-lost', `GPU context lost while compiling ${view.id}`);
+              const log = (gl.getProgramInfoLog(program.program) || 'program link failed').trim().slice(0, 768);
+              throw new RangeAssetError('shader', `${view.id}: ${log}`);
+            }
+          }
+        }
         const prepared = {
           view, generation, manifest: cpu.manifest, data: cpu.data, identity: cpu.identity, tourCpuKey: opts.tourCpuKey,
           surface, uniforms, material, depthMaterial, geometries: geos.geometries, fringes: geos.fringes, fringeMeshes, fringeTravel, scenes, depthScene, depthScenes,
@@ -706,6 +718,7 @@ export class RangeScene {
           actors?.dispose();
           stageGL?.dispose();
           material?.dispose();
+          depthMaterial?.dispose();
           featureMaterial?.dispose();
           for (const g of Object.values(featureGeometries)) g.dispose();
           surface?.texture?.dispose();

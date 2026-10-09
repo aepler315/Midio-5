@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "verdict": "unreviewed",
+  "frames": [
+    {
+      "songId": "contrast",
+      "timeMs": 6000,
+      "before": "contrast/frame-00000.png",
+      "after": "contrast/frame-00000.png",
+      "identical": true,
+      "difference": {
+        "changedFraction": 0,
+        "meanAbsoluteError": 0
+      }
+    },
+    {
+      "songId": "contrast",
+      "timeMs": 12000,
+      "before": "contrast/frame-00001.png",
+      "after": "contrast/frame-00001.png",
+      "identical": true,
+      "difference": {
+        "changedFraction": 0,
+        "meanAbsoluteError": 0
+      }
+    },
+    {
+      "songId": "contrast",
+      "timeMs": 20000,
+      "before": "contrast/frame-00002.png",
+      "after": "contrast/frame-00002.png",
+      "identical": true,
+      "difference": {
+        "changedFraction": 0,
+        "meanAbsoluteError": 0
+      }
+    }
+  ]
+}

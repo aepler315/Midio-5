@@ -1,0 +1,119 @@
+{
+  "fault": "invalid terrain GLSL",
+  "audio": "/workspace/Midio-5/.smoke/range-regression/baseline/contrast/audio.wav",
+  "timeMs": 12000,
+  "browser": "151.0.7922.173",
+  "passed": true,
+  "range": {
+    "tourMode": null,
+    "tour": null,
+    "mode": "v2",
+    "active": false,
+    "reason": "shader: teton-jackson-lake: Fragment shader is not compiled.\n\u0000",
+    "viewId": null,
+    "forcedCandidate": false,
+    "forcedViewId": "teton-jackson-lake",
+    "diag": null,
+    "generation": 1,
+    "runtime": "ready",
+    "arrival": 1,
+    "incomingFade": 1,
+    "incomingViewId": null,
+    "seamP": null,
+    "failures": {
+      "teton-jackson-lake": "shader: teton-jackson-lake: Fragment shader is not compiled.\n\u0000"
+    },
+    "deferred": [],
+    "frameId": 0,
+    "progress01": null,
+    "scene": {
+      "prepared": [],
+      "pending": [],
+      "contextLost": false,
+      "windows": [],
+      "size": {
+        "width": 0,
+        "height": 0
+      },
+      "stats": {
+        "depthPasses": 0,
+        "partitions": 0,
+        "lastPartitionMs": 0
+      },
+      "sideB": false
+    },
+    "residency": {
+      "budget": "desktop",
+      "budgetBytes": 268435456,
+      "pendingBytes": 0,
+      "liveBytes": 75235968,
+      "denials": 0,
+      "overcommits": 0,
+      "byOwner": {
+        "legacy-strips#2": {
+          "pending": 0,
+          "live": 75235968,
+          "count": 2
+        }
+      },
+      "pinned": [],
+      "cancelledGenerations": [],
+      "peakBytes": 180510106,
+      "peakByOwner": {
+        "legacy-strips#2": 37605256,
+        "range-terrain-cpu": 8185208,
+        "range-material": 12582910,
+        "range-terrain-gpu": 66893841,
+        "range-scratch": 55242891
+      },
+      "entryCount": 2,
+      "generations": [
+        0
+      ]
+    },
+    "narrative": null,
+    "timings": {
+      "lastCopyMs": 0,
+      "lastPartitionMs": 0,
+      "frameId": 0,
+      "frameRenderMs": 0,
+      "frameCopyMs": 0
+    },
+    "catalogVersion": 19
+  },
+  "errors": [
+    "warn: [range v2] teton-jackson-lake unavailable; legacy Range for its sections RangeAssetError: teton-jackson-lake: Fragment shader is not compiled.\n\u0000\n    at http://127.0.0.1:8080/src/world/alpine/RangeScene.js:674:21"
+  ],
+  "resources": {
+    "prepared": [],
+    "residency": {
+      "budget": "desktop",
+      "budgetBytes": 268435456,
+      "pendingBytes": 0,
+      "liveBytes": 75235968,
+      "denials": 0,
+      "overcommits": 0,
+      "byOwner": {
+        "legacy-strips#2": {
+          "pending": 0,
+          "live": 75235968,
+          "count": 2
+        }
+      },
+      "pinned": [],
+      "cancelledGenerations": [],
+      "peakBytes": 180510106,
+      "peakByOwner": {
+        "legacy-strips#2": 37605256,
+        "range-terrain-cpu": 8185208,
+        "range-material": 12582910,
+        "range-terrain-gpu": 66893841,
+        "range-scratch": 55242891
+      },
+      "entryCount": 2,
+      "generations": [
+        0
+      ]
+    }
+  }
+}
