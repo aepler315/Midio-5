@@ -1,0 +1,112 @@
+# Run, inspect, change, compare
+
+Use actual audio and actual rendered output to guide changes. Unit tests establish correctness; they do not establish that the scene looks good or follows the music clearly.
+
+## First run
+
+```sh
+npm ci
+npx playwright install chromium
+npm run visual:eval -- --out .smoke/baseline
+```
+
+On Linux CI, install browser system dependencies with `npx playwright install --with-deps chromium`. An existing Chromium can be selected with `PLAYWRIGHT_CHROMIUM_PATH`. The command starts and stops its own loopback server and browser. It does not depend on `npm start`, an occupied port, the deployed site, or the version picker.
+
+Open `.smoke/baseline/index.html`. The report contains time-stamped checkpoints, every saved motion frame, diagnostic state, and source audio. Press a clip button to play the matching audio while the actual captured frames advance. Expand the consecutive-frame section to inspect an attack or transition frame by frame. Download and extract the entire evidence folder before opening an HTML report from CI.
+
+The full two-pass CI corpus took about 20 minutes on software WebGL in the initial verification. For tight iterations, use a focused manifest with one recording and a few windows; use the full corpus for acceptance.
+
+The default versioned corpus contains three generated 24-second recordings: silence, isolated kicks, and quiet/loud/quiet instrumental contrast. The contrast track uses the existing pilot generator. These are controlled diagnostic inputs, not coverage of real genres or proof of instrument recognition. Run your representative recordings before accepting an artistic change.
+
+## The coding-model loop
+
+1. Capture a baseline before editing. Read the JSON status and errors; open the PNGs and inspect consecutive frames; listen to the matching passage. A failed capture is a harness/runtime problem to diagnose, not an acceptable baseline.
+2. Write one falsifiable observation with a song ID and timestamp: for example, “The ridge response vanishes at the storm maximum at 12.0 seconds.” Distinguish an audio-derived control from an ambient clock. State what visible evidence would show improvement.
+3. Change the smallest relevant component. Preserve the original baseline. Run the relevant behavior tests.
+4. Run **the same manifest** into a new directory:
+
+   ```sh
+   npm run visual:eval -- --out .smoke/candidate
+   npm run visual:eval -- --compare .smoke/baseline .smoke/candidate --out .smoke/comparison
+   ```
+
+5. Open the comparison and both audio-backed motion reports. Check quiet, attack, climax and return passages. A large pixel difference does not mean better; identical pixels can reveal that the code change never reached the image.
+6. Record a retain/revert decision, the observation it addresses, regressions checked, and remaining uncertainty. If an iteration does not improve the stated observation, revert only that iteration's changes. Keep unrelated user work intact. Stop when the selected acceptance criteria are met; do not keep adding spectacle to increase a score.
+
+Suggested task prompt:
+
+> Read AGENTS.md and docs/visual-evaluation-loop.md. Capture the specified manifest as a baseline. Inspect actual screenshots and listen to the corresponding clips. Choose the most consequential visible musical mismatch, explain its cause, and make one scoped improvement. Capture the identical manifest again, compare the results, and retain the change only if the target visibly improves without regressions in quiet passages, transitions, or framing. Report the evidence paths and exact song/time references. Do not infer visual success from unit tests or numeric controls alone.
+
+## Your own recordings
+
+Create a manifest in an ignored directory, for example `.smoke/music-corpus.json`. File paths are relative to the manifest, not to the shell's working directory. Absolute paths work too. The runner copies audio into its output so the report remains playable offline. Keep private/copyrighted recordings and reports out of public commits and public CI artifacts.
+
+```json
+{
+  "version": 1,
+  "settings": {
+    "width": 1280,
+    "height": 720,
+    "seed": 315,
+    "quality": 0,
+    "view": "teton-jackson-lake",
+    "biome": "CONIFER",
+    "fps": 24,
+    "mode": "sparse",
+    "intervalMs": 10000
+  },
+  "songs": [
+    {
+      "id": "my-song",
+      "file": "../music/my-song.flac",
+      "clips": [
+        { "startMs": 30000, "durationMs": 3000 },
+        { "startMs": 90000, "durationMs": 3000 }
+      ]
+    }
+  ]
+}
+```
+
+```sh
+npm run visual:eval -- --manifest .smoke/music-corpus.json --out .smoke/real-baseline
+```
+
+Without `timesMs`, checkpoints occur at zero and every `intervalMs` (10 seconds by default), up to the decoded duration. Without `clips`, the runner captures two seconds around the midpoint (shorter for very short inputs). To sample chosen musical moments, supply `timesMs` and `clips` explicitly. An empty `clips` array disables motion samples; an empty `timesMs` array is rejected. Out-of-range times or clips fail instead of silently truncating. WAV, MP3, FLAC, OGG, M4A and AAC are accepted when Chromium can decode them; MIDI requires rendered audio first.
+
+Choose at least a quiet/sparse recording, a rhythmically clear recording, and a dense recording; include a strong section contrast and a returning motif. Save the chosen windows once. Do not pick new favorable moments after seeing the candidate. Keep an additional holdout song for final acceptance.
+
+## What is held fixed
+
+- SHA-256 of each copied audio file, requested and actual timestamps.
+- Seed, quality level, viewport, DPR 1, frame cadence, capture mode, view and biome pin.
+- Chromium version and reported GL renderer/vendor/device memory.
+- An immutable in-memory snapshot of `index.html` and the entire public `src/` tree, including terrain assets and runtime code. Its hashes and git commit/dirty state are recorded. A source edit during the capture makes the run fail and preserves its evidence.
+- External page requests are blocked; lyrics lookup is disabled; service workers are blocked. Real upload, decode, analysis and rendering still run.
+
+`view: null` and `biome: null` exercise natural song casting. Use a separate manifest for this check; it is intentionally incompatible with a forced-view A/B run. Current assertions require Range v2 to stay active. A natural-casting case with legitimate legacy fallback is reported as a failed v2 case, not mislabeled high-fidelity evidence. Existing `test:worlds` remains the suite for the other seven worlds.
+
+## Timing and interpretation
+
+**Sparse** mode advances fixed simulation steps over gaps, draws an early opening frame, then draws every selected checkpoint and clip frame plus one second of clip pre-roll. Skipped draws can matter to render history. This is useful for fast composition and localized response comparisons, but does not prove uninterrupted playback behavior.
+
+**Continuous** mode draws every frame from zero through the last requested checkpoint/clip at the chosen FPS. Use it when changing temporal accumulation, opening transitions, camera continuity, weather history, or any render-dependent state. It is slower, particularly in software WebGL. Choose short focused recordings to keep it practical. The existing live playback/seek/export tests remain relevant; fixed export evidence does not certify live audio latency, seeking equivalence, context recovery, or hardware performance.
+
+The export clock can be up to one fixed simulation step behind a requested time. Every frame records its actual time; playback of the captured sequence uses that time. The report's audio energy and camera/weather diagnostics help trace causes but are not proof that their visible effect is strong enough.
+
+The default 640×360 capture is fast triage. Use 1280×720 or higher and your intended quality level for final fine-detail review. Pin the same settings in both runs. Software WebGL timings are not desktop/phone FPS measurements.
+
+## Failures and outputs
+
+The output directory must be new. This protects baselines from accidental overwrite. Each capture exits nonzero on errors and retains `report.json`, `index.html`, and any completed frames. A browser-launch failure therefore produces an honest failed report, not an empty green result.
+
+Each completed run has:
+
+- `manifest.json`: normalized requested inputs/settings.
+- `report.json`: provenance, actual state, warnings/errors and saved frame metadata.
+- `index.html`: offline review page, audio and motion controls.
+- `<song>/audio.*`, `<song>/frame-*.png`: copied audio and actual images.
+
+Comparison checks identical input hashes, settings, browser/environment, duration, schedule and complete frame sets. It verifies copied audio and PNG hashes before writing a self-contained side-by-side report. Changed-pixel measurements use 64×36 thumbnails and ignore changes of at most two RGB levels; they are diagnostics, never a pass/fail aesthetic criterion. The quality verdict always starts `unreviewed`.
+
+The `Visual evaluation` CI workflow captures the committed default fixtures and uploads the report even when the command fails. It also repeats one identical capture to expose nondeterminism. Any drift is recorded as a finding, not automatically accepted or hidden by a loose screenshot tolerance.
