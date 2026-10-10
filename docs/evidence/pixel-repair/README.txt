@@ -9,3 +9,7 @@ Use evidence-manifest.json to verify the archive, report and every packaged arti
 The evidence branch intentionally keeps large generated files out of the implementation PR.
 
 All 18 matched successful-scene PNGs are identical before/after. Integer raster fixtures improve from 29 fractional origins / 17 failed grids out of 32 to zero. All 26 live fallback encode/decode checks pass. Actual v2 buffers and fallback are verified in browser CI; two live v2 encoding attempts timed out. Hardware/Safari/long authored-camera/full-cast checks remain unverified.
+
+PR #422 was merged by account aepler315 while verification was finishing.
+Main squash commit: 7862d4e695daf1633ee3608b1047b19456b5e47c
+Verified its complete Git tree matches implementation commit dac52b6, including the smoke-test correction.
