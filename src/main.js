@@ -278,6 +278,8 @@ const rangeListening = true;
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
+const playbackCadence = new FrameCadence();
+const titleCadence = new FrameCadence();
 let lastSpecSig = null; // cache-gate for the One-Spectrum CSS var sync (write only on key/form change)
 // A second, much coarser gate for the --glow-* tokens. See the note on
 // #app::before in style.css: those three feed a larger-than-viewport element
@@ -555,8 +557,6 @@ function persistFpsCap(fps) {
 }
 
 let fpsCapMs = 1000 / readFpsCap();
-const playbackCadence = new FrameCadence();
-const titleCadence = new FrameCadence();
 /** Exact backing-store size while tools/bulk-export.mjs is driving frames.
  *  Display-fit and the perf ladder both stand aside for it. */
 let bulkExportSize = null;
