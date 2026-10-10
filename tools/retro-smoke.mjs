@@ -32,7 +32,9 @@ try {
   browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_PATH,headless:true,args:['--in-process-gpu','--ignore-gpu-blocklist']});
   report.browser=browser.version();
   report.raster=await verifyPixelRaster(browser,{url:'http://127.0.0.1:8089',out:path.join(out,'raster')});
-  for(const backend of ['v2','legacy']) {
+  const backends=(process.env.RETRO_BACKENDS||'v2,legacy').split(',');
+  assert.ok(backends.length&&backends.every(b=>['v2','legacy'].includes(b)));report.requestedBackends=backends;
+  for(const backend of backends) {
     console.log('Checking backend',backend);
     const context=await browser.newContext({viewport:{width:1000,height:700},serviceWorkers:'block'});
     await context.addInitScript(seedBrowserConstruction,315);await context.addInitScript(installSeedReceiver);
@@ -142,6 +144,15 @@ try {
           report.contextRestore=restored.backend;
         } else report.contextLoss='extension unavailable';
       }
+      // Negative controls use actual Chromium pixels and completed scene
+      // buffers, so a black or frozen image cannot pass just on color count.
+      await page.evaluate(()=>{const c=document.querySelector('#stage'),ctx=c.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,c.width,c.height);});
+      const black=await page.evaluate(inspectPixelFrame);assert.throws(()=>assertMeaningfulFrame(black),/blank/);
+      await fs.writeFile(path.join(out,`${backend}-rejected-black.png`),Buffer.from(black.png,'base64'));
+      await page.evaluate(()=>window.__SMW.renderExportFrame(11000));
+      const held=await page.evaluate(inspectPixelFrame),repeat=await page.evaluate(inspectPixelFrame);
+      assertMeaningfulFrame(held);assert.throws(()=>assertTemporalChange([held.thumbnail,repeat.thumbnail]),/frozen/);
+      report.frames.push({kind:'negative-controls',backend,blackRejected:true,frozenRejected:true,black:{colors:black.colors,mean:black.mean},heldTimeMs:held.timeMs});
       // Reproduce first-frame export failure in the actual app, without an
       // untracked fallback canvas or allowing a returned blank file.
       const failed=await page.evaluate(async()=>{
