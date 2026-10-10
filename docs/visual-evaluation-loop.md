@@ -14,7 +14,11 @@ On Linux CI, install browser system dependencies with `npx playwright install --
 
 Open `.smoke/baseline/index.html`. The report contains time-stamped checkpoints, every saved motion frame, diagnostic state, and source audio. Press a clip button to play the matching audio while the actual captured frames advance. Expand the consecutive-frame section to inspect an attack or transition frame by frame. Download and extract the entire evidence folder before opening an HTML report from CI.
 
-The full two-pass CI corpus took about 20 minutes on software WebGL in the initial verification. For tight iterations, use a focused manifest with one recording and a few windows; use the full corpus for acceptance.
+The full two-pass corpus can exceed 30 minutes on software WebGL. CI runs
+each complete recording in a separate job, retaining every checkpoint and
+motion sample in both passes and comparing identical inputs. For tight
+iterations, use a focused manifest with one recording and a few windows;
+use the full corpus for acceptance.
 
 The default versioned corpus contains three generated 24-second recordings: silence, isolated kicks, and quiet/loud/quiet instrumental contrast. The contrast track uses the existing pilot generator. These are controlled diagnostic inputs, not coverage of real genres or proof of instrument recognition. Run your representative recordings before accepting an artistic change.
 

@@ -16,22 +16,38 @@ jobs:
   capture:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        song: [silence, kicks, contrast]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/setup
         with:
           browser: true
+      - name: Select one complete recording from the shared corpus
+        env:
+          VISUAL_SONG: ${{ matrix.song }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const corpus = JSON.parse(fs.readFileSync('test/fixtures/visual-evaluation.json', 'utf8'));
+          const songs = corpus.songs.filter(song => song.id === process.env.VISUAL_SONG);
+          if (songs.length !== 1) throw new Error('Expected exactly one corpus recording');
+          fs.mkdirSync('.smoke/visual-evaluation', { recursive: true });
+          fs.writeFileSync('.smoke/visual-evaluation/corpus.json', JSON.stringify({ ...corpus, songs }));
+          NODE
       - name: Capture diagnostic corpus
-        run: npm run visual:eval -- --out .smoke/visual-evaluation/baseline
+        run: npm run visual:eval -- --manifest .smoke/visual-evaluation/corpus.json --out .smoke/visual-evaluation/baseline
       - name: Repeat identical corpus
-        run: npm run visual:eval -- --out .smoke/visual-evaluation/repeat
+        run: npm run visual:eval -- --manifest .smoke/visual-evaluation/corpus.json --out .smoke/visual-evaluation/repeat
       - name: Compare identical inputs
         run: npm run visual:eval -- --compare .smoke/visual-evaluation/baseline .smoke/visual-evaluation/repeat --out .smoke/visual-evaluation/comparison
       - name: Retain real rendered evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: visual-evaluation
+          name: visual-evaluation-${{ matrix.song }}
           path: .smoke/visual-evaluation/
           include-hidden-files: true
           if-no-files-found: error
