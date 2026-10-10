@@ -47,11 +47,31 @@ try {
     });
     assert.equal(frame.range.active, false, 'a failed terrain shader cannot claim an active scene');
     assert.match(frame.range.failures['teton-jackson-lake'], /^shader:/);
+    assert.match(frame.range.failures['teton-jackson-lake'], /ERROR|syntax error/i,
+      'retain the native compiler diagnostic, not only a generic link failure');
     assert.deepEqual(report.resources.prepared, []);
     for (const owner of ['range-terrain-gpu', 'range-terrain-cpu', 'range-material']) {
       assert.equal(report.resources.residency.byOwner[owner], undefined, `${owner} released after rejection`);
     }
     assert.ok(!errors.some(error => error.startsWith('gl:')), 'failure handled before first shader use');
+    // The phone-accessible report uses the same production controls in the
+    // playback dialog, including a selectable fallback when copying is denied.
+    await context.grantPermissions([]);
+    await page.locator('#displaySettingsBtn').click({force:true});
+    await page.locator('#graphicsTroubleshooting summary').click();
+    await page.locator('#copyGraphicsReport').click();
+    assert.match(await page.locator('#graphicsReportStatus').textContent(), /Select and copy/);
+    const local = JSON.parse(await page.locator('#graphicsReport').inputValue());
+    assert.equal(local.range.active,false);
+    assert.match(local.range.failures['teton-jackson-lake'],/ERROR|syntax error/i);
+    assert.ok(local.gpu.renderer);
+    await context.grantPermissions(['clipboard-read','clipboard-write']);
+    await page.locator('#copyGraphicsReport').click();
+    assert.match(await page.locator('#graphicsReportStatus').textContent(),/^Copied/);
+    const copied=JSON.parse(await page.evaluate(()=>navigator.clipboard.readText()));
+    assert.equal(copied.range.reason,local.range.reason);
+    assert.equal(JSON.stringify(copied).includes(path.basename(wav)),false);
+    report.deviceReport=copied;
     report.passed = true;
     console.log('Compiler rejection selects legacy scenery; rejected view resources released.');
   } finally { await context.close(); }

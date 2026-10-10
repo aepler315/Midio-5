@@ -195,6 +195,13 @@
                 <option value="30">30 fps</option>
               </select>
             </div>
+            <details id="graphicsTroubleshooting">
+              <summary>Graphics troubleshooting</summary>
+              <p class="hint">If the 3D scenery never appears, copy a report of the graphics state. Audio, filenames and lyrics are excluded.</p>
+              <button id="copyGraphicsReport" class="ghostbtn" type="button">Copy graphics report</button>
+              <p id="graphicsReportStatus" class="hint" role="status"></p>
+              <textarea id="graphicsReport" hidden readonly rows="12" aria-label="Graphics report"></textarea>
+            </details>
           </details>
 
           
