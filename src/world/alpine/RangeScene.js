@@ -1,4 +1,5 @@
 import { cloudPuffs } from './CloudOcclusion.js';
+import { shaderFailureLog } from '../../render/GraphicsDiagnostics.js';
 import { applyLensFov } from '../../render/CameraLens.js';
 import { giantLayout, giantAmounts, mirrorGiantSpan, aheadOfEye } from './LandscapeGiants.js';
 import { resolveRangeComposition, compositionBars } from './RangeComposition.js';
@@ -670,7 +671,7 @@ export class RangeScene {
             for (const program of this.renderer.properties.get(m).programs.values()) {
               if (gl.getProgramParameter(program.program, gl.LINK_STATUS)) continue;
               if (gl.isContextLost()) throw new RangeAssetError('context-lost', `GPU context lost while compiling ${view.id}`);
-              const log = (gl.getProgramInfoLog(program.program) || 'program link failed').trim().slice(0, 768);
+              const log = shaderFailureLog(gl, program.program);
               throw new RangeAssetError('shader', `${view.id}: ${log}`);
             }
           }

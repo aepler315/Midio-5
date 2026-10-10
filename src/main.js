@@ -16,6 +16,7 @@ import {
 } from './audio/loadLimits.js';
 import { Simulation } from './sim/Simulation.js';
 import { resolveRendererMode } from './render/WebGLRenderer.js';
+import { graphicsReport } from './render/GraphicsDiagnostics.js';
 import { hitTestComposerStrip } from './render/Renderer.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { SimpleSynth } from './audio/SimpleSynth.js';
@@ -3315,6 +3316,23 @@ document.getElementById('displaySettingsBtn')?.addEventListener('click', () => {
 });
 document.getElementById('displaySettingsClose')?.addEventListener('click', () => displayDialog.close());
 displayDialog?.addEventListener('close', () => settingsHome.append(titleSettings));
+document.getElementById('copyGraphicsReport')?.addEventListener('click', async () => {
+  const output = document.getElementById('graphicsReport');
+  const status = document.getElementById('graphicsReportStatus');
+  const text = JSON.stringify(graphicsReport({
+    range: rangePresentation?.snapshot(), profile: displayPrefs,
+    presentation: renderer?.diagnostics || titlePresentation?.diagnostics, canvas,
+    gl: rangePresentation?.scene?.renderer?.getContext(),
+  }), null, 2);
+  output.hidden = false; output.value = text;
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = 'Copied. Paste this report when reporting a graphics problem.';
+  } catch {
+    output.focus(); output.select();
+    status.textContent = 'Select and copy the report below.';
+  }
+});
 
 // The settings gear opens straight to the hidden-fonts ("unhide") view; the
 // F key (below) opens the visible-fonts list.
