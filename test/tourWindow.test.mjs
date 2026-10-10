@@ -52,3 +52,16 @@ test('the second-ahead CPU build waits for the next window, is sized from it, an
  assert.deepEqual(builds,[2]);assert.equal(residency.snapshot().byOwner['range-tour-window-cpu'].pending,40*MiB);
  assert.ok(residency.has(next.key)&&residency.has(active.key),'the active and next windows survive the reservation');
 });
+
+test('a missing next window keeps the neighbouring full window and its trees, never a treeless stand-in',async()=>{
+ const {RangeScene}=await import('../src/world/alpine/RangeScene.js');
+ const full={key:'range:tour-window:test:1:0',index:0,coarse:false},requests=[],swaps=[];
+ const p={view:{id:'test',tour:{durationMs:60000}},generation:0,gpuKey:'g',cpuKey:'c',workerKey:'w',activeWindow:full,windowIndex:0,
+  windowCache:{closed:false,resident:new Map([[0,full]]),pending:new Map(),request(index,opts){requests.push([index,!!opts?.replace]);return new Promise(()=>{});},prune(){}},
+  windowWorker:{build(){return new Promise(()=>{});}},windowOptions:{}};
+ const scene={residency:null,_swapTourWindow(_,w){swaps.push(w);},_tourWindowResource:RangeScene.prototype._tourWindowResource};
+ // 9 s is inside window 1, which has not arrived: window 0 stays on screen and window 1 is requested.
+ RangeScene.prototype._ensureTourWindow.call(scene,p,9000);
+ assert.deepEqual(swaps,[full]);assert.ok(requests.some(([i])=>i===1),'the arriving window is requested');
+ assert.equal(p.windowCache.resident.has(1),false,'no coarse stand-in is published for window 1');
+});
