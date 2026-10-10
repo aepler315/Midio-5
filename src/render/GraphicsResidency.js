@@ -17,7 +17,10 @@
 // residency; driver overhead needs device observation.
 
 export const MiB = 1024 * 1024;
-export const RESIDENCY_BUDGETS = Object.freeze({ desktop: 256 * MiB, mobile: 128 * MiB });
+// Mobile was 128 MiB until the Teton tour: its base scene and one 8-second
+// window alone use ~123 MiB, so the next window could never be reserved and
+// every window boundary fell back to a treeless coarse window on phones.
+export const RESIDENCY_BUDGETS = Object.freeze({ desktop: 256 * MiB, mobile: 192 * MiB });
 
 /** Pick the budget class for this device. Conservative: anything that looks
  *  like a phone/tablet or reports <= 4 GB gets the mobile budget. */

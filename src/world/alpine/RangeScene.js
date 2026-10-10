@@ -418,8 +418,9 @@ export class RangeScene {
     const key = `range:tour-window:${p.view.id}:${generation}:${index}`;
     const bytes = Object.values(raw.built.bands).reduce((n, b) => n + b.positions.byteLength + b.indices.byteLength + b.fringe.byteLength, 0) + raw.placed.count * 7 * 4;
     const reservation = this.residency?.reserve({ key, bytes, owner: 'range-tour-window', generation: p.generation,
-      protect: [p.gpuKey, p.cpuKey, p.workerKey, p.activeWindow?.key].filter(Boolean) });
+      protect: [p.gpuKey, p.cpuKey, p.workerKey, p.activeWindow?.key, p.windowCache.resident.get(p.windowIndex + 1)?.key].filter(Boolean) });
     if (this.residency && !reservation) throw new RangeAssetError('budget', `No room for tour window ${index}`);
+    p.lastWindowBytes = bytes;
     const geos = createBandGeometries(this.THREE, p.data, { built: raw.built }), forest = createForest(this.THREE, raw.placed, p.uniforms);
     const window = this._tourWindowResource(p, index, geos, forest, key);
     window.detail = raw.plan;
@@ -477,14 +478,17 @@ export class RangeScene {
     if (window.coarse) p.windowCache.request(index, { replace: true }).catch(fail);
     if ((index + 1) * 8000 < p.view.tour.durationMs) p.windowCache.request(index + 1).catch(fail);
     // The second-ahead result remains CPU data until it is needed on GPU.
+    // It starts only once the next window is resident: reserved earlier, it
+    // took the room the next window needed and the camera arrived at a
+    // treeless coarse window. Sized from the last real window, not a guess.
     p.rawAhead ||= new Map();
     for (const [old, entry] of p.rawAhead) if (old < index || old > index + 2) { this.residency?.release(entry.key); p.rawAhead.delete(old); }
-    const aheadIndex = index + 2;
-    if (aheadIndex * 8000 < p.view.tour.durationMs && !p.rawAhead.has(aheadIndex) && p.prefetchAttempted !== aheadIndex) {
+    const aheadIndex = index + 2, next = p.windowCache.resident.get(index + 1);
+    if (next && !next.coarse && aheadIndex * 8000 < p.view.tour.durationMs && !p.rawAhead.has(aheadIndex) && p.prefetchAttempted !== aheadIndex) {
       p.prefetchAttempted = aheadIndex;
       const key = `range:tour-window-cpu:${p.view.id}:${aheadIndex}`;
-      const reservation = this.residency?.reserve({ key, bytes: 64 * 1024 ** 2, owner: 'range-tour-window-cpu', generation: p.generation,
-        protect: [p.gpuKey, p.cpuKey, p.workerKey, window.key] });
+      const reservation = this.residency?.reserve({ key, bytes: p.lastWindowBytes || 64 * 1024 ** 2, owner: 'range-tour-window-cpu', generation: p.generation,
+        protect: [p.gpuKey, p.cpuKey, p.workerKey, window.key, next.key] });
       if (!this.residency || reservation) {
         const job = p.windowWorker.build(aheadIndex, p.windowOptions).then(raw => {
           if (p.windowCache.closed || !p.rawAhead.has(aheadIndex)) { this.residency?.release(key); return raw; }
