@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 
 // These checks establish content/geometry, not an artistic quality verdict.
-export function assertMeaningfulFrame(frame) {
-  assert.ok(frame.opaque && frame.colors >= 8 && frame.litFraction > .12 && frame.mean > 8,
-    `blank or insufficient scene content: ${JSON.stringify(frame)}`);
+export function assertMeaningfulFrame(frame, {requireOpaque=true}={}) {
+  const {colors,litFraction,mean,opaque}=frame;
+  assert.ok((!requireOpaque || frame.opaque) && frame.colors >= 8 && frame.litFraction > .12 && frame.mean > 8,
+    `blank or insufficient scene content: ${JSON.stringify({colors,litFraction,mean,opaque})}`);
 }
 export function assertTemporalChange(thumbnails) {
   assert.ok(thumbnails.length >= 2, 'need a controlled temporal sequence');

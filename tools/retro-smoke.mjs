@@ -52,7 +52,7 @@ try {
         for(let i=0;i<p.length;i+=4){colors.add(`${p[i]},${p[i+1]},${p[i+2]}`);const v=p[i]+p[i+1]+p[i+2];sum+=v;if(v>24)lit++;if(p[i+3]!==255)opaque=false;}
         return {width:c.width,height:c.height,colors:colors.size,litFraction:lit/(p.length/4),mean:sum/(p.length/4*3),opaque,png:c.toDataURL('image/png').split(',')[1]};
       });
-      assertMeaningfulFrame(title);await fs.writeFile(path.join(out,`${backend}-title.png`),Buffer.from(title.png,'base64'));delete title.png;
+      assertMeaningfulFrame(title,{requireOpaque:false});await fs.writeFile(path.join(out,`${backend}-title.png`),Buffer.from(title.png,'base64'));delete title.png;
       report.frames.push({kind:'title',content:title,backend,requested:await page.evaluate(()=>window.__SMW.displayPrefs),diagnostics:await page.evaluate(()=>window.__SMW.presentationDiagnostics),dpr:1});
       await page.reload();
       assert.equal(await page.locator('#display-look').inputValue(),'palette');

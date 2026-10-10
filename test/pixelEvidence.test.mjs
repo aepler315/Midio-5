@@ -18,3 +18,10 @@ test('palette evidence rejects missing completed capture instead of reporting ze
   try { await assert.rejects(inspectPixelFrame({paletteId:'range32'}),/completed capture/); }
   finally {globalThis.window=previous;}
 });
+
+test('transparent title content retains blank rejection without requiring opaque scene pixels', () => {
+  const title={colors:598,litFraction:.98,mean:78,opaque:false};
+  assert.throws(()=>assertMeaningfulFrame(title),/blank/);
+  assert.doesNotThrow(()=>assertMeaningfulFrame(title,{requireOpaque:false}));
+  assert.throws(()=>assertMeaningfulFrame({colors:1,litFraction:0,mean:0,opaque:false},{requireOpaque:false}),/blank/);
+});
