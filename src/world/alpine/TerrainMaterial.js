@@ -132,9 +132,8 @@ export const SCENE_FRAG = /* glsl */`
   uniform mat4 uViewProj;
   // Gust fronts (the forest's): on the water they are cat's paws, rough
   // patches that cross the frame with each front and break the mirror.
-  uniform float uGustAge[${GUST_FRONTS}];
-  uniform float uGustAmp[${GUST_FRONTS}];
-  uniform float uGustDir[${GUST_FRONTS}];
+  // Water reads the same six gusts as the forest, packed per front.
+  uniform vec3 uWaterGust[${GUST_FRONTS}];
   // The cast's lanterns (ActorsGL.js): their light, glints and Midio's wake.
   ${ACTOR_GLSL}
   ${WAKE_GLSL}
@@ -190,9 +189,9 @@ export const SCENE_FRAG = /* glsl */`
     float sx = clamp(gl_FragCoord.x / max(uViewportPx.x, 1.0) * 2.0 - 1.0, -1.2, 1.2);
     float paw = 0.0;
     for (int i = 0; i < ${GUST_FRONTS}; i++) {
-      float age = uGustAge[i] - ((sx * uGustDir[i]) * 0.5 + 0.5) * ${GUST_SWEEP_SEC.toFixed(3)};
+      float age = uWaterGust[i].x - ((sx * uWaterGust[i].z) * 0.5 + 0.5) * ${GUST_SWEEP_SEC.toFixed(3)};
       float env = age < 0.0 ? 0.0 : (age < 0.35 ? age / 0.35 : exp(-(age - 0.35) / 1.5));
-      paw = max(paw, env * uGustAmp[i]);
+      paw = max(paw, env * uWaterGust[i].y);
     }
     float patches = smoothstep(0.38, 0.72, vnoise12(xz / 160.0 + vec2(uTime * 0.05, -uTime * 0.03)));
     return paw * patches;
@@ -494,6 +493,13 @@ export function gustUniforms() {
     uGustAmp: { value: new Array(GUST_FRONTS).fill(0) }, uGustDir: { value: new Array(GUST_FRONTS).fill(1) } };
 }
 
+/** Preserve the forest gust values in the terrain fragment's packed array. */
+export function syncGustUniforms(u) {
+  for (let i = 0; i < GUST_FRONTS; i++) {
+    u.uWaterGust.value[i].set(u.uGustAge.value[i], u.uGustAmp.value[i], u.uGustDir.value[i]);
+  }
+}
+
 /** Shared uniforms for the production terrain (values set per frame). */
 export function sceneUniforms(THREE, base) {
   return {
@@ -529,6 +535,7 @@ export function sceneUniforms(THREE, base) {
     uTime: { value: 0 },
     // Gust fronts in flight: age (s), strength, and way across the frame.
     ...gustUniforms(),
+    uWaterGust: { value: Array.from({ length: GUST_FRONTS }, () => new THREE.Vector3(GUST_IDLE_SEC, 0, 1)) },
     uForestKeep: { value: 1 },
     uExposure: { value: 2.0 },
     uNarrative: { value: new THREE.Vector4(1, 1, 1, 1) },

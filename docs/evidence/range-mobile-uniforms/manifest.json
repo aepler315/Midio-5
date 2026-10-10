@@ -1,0 +1,280 @@
+{
+  "fixCommit": "6bec139abc0e19f27310a69837e2a9bd21109180",
+  "reportedDevice": {
+    "gpu": "ANGLE (Qualcomm, Adreno (TM) 840, OpenGL ES 3.2)",
+    "fragmentUniformVectors": 256,
+    "vertexUniformVectors": 256,
+    "dpr": 4,
+    "tourMode": "tetons",
+    "stage": {
+      "width": 550,
+      "height": 309
+    },
+    "reason": "shader: teton-range-tour: FRAGMENT shader uniforms count exceeds MAX_FRAGMENT_UNIFORM_VECTORS(256)"
+  },
+  "conservativeFragmentVectors": {
+    "before": 288,
+    "after": 244,
+    "includesThreePrefix": true
+  },
+  "visual": {
+    "fixture": "generated contrast/24s",
+    "seed": 315,
+    "timesMs": [
+      12000,
+      12500,
+      13000
+    ],
+    "width": 550,
+    "height": 310,
+    "dpr": 1,
+    "beforeAfterIdenticalPngs": 3
+  },
+  "commands": {
+    "npm test": "3941 pass",
+    "npm run lint": "pass",
+    "node --test test/mobileUniformBudget.test.js test/cloudOcclusion.test.js test/rangeShaderSource.test.js": "10 pass",
+    "node tools/cloud-occlusion-smoke.mjs http://127.0.0.1:8093 .smoke/cloud-packed.json": "12 actual GPU samples pass",
+    "visual-evaluate baseline/candidate/compare": "pass, 3/3 identical PNGs",
+    "node work/tour-smoke.mjs": "active teton-range-tour Natural/Pixel/Palette, mobile budget and DPR4 emulation; pass",
+    "RETRO_BACKENDS=v2 RETRO_OUT=.smoke/uniform-retro npm run test:retro": "pass: 14 recorded frames, 32 real raster fixtures, six output/profile cases, context recovery, shader fallback and export failure"
+  },
+  "limitations": [
+    "SwiftShader does not reproduce the Adreno linker or its physical 256-vector limit; the actual phone supplied the before failure",
+    "Actual S26 after-deployment confirmation pending",
+    "Visual export fixture height310 differs from reported live height309 because the existing export tool requires even dimensions",
+    "Mobile tour preserved bounded residency; two denials occurred after look changes while v2 continued presenting",
+    "One prior tour probe rejected an intentionally cancelled generation request; final probe records that cancellation and verifies successful manifest fetch200"
+  ],
+  "files": [
+    {
+      "path": "uniform-baseline/report.json",
+      "bytes": 572337,
+      "sha256": "139ce74b69f4eb10253d880dc339b043c9e845a7176e7c3f4fbfa77e80c8d5b9"
+    },
+    {
+      "path": "uniform-baseline/index.html",
+      "bytes": 5026,
+      "sha256": "6223814eded1d9c35198113e1db6ed43a76a54fa5ada46656eb9974dd892c04d"
+    },
+    {
+      "path": "uniform-baseline/manifest.json",
+      "bytes": 632,
+      "sha256": "49ee17ab16467abbbaa0393c3c248e7c7b69fb63537c1dab323032c67debbf93"
+    },
+    {
+      "path": "uniform-baseline/mobile-uniform-contrast/frame-00002.png",
+      "bytes": 221659,
+      "sha256": "48ad34cf7991afa3428cfa0d9bdb579f47f0d6221efc3899bea952d07ec8547e"
+    },
+    {
+      "path": "uniform-baseline/mobile-uniform-contrast/frame-00000.png",
+      "bytes": 212581,
+      "sha256": "bbc5170587e7d96d20d0f6d38903f6b49cc78e14f8b944f36f74713a7a9a1ce8"
+    },
+    {
+      "path": "uniform-baseline/mobile-uniform-contrast/audio.wav",
+      "bytes": 2116844,
+      "sha256": "bb12db8491e04ca67c68eac85ce658b218951398194bc8ca11d24ae806ab347f"
+    },
+    {
+      "path": "uniform-baseline/mobile-uniform-contrast/frame-00001.png",
+      "bytes": 222424,
+      "sha256": "ffb2f5167a0ec464c335d6090a0f7dedc1aec41204c0b7e8681db9c7257b5976"
+    },
+    {
+      "path": "uniform-candidate/report.json",
+      "bytes": 572489,
+      "sha256": "d13b882c695430243a1f5ee3a0a113b2fe55f5d335f385ace638269fc627fb2d"
+    },
+    {
+      "path": "uniform-candidate/index.html",
+      "bytes": 5026,
+      "sha256": "7d433f37aedbc366251ee9e4582e84d658668f5a34c601b3bf7e978817a71302"
+    },
+    {
+      "path": "uniform-candidate/manifest.json",
+      "bytes": 632,
+      "sha256": "49ee17ab16467abbbaa0393c3c248e7c7b69fb63537c1dab323032c67debbf93"
+    },
+    {
+      "path": "uniform-candidate/mobile-uniform-contrast/frame-00002.png",
+      "bytes": 221659,
+      "sha256": "48ad34cf7991afa3428cfa0d9bdb579f47f0d6221efc3899bea952d07ec8547e"
+    },
+    {
+      "path": "uniform-candidate/mobile-uniform-contrast/frame-00000.png",
+      "bytes": 212581,
+      "sha256": "bbc5170587e7d96d20d0f6d38903f6b49cc78e14f8b944f36f74713a7a9a1ce8"
+    },
+    {
+      "path": "uniform-candidate/mobile-uniform-contrast/audio.wav",
+      "bytes": 2116844,
+      "sha256": "bb12db8491e04ca67c68eac85ce658b218951398194bc8ca11d24ae806ab347f"
+    },
+    {
+      "path": "uniform-candidate/mobile-uniform-contrast/frame-00001.png",
+      "bytes": 222424,
+      "sha256": "ffb2f5167a0ec464c335d6090a0f7dedc1aec41204c0b7e8681db9c7257b5976"
+    },
+    {
+      "path": "uniform-comparison/index.html",
+      "bytes": 2695,
+      "sha256": "74044b8fc83866cd48c3059d5c37e4fadf244df788ef9d83d965f9067fe97432"
+    },
+    {
+      "path": "uniform-comparison/comparison.json",
+      "bytes": 999,
+      "sha256": "5ff0801431fbae43371a06798eefa7ea3e755f3ecc6ec546bd17208322600abd"
+    },
+    {
+      "path": "uniform-comparison/candidate/report.json",
+      "bytes": 572489,
+      "sha256": "d13b882c695430243a1f5ee3a0a113b2fe55f5d335f385ace638269fc627fb2d"
+    },
+    {
+      "path": "uniform-comparison/candidate/index.html",
+      "bytes": 5026,
+      "sha256": "7d433f37aedbc366251ee9e4582e84d658668f5a34c601b3bf7e978817a71302"
+    },
+    {
+      "path": "uniform-comparison/candidate/manifest.json",
+      "bytes": 632,
+      "sha256": "49ee17ab16467abbbaa0393c3c248e7c7b69fb63537c1dab323032c67debbf93"
+    },
+    {
+      "path": "uniform-comparison/baseline/report.json",
+      "bytes": 572337,
+      "sha256": "139ce74b69f4eb10253d880dc339b043c9e845a7176e7c3f4fbfa77e80c8d5b9"
+    },
+    {
+      "path": "uniform-comparison/baseline/index.html",
+      "bytes": 5026,
+      "sha256": "6223814eded1d9c35198113e1db6ed43a76a54fa5ada46656eb9974dd892c04d"
+    },
+    {
+      "path": "uniform-comparison/baseline/manifest.json",
+      "bytes": 632,
+      "sha256": "49ee17ab16467abbbaa0393c3c248e7c7b69fb63537c1dab323032c67debbf93"
+    },
+    {
+      "path": "uniform-comparison/candidate/mobile-uniform-contrast/frame-00002.png",
+      "bytes": 221659,
+      "sha256": "48ad34cf7991afa3428cfa0d9bdb579f47f0d6221efc3899bea952d07ec8547e"
+    },
+    {
+      "path": "uniform-comparison/candidate/mobile-uniform-contrast/frame-00000.png",
+      "bytes": 212581,
+      "sha256": "bbc5170587e7d96d20d0f6d38903f6b49cc78e14f8b944f36f74713a7a9a1ce8"
+    },
+    {
+      "path": "uniform-comparison/candidate/mobile-uniform-contrast/audio.wav",
+      "bytes": 2116844,
+      "sha256": "bb12db8491e04ca67c68eac85ce658b218951398194bc8ca11d24ae806ab347f"
+    },
+    {
+      "path": "uniform-comparison/candidate/mobile-uniform-contrast/frame-00001.png",
+      "bytes": 222424,
+      "sha256": "ffb2f5167a0ec464c335d6090a0f7dedc1aec41204c0b7e8681db9c7257b5976"
+    },
+    {
+      "path": "uniform-comparison/baseline/mobile-uniform-contrast/frame-00002.png",
+      "bytes": 221659,
+      "sha256": "48ad34cf7991afa3428cfa0d9bdb579f47f0d6221efc3899bea952d07ec8547e"
+    },
+    {
+      "path": "uniform-comparison/baseline/mobile-uniform-contrast/frame-00000.png",
+      "bytes": 212581,
+      "sha256": "bbc5170587e7d96d20d0f6d38903f6b49cc78e14f8b944f36f74713a7a9a1ce8"
+    },
+    {
+      "path": "uniform-comparison/baseline/mobile-uniform-contrast/audio.wav",
+      "bytes": 2116844,
+      "sha256": "bb12db8491e04ca67c68eac85ce658b218951398194bc8ca11d24ae806ab347f"
+    },
+    {
+      "path": "uniform-comparison/baseline/mobile-uniform-contrast/frame-00001.png",
+      "bytes": 222424,
+      "sha256": "ffb2f5167a0ec464c335d6090a0f7dedc1aec41204c0b7e8681db9c7257b5976"
+    },
+    {
+      "path": "uniform-tour-final/report.json",
+      "bytes": 40842,
+      "sha256": "49a44ecdf038a6cc551e00bf8b00c28b358f60010ef4b05a8d1d2eac2d598f25"
+    },
+    {
+      "path": "uniform-tour-final/palette.png",
+      "bytes": 36275,
+      "sha256": "6f559c7cc8087e5cfe7752948e5ec868eefad0316f3cc47a163e83bddb750193"
+    },
+    {
+      "path": "uniform-tour-final/natural.png",
+      "bytes": 190443,
+      "sha256": "6d603538768ed4f3377d6430f50aa5088266bed43e8cba003eb31671d92d1151"
+    },
+    {
+      "path": "uniform-tour-final/pixel.png",
+      "bytes": 110510,
+      "sha256": "6c8a5c480bd661e2025ff8f821b25a6271a60af2bb3eff68f9d42d7aff050a63"
+    },
+    {
+      "path": "cloud-packed.json",
+      "bytes": 1826,
+      "sha256": "32f0775eb91b9dea6cf5f64d790600102d75f5bc88e78131a5c5fe23fe541bfd"
+    },
+    {
+      "path": "logs/uniform-red.log",
+      "bytes": 2458,
+      "sha256": "1fa487d64ee887a81ad67466aaf9ca0ba1d4289680b1f22bd9824a50455ab4b1"
+    },
+    {
+      "path": "logs/uniform-green.log",
+      "bytes": 1021,
+      "sha256": "64607fc3dd547b72f7392fc8dec45de44381b28fe97170050f3b132615353729"
+    },
+    {
+      "path": "logs/tests.log",
+      "bytes": 345270,
+      "sha256": "82b02ada186dde1530caad0f2883db2f3f330e6412687d897d6b4253084daa0c"
+    },
+    {
+      "path": "logs/lint-final.log",
+      "bytes": 58,
+      "sha256": "6160487ebb6326884a0a3e81731d3bc17a9da1b6b3d2967f3c7bc306376755bb"
+    },
+    {
+      "path": "logs/cloud-browser.log",
+      "bytes": 848,
+      "sha256": "c1bcb4034cc5276df3025de1f2504d49650e6e77401fdc9e4361f86e77ab9a32"
+    },
+    {
+      "path": "logs/comparison.log",
+      "bytes": 132,
+      "sha256": "213a220e4467b5953423ce65624997e62be5614d5f557dc225f8a25c5ac0c36a"
+    },
+    {
+      "path": "logs/tour-final.log",
+      "bytes": 41,
+      "sha256": "4a07b7c11555b394b3f0bc42eab30b477400a4e21b061c7c39cf79b1869dd1fe"
+    },
+    {
+      "path": "tour-smoke.mjs",
+      "bytes": 2831,
+      "sha256": "f0ccf7380b7ff1630d7e0d98e63e2900cffe14c0463b549eb7cbad4eeb82d94a"
+    },
+    {
+      "path": "retro/report.json",
+      "bytes": 969430,
+      "sha256": "c65b937d936f22a0cefeb531c08eec9521e22b114552b5fa0e482bd225a604fa"
+    },
+    {
+      "path": "logs/retro.log",
+      "bytes": 465,
+      "sha256": "d85351f773a9b4d34305fed310349a71a19ec987e2b884f722b857560798c458"
+    }
+  ],
+  "archive": {
+    "sha256": "23dd8a8f07edec4d1d2b576d8b20a1f50046bc0d81b681e81972d9f3c84b0a25",
+    "bytes": 11154132
+  }
+}

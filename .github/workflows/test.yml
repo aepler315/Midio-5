@@ -77,6 +77,13 @@ jobs:
           browser: true
       - name: Verify real pixel placement, Range backends and export failure
         run: npm run test:retro
+      - name: Verify packed cloud uniforms on the GPU
+        run: |
+          HOST=127.0.0.1 PORT=8082 node tools/serve.js > .smoke/cloud-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:8082/ > /dev/null
+          node tools/cloud-occlusion-smoke.mjs http://127.0.0.1:8082 .smoke/retro/cloud-packed.json
       - name: Upload pixel evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

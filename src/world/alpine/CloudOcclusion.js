@@ -42,14 +42,15 @@ export function cloudTransmission(receiver, direction, puffs, basis) {
 export function cloudUniforms(THREE) {
   return {uCloudCount:{value:0},uMoonClouds:{value:0},
     uCloudCenterRadius:{value:Array.from({length:MAX_CLOUD_PUFFS},()=>new THREE.Vector4())},
-    uCloudShape:{value:Array.from({length:MAX_CLOUD_PUFFS},()=>new THREE.Vector2())},
+    uCloudShape:{value:Array.from({length:MAX_CLOUD_PUFFS / 2},()=>new THREE.Vector4())},
     uCloudRight:{value:new THREE.Vector3()},uCloudUp:{value:new THREE.Vector3()},uCloudForward:{value:new THREE.Vector3()}};
 }
 export const CLOUD_OCCLUSION_GLSL = /* glsl */`
   uniform int uCloudCount;
   uniform float uMoonClouds;
   uniform vec4 uCloudCenterRadius[${MAX_CLOUD_PUFFS}];
-  uniform vec2 uCloudShape[${MAX_CLOUD_PUFFS}];
+  // Two (vertical radius, opacity) pairs per vector; retain all 64 puffs.
+  uniform vec4 uCloudShape[${MAX_CLOUD_PUFFS / 2}];
   uniform vec3 uCloudRight, uCloudUp, uCloudForward;
   float moonCloudTransmission(vec3 receiver, vec3 direction) {
     float denominator=dot(direction,uCloudForward);
@@ -58,11 +59,13 @@ export const CLOUD_OCCLUSION_GLSL = /* glsl */`
     for(int i=0;i<${MAX_CLOUD_PUFFS};i++) {
       if(i>=uCloudCount)break;
       vec4 puff=uCloudCenterRadius[i];
+      vec4 pair=uCloudShape[i / 2];
+      vec2 shape=(i % 2 == 0) ? pair.xy : pair.zw;
       float distanceM=dot(puff.xyz-receiver,uCloudForward)/denominator;
       if(distanceM<=0.0)continue;
       vec3 d=receiver+direction*distanceM-puff.xyz;
-      float radius=length(vec2(dot(d,uCloudRight)/puff.w,dot(d,uCloudUp)/uCloudShape[i].x));
-      transmission*=1.0-uCloudShape[i].y*max(0.0,1.0-radius);
+      float radius=length(vec2(dot(d,uCloudRight)/puff.w,dot(d,uCloudUp)/shape.x));
+      transmission*=1.0-shape.y*max(0.0,1.0-radius);
     }
     return transmission;
   }

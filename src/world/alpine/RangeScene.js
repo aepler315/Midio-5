@@ -19,7 +19,7 @@ import { resolveRangeComposition, compositionBars } from './RangeComposition.js'
 // reserved here before creation and released through dispose().
 import { prepareTerrainAssets, RangeAssetError } from './RangeAssets.js';
 import { createSurfaceTexture, terrainUniforms, createBandGeometries } from './TerrainGL.js';
-import { sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
+import { syncGustUniforms, sceneUniforms, createSceneMaterial, createDepthMaterial, setLinearFromHex, createMaterialTextures, applyMaterial, SCENE_VERT, FEATURE_FRAG } from './TerrainMaterial.js';
 import { terrainFeatureSegments } from './TerrainFeatures.js';
 import { loadMaterialPack, materialGpuBytes, RULE_DEFAULTS, validateWaterRules } from './MaterialPackage.js';
 import { placeForestAsync } from './ForestCover.js';
@@ -958,6 +958,7 @@ export class RangeScene {
     u.uDeformPhase.value = m.phaseRad;
     u.uTime.value = frame.reducedMotion ? 0 : frame.timeMs / 1000;
     m.gusts.forEach((g, i) => { u.uGustAge.value[i] = g.ageSec; u.uGustAmp.value[i] = g.amp01 * (1 + (frame.storm?.amount || 0) * .8); u.uGustDir.value[i] = g.dir; });
+    syncGustUniforms(u);
     u.uForestKeep.value = rangeQuality(frame.qualityLevel).forestKeep;
         for (const objects of Object.values(p.forest?.byBand || {})) for (const tree of objects) tree.visible = !n || n.materials > .01;
     for (const tree of p.forest?.depth || []) tree.visible = !n || n.materials > .01;
@@ -1085,7 +1086,8 @@ export class RangeScene {
     u.uCloudCount.value = puffs.length;
     puffs.forEach((puff,i) => {
       u.uCloudCenterRadius.value[i].set(...puff.centerM, puff.radiusXM);
-      u.uCloudShape.value[i].set(puff.radiusYM, puff.opacity);
+      const shape = u.uCloudShape.value[Math.floor(i / 2)], component = (i % 2) * 2;
+      shape.setComponent(component, puff.radiusYM).setComponent(component + 1, puff.opacity);
     });
   }
 
