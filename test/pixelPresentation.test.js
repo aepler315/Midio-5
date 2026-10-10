@@ -172,3 +172,16 @@ test('disposed adapters and context loss after begin cannot publish successful p
   assert.equal(adapter.getCaptureSource(),null);
   owner.dispose();
 });
+
+test('throwing inner disposal still invalidates capture and releases residency', () => {
+  const residency=new GraphicsResidency({budgetBytes:1000000});
+  const adapter=createPresentingRenderer({canvas:surface(),presentation:pixel,residency,
+    rendererFactory:()=>({draw(){},dispose(){throw new Error('inner cleanup failed');}})});
+  assert.equal(adapter.draw({},0).presented,true);
+  assert.ok(adapter.getCaptureSource());
+  assert.throws(()=>adapter.dispose(),/inner cleanup failed/);
+  assert.equal(adapter.getCaptureSource(),null);
+  assert.equal(residency.entries.size,0);
+  assert.equal(adapter.draw({},0).presented,false);
+  assert.doesNotThrow(()=>adapter.dispose());
+});

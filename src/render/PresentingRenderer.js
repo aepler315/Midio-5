@@ -23,8 +23,9 @@ class PresentingRenderer {
   get rangeListeningActive() { return this.canvasRenderer.rangeListeningActive; }
   get diagnostics() { return this.output.diagnostics; }
   setPresentation(value) { this.output.setPresentation(value); }
-  getCaptureSource() { return this.output.getCaptureSource(); }
+  getCaptureSource() { return this._disposed ? null : this.output.getCaptureSource(); }
   draw(sim, alpha) {
+    if (this._disposed) return this.output.failFrame('disposed');
     const source = this.output.beginFrame();
     if (!source) return this.output.diagnostics.frame;
     const scene = this.canvasRenderer;
@@ -36,5 +37,5 @@ class PresentingRenderer {
     this.output.diagnostics.qualityLevel = sim?.perf?.level ?? null;
     return result;
   }
-  dispose() { if (this._disposed) return; this._disposed = true; this.inner.dispose(); this.output.dispose(); }
+  dispose() { if (this._disposed) return; this._disposed = true; try { this.inner.dispose(); } finally { this.output.dispose(); } }
 }
