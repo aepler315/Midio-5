@@ -32,3 +32,23 @@ test('refinement allocates new ownership while keeping the active window and rej
  await assert.rejects(stale,/generation ended/);assert.equal(residency.has(oldKey),true);
  residency.release(oldKey);assert.equal(retired,true);
 });
+
+test('the second-ahead CPU build waits for the next window, is sized from it, and cannot evict it',async()=>{
+ const {RangeScene}=await import('../src/world/alpine/RangeScene.js');
+ const {GraphicsResidency}=await import('../src/render/GraphicsResidency.js');
+ const MiB=1024**2,residency=new GraphicsResidency({budgetBytes:100*MiB});
+ const live=(key,bytes)=>{const r=residency.reserve({key,bytes,owner:'range-tour-window'});residency.commit(r,{},()=>{});return{key,coarse:false};};
+ const active=live('range:tour-window:test:1:0',30*MiB),requests=[],builds=[];
+ const p={view:{id:'test',tour:{durationMs:60000}},generation:0,gpuKey:'g',cpuKey:'c',workerKey:'w',activeWindow:active,windowIndex:0,
+  windowCache:{closed:false,resident:new Map([[0,active]]),pending:new Map(),request(index){requests.push(index);return new Promise(()=>{});},prune(){}},
+  windowWorker:{build(index){builds.push(index);return new Promise(()=>{});}},windowOptions:{}};
+ const scene={residency,_swapTourWindow(){},_tourWindowResource:RangeScene.prototype._tourWindowResource};
+ // Window 1 is still building: no CPU ownership is taken ahead of it.
+ RangeScene.prototype._ensureTourWindow.call(scene,p,1000);
+ assert.deepEqual(requests,[1]);assert.deepEqual(builds,[]);assert.equal(residency.snapshot().byOwner['range-tour-window-cpu'],undefined);
+ // Once window 1 is resident, window 2's CPU build reserves what a real window costs and cannot evict window 1.
+ p.lastWindowBytes=40*MiB;const next=live('range:tour-window:test:1:1',30*MiB);p.windowCache.resident.set(1,next);
+ RangeScene.prototype._ensureTourWindow.call(scene,p,1000);
+ assert.deepEqual(builds,[2]);assert.equal(residency.snapshot().byOwner['range-tour-window-cpu'].pending,40*MiB);
+ assert.ok(residency.has(next.key)&&residency.has(active.key),'the active and next windows survive the reservation');
+});

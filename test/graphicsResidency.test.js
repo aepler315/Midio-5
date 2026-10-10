@@ -8,7 +8,7 @@ const ledger = (mb = 100) => new GraphicsResidency({ budgetBytes: mb * MiB });
 
 test('budgets match the plan', () => {
   assert.equal(RESIDENCY_BUDGETS.desktop, 256 * MiB);
-  assert.equal(RESIDENCY_BUDGETS.mobile, 128 * MiB);
+  assert.equal(RESIDENCY_BUDGETS.mobile, 192 * MiB);
   assert.equal(residencyBudgetFor({ navigator: { deviceMemory: 4 } }).name, 'mobile');
   assert.equal(residencyBudgetFor({ navigator: { maxTouchPoints: 5 }, screen: { width: 390, height: 844 } }).name, 'mobile');
   assert.equal(residencyBudgetFor({ navigator: { deviceMemory: 16 }, screen: { width: 2560, height: 1440 } }).name, 'desktop');

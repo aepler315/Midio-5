@@ -8,7 +8,7 @@ Run each on the real device, with the tab in front, the screen awake and nothing
 
 | Run | Device | Length | Why |
 | --- | --- | --- | --- |
-| A | A mid-range Android phone (Chrome) | 10 min | Sustained phone behaviour: thermal throttling, governor rungs, residency under the mobile budget (128 MiB) |
+| A | A mid-range Android phone (Chrome) | 10 min | Sustained phone behaviour: thermal throttling, governor rungs, residency under the mobile budget (192 MiB) |
 | B | An iPhone (Safari) | 10 min | Same, on the other mobile engine |
 | C | A desktop or laptop with a GPU (Chrome) | 5 min | Desktop budget (256 MiB), the 16-band travel seam at full resolution |
 
@@ -30,7 +30,7 @@ Run each on the real device, with the tab in front, the screen awake and nothing
 | --- | --- |
 | `gpu`, `userAgent`, `deviceMemoryGB`, `dpr` | Device, browser and GPU as the browser reports them |
 | `stage`, `rangeTarget` | CSS and backing size of the stage; size of the Range render target |
-| `budget` | Residency budget class chosen (`desktop` 256 MiB, `mobile` 128 MiB) |
+| `budget` | Residency budget class chosen (`desktop` 256 MiB, `mobile` 192 MiB) |
 | `coldStartCaptured` | True when the probe was running before the song loaded (otherwise `cold` is just the first 20 s it saw) |
 | `songRestarts` | How many times the song was restarted during the run (the probe follows the new song) |
 | `intervals.cold` | Frame intervals in the first 20 s of the song, including the frame that spans world construction |
