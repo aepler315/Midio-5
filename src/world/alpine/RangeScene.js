@@ -460,6 +460,12 @@ export class RangeScene {
     const index = Math.max(0, Math.floor(Math.min(timeMs, Math.max(0, p.view.tour.durationMs - 1)) / 8000));
     p.windowCache.current = index;
     let window = p.windowCache.resident.get(index);
+    // Until this window's full build arrives, keep drawing the neighbouring
+    // full window: its trees stand within 8 km of an adjacent stretch of the
+    // same route. A coarse stand-in has no forest, so it is only for a seek
+    // with no full neighbour on screen.
+    const held = !window && p.activeWindow && !p.activeWindow.coarse && Math.abs(p.activeWindow.index - index) <= 1 ? p.activeWindow : null;
+    if (held) window = held;
     if (!window) {
       const plan = planTerrainWindow(p.data, p.view.tour, index, { ...p.windowOptions, bias: 2 });
       const key = `range:tour-window:${p.view.id}:${index}:coarse`, bytes = plan.triangles * 36 + 256 * 1024;
@@ -476,6 +482,7 @@ export class RangeScene {
     p.windowCache.prune();
     const fail = error => { if (error?.reason !== 'stale' && error?.name !== 'AbortError') p.windowNote = error.message; };
     if (window.coarse) p.windowCache.request(index, { replace: true }).catch(fail);
+    else if (held) p.windowCache.request(index).catch(fail);
     if ((index + 1) * 8000 < p.view.tour.durationMs) p.windowCache.request(index + 1).catch(fail);
     // The second-ahead result remains CPU data until it is needed on GPU.
     // It starts only once the next window is resident: reserved earlier, it

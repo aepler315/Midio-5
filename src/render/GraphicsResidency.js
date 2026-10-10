@@ -17,20 +17,29 @@
 // residency; driver overhead needs device observation.
 
 export const MiB = 1024 * 1024;
-// Mobile was 128 MiB until the Teton tour: its base scene and one 8-second
-// window alone use ~123 MiB, so the next window could never be reserved and
-// every window boundary fell back to a treeless coarse window on phones.
-export const RESIDENCY_BUDGETS = Object.freeze({ desktop: 256 * MiB, mobile: 192 * MiB });
+// Budgets follow reported device memory. The Teton tour needs room for the
+// active, next and second-ahead 8-second windows on top of its base scene,
+// and the base alone measured ~208 MiB on a 2560x1440 stage served without
+// cross-origin isolation (render targets and the worker's own terrain copy
+// grow with it), so a fixed 256 MiB left no room for the next window and the
+// tour lost its trees. Devices reporting less than 8 GB keep the old ledgers.
+export const RESIDENCY_BUDGETS = Object.freeze({ desktop: 512 * MiB, mobile: 320 * MiB });
+export const LOW_MEMORY_BUDGETS = Object.freeze({ desktop: 256 * MiB, mobile: 192 * MiB });
 
-/** Pick the budget class for this device. Conservative: anything that looks
- *  like a phone/tablet or reports <= 4 GB gets the mobile budget. */
+/** Pick the budget for this device. Conservative: anything that looks like a
+ *  phone/tablet or reports <= 4 GB is mobile. A phone gets the larger ledger
+ *  only when it reports >= 8 GB; a desktop unless it reports < 8 GB (Firefox
+ *  and Safari report nothing). */
 export function residencyBudgetFor(env = globalThis) {
   try {
     const nav = env.navigator || {};
     const mem = Number(nav.deviceMemory);
+    const known = Number.isFinite(mem);
     const touch = (nav.maxTouchPoints || 0) > 1;
     const small = Math.min(env.screen?.width || 1920, env.screen?.height || 1080) < 820;
-    if ((Number.isFinite(mem) && mem <= 4) || (touch && small)) return { name: 'mobile', bytes: RESIDENCY_BUDGETS.mobile };
+    const name = (known && mem <= 4) || (touch && small) ? 'mobile' : 'desktop';
+    const roomy = name === 'mobile' ? known && mem >= 8 : !(known && mem < 8);
+    return { name, bytes: (roomy ? RESIDENCY_BUDGETS : LOW_MEMORY_BUDGETS)[name] };
   } catch { /* default below */ }
   return { name: 'desktop', bytes: RESIDENCY_BUDGETS.desktop };
 }

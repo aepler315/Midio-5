@@ -1,17 +1,30 @@
 // Range v2 Task 7: one ledger for all Range graphics ownership.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GraphicsResidency, RESIDENCY_BUDGETS, MiB, residencyBudgetFor } from '../src/render/GraphicsResidency.js';
+import { GraphicsResidency, RESIDENCY_BUDGETS, LOW_MEMORY_BUDGETS, MiB, residencyBudgetFor } from '../src/render/GraphicsResidency.js';
 import { TerrainStripCache } from '../src/world/terrain/TerrainStripCache.js';
 
 const ledger = (mb = 100) => new GraphicsResidency({ budgetBytes: mb * MiB });
 
 test('budgets match the plan', () => {
-  assert.equal(RESIDENCY_BUDGETS.desktop, 256 * MiB);
-  assert.equal(RESIDENCY_BUDGETS.mobile, 192 * MiB);
+  assert.equal(RESIDENCY_BUDGETS.desktop, 512 * MiB);
+  assert.equal(RESIDENCY_BUDGETS.mobile, 320 * MiB);
+  assert.equal(LOW_MEMORY_BUDGETS.desktop, 256 * MiB);
+  assert.equal(LOW_MEMORY_BUDGETS.mobile, 192 * MiB);
   assert.equal(residencyBudgetFor({ navigator: { deviceMemory: 4 } }).name, 'mobile');
   assert.equal(residencyBudgetFor({ navigator: { maxTouchPoints: 5 }, screen: { width: 390, height: 844 } }).name, 'mobile');
   assert.equal(residencyBudgetFor({ navigator: { deviceMemory: 16 }, screen: { width: 2560, height: 1440 } }).name, 'desktop');
+});
+
+test('budget size follows reported device memory', () => {
+  const at = (nav, screen = { width: 2560, height: 1440 }) => residencyBudgetFor({ navigator: nav, screen }).bytes;
+  const phone = { width: 412, height: 915 };
+  assert.equal(at({ deviceMemory: 32 }), 512 * MiB, 'a 32 GB desktop');
+  assert.equal(at({}), 512 * MiB, 'a desktop browser that does not report memory');
+  assert.equal(at({ deviceMemory: 6 }), 256 * MiB, 'a desktop reporting under 8 GB');
+  assert.equal(at({ deviceMemory: 8, maxTouchPoints: 5 }, phone), 320 * MiB, 'a phone reporting 8 GB');
+  assert.equal(at({ maxTouchPoints: 5 }, phone), 192 * MiB, 'a phone that does not report memory');
+  assert.equal(at({ deviceMemory: 4 }), 192 * MiB, 'any 4 GB device');
 });
 
 test('a denied reservation allocates nothing and evicts nothing', () => {
