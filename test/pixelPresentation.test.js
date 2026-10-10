@@ -158,3 +158,17 @@ test('adapter explicitly reports an unsuccessful allocation without drawing', ()
   assert.equal(adapter.getCaptureSource(), null);
   adapter.dispose();
 });
+
+test('disposed adapters and context loss after begin cannot publish successful presentation', () => {
+  const canvas=surface(320,180),owner=new PixelPresentation({canvas,presentation:pixel});
+  owner.beginFrame();
+  canvas.getContext('2d').isContextLost=()=>true;
+  assert.equal(owner.finishFrame().presented,false);
+  assert.equal(owner.getCaptureSource(),null);
+  const adapter=createPresentingRenderer({canvas:surface(),presentation:pixel,rendererFactory:()=>({draw(){},dispose(){}})});
+  assert.equal(adapter.draw({},0).presented,true);
+  adapter.dispose();
+  assert.equal(adapter.draw({},0).presented,false);
+  assert.equal(adapter.getCaptureSource(),null);
+  owner.dispose();
+});

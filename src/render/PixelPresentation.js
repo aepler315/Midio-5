@@ -61,7 +61,7 @@ export class PixelPresentation {
   }
   beginFrame() {
     this._invalidateCapture();
-    if (this._disposed) return null;
+    if (this._disposed) { this.failFrame('disposed'); return null; }
     const { canvas, presentation: p } = this;
     if (this._outputSize !== `${canvas.width}x${canvas.height}`) {
       this._outputSize = `${canvas.width}x${canvas.height}`;
@@ -70,7 +70,8 @@ export class PixelPresentation {
     this.diagnostics.output = { width: canvas.width, height: canvas.height };
     this.diagnostics.frame = { presented: false, generation: this.generation, reason: 'in-progress' };
     try {
-      if (!(canvas.width > 0 && canvas.height > 0) || !canvas.getContext('2d')) {
+      const outputContext = canvas.getContext('2d');
+      if (!(canvas.width > 0 && canvas.height > 0) || !outputContext || outputContext.isContextLost?.()) {
         this.failFrame('output-context'); return null;
       }
       if (!p.pixelated || canvas.width === 320 && canvas.height === 180) {
@@ -96,7 +97,7 @@ export class PixelPresentation {
         this.source = this.working;
       }
       const ctx = this.source.getContext('2d');
-      if (!ctx) throw Error('Source context unavailable');
+      if (!ctx || ctx.isContextLost?.()) throw Error('Source context unavailable');
       ctx.imageSmoothingEnabled = !p.pixelated;
       this.diagnostics.working = { width: this.source.width, height: this.source.height };
       this._pending = { generation: this.generation, outputSize: this._outputSize };
@@ -115,6 +116,8 @@ export class PixelPresentation {
     if (pending.generation !== this.generation || pending.outputSize !== `${this.canvas.width}x${this.canvas.height}`
       || source === this.working && this.residency.get(this.key) !== source) return this.failFrame('stale-frame');
     try {
+      const sourceContext = source.getContext('2d'), outputContext = this.canvas.getContext('2d');
+      if (!sourceContext || sourceContext.isContextLost?.() || !outputContext || outputContext.isContextLost?.()) return this.failFrame('context-lost');
       this.diagnostics.effectiveLook = p.pixelated ? 'pixel' : 'natural';
       let status = { applied: false, reason: null, pixels: 0 };
       if (p.paletteId !== 'none' && p.pixelated) {
@@ -149,6 +152,10 @@ export class PixelPresentation {
     if (!c || this._disposed || c.generation !== this.generation || c.outputSize !== `${this.canvas.width}x${this.canvas.height}`
       || c.width !== c.canvas.width || c.height !== c.canvas.height
       || c.canvas === this.working && this.residency.get(this.key) !== c.canvas) return null;
+    try {
+      const sourceContext = c.canvas.getContext('2d'), outputContext = this.canvas.getContext('2d');
+      if (!sourceContext || sourceContext.isContextLost?.() || !outputContext || outputContext.isContextLost?.()) return null;
+    } catch { return null; }
     return c;
   }
   dispose() { if (this._disposed) return; this._disposed = true; this._releaseWorking(); }

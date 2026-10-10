@@ -1644,22 +1644,22 @@ function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
   if (audioEngine?.master) audioEngine.master.gain.value = 0;
   if (audioEngine?.ctx?.state === 'running') audioEngine.ctx.suspend();
   try {
-  const advanced = stepExportClock({
-    simTime,
-    targetMs: target,
-    stepMs: STEP_MS,
-    step: (dt, at) => sim.step(dt, at),
-  });
-  simTime = advanced.simTime;
-  if (typeof beforeDraw === 'function') beforeDraw();
-  const drawsBefore = renderer.drawCount ?? 0;
-  const result = renderer.draw(sim, 0);
-  if (!result?.presented || !renderer.getCaptureSource()) throw new Error(`Export presentation failed: ${result?.reason || 'no completed frame'}.`);
-  return {
-    width: canvas.width, height: canvas.height, timeMs: simTime,
-    draws: (renderer.drawCount ?? 0) - drawsBefore,
-    presented: true, generation: result.generation, frameId: result.frameId,
-  };
+    const advanced = stepExportClock({
+      simTime,
+      targetMs: target,
+      stepMs: STEP_MS,
+      step: (dt, at) => sim.step(dt, at),
+    });
+    simTime = advanced.simTime;
+    if (typeof beforeDraw === 'function') beforeDraw();
+    const drawsBefore = renderer.drawCount ?? 0;
+    const result = renderer.draw(sim, 0);
+    if (!result?.presented || !renderer.getCaptureSource()) throw new Error(`Export presentation failed: ${result?.reason || 'no completed frame'}.`);
+    return {
+      width: canvas.width, height: canvas.height, timeMs: simTime,
+      draws: (renderer.drawCount ?? 0) - drawsBefore,
+      presented: true, generation: result.generation, frameId: result.frameId,
+    };
   } catch (err) {
     abortBulkExport();
     throw failBulkExport(`Export presentation failed: ${err?.message || err}`);
