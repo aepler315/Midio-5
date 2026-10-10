@@ -10,3 +10,11 @@ test('temporal acceptance rejects a frozen controlled sequence, permits quiet re
   assert.throws(() => assertTemporalChange([a, a, a]), /frozen/);
   assert.doesNotThrow(() => assertTemporalChange([a, a, b]));
 });
+
+test('palette evidence rejects missing completed capture instead of reporting zero errors', async () => {
+  const {inspectPixelFrame}=await import('../tools/lib/pixel-evidence.mjs');
+  const previous=globalThis.window;
+  globalThis.window={__SMW:{renderer:{getCaptureSource:()=>null}}};
+  try { await assert.rejects(inspectPixelFrame({paletteId:'range32'}),/completed capture/); }
+  finally {globalThis.window=previous;}
+});

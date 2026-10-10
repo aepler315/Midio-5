@@ -71,3 +71,9 @@ test('visual manifests accept independent presentation profiles and reject inval
     assert.throws(() => normalizeManifest({ ...manifest(), settings: { presentation: { ...presentation, ...change } } }));
   }
 });
+
+test('a bounded continuous capture draws every frame from its explicit start and rejects earlier checkpoints', () => {
+  const m=normalizeManifest({ ...manifest({timesMs:[1500,2000],clips:[{startMs:1500,durationMs:250}]}),settings:{mode:'continuous',fps:4,startMs:1500} });
+  assert.deepEqual(captureSchedule(m.songs[0],4000,m.settings).map(p=>p.timeMs),[1500,1750,2000]);
+  assert.throws(()=>captureSchedule({...m.songs[0],timesMs:[1000]},4000,m.settings),/start/);
+});

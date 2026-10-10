@@ -110,3 +110,30 @@ Each completed run has:
 Comparison checks identical input hashes, settings, browser/environment, duration, schedule and complete frame sets. It verifies copied audio and PNG hashes before writing a self-contained side-by-side report. Changed-pixel measurements use 64×36 thumbnails and ignore changes of at most two RGB levels; they are diagnostics, never a pass/fail aesthetic criterion. The quality verdict always starts `unreviewed`.
 
 The `Visual evaluation` CI workflow captures the committed default fixtures and uploads the report even when the command fails. It also repeats one identical capture to expose nondeterminism. Any drift is recorded as a finding, not automatically accepted or hidden by a loose screenshot tolerance.
+
+## Pixel presentation evidence
+
+A focused manifest may set `settings.presentation` to a version-1 display
+profile (`look`, `quality`, `palette`, `dither`, `scaling`). The runner applies
+that profile through the production bulk-export entry point; each saved frame
+records requested/effective presentation, backend, grid, output size and DPR.
+Use identical manifests for Natural, Pixel and Palette before/after runs.
+
+`settings.startMs` optionally bounds continuous drawing to a later start.
+Checkpoints and clips before that start are rejected. Such a run does not
+verify opening history; retain an opening check separately. Sparse captures
+still draw consecutive frames within each selected clip and its pre-roll.
+`VISUAL_ANGLE=gl` selects Chromium's GL backend; the default remains SwiftShader.
+The selected driver and actual GL environment are recorded. Driver changes
+must not be mixed in a matched comparison.
+
+`npm run test:retro` uses real Canvas/CSS checkerboards at four DPRs and eight
+resized viewports, then checks the default Range v2 and explicit legacy path.
+It rejects silent v2 fallback, blank/frozen controlled sequences, missing
+capture, nonpalette raw pixels, incorrect scene bars and failed exports.
+`npm run test:export` records and decodes live Pixel and Palette transitions
+through SongRecorder, preserving encoded dimensions. Opaque raw palette
+membership is exact; decoded H.264 bars permit peak RGB sum <=96 and <=20%
+weakly lit pixels away from the boundary (<=35% at the adjacent boundary).
+These codec tolerances do not establish exact palette membership after loss.
+The browser CI jobs have time bounds and retain failed diagnostics.

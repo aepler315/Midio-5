@@ -64,3 +64,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+
+  pixel-presentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up the game and Chromium
+        uses: ./.github/actions/setup
+        with:
+          browser: true
+      - name: Verify real pixel placement, Range backends and export failure
+        run: npm run test:retro
+      - name: Upload pixel evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pixel-presentation
+          path: .smoke/retro/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

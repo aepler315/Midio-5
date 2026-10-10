@@ -25,6 +25,7 @@ the `audio-smoke` job.
 | Job | Command / check | Pass bar | Proves | Does not prove |
 | --- | --- | --- | --- | --- |
 | `test` | `npm ci`, `npm audit --audit-level=high`, `npm run lint`, `npm test` | zero failing Node tests under `test/*.js`, `test/*.mjs`, `test/helpers/*.js`; lint clean; no high+ npm advisories | Unit contracts for analysis, library fakes, export estimates, UI helpers | Real IndexedDB in a browser; Firefox/Safari; long recordings; physical devices |
+| `pixel-presentation` | `npm run test:retro` (12-minute harness bound; 15-minute job) | real DPR raster grid/boundaries, completed-capture palette membership, meaningful/changing Range content, scene bars, explicit export rejection | Chromium default v2 versus explicit legacy, six representative export profiles/sizes, persisted settings, context recovery where available | Device performance, non-Chromium engines, every profile combination; failed driver runs remain failed evidence |
 | `audio-smoke` | Playback/lighting/shading/seek/world/export/car/URL-loader smokes against source, then `stage:site` + `test:bootstrap` against that artifact | each script exits 0; staged Browse opens a real chooser; artifacts under `.smoke/` | Chromium can boot the actual public file set, upload a short synthetic fixture, pick a world, draw, seek, and start an export | Watchability, identity, other engines, songs longer than the fixture |
 
 GitHub Pages deploy stages one artifact with `stage:site`, runs bootstrap and

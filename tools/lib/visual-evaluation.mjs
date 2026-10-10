@@ -13,7 +13,7 @@ const keys = (obj, allowed, label) => {
 export function normalizeManifest(value) {
   keys(value, ['version', 'settings', 'songs'], 'manifest');
   assert.equal(value.version, 1, 'manifest version must be 1');
-  keys(value.settings || {}, [...Object.keys(DEFAULT_SETTINGS), 'presentation'], 'settings');
+  keys(value.settings || {}, [...Object.keys(DEFAULT_SETTINGS), 'presentation', 'startMs'], 'settings');
   const settings = { ...DEFAULT_SETTINGS, ...value.settings };
   if (settings.presentation != null) {
     const p = settings.presentation;
@@ -28,6 +28,7 @@ export function normalizeManifest(value) {
   for (const key of ['width', 'height']) { integer(settings[key], 64, 3840, key); assert.equal(settings[key] % 2, 0, `${key} must be even`); }
   integer(settings.seed, 0, 0xffffffff, 'seed'); integer(settings.quality, 0, 3, 'quality');
   integer(settings.fps, 1, 60, 'fps'); integer(settings.intervalMs, 100, 3600000, 'intervalMs');
+  if (settings.startMs != null) integer(settings.startMs, 0, 86400000, 'startMs');
   assert.ok(['sparse', 'continuous'].includes(settings.mode), 'invalid mode');
   assert.ok(settings.view === null || /^[a-z0-9-]+$/.test(settings.view), 'invalid view');
   assert.ok(settings.biome === null || REAL_BIOMES.includes(settings.biome), 'invalid biome');
@@ -59,9 +60,13 @@ export function normalizeManifest(value) {
 
 export function captureSchedule(song, durationMs, settings) {
   assert.ok(Number.isFinite(durationMs) && durationMs > 0, 'invalid song duration');
-  const times = song.timesMs ?? Array.from({ length: Math.ceil(durationMs / settings.intervalMs) }, (_, i) => i * settings.intervalMs);
+  const start = settings.startMs ?? 0;
+  assert.ok(start < durationMs, 'start exceeds duration');
+  const times = song.timesMs ?? Array.from({ length: Math.ceil((durationMs - start) / settings.intervalMs) }, (_, i) => start + i * settings.intervalMs);
   const clips = song.clips ?? [{ startMs: Math.floor(durationMs * 0.5), durationMs: Math.min(2000, Math.floor(durationMs * 0.25)) }];
   for (const t of times) assert.ok(t < durationMs, `checkpoint ${t} exceeds duration ${durationMs}`);
+  for (const t of times) assert.ok(t >= start, `checkpoint ${t} precedes start ${start}`);
+  for (const c of clips) assert.ok(c.startMs >= start, `clip precedes start ${start}`);
   for (const c of clips) assert.ok(c.startMs + c.durationMs <= durationMs, `clip exceeds duration ${durationMs}`);
   const points = new Map();
   const add = (timeMs, checkpoint = false, clip = null) => {
@@ -74,14 +79,14 @@ export function captureSchedule(song, durationMs, settings) {
   times.forEach(t => add(t, true));
   const dt = 1000 / settings.fps;
   clips.forEach((c, i) => {
-    for (let n = Math.ceil(Math.min(1000, c.startMs) / dt); n > 0; n--) add(Math.max(0, c.startMs - n * dt));
+    for (let n = Math.ceil(Math.min(1000, c.startMs - start) / dt); n > 0; n--) add(Math.max(start, c.startMs - n * dt));
     for (let n = 0; n * dt < c.durationMs - 0.001; n++) add(c.startMs + n * dt, false, i);
   });
   assert.ok(points.size, 'empty capture schedule');
   const end = Math.max(...points.keys());
-  if (settings.mode === 'continuous') for (let n = 0; n * dt <= end; n++) add(n * dt);
+  if (settings.mode === 'continuous') for (let n = 0; start + n * dt <= end; n++) add(start + n * dt);
   // The opening assembly needs an early actual paint, even in sparse mode.
-  if (end >= 250) add(250);
+  if (start <= 250 && end >= 250) add(250);
   // In continuous mode the regular frame grid already paints the opening.
   if (settings.mode === 'continuous' && !times.includes(250) && !points.get(250)?.save && 250 % dt > 0.001) points.delete(250);
   return [...points.values()].sort((a, b) => a.timeMs - b.timeMs);

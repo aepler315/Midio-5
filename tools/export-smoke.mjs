@@ -16,27 +16,30 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { withAllWorlds, withLegacyRange } from './lib/allWorlds.mjs';
 import { landscapeOwnership, assertLandscapeOwnership } from './range-scene-smoke.mjs';
 import { seedBrowserConstruction, installSeedReceiver } from './lib/landscape-browser.mjs';
+import { inspectPixelFrame, assertMeaningfulFrame } from './lib/pixel-evidence.mjs';
 
 const url = process.argv[2] || 'http://127.0.0.1:8080';
 const out = path.resolve(process.argv[3] || '.smoke/export');
 await fs.mkdir(out, { recursive: true });
 
 const checks = [];
+const pixelRecordings = [];
 const check = (name, ok, detail = '') => {
   checks.push({ name, ok: !!ok, detail });
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
 };
 
 const wav = path.join(out, 'export-fixture.wav');
-execFileSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'gen-test-wav.mjs'), wav, '120', String(Number(process.env.EXPORT_FIXTURE_SECONDS) || 20)]);
+execFileSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'gen-test-wav.mjs'), wav, '120', String(Number(process.env.EXPORT_FIXTURE_SECONDS) || 120)]);
 
 /** Decode a file the page just wrote, and report what is actually in it. */
-const inspect = async (page, bytes, mime) => page.evaluate(async ({ b64, type }) => {
+const inspect = async (page, bytes, mime, sampleTime = 2) => page.evaluate(async ({ b64, type, sampleTime }) => {
   const bin = atob(b64);
   const buf = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
@@ -57,7 +60,7 @@ const inspect = async (page, bytes, mime) => page.evaluate(async ({ b64, type })
     await video.play().catch(() => {});
     await new Promise((res) => setTimeout(res, 1200));
     video.pause();
-    await new Promise((res) => { video.onseeked = res; video.currentTime = Math.min(2, video.duration / 2); });
+    await new Promise((res) => { video.onseeked = res; video.currentTime = Math.min(sampleTime, video.duration - .1); });
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -87,6 +90,14 @@ const inspect = async (page, bytes, mime) => page.evaluate(async ({ b64, type })
       }
       return peak;
     };
+    const rowTransitions = (y) => {
+      let changed = 0;
+      for (let x = 1; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4;
+        if (Math.abs(px[i] - px[i-4]) + Math.abs(px[i+1] - px[i-3]) + Math.abs(px[i+2] - px[i-2]) > 24) changed++;
+      }
+      return changed;
+    };
     for (let i = 0; i < px.length; i += 4) colors.add(`${px[i]},${px[i + 1]},${px[i + 2]}`);
     return {
       width: video.videoWidth,
@@ -99,20 +110,25 @@ const inspect = async (page, bytes, mime) => page.evaluate(async ({ b64, type })
       bottomRowLit: rowLit(canvas.height - 5),
       topRowPeak: rowPeak(4),
       bottomRowPeak: rowPeak(canvas.height - 5),
+      middleTransitions: rowTransitions(Math.floor(canvas.height / 2)),
+      rows: [14,16,59,61,418,421,463,466].filter(y=>y<canvas.height).map(y=>({y,lit:rowLit(y),peak:rowPeak(y)})),
+      png:canvas.toDataURL('image/png').split(',')[1],
     };
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
-}, { b64: bytes.toString('base64'), type: mime });
+}, { b64: bytes.toString('base64'), type: mime, sampleTime });
 
-const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH
-  ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
+let runError;
+const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH,
+  args: ['--use-angle=gl', '--ignore-gpu-blocklist'] });
 try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 780 }, acceptDownloads: true });
   await context.addInitScript(seedBrowserConstruction, 315);
   await context.addInitScript(installSeedReceiver);
   await context.route('**/soundfonts/', (route) => route.fulfill({ json: [] }));
   await context.route('**/favicon.ico', (route) => route.fulfill({ status: 204 }));
+  await context.route(/^https:\/\//, route => route.abort());
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -162,12 +178,13 @@ try {
     check('actual v2 scene is active for the recording', true, JSON.stringify(await page.evaluate(() => ({ seed: window.__SMW.songSeed, view: window.__SMW.rangeState.viewId, generation: window.__SMW.ridgeStateKey }))));
   }
 
+  await page.evaluate(() => window.__SMW.seek(1500));
   // --- record from the HUD, mid-song
   await clickHudButton('#recordBtn');
   check('recording is armed', await page.getAttribute('#recordBtn', 'aria-pressed') === 'true');
   // Armed includes preparation; wait for the real recorder before measuring.
   await page.waitForFunction(() => document.getElementById('recordBtn').title === 'Stop recording and save the video', null, { timeout: 120000 });
-  await page.waitForTimeout(Number(process.env.EXPORT_RECORD_MS) || 4000);
+  await page.waitForTimeout(Number(process.env.EXPORT_RECORD_MS) || 12000);
   // The HUD holds itself open while recording: its stop control is the only
   // way out, and a faded HUD sits under the canvas.
   check('the HUD stays reachable while recording', await page.locator('#recordBtn').isVisible());
@@ -190,6 +207,60 @@ try {
   // The song itself, tapped off the master bus. A recording that is silent
   // still saves, plays and looks right -- nothing else would catch this.
   check('the saved file has sound in it', hud.audioBytes === null || hud.audioBytes > 0, `${hud.audioBytes} audio bytes decoded`);
+
+  // Live app + real SongRecorder + real MediaRecorder + decode. The output
+  // stays 800x480 through a look/scaling transition. PNG palette membership
+  // is exact before encode; decoded codec bleed is judged at <=32/255 per
+  // average channel in bars, with <=20% weakly lit bar pixels (same bounds
+  // as the existing H.264 car test below). At the adjacent image boundary
+  // allow 35% weak codec bleed while retaining the <=96 peak limit.
+  await page.evaluate(async()=>{
+    // The completion menu is populated lazily; prepare its real presets
+    // before choosing the persisted target for a mid-song HUD recording.
+    const {RENDER_PRESETS}=await import('/src/render/VideoExport.js'),n=document.querySelector('#exportPreset');
+    if(!n.options.length)for(const p of RENDER_PRESETS)n.add(new Option(p.label,p.id));
+    n.value='car';n.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  for (const look of ['pixel','palette']) {
+    await page.evaluate(()=>window.__SMW.seek(1500));
+    await clickHudButton('#displaySettingsBtn');
+    await page.selectOption('#display-look',look);
+    await page.selectOption('#display-quality',look==='pixel'?'auto':'economy');
+    await page.selectOption('#display-scaling','integer');
+    if(look==='palette') {
+      await page.selectOption('#display-palette','range32');
+      await page.selectOption('#display-dither','0.35');
+    }
+    await page.click('#displaySettingsClose');
+    await page.waitForFunction(look=>window.__SMW.presentationDiagnostics?.effectiveLook===look,look);
+    const raw=await page.evaluate(inspectPixelFrame,{paletteId:look==='palette'?'range32':'none'});
+    assertMeaningfulFrame(raw);assert.equal(raw.paletteErrors,0);
+    await fs.writeFile(path.join(out,`${look}-pre-encode.png`),Buffer.from(raw.png,'base64'));delete raw.png;
+    await clickHudButton('#recordBtn');
+    await page.waitForFunction(()=>document.querySelector('#recordBtn').title==='Stop recording and save the video',null,{timeout:120000});
+    await page.waitForTimeout(2000);
+    await clickHudButton('#displaySettingsBtn');
+    const nextLook=look==='pixel'?'palette':'pixel';
+    await page.selectOption('#display-look',nextLook);await page.selectOption('#display-scaling','fit');
+    await page.click('#displaySettingsClose');
+    await page.waitForFunction(look=>window.__SMW.presentationDiagnostics?.effectiveLook===look,nextLook);
+    await page.waitForTimeout(2000);
+    const download=page.waitForEvent('download',{timeout:60000});
+    await clickHudButton('#recordBtn');const saved=await download;
+    const file=path.join(out,`${look}-transition${path.extname(saved.suggestedFilename())}`);await saved.saveAs(file);
+    const bytes=await fs.readFile(file);
+    const first=await inspect(page,bytes,candidate.mimeType,1);
+    const decoded=await inspect(page,bytes,candidate.mimeType,1e9);
+    for(const [label,frame] of [['integer',first],['fit',decoded]]) {
+      await fs.writeFile(path.join(out,`${look}-decoded-${label}.png`),Buffer.from(frame.png,'base64'));delete frame.png;
+    }
+    check(`${look} transition recording keeps stable encoded dimensions`,decoded.width===800&&decoded.height===480,`${decoded.width}x${decoded.height}`);
+    check(`${look} transition recording decodes meaningful scene content`,decoded.colors>8&&decoded.middleRowLit>.12,JSON.stringify(decoded));
+    check(`${look} transition recording preserves bars with codec tolerance`,decoded.topRowLit<=.2&&decoded.bottomRowLit<=.2&&decoded.topRowPeak<=96&&decoded.bottomRowPeak<=96,JSON.stringify(decoded));
+    const integerBar=first.rows.find(r=>r.y===59),fitImage=decoded.rows.find(r=>r.y===16);
+    check(`${look} transition changes placement while preserving encoded size`,first.width===decoded.width&&first.height===decoded.height&&integerBar.peak<=96&&integerBar.lit<=.35&&fitImage.lit>.2,JSON.stringify({integerBar,fitImage}));
+    pixelRecordings.push({look,nextLook,requestedScaling:['integer','fit'],raw,first,decoded,backend:await page.evaluate(()=>window.__SMW.rangeState),file:path.basename(file),codec:candidate.mimeType});
+  }
 
   // --- full-song export at the car preset
   await page.evaluate(() => window.__SMW.seek(window.__SMW.durationMs - 3000));
@@ -245,12 +316,13 @@ try {
     (await page.textContent('#exportNote')).slice(0, 120));
 
   check('no browser errors', errors.length === 0, errors.join(' | '));
-} finally {
+} catch(error) { runError=String(error.stack||error);check('browser run completed',false,runError); } finally {
   await browser.close();
 }
 
 const failed = checks.filter((c) => !c.ok);
-await fs.writeFile(path.join(out, 'report.json'), JSON.stringify({ checks }, null, 2));
+await fs.writeFile(path.join(out, 'report.json'), JSON.stringify({ commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
+  seed:315,fixture:'gen-test-wav/120bpm',audioSha256:createHash('sha256').update(await fs.readFile(wav)).digest('hex'),error:runError,browser:browser.version(),checks,pixelRecordings }, null, 2));
 if (failed.length) {
   console.error(`\nExport smoke FAILED (${failed.length}/${checks.length}).`);
   process.exitCode = 1;

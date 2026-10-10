@@ -15,8 +15,10 @@ export function assertTemporalChange(thumbnails) {
 // Self-contained for page.evaluate. Exact palette membership is tested only
 // on opaque pre-encode buffers, never on lossy decoded RGB.
 export async function inspectPixelFrame({ paletteId = 'none' } = {}) {
-  const smw = window.__SMW, canvas = document.querySelector('#stage');
+  const smw = window.__SMW;
   const capture = smw.renderer?.getCaptureSource();
+  if (!capture) throw new Error('pixel evidence requires a completed capture');
+  const canvas = document.querySelector('#stage');
   const px = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
   const colors = new Set(); let lit = 0, sum = 0, opaque = true;
   for (let i=0;i<px.length;i+=4) {
@@ -24,13 +26,27 @@ export async function inspectPixelFrame({ paletteId = 'none' } = {}) {
     const brightness = px[i]+px[i+1]+px[i+2]; sum += brightness;
     if (brightness > 24) lit++; if (px[i+3] !== 255) opaque = false;
   }
+  let placement=null, barErrors=0,barPixels=0;
+  if (capture.pixelated) {
+    const {fitPixelRect}=await import('/src/render/PixelPresentation.js');
+    placement=fitPixelRect(capture.width,capture.height,canvas.width,canvas.height,capture.scaling);
+    for(let y=0;y<canvas.height;y++) for(let x=0;x<canvas.width;x++) {
+      // Exclude only the fractional boundary pixel in Fit/sub-grid mode.
+      if(x+1<=placement.x || x>=Math.ceil(placement.x+placement.width) || y+1<=placement.y || y>=Math.ceil(placement.y+placement.height)) {
+        barPixels++;const i=(y*canvas.width+x)*4;
+        if(px[i]||px[i+1]||px[i+2]||px[i+3]!==255)barErrors++;
+      }
+    }
+  }
   const thumb = document.createElement('canvas'); thumb.width=64;thumb.height=36;
   const ctx=thumb.getContext('2d');ctx.drawImage(canvas,0,0,64,36);
-  let paletteErrors=0;
-  if (paletteId !== 'none' && capture) {
+  let paletteErrors=0, palettePixels=0;
+  if (paletteId !== 'none') {
     const { RANGE32_COLORS } = await import('/src/render/PaletteCatalog.js');
     const allowed = new Set(RANGE32_COLORS.map(hex=>[1,3,5].map(start=>parseInt(hex.slice(start,start+2),16)).join(',')));
     const source = capture.canvas, raw=source.getContext('2d').getImageData(0,0,source.width,source.height).data;
+    palettePixels=raw.length/4;
+    if (!palettePixels) throw new Error('palette evidence requires nonempty capture');
     for(let i=0;i<raw.length;i+=4) {
       if (raw[i+3] !== 255) { paletteErrors++; continue; }
       if (paletteId === 'range32') { if(!allowed.has(`${raw[i]},${raw[i+1]},${raw[i+2]}`))paletteErrors++; }
@@ -38,6 +54,7 @@ export async function inspectPixelFrame({ paletteId = 'none' } = {}) {
     }
   }
   return { width:canvas.width,height:canvas.height,colors:colors.size,litFraction:lit/(px.length/4),mean:sum/(px.length/4*3),opaque,
-    paletteErrors,thumbnail:[...ctx.getImageData(0,0,64,36).data],presentation:smw.presentationDiagnostics,backend:smw.rangeState,
-    timeMs:smw.sim.timeMs,seed:smw.songSeed,dpr:devicePixelRatio,png:canvas.toDataURL('image/png').split(',')[1] };
+    captureReady:true,placement,barPixels,barErrors,palettePixels,paletteErrors,thumbnail:[...ctx.getImageData(0,0,64,36).data],presentation:smw.presentationDiagnostics,backend:smw.rangeState,
+    timeMs:smw.sim.timeMs,seed:smw.songSeed,dpr:devicePixelRatio,requested:smw.displayPrefs,
+    fps:{requested:Number(document.querySelector('#stageFps')?.value),measured:smw.frameRates},png:canvas.toDataURL('image/png').split(',')[1] };
 }
