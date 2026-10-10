@@ -44,7 +44,7 @@ export async function openEvaluationSong(browser, { url, audioPath, settings, di
     const info = await page.evaluate(async settings => {
       if (window.__SMW_EXPORT_ERROR) throw new Error(window.__SMW_EXPORT_ERROR);
       window.__resetLandscapeRandom();
-      window.__SMW.beginBulkExport({ width: settings.width, height: settings.height });
+      window.__SMW.beginBulkExport({ width: settings.width, height: settings.height, presentation: settings.presentation });
       await window.__SMW.rangeReady({ timeoutMs: 120000 });
       window.__SMW.perf.setFixtureLevel(settings.quality);
       const gl = window.__SMW.sim.biomes.rangePresentation?.scene?.renderer?.getContext();
@@ -86,6 +86,8 @@ export async function renderEvaluationFrame(page, point, settings) {
         bands: sim.energyCurves?.sampleAll(sim.heardTimeMs) ?? null },
       controls: { camera: sim.camera, cameraMove: frame?.cameraMove ?? null, storm: frame?.storm ?? null,
         land: frame?.music ?? null, sectionId: frame?.sectionId ?? null, motifId: frame?.motifId ?? null },
+      presentation: smw.presentationDiagnostics, requestedPresentation: settings.presentation ?? null,
+      output: { width: canvas.width, height: canvas.height }, dpr: devicePixelRatio,
       generation: smw.generation, seed: smw.songSeed };
   }, { point, settings });
 }

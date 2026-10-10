@@ -62,3 +62,12 @@ test('paired missing provenance cannot masquerade as compatible evidence', () =>
     r => { delete r.songs[0].frames[0].actualTimeMs; }, r => { delete r.settings.seed; }, r => { delete r.source; }, r => { r.source.changedDuringRun = true; }];
   for (const remove of deletions) { const a = report(), b = report(); remove(a); remove(b); assert.throws(() => compareReports(a, b), /missing|invalid/i); }
 });
+
+test('visual manifests accept independent presentation profiles and reject invalid values', () => {
+  const presentation = { version: 1, look: 'palette', quality: 'auto', palette: 'range32', dither: .35, scaling: 'integer' };
+  const m = normalizeManifest({ ...manifest(), settings: { presentation } });
+  assert.deepEqual(m.settings.presentation, presentation);
+  for (const change of [{ look: 'cathode' }, { quality: 'low' }, { scaling: 'stretch' }, { dither: 9 }, { palette: 'missing' }]) {
+    assert.throws(() => normalizeManifest({ ...manifest(), settings: { presentation: { ...presentation, ...change } } }));
+  }
+});

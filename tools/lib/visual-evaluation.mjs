@@ -13,8 +13,18 @@ const keys = (obj, allowed, label) => {
 export function normalizeManifest(value) {
   keys(value, ['version', 'settings', 'songs'], 'manifest');
   assert.equal(value.version, 1, 'manifest version must be 1');
-  keys(value.settings || {}, Object.keys(DEFAULT_SETTINGS), 'settings');
+  keys(value.settings || {}, [...Object.keys(DEFAULT_SETTINGS), 'presentation'], 'settings');
   const settings = { ...DEFAULT_SETTINGS, ...value.settings };
+  if (settings.presentation != null) {
+    const p = settings.presentation;
+    keys(p, ['version', 'look', 'quality', 'palette', 'dither', 'scaling'], 'presentation');
+    assert.equal(p.version, 1, 'invalid presentation version');
+    assert.ok(['natural', 'pixel', 'palette'].includes(p.look), 'invalid look');
+    assert.ok(['auto', 'economy'].includes(p.quality), 'invalid quality');
+    assert.ok(['range32', 'rgb332'].includes(p.palette), 'invalid palette');
+    assert.ok([0, .35, 1].includes(p.dither), 'invalid dither');
+    assert.ok(['fit', 'integer'].includes(p.scaling), 'invalid scaling');
+  }
   for (const key of ['width', 'height']) { integer(settings[key], 64, 3840, key); assert.equal(settings[key] % 2, 0, `${key} must be even`); }
   integer(settings.seed, 0, 0xffffffff, 'seed'); integer(settings.quality, 0, 3, 'quality');
   integer(settings.fps, 1, 60, 'fps'); integer(settings.intervalMs, 100, 3600000, 'intervalMs');
