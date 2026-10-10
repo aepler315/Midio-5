@@ -9,7 +9,7 @@ if(last){const v=p.eyeM.map((x,k)=>(x-last.eyeM[k])*10),speed=Math.hypot(v[0],v[
 let maxCorner=0,corner=null;for(let i=1;i<plan.speedProfile.samples.length-1;i++){const a=plan.speedProfile.samples[i-1],b=plan.speedProfile.samples[i],c=plan.speedProfile.samples[i+1],u=[b[0]-a[0],b[1]-a[1]],v=[c[0]-b[0],c[1]-b[1]],angle=Math.acos(Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1])/(Math.hypot(...u)*Math.hypot(...v)))))*180/Math.PI;if(angle>maxCorner){maxCorner=angle;corner={i,a,b,c}}}
 const report={fixture:'six minutes, thirteen roles, 100ms samples',node:process.version,commit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),tunables:data.tunables,planMs,timelineMs,meanQualityRatio:tour.meanQualityRatio,heroCount:tour.heroes.length,passedAtRange:tour.heroes.filter(h=>h.passedAtRange).length,maxClimb,maxYaw,maxAcceleration,accelTime,maxSpeed,minSpeed,minMargin,omegaFraction:omegaGood/n,maxCorner,corner,heroes:tour.heroes,notes:tour.notes};
 report.gates={planner60ms:planMs<=60,quality80pct:report.meanQualityRatio>=.8,optical98pct:report.omegaFraction>=.98,climb30mps:maxClimb<=30.01,yaw25dps:maxYaw<=25.01,acceleration12mps2:maxAcceleration<=12.01,clearance:minMargin>=0};
-const output=process.argv[2]||path.join(repo,'docs/evidence/teton-tour/runtime-metrics.json');
+const output=process.argv[2]||path.join(repo,'.smoke/teton-tour/runtime-metrics.json');
 await fs.writeFile(output,JSON.stringify(report,null,2)+'\n');
 console.log(JSON.stringify({...report,tunables:undefined,heroes:undefined,notes:undefined},null,2));
 if(Object.values(report.gates).some(pass=>!pass))process.exitCode=1;

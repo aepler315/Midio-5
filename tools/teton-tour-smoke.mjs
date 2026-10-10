@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {chromium} from 'playwright';
 import {openSong,captureFrame} from './range-scene-smoke.mjs';
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),url=process.argv[2]||'http://127.0.0.1:8080',output=path.resolve(process.argv[3]||'docs/evidence/teton-tour');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),url=process.argv[2]||'http://127.0.0.1:8080',output=path.resolve(process.argv[3]||'.smoke/teton-tour');
 await fs.mkdir(output,{recursive:true});
 const codeFiles=execFileSync('git',['ls-files','-z','--cached','--others','--exclude-standard','src','index.html'],{cwd:root,encoding:'utf8'}).split('\0').filter(f=>/\.(js|mjs|html)$/.test(f)).sort();
 const codeHash=createHash('sha256');for(const file of codeFiles){codeHash.update(file+'\0');codeHash.update(await fs.readFile(path.join(root,file)));codeHash.update('\0');}

@@ -116,7 +116,7 @@ const result = { schema: 'midio.range-composition-coverage', version: 1, visualA
     'no musical deformation, trees or travel compositor', 'no GPU render, material appearance, device performance or visual approval'],
   sourceFiles, rows };
 const output = path.resolve(repo, outArg || (all ? 'docs/evidence/range-v2/no-stage-coverage.json'
-  : 'docs/evidence/terrain-continuation/coverage.json'));
+  : '.smoke/terrain-continuation/coverage.json'));
 await fs.mkdir(path.dirname(output), { recursive: true });
 await fs.writeFile(output, JSON.stringify(result, null, 2) + '\n');
 for (const row of rows) console.log(`${row.id}: nominal ${row.nominal.uncoveredPixels}/${row.nominal.testedPixels}, extremes ${row.extremes.uncoveredPixels}/${row.extremes.testedPixels} uncovered`);

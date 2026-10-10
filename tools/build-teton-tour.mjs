@@ -258,7 +258,7 @@ export async function buildTourHighway({
   authoringFile = path.join(root, 'data/terrain/teton-tour.json'),
   pointsFile = path.join(root, 'data/terrain/teton-tour-points.json'),
   outDir = path.join(root, '.terrain-cache/teton-tour'),
-  evidenceDir = path.join(root, 'docs/evidence/teton-tour'), log = console.log, ...options
+  evidenceDir = path.join(root, '.smoke/teton-tour'), log = console.log, ...options
 } = {}) {
   const view = JSON.parse(await fs.readFile(authoringFile, 'utf8'));
   const stations = await buildTourStations({ ...options, authoringFile, pointsFile, outDir, log });
