@@ -62,9 +62,9 @@ import {
 } from './render/StagePresets.js';
 import { createPresentingRenderer } from './render/PresentingRenderer.js';
 import { PixelPresentation, fitPixelRect } from './render/PixelPresentation.js';
-import { shouldDrawFrame } from './render/FrameCadence.js';
+import { FrameCadence } from './render/FrameCadence.js';
 import { readDisplayPrefs, writeDisplayPrefs, resolvePresentation, resolveDisplayPrefs } from './render/DisplayProfile.js';
-import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
+import { emaFps, resolveFpsHudVisible, PresentedFpsMeter } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { clientToStageCoords } from './ui/StageCoords.js';
@@ -439,6 +439,7 @@ let running = false;
 let paused = false; // suspends the AudioContext itself -- the master clock everything derives from
 let fpsHudVisible = resolveFpsHudVisible(typeof location !== 'undefined' ? location.search : '');
 let fpsEma = null;
+const presentedFps = new PresentedFpsMeter();
 fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
 // Renderer path: ?renderer=webgl enables the optional WebGL post-FX overlay.
 // Default remains pure Canvas 2D so drag/upload MIDI never depends on GL.
@@ -554,8 +555,8 @@ function persistFpsCap(fps) {
 }
 
 let fpsCapMs = 1000 / readFpsCap();
-let lastDrawMs = null;
-let titleLastDrawMs = null;
+const playbackCadence = new FrameCadence();
+const titleCadence = new FrameCadence();
 /** Exact backing-store size while tools/bulk-export.mjs is driving frames.
  *  Display-fit and the perf ladder both stand aside for it. */
 let bulkExportSize = null;
@@ -743,6 +744,7 @@ function randomizeSeed() {
       const fps = Number(stageFpsEl.value) || 60;
       persistFpsCap(fps);
       fpsCapMs = 1000 / fps;
+      playbackCadence.reset(); titleCadence.reset(); presentedFps.reset();
       // The same reasoning as the resolution menu next to it: halving the
       // draw rate halves the work, so what the ladder learned at the old
       // rate describes a different workload. The frame callbacks go clean
@@ -930,6 +932,8 @@ function noteFrameGap(rafDeltaMs) {
 // where it happens; the frame-gap check above covers the projection cases
 // where it does not.
 document.addEventListener('visibilitychange', () => {
+  playbackCadence.reset(); titleCadence.reset(); presentedFps.reset();
+  lastRafMs = null;
   if (document.visibilityState === 'hidden') { displaySlept = true; return; }
   // Coming back, the first frames are a cold cache and a giant rAF gap, not
   // a scene the machine cannot draw. The ladder must not read them as
@@ -1214,6 +1218,7 @@ function updatePauseButtonUI() {
 function togglePause() {
   if (!running || !sim || !audioEngine) return;
   paused = !paused;
+  playbackCadence.reset(); presentedFps.reset();
   if (paused) audioEngine.ctx.suspend();
   else { audioEngine.ctx.resume(); lastRafMs = null; }
   updatePauseButtonUI();
@@ -2008,6 +2013,7 @@ function startTimeline(timelineData, extra = {}) {
 
   acc = 0;
   lastRafMs = null;
+  playbackCadence.reset(); presentedFps.reset(); fpsEma = null;
   // Fresh song, fresh button: the demo/play buttons must lose focus so a
   // stray keypress never re-"clicks" them.
   document.activeElement?.blur?.();
@@ -2155,6 +2161,7 @@ function startTimeline(timelineData, extra = {}) {
     get durationMs() { return conductor?.durationMs || 0; },
     get exportSize() { return { width: canvas.width, height: canvas.height }; },
     get presentationDiagnostics() { return renderer?.diagnostics || titlePresentation?.diagnostics; },
+    get frameRates() { return { presented: presentedFps.fps, callback: fpsEma }; },
     get displayPrefs() { return { ...displayPrefs }; },
     beginBulkExport: (size) => beginBulkExport(size),
     renderExportFrame: (timeMs, options) => renderExportFrame(timeMs, options),
@@ -3389,7 +3396,7 @@ function frame(tRaf) {
     if (perfGovernor.level !== prevLevel) fitCanvas();
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
-      fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
+      fpsHudEl.textContent = `${Math.round(presentedFps.fps)} presented fps  ·  ${Math.round(fpsEma)} callback fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
     }
   }
   lastRafMs = tRaf;
@@ -3434,11 +3441,11 @@ function frame(tRaf) {
   // FPS cap: skip the draw when we're ahead of the target frame period.
   // The sim still steps at full rate so audio sync stays tight; only the
   // GPU-bound draw is throttled.
-  if (!shouldDrawFrame(tRaf, lastDrawMs, 1000 / fpsCapMs)) {
+  if (!playbackCadence.shouldDraw(tRaf, 1000 / fpsCapMs)) {
+    presentedFps.sample(tRaf, false);
     rafHandle = requestAnimationFrame(frame);
     return;
   }
-  lastDrawMs = tRaf;
 
   if (pendingCapturePresetId && captureClock.captureReady) {
     const presetId = pendingCapturePresetId;
@@ -3550,6 +3557,7 @@ function frame(tRaf) {
   // One composite per rendered frame, after the stage is final --
   // visionLoop samples the same canvas here, which is what says so.
   const capture = presented ? renderer?.getCaptureSource() : null;
+  presentedFps.sample(tRaf, !!capture);
   if (capture) songRecorder?.captureFrame(capture);
   else if (songRecorder?.recording || pendingCapturePresetId) abortRecording('Presentation failed; the recording was discarded.');
   updateRecordReadout(tRaf);
@@ -3635,8 +3643,7 @@ function clientToStage(e) {
  *  instant a song starts. */
 function titleFrame(tRaf) {
   if (running) return;
-  if (!shouldDrawFrame(tRaf, titleLastDrawMs, 1000 / fpsCapMs)) { titleRafHandle = requestAnimationFrame(titleFrame); return; }
-  titleLastDrawMs = tRaf;
+  if (!titleCadence.shouldDraw(tRaf, 1000 / fpsCapMs)) { titleRafHandle = requestAnimationFrame(titleFrame); return; }
   // Rebuilt whenever the backing store changes size, not just once: the
   // backdrop bakes its star and nebula positions against the dimensions it
   // was constructed with, so one built for a 1920x1080 buffer draws almost
@@ -3660,6 +3667,7 @@ function titleFrame(tRaf) {
 }
 
 function startTitleBackdrop() {
+  titleCadence.reset();
   if (titleRafHandle == null) titleRafHandle = requestAnimationFrame(titleFrame);
 }
 
