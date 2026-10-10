@@ -7,7 +7,7 @@ import { seedBrowserConstruction, installSeedReceiver } from './lib/landscape-br
 const phase = process.argv[2] || 'after';
 const variant = process.env.EVIDENCE_VARIANT || '';
 const phaseLabel = variant || phase;
-const out = process.env.EVIDENCE_OUT || 'docs/evidence/pixel-storm-peaks';
+const out = process.env.EVIDENCE_OUT || '.smoke/pixel-storm-peaks';
 const port = process.env.EVIDENCE_PORT || '8080';
 const url = `http://127.0.0.1:${port}`;
 const server = spawn(process.execPath, ['tools/serve.js', port], { stdio: 'ignore' });
