@@ -69,6 +69,7 @@ export class PixelPresentation {
     }
     this.diagnostics.output = { width: canvas.width, height: canvas.height };
     this.diagnostics.frame = { presented: false, generation: this.generation, reason: 'in-progress' };
+    let uncommitted = null;
     try {
       const outputContext = canvas.getContext('2d');
       if (!(canvas.width > 0 && canvas.height > 0) || !outputContext || outputContext.isContextLost?.()) {
@@ -86,12 +87,15 @@ export class PixelPresentation {
             this.failFrame('allocation-denied'); return null;
           }
           const buffer = (canvas.ownerDocument || globalThis.document).createElement('canvas');
+          uncommitted = buffer;
           buffer.width = 320; buffer.height = 180;
           if (!buffer.getContext('2d')) throw Error('Working context unavailable');
           if (!this.residency.commit(reservation, buffer, c => { c.width = 0; c.height = 0; })) {
+            buffer.width = 0; buffer.height = 0; uncommitted = null;
             this.residency.release(this.key);
             this.failFrame('reservation-commit'); return null;
           }
+          uncommitted = null;
           this.working = buffer;
         }
         this.source = this.working;
@@ -103,6 +107,7 @@ export class PixelPresentation {
       this._pending = { generation: this.generation, outputSize: this._outputSize };
       return this.source;
     } catch {
+      if (uncommitted) { uncommitted.width = 0; uncommitted.height = 0; }
       this._releaseWorking();
       this.diagnostics.paletteStatus = { applied: false, reason: 'unavailable', pixels: 0 };
       this.failFrame('source-unavailable'); return null;

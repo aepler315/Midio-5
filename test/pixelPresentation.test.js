@@ -185,3 +185,15 @@ test('throwing inner disposal still invalidates capture and releases residency',
   assert.equal(adapter.draw({},0).presented,false);
   assert.doesNotThrow(()=>adapter.dispose());
 });
+
+test('failed reservation commit releases the uncommitted canvas storage', () => {
+  const canvas=surface(),buffer=surface(0,0);
+  canvas.ownerDocument.createElement=()=>buffer;
+  const residency=new GraphicsResidency({budgetBytes:1000000});
+  residency.commit=()=>false;
+  const owner=new PixelPresentation({canvas,presentation:pixel,residency});
+  assert.equal(owner.beginFrame(),null);
+  assert.deepEqual([buffer.width,buffer.height],[0,0]);
+  assert.equal(residency.pendingBytes,0);
+  owner.dispose();
+});
