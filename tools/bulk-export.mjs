@@ -184,6 +184,7 @@ async function pushExportFrame({ timeMs, url, width, height, jpeg }) {
   // drawn before its view was ready is drawn again once it is.
   if (await window.__SMW.rangeSettle?.()) frame = window.__SMW.renderExportFrame(timeMs);
   const drawn = performance.now();
+  if (!frame?.presented) throw new Error('Export presentation did not complete.');
   if (frame.width !== width || frame.height !== height) {
     throw new Error(`stage is ${frame.width}×${frame.height}, wanted ${width}×${height}`);
   }
@@ -373,9 +374,10 @@ async function renderPass({ page, session, frameUrl, pass, audioPath, outDir, la
       console.log(`    wrote ${path.basename(output.outPath)}  (${(st.size / 1048576).toFixed(1)} MB, ${output.framesWritten} frames)`);
     }
   } catch (err) {
-    session.onFrame = async () => {};
+    session.onFrame = async () => { throw new Error('Export session failed.'); };
     for (const output of outputs) {
       try { output.enc.child.kill(); } catch { /* already gone */ }
+      await output.enc.closed.catch(() => {});
       try { await fs.unlink(output.outPath); } catch { /* never created */ }
     }
     throw err;

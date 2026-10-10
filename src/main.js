@@ -1636,6 +1636,7 @@ function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
   if (!Number.isFinite(target)) throw new Error('Export frame time is not a number.');
   if (audioEngine?.master) audioEngine.master.gain.value = 0;
   if (audioEngine?.ctx?.state === 'running') audioEngine.ctx.suspend();
+  try {
   const advanced = stepExportClock({
     simTime,
     targetMs: target,
@@ -1645,11 +1646,26 @@ function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
   simTime = advanced.simTime;
   if (typeof beforeDraw === 'function') beforeDraw();
   const drawsBefore = renderer.drawCount ?? 0;
-  renderer.draw(sim, 0);
+  const result = renderer.draw(sim, 0);
+  if (!result?.presented || !renderer.getCaptureSource()) throw new Error(`Export presentation failed: ${result?.reason || 'no completed frame'}.`);
   return {
     width: canvas.width, height: canvas.height, timeMs: simTime,
     draws: (renderer.drawCount ?? 0) - drawsBefore,
+    presented: true, generation: result.generation, frameId: result.frameId,
   };
+  } catch (err) {
+    abortBulkExport();
+    throw failBulkExport(`Export presentation failed: ${err?.message || err}`);
+  }
+}
+
+function abortBulkExport() {
+  bulkExportArmed = false;
+  bulkExportSize = null;
+  bulkPresentation = null;
+  abortRecording('Export presentation failed; the recording was discarded.');
+  stopTimeline({ preservePause: true });
+  rangePresentation?.dispose();
 }
 
 /** Rebuild the current song at an exact frame size and arm the export clock.
@@ -2092,8 +2108,13 @@ function startTimeline(timelineData, extra = {}) {
   if (exportMode) {
     // No rAF loop: the exporter asks for each frame. Frame 0 is drawn now so
     // the first capture is the opening, not an unpainted canvas.
-    try { renderer.draw(sim, 0); }
-    catch (err) { console.error('[bulk export] first frame', err); }
+    try {
+      const result = renderer.draw(sim, 0);
+      if (!result?.presented) throw new Error(result?.reason || 'no completed frame');
+    } catch (err) {
+      abortBulkExport();
+      throw failBulkExport(`Export presentation failed on the first frame: ${err?.message || err}`);
+    }
   } else {
     rafHandle = requestAnimationFrame(frame);
   }
@@ -2130,7 +2151,7 @@ function startTimeline(timelineData, extra = {}) {
     seek: (ms) => seekSong(ms),
     // tools/bulk-export.mjs drives these: arm at an exact size, then ask for
     // each output frame by time. See docs/video-export.md, "Bulk export".
-    exportReady: exportMode,
+    get exportReady() { return bulkExportArmed; },
     get durationMs() { return conductor?.durationMs || 0; },
     get exportSize() { return { width: canvas.width, height: canvas.height }; },
     get presentationDiagnostics() { return renderer?.diagnostics || titlePresentation?.diagnostics; },
@@ -3426,8 +3447,11 @@ function frame(tRaf) {
   }
 
   const alpha = acc / STEP_MS;
+  let presented = false;
   try {
-    renderer.draw(sim, alpha);
+    const result = renderer.draw(sim, alpha);
+    presented = !!result?.presented;
+    if (!presented) throw new Error(`Presentation failed: ${result?.reason || 'no completed frame'}`);
   } catch (err) {
     // One bad frame must not kill the whole run (canvas NaN colors used to
     // throw here and leave the world frozen on the last good paint). But it
@@ -3525,9 +3549,11 @@ function frame(tRaf) {
 
   // One composite per rendered frame, after the stage is final --
   // visionLoop samples the same canvas here, which is what says so.
-  songRecorder?.captureFrame(renderer?.getCaptureSource());
+  const capture = presented ? renderer?.getCaptureSource() : null;
+  if (capture) songRecorder?.captureFrame(capture);
+  else if (songRecorder?.recording || pendingCapturePresetId) abortRecording('Presentation failed; the recording was discarded.');
   updateRecordReadout(tRaf);
-  visionLoop.maybeSample(tRaf, simTime);
+  if (presented) visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
   // Fallback completion: FractureEngine finishes after musical last impact +
@@ -4735,6 +4761,17 @@ function finishRecording() {
     showErrorBanner('Could not save the recording: ' + (err?.message || err));
     syncRecordUI();
   });
+  syncRecordUI();
+}
+
+function abortRecording(message) {
+  const active = songRecorder?.recording || pendingCapturePresetId;
+  pendingCapturePresetId = null;
+  pendingExportPresetId = null;
+  songRecorder?.cancel();
+  if (!active) return;
+  captureClock.release(audioEngine?.nowMs || 0);
+  setExportNote(message, 'isWarning');
   syncRecordUI();
 }
 

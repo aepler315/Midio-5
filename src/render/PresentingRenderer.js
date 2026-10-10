@@ -26,13 +26,15 @@ class PresentingRenderer {
   getCaptureSource() { return this.output.getCaptureSource(); }
   draw(sim, alpha) {
     const source = this.output.beginFrame();
-    if (!source) return;
+    if (!source) return this.output.diagnostics.frame;
     const scene = this.canvasRenderer;
     scene.canvas = source; scene.ctx = source.getContext('2d');
     this.inner.presentationPixelated = this.output.presentation.pixelated;
-    this.inner.draw(sim, alpha);
-    this.output.finishFrame();
+    try { this.inner.draw(sim, alpha); }
+    catch (err) { this.output.failFrame('scene-draw'); throw err; }
+    const result = this.output.finishFrame();
     this.output.diagnostics.qualityLevel = sim?.perf?.level ?? null;
+    return result;
   }
   dispose() { if (this._disposed) return; this._disposed = true; this.inner.dispose(); this.output.dispose(); }
 }

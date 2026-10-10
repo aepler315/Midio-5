@@ -375,3 +375,12 @@ test('capture source and integer scaling preserve bars through mode changes', ()
   rec.captureFrame({ canvas: source, pixelated: true, scaling: 'fit' });
   assert.deepEqual(rec._canvas.draws.at(-1).slice(1), [0, 15, 800, 450]);
 });
+
+test('nullable failed capture is ignored without destructuring or pushing a frame', () => {
+  const rec = new SongRecorder({ stage, scope: fakeScope() });
+  rec.start({ presetId: 'car', deferFirstFrame: true });
+  assert.doesNotThrow(() => rec.captureFrame(null));
+  assert.equal(rec._canvas.draws.length, 0);
+  assert.equal(rec._videoTrack.frames, 0);
+  rec.cancel();
+});
