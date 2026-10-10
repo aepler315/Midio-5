@@ -27,6 +27,17 @@ const watchdog=setTimeout(async()=>{
 async function settings(page, values) {
   for(const [key,value] of Object.entries(values)) await page.selectOption(`#display-${key}`,String(value));
 }
+async function captureTitle(page,backend,tag) {
+      const title=await page.evaluate(()=>{
+        const c=document.querySelector('#stage'),p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+        const colors=new Set();let lit=0,sum=0,opaque=true;
+        for(let i=0;i<p.length;i+=4){colors.add(`${p[i]},${p[i+1]},${p[i+2]}`);const v=p[i]+p[i+1]+p[i+2];sum+=v;if(v>24)lit++;if(p[i+3]!==255)opaque=false;}
+        return {width:c.width,height:c.height,colors:colors.size,litFraction:lit/(p.length/4),mean:sum/(p.length/4*3),opaque,png:c.toDataURL('image/png').split(',')[1]};
+      });
+      assertMeaningfulFrame(title,{requireOpaque:false});await fs.writeFile(path.join(out,`${backend}-title-${tag}.png`),Buffer.from(title.png,'base64'));delete title.png;
+      report.frames.push({kind:'title',content:title,requestedRangeBackend:backend,backend:'title-canvas-2d',look:tag,requested:await page.evaluate(()=>window.__SMW.displayPrefs),diagnostics:await page.evaluate(()=>window.__SMW.presentationDiagnostics),dpr:1});
+}
+
 try {
   for(let i=0;i<50;i++){try{if((await fetch('http://127.0.0.1:8089')).ok)break;}catch{/* startup */}await new Promise(r=>setTimeout(r,100));}
   browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_PATH,headless:true,args:['--in-process-gpu','--ignore-gpu-blocklist']});
@@ -44,18 +55,15 @@ try {
     try {
       // v2 uses the default path, never a silently accepted fallback.
       await page.goto(`http://127.0.0.1:8089/?seed=315&rangeView=teton-jackson-lake${backend==='legacy'?'&rangeRenderer=legacy':''}`);
+      await page.waitForFunction(()=>window.__SMW?.presentationDiagnostics?.frame?.presented);
+      await captureTitle(page,backend,'natural');
       await page.locator('#titleSettings').evaluate(n=>{n.open=true;});
       await settings(page,{look:'palette',quality:'auto',scaling:'integer',palette:'range32',dither:.35});
+      const titleFrameId=await page.evaluate(()=>window.__SMW?.presentationDiagnostics?.frame?.frameId);
       await page.selectOption('#stageFps','30');
+      await page.waitForFunction(id=>window.__SMW?.presentationDiagnostics?.frame?.presented&&window.__SMW.presentationDiagnostics.frame.frameId!==id,titleFrameId);
       await page.waitForFunction(()=>window.__SMW?.presentationDiagnostics?.frame?.presented);
-      const title=await page.evaluate(()=>{
-        const c=document.querySelector('#stage'),p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
-        const colors=new Set();let lit=0,sum=0,opaque=true;
-        for(let i=0;i<p.length;i+=4){colors.add(`${p[i]},${p[i+1]},${p[i+2]}`);const v=p[i]+p[i+1]+p[i+2];sum+=v;if(v>24)lit++;if(p[i+3]!==255)opaque=false;}
-        return {width:c.width,height:c.height,colors:colors.size,litFraction:lit/(p.length/4),mean:sum/(p.length/4*3),opaque,png:c.toDataURL('image/png').split(',')[1]};
-      });
-      assertMeaningfulFrame(title,{requireOpaque:false});await fs.writeFile(path.join(out,`${backend}-title.png`),Buffer.from(title.png,'base64'));delete title.png;
-      report.frames.push({kind:'title',content:title,backend,requested:await page.evaluate(()=>window.__SMW.displayPrefs),diagnostics:await page.evaluate(()=>window.__SMW.presentationDiagnostics),dpr:1});
+      await captureTitle(page,backend,'palette');
       await page.reload();
       assert.equal(await page.locator('#display-look').inputValue(),'palette');
       assert.equal(await page.locator('#display-quality').inputValue(),'auto');
@@ -63,6 +71,8 @@ try {
       assert.equal(await page.locator('#stageFps').inputValue(),'30');
       await page.locator('#titleSettings').evaluate(n=>{n.open=true;});
       await settings(page,{look:'pixel',quality:'auto',scaling:'fit'});
+      await page.waitForFunction(()=>window.__SMW?.presentationDiagnostics?.effectiveLook==='pixel'&&window.__SMW.presentationDiagnostics.frame.presented);
+      await captureTitle(page,backend,'pixel');
       await page.locator('#lyricGroundingBtn').evaluate(n=>{if(n.getAttribute('aria-pressed')==='true')n.click();});
       await page.locator('#fileInput').setInputFiles(wav);
       if(await page.locator('#worldSelect[open]').count())await page.locator('.worldCard').first().click();

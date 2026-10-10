@@ -30,9 +30,11 @@ export async function inspectPixelFrame({ paletteId = 'none' } = {}) {
     const brightness = px[i]+px[i+1]+px[i+2]; sum += brightness;
     if (brightness > 24) lit++; if (px[i+3] !== 255) opaque = false;
   }
-  let placement=null, barErrors=0,barPixels=0;
-  if (capture.pixelated) {
-    placement=fitPixelRect(capture.width,capture.height,canvas.width,canvas.height,capture.scaling);
+  let placement, barErrors=0,barPixels=0;
+  {
+    const sim=smw.sim;
+    placement=capture.pixelated ? fitPixelRect(capture.width,capture.height,canvas.width,canvas.height,capture.scaling)
+      : fitPixelRect(sim.stageW||sim.canvasWidth||1280,sim.stageH||sim.canvasHeight||720,canvas.width,canvas.height,'fit');
     for(let y=0;y<canvas.height;y++) for(let x=0;x<canvas.width;x++) {
       // Exclude only the fractional boundary pixel in Fit/sub-grid mode.
       if(x+1<=placement.x || x>=Math.ceil(placement.x+placement.width) || y+1<=placement.y || y>=Math.ceil(placement.y+placement.height)) {
