@@ -205,6 +205,6 @@ try {
   } finally {await shaderContext.close();}
   assert.equal((await snapshotSource(process.cwd())).digest,report.source,'source changed during smoke');
   assert.deepEqual(report.errors,[]);report.status='passed';
-  console.log('PASS real v2/fallback, preferences, title/playback transitions, pixel raster, six export profiles/sizes, palette membership, temporal content, context recovery and export failure');
+  console.log(`PASS ${report.requestedBackends.join('/')}, preferences, title/playback transitions, pixel raster, six export profiles/sizes, palette membership, temporal content, context recovery and export failure`);
 }catch(e){report.error=String(e.stack||e);throw e;}
 finally{clearTimeout(watchdog);await fs.writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));await browser?.close();server.kill();}

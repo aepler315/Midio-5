@@ -26,7 +26,7 @@ export async function verifyPixelRaster(browser, { url, out, enforce = true }) {
           canvas.classList.add('retro');
           const ctx = canvas.getContext('2d');
           for (let y = 0; y < 180; y++) for (let x = 0; x < 320; x++) {
-            ctx.fillStyle = (x + y) % 2 ? '#000' : '#fff'; ctx.fillRect(x, y, 1, 1);
+            ctx.fillStyle = x===319||y===179 ? '#fff' : (x + y) % 2 ? '#000' : '#fff'; ctx.fillRect(x, y, 1, 1);
           }
           const p = { pixelated: true, scaling: 'integer' };
           new Function('canvas', 'effectivePresentation', 'bulkExportSize', 'fitPixelRect', `${layout};fitPixelLayout();`)(canvas, () => p, null, fitPixelRect);
@@ -55,6 +55,9 @@ export async function verifyPixelRaster(browser, { url, out, enforce = true }) {
             }
             // Opposite boundaries and bars must remain sharply separate.
             if (color(ox-1,oy) > 16 || color(ox,oy-1) > 16) mismatches++;
+            const rw=Math.round(row.rect.width),rh=Math.round(row.rect.height);
+            if(color(ox+rw-1,oy)!==255||color(ox,oy+rh-1)!==255)mismatches++;
+            if(color(ox+rw,oy)>16||color(ox,oy+rh)>16)mismatches++;
           }
           return { mismatches, rasterWidth: c.width, rasterHeight: c.height };
         }, { png: bytes.toString('base64'), row });

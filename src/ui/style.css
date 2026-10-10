@@ -3096,10 +3096,12 @@ html, body {
 /* A centered integer image has its own hit rectangle; surrounding bars reject taps. */
 #stage.integerPixels {
   position: fixed; left: 0; top: 0;
-  width: var(--pixel-width); height: var(--pixel-height);
+  width: 320px; height: 180px;
   /* Resolved offsets, never 50% centering. Transforms preserve sub-CSS-pixel
-     precision at fractional DPR; layout left/top quantize to 1/64 CSS px. */
-  transform: translate(var(--pixel-left), var(--pixel-top));
+     precision at fractional DPR; layout positions AND dimensions quantize
+     to 1/64 CSS px. Scale the logical dimensions in the transform instead. */
+  transform-origin: 0 0;
+  transform: translate(var(--pixel-left), var(--pixel-top)) scale(var(--pixel-scale));
   background: #000;
 }
 .displayRow { flex-wrap: wrap; }
