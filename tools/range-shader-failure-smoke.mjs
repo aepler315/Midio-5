@@ -64,18 +64,24 @@ try {
     assert.ok(!errors.some(error => error.startsWith('gl:')), 'failure handled before first shader use');
     // The phone-accessible report uses the same production controls in the
     // playback dialog, including a selectable fallback when copying is denied.
+    // The click handler awaits the clipboard, so read the status it writes
+    // after this click, not whatever an earlier click left there.
+    const copyReport = async () => {
+      await page.locator('#graphicsReportStatus').evaluate(el => { el.textContent = ''; });
+      await page.locator('#copyGraphicsReport').click();
+      await page.waitForFunction(() => document.getElementById('graphicsReportStatus').textContent !== '');
+      return page.locator('#graphicsReportStatus').textContent();
+    };
     await context.grantPermissions([]);
     await page.locator('#displaySettingsBtn').click({force:true});
     await page.locator('#graphicsTroubleshooting summary').click();
-    await page.locator('#copyGraphicsReport').click();
-    assert.match(await page.locator('#graphicsReportStatus').textContent(), /Select and copy/);
+    assert.match(await copyReport(), /Select and copy/);
     const local = JSON.parse(await page.locator('#graphicsReport').inputValue());
     assert.equal(local.range.active,false);
     assert.match(local.range.failures['teton-jackson-lake'],/ERROR|syntax error/i);
     assert.ok(local.gpu.renderer);
     await context.grantPermissions(['clipboard-read','clipboard-write']);
-    await page.locator('#copyGraphicsReport').click();
-    assert.match(await page.locator('#graphicsReportStatus').textContent(),/^Copied/);
+    assert.match(await copyReport(),/^Copied/);
     const copied=JSON.parse(await page.evaluate(()=>navigator.clipboard.readText()));
     assert.equal(copied.range.reason,local.range.reason);
     assert.equal(JSON.stringify(copied).includes(path.basename(wav)),false);
