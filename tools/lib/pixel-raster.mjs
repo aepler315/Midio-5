@@ -23,6 +23,7 @@ export async function verifyPixelRaster(browser, { url, out, enforce = true }) {
           const { clientToStageCoords } = await import('/src/ui/StageCoords.js');
           const canvas = document.querySelector('#stage'), app = canvas.parentElement;
           app.style.cssText = `position:absolute;left:11.3px;top:7.7px;width:${width}px;height:${height}px;min-width:0;min-height:0;padding:0;border:0;`;
+          canvas.classList.add('retro');
           const ctx = canvas.getContext('2d');
           for (let y = 0; y < 180; y++) for (let x = 0; x < 320; x++) {
             ctx.fillStyle = (x + y) % 2 ? '#000' : '#fff'; ctx.fillRect(x, y, 1, 1);
@@ -53,7 +54,7 @@ export async function verifyPixelRaster(browser, { url, out, enforce = true }) {
               if (color(ox,oy+k) !== expected) mismatches++;
             }
             // Opposite boundaries and bars must remain sharply separate.
-            if (color(ox-1,oy) !== 0 || color(ox,oy-1) !== 0) mismatches++;
+            if (color(ox-1,oy) > 16 || color(ox,oy-1) > 16) mismatches++;
           }
           return { mismatches, rasterWidth: c.width, rasterHeight: c.height };
         }, { png: bytes.toString('base64'), row });

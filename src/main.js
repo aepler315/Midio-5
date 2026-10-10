@@ -572,9 +572,11 @@ function fitPixelLayout() {
   if (integer) {
     const box = canvas.parentElement.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const fit = fitPixelRect(320, 180, box.width * dpr, box.height * dpr, 'integer');
+    const fit = fitPixelRect(320, 180, box.width * dpr, box.height * dpr, 'integer', { x: box.left * dpr, y: box.top * dpr });
     canvas.style.setProperty('--pixel-width', `${fit.width / dpr}px`);
     canvas.style.setProperty('--pixel-height', `${fit.height / dpr}px`);
+    canvas.style.setProperty('--pixel-left', `${box.left + fit.x / dpr}px`);
+    canvas.style.setProperty('--pixel-top', `${box.top + fit.y / dpr}px`);
   }
 }
 

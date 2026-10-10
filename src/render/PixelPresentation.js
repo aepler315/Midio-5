@@ -1,12 +1,20 @@
 import { applyPalette } from './PaletteQuantize.js';
 import { sharedResidency } from './GraphicsResidency.js';
 
-export function fitPixelRect(srcW, srcH, dstW, dstH, scaling = 'fit') {
+export function fitPixelRect(srcW, srcH, dstW, dstH, scaling = 'fit', origin = { x: 0, y: 0 }) {
   if (!(srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0)) return { x: 0, y: 0, width: 0, height: 0, scale: 0 };
   const fit = Math.min(dstW / srcW, dstH / srcH);
   const scale = scaling === 'integer' && fit >= 1 ? Math.floor(fit) : fit;
   const width = srcW * scale, height = srcH * scale;
-  return { x: (dstW - width) / 2, y: (dstH - height) / 2, width, height, scale };
+  let x = (dstW - width) / 2, y = (dstH - height) / 2;
+  // All coordinates here are device pixels. A fractional parent origin
+  // needs the opposite fractional local offset to align the absolute image.
+  // Exact centering can leave opposite bars one physical pixel different.
+  if (scaling === 'integer' && fit >= 1) {
+    x = Math.round(origin.x + x) - origin.x;
+    y = Math.round(origin.y + y) - origin.y;
+  }
+  return { x, y, width, height, scale };
 }
 let nextOwner = 0;
 /** Owns only the bounded working buffer. The output belongs to the caller. */

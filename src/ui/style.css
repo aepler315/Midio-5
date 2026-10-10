@@ -3095,9 +3095,11 @@ html, body {
 
 /* A centered integer image has its own hit rectangle; surrounding bars reject taps. */
 #stage.integerPixels {
-  position: absolute; left: 50%; top: 50%;
+  position: fixed; left: 0; top: 0;
   width: var(--pixel-width); height: var(--pixel-height);
-  transform: translate(-50%, -50%);
+  /* Resolved offsets, never 50% centering. Transforms preserve sub-CSS-pixel
+     precision at fractional DPR; layout left/top quantize to 1/64 CSS px. */
+  transform: translate(var(--pixel-left), var(--pixel-top));
   background: #000;
 }
 .displayRow { flex-wrap: wrap; }
