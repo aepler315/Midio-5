@@ -22,6 +22,7 @@ import { chromium } from 'playwright';
 import { withAllWorlds, withLegacyRange } from './lib/allWorlds.mjs';
 import { landscapeOwnership, assertLandscapeOwnership } from './range-scene-smoke.mjs';
 import { seedBrowserConstruction, installSeedReceiver } from './lib/landscape-browser.mjs';
+import { snapshotSource } from './lib/visual-evaluation-server.mjs';
 import { inspectPixelFrame, assertMeaningfulFrame } from './lib/pixel-evidence.mjs';
 
 const url = process.argv[2] || 'http://127.0.0.1:8080';
@@ -119,6 +120,7 @@ const inspect = async (page, bytes, mime, sampleTime = 2) => page.evaluate(async
   }
 }, { b64: bytes.toString('base64'), type: mime, sampleTime });
 
+const provenance={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),source:(await snapshotSource(process.cwd())).digest};
 let runError;
 const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH,
   args: ['--use-angle=gl', '--ignore-gpu-blocklist'] });
@@ -330,8 +332,9 @@ try {
   await browser.close();
 }
 
+check('public source stayed fixed during recording',(await snapshotSource(process.cwd())).digest===provenance.source);
 const failed = checks.filter((c) => !c.ok);
-await fs.writeFile(path.join(out, 'report.json'), JSON.stringify({ commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
+await fs.writeFile(path.join(out, 'report.json'), JSON.stringify({ ...provenance,
   seed:315,fixture:'gen-test-wav/120bpm',audioSha256:createHash('sha256').update(await fs.readFile(wav)).digest('hex'),error:runError,browser:browser.version(),checks,pixelRecordings }, null, 2));
 if (failed.length) {
   console.error(`\nExport smoke FAILED (${failed.length}/${checks.length}).`);

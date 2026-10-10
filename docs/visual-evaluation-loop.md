@@ -123,7 +123,7 @@ Use identical manifests for Natural, Pixel and Palette before/after runs.
 Checkpoints and clips before that start are rejected. Such a run does not
 verify opening history; retain an opening check separately. Sparse captures
 still draw consecutive frames within each selected clip and its pre-roll.
-`VISUAL_ANGLE=gl` selects Chromium's GL backend; the default remains SwiftShader.
+`VISUAL_ANGLE=gl` requests Chromium's GL backend (it may fall back); the default remains SwiftShader.
 The selected driver and actual GL environment are recorded. Driver changes
 must not be mixed in a matched comparison.
 
