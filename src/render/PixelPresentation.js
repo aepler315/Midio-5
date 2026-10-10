@@ -37,8 +37,8 @@ export class PixelPresentation {
     this._capture = null;
   }
   setPresentation(presentation) {
-    if (JSON.stringify(presentation) === JSON.stringify(this.presentation)) return;
     this._invalidateCapture();
+    if (JSON.stringify(presentation) === JSON.stringify(this.presentation)) return;
     this.presentation = { ...presentation };
     this.generation++;
     this._securityGeneration = null;

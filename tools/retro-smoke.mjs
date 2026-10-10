@@ -77,16 +77,16 @@ try {
       await page.waitForFunction(()=>window.__SMW.presentationDiagnostics?.effectiveLook==='palette');
       report.frames.push({kind:'playback-transition',requested:await page.evaluate(()=>window.__SMW.displayPrefs),diagnostics:await page.evaluate(()=>window.__SMW.presentationDiagnostics),rates:await page.evaluate(()=>window.__SMW.frameRates),backend:await page.evaluate(()=>window.__SMW.rangeState),dpr:1});
       if(backend==='legacy') {
-        const before=await page.evaluate(async()=>{
-          const {sharedResidency}=await import('/src/render/GraphicsResidency.js'),r=sharedResidency();
-          window.__retroBudget=r.budgetBytes;window.__SMW.renderer.output._releaseWorking();r.budgetBytes=1;
+        const before=await page.evaluate(()=>{
+          const c=document.querySelector('#stage');window.__retroSize=[c.width,c.height];
+          c.width=0;c.height=0; // Real backing loss; live grid needs no reservation.
           return {audio:window.__SMW.audioEngine.nowMs,sim:window.__SMW.sim.timeMs};
         });
-        await page.waitForFunction(()=>window.__SMW.presentationDiagnostics?.frame?.reason==='allocation-denied');
+        await page.waitForFunction(()=>window.__SMW.presentationDiagnostics?.frame?.reason==='output-context');
         await page.waitForTimeout(300);
         const after=await page.evaluate(()=>({audio:window.__SMW.audioEngine.nowMs,sim:window.__SMW.sim.timeMs,capture:window.__SMW.renderer.getCaptureSource(),diagnostic:window.__SMW.presentationDiagnostics.frame}));
         assert.ok(after.audio>before.audio);assert.ok(after.sim>before.sim);assert.equal(after.capture,null);
-        await page.evaluate(async()=>{const {sharedResidency}=await import('/src/render/GraphicsResidency.js');sharedResidency().budgetBytes=window.__retroBudget;});
+        await page.evaluate(()=>{const c=document.querySelector('#stage');[c.width,c.height]=window.__retroSize;});
         await page.waitForFunction(()=>window.__SMW.presentationDiagnostics?.frame?.presented);
         report.liveFailure={before,after,recovered:true};
       }

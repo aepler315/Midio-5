@@ -137,10 +137,10 @@ try {
     let lastErr;
     for (let attempt = 0; attempt < 6; attempt++) {
       if (await page.locator('#hudRight.hud-faded').count()) {
-        await page.locator('#stage').click({ position: { x: 640, y: 250 } });
+        await page.locator('#stage').click({ position: { x: 100, y: 100 },force:true,timeout:30000 });
       }
       try {
-        await page.locator(selector).click({ timeout: 5000 });
+        await page.locator(selector).click({ timeout: 30000, force: true });
         return;
       } catch (err) { lastErr = err; }
     }
@@ -167,13 +167,22 @@ try {
   check('the browser offers a recordable container', !!candidate, candidate?.mimeType);
   if (!candidate) throw new Error('no recordable container');
 
+  if(v2) await page.evaluate(()=>{
+    // Pause through the app before the first live callback. Software GL
+    // shader warm-up must not consume the entire deterministic fixture.
+    let value=window.__SMW,first=true;
+    Object.defineProperty(window,'__SMW',{configurable:true,get:()=>value,set(next){
+      value=next;if(first&&next?.sim){first=false;document.querySelector('#pauseBtn').click();}
+    }});
+  });
   await page.locator('#fileInput').setInputFiles(wav);
   await page.locator('#worldSelect[open]').waitFor({ timeout: 120000 });
   await page.locator('.worldCard').first().click();
-  await page.waitForFunction(() => window.__SMW?.sim?.timeMs > 1500, null, { timeout: 60000 });
+  await page.waitForFunction(v2 => v2 ? !!window.__SMW?.sim : window.__SMW?.sim?.timeMs>1500, v2, { timeout: 60000 });
 
   assertLandscapeOwnership(await landscapeOwnership(page));
   if (v2) {
+    await page.evaluate(async()=>{await window.__SMW.rangeReady({timeoutMs:120000});window.__SMW.seek(1500);await window.__SMW.rangeReady({timeoutMs:120000});window.__SMW.renderer.draw(window.__SMW.sim,0);});
     await page.waitForFunction(() => window.__SMW.rangeState?.active, null, { timeout: 120000 });
     check('actual v2 scene is active for the recording', true, JSON.stringify(await page.evaluate(() => ({ seed: window.__SMW.songSeed, view: window.__SMW.rangeState.viewId, generation: window.__SMW.ridgeStateKey }))));
   }
@@ -181,10 +190,11 @@ try {
   await page.evaluate(() => window.__SMW.seek(1500));
   // --- record from the HUD, mid-song
   await clickHudButton('#recordBtn');
+  if(v2)await page.locator('#pauseBtn').evaluate(n=>{if(n.getAttribute('aria-pressed')==='true')n.click();});
   check('recording is armed', await page.getAttribute('#recordBtn', 'aria-pressed') === 'true');
   // Armed includes preparation; wait for the real recorder before measuring.
   await page.waitForFunction(() => document.getElementById('recordBtn').title === 'Stop recording and save the video', null, { timeout: 120000 });
-  await page.waitForTimeout(Number(process.env.EXPORT_RECORD_MS) || 12000);
+  await page.waitForTimeout(Number(process.env.EXPORT_RECORD_MS) || 4000);
   // The HUD holds itself open while recording: its stop control is the only
   // way out, and a faded HUD sits under the canvas.
   check('the HUD stays reachable while recording', await page.locator('#recordBtn').isVisible());

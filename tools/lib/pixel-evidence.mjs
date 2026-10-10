@@ -16,6 +16,9 @@ export function assertTemporalChange(thumbnails) {
 // Self-contained for page.evaluate. Exact palette membership is tested only
 // on opaque pre-encode buffers, never on lossy decoded RGB.
 export async function inspectPixelFrame({ paletteId = 'none' } = {}) {
+  if(!window.__SMW?.renderer?.getCaptureSource())throw new Error('pixel evidence requires a completed capture');
+  const [{fitPixelRect},{RANGE32_COLORS}]=await Promise.all([import('/src/render/PixelPresentation.js'),import('/src/render/PaletteCatalog.js')]);
+  // No await from capture acquisition through the final raster/metadata snapshot.
   const smw = window.__SMW;
   const capture = smw.renderer?.getCaptureSource();
   if (!capture) throw new Error('pixel evidence requires a completed capture');
@@ -29,7 +32,6 @@ export async function inspectPixelFrame({ paletteId = 'none' } = {}) {
   }
   let placement=null, barErrors=0,barPixels=0;
   if (capture.pixelated) {
-    const {fitPixelRect}=await import('/src/render/PixelPresentation.js');
     placement=fitPixelRect(capture.width,capture.height,canvas.width,canvas.height,capture.scaling);
     for(let y=0;y<canvas.height;y++) for(let x=0;x<canvas.width;x++) {
       // Exclude only the fractional boundary pixel in Fit/sub-grid mode.
@@ -43,7 +45,6 @@ export async function inspectPixelFrame({ paletteId = 'none' } = {}) {
   const ctx=thumb.getContext('2d');ctx.drawImage(canvas,0,0,64,36);
   let paletteErrors=0, palettePixels=0;
   if (paletteId !== 'none') {
-    const { RANGE32_COLORS } = await import('/src/render/PaletteCatalog.js');
     const allowed = new Set(RANGE32_COLORS.map(hex=>[1,3,5].map(start=>parseInt(hex.slice(start,start+2),16)).join(',')));
     const source = capture.canvas, raw=source.getContext('2d').getImageData(0,0,source.width,source.height).data;
     palettePixels=raw.length/4;

@@ -197,3 +197,12 @@ test('failed reservation commit releases the uncommitted canvas storage', () => 
   assert.equal(residency.pendingBytes,0);
   owner.dispose();
 });
+
+test('reapplying a profile before a backing reset invalidates capture without retrying taint', () => {
+  const owner=new PixelPresentation({canvas:surface(),presentation:pixel});
+  owner.beginFrame();const first=owner.finishFrame();assert.ok(owner.getCaptureSource());
+  owner.setPresentation({...pixel});
+  assert.equal(owner.getCaptureSource(),null);
+  assert.equal(owner.generation,first.generation);
+  owner.beginFrame();assert.equal(owner.finishFrame().presented,true);owner.dispose();
+});
