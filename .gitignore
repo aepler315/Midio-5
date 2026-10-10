@@ -30,3 +30,10 @@ _site/
 
 # Downloaded history used by source ZIP previews
 .midio-history/
+
+# Captured evidence belongs in CI artifacts or Release assets, not git
+# history (see AGENTS.md). Only the index and the Range v2 acceptance
+# captures cited by src/world/terrain/sceneCatalogData.js stay tracked.
+/docs/evidence/*
+!/docs/evidence/README.md
+!/docs/evidence/range-v2/

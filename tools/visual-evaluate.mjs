@@ -4,15 +4,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
-import { normalizeManifest, captureSchedule, compareReports } from './lib/visual-evaluation.mjs';
+import { normalizeManifest, captureSchedule, compareReports, differingFrames } from './lib/visual-evaluation.mjs';
 import { snapshotSource, serveSnapshot, sha256 } from './lib/visual-evaluation-server.mjs';
 import { openEvaluationSong, renderEvaluationFrame } from './lib/visual-evaluation-browser.mjs';
 import { renderRunReport, renderComparisonReport } from './lib/visual-evaluation-report.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const help = `npm run visual:eval -- --out .smoke/baseline [--manifest path/to/corpus.json]
-npm run visual:eval -- --compare .smoke/baseline .smoke/candidate --out .smoke/comparison
+npm run visual:eval -- --compare .smoke/baseline .smoke/candidate --out .smoke/comparison [--require-identical]
 
+--require-identical fails the comparison (after writing it) unless every PNG
+matches. Use it only for repeat runs of identical inputs, as CI does.
 Creates a NEW output directory (never overwrites a run). See docs/visual-evaluation-loop.md.
 Set PLAYWRIGHT_CHROMIUM_PATH to use an installed Chromium. Outputs contain copies of source audio.
 `;
@@ -21,6 +23,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i];
     if (key === '--help' || key === '-h') return { help: true };
+    if (key === '--require-identical') { args.requireIdentical = true; continue; }
     if (key === '--compare') {
       args.compare = [argv[++i], argv[++i]];
       if (args.compare.some(v => !v || v.startsWith('--'))) throw new Error('--compare needs BEFORE AFTER');
@@ -29,6 +32,7 @@ function parseArgs(argv) {
     } else throw new Error(`unknown argument ${key}`);
   }
   if (!args.out) throw new Error('--out is required');
+  if (args.requireIdentical && !args.compare) throw new Error('--require-identical only applies to --compare');
   return args;
 }
 async function newOutput(out) {
@@ -146,6 +150,10 @@ async function runComparison(args) {
     await fs.writeFile(path.join(out, 'index.html'), renderComparisonReport(diff, before, after));
     console.log(`Comparison: ${out}/index.html · ${diff.frames.filter(f => f.identical).length}/${diff.frames.length} identical PNGs · judgment unreviewed`);
   } catch (e) { await fs.writeFile(path.join(out, 'failure.txt'), String(e.stack || e)); throw e; }
+  const differing = differingFrames(diff);
+  if (args.requireIdentical && differing.length) {
+    throw new Error(`Identical inputs rendered differently at ${differing.length} frame(s): ${differing.slice(0, 8).join(', ')}`);
+  }
 }
 try {
   const args = parseArgs(process.argv.slice(2));

@@ -31,7 +31,6 @@ const quantile = (arr, q) => {
 };
 const median = (arr) => quantile(arr, 0.5);
 const vfovFor = (hfov) => 2 * Math.atan(Math.tan((hfov * DEG) / 2) / ASPECT) / DEG;
-const hfovFor = (vfov) => 2 * Math.atan(Math.tan((vfov * DEG) / 2) * ASPECT) / DEG;
 
 /** Describe the crest inside a range's bbox: high cells, their principal
  *  axis, the summit and the surrounding floor. */

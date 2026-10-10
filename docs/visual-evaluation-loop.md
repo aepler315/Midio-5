@@ -15,8 +15,11 @@ On Linux CI, install browser system dependencies with `npx playwright install --
 Open `.smoke/baseline/index.html`. The report contains time-stamped checkpoints, every saved motion frame, diagnostic state, and source audio. Press a clip button to play the matching audio while the actual captured frames advance. Expand the consecutive-frame section to inspect an attack or transition frame by frame. Download and extract the entire evidence folder before opening an HTML report from CI.
 
 The full two-pass corpus can exceed 30 minutes on software WebGL. CI runs
-each complete recording in a separate job, retaining every checkpoint and
-motion sample in both passes and comparing identical inputs. For tight
+each complete recording in a separate job (one per song in
+`test/fixtures/visual-evaluation.json`), retaining every checkpoint and
+motion sample in both passes and comparing identical inputs with
+`--require-identical`: any PNG that differs between the two passes fails
+the job, since software WebGL renders identical inputs byte-for-byte. For tight
 iterations, use a focused manifest with one recording and a few windows;
 use the full corpus for acceptance.
 
