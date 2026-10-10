@@ -62,9 +62,9 @@ import {
 } from './render/StagePresets.js';
 import { createPresentingRenderer } from './render/PresentingRenderer.js';
 import { PixelPresentation, fitPixelRect } from './render/PixelPresentation.js';
-import { shouldDrawFrame } from './render/FrameCadence.js';
+import { FrameCadence } from './render/FrameCadence.js';
 import { readDisplayPrefs, writeDisplayPrefs, resolvePresentation, resolveDisplayPrefs } from './render/DisplayProfile.js';
-import { emaFps, resolveFpsHudVisible } from './render/FpsMeter.js';
+import { emaFps, resolveFpsHudVisible, PresentedFpsMeter } from './render/FpsMeter.js';
 import { LoadingShow } from './ui/LoadingShow.js';
 import { TitleBackdrop } from './ui/TitleBackdrop.js';
 import { clientToStageCoords } from './ui/StageCoords.js';
@@ -278,6 +278,8 @@ const rangeListening = true;
 let renderer = null;
 let titleBackdrop = null; // living title-screen backdrop (drawn while !running)
 let titleRafHandle = null;
+const playbackCadence = new FrameCadence();
+const titleCadence = new FrameCadence();
 let lastSpecSig = null; // cache-gate for the One-Spectrum CSS var sync (write only on key/form change)
 // A second, much coarser gate for the --glow-* tokens. See the note on
 // #app::before in style.css: those three feed a larger-than-viewport element
@@ -439,6 +441,7 @@ let running = false;
 let paused = false; // suspends the AudioContext itself -- the master clock everything derives from
 let fpsHudVisible = resolveFpsHudVisible(typeof location !== 'undefined' ? location.search : '');
 let fpsEma = null;
+const presentedFps = new PresentedFpsMeter();
 fpsHudEl?.classList.toggle('hidden', !fpsHudVisible);
 // Renderer path: ?renderer=webgl enables the optional WebGL post-FX overlay.
 // Default remains pure Canvas 2D so drag/upload MIDI never depends on GL.
@@ -554,8 +557,6 @@ function persistFpsCap(fps) {
 }
 
 let fpsCapMs = 1000 / readFpsCap();
-let lastDrawMs = null;
-let titleLastDrawMs = null;
 /** Exact backing-store size while tools/bulk-export.mjs is driving frames.
  *  Display-fit and the perf ladder both stand aside for it. */
 let bulkExportSize = null;
@@ -571,9 +572,12 @@ function fitPixelLayout() {
   if (integer) {
     const box = canvas.parentElement.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const fit = fitPixelRect(320, 180, box.width * dpr, box.height * dpr, 'integer');
+    const fit = fitPixelRect(320, 180, box.width * dpr, box.height * dpr, 'integer', { x: box.left * dpr, y: box.top * dpr });
     canvas.style.setProperty('--pixel-width', `${fit.width / dpr}px`);
     canvas.style.setProperty('--pixel-height', `${fit.height / dpr}px`);
+    canvas.style.setProperty('--pixel-scale', String(fit.scale / dpr));
+    canvas.style.setProperty('--pixel-left', `${box.left + fit.x / dpr}px`);
+    canvas.style.setProperty('--pixel-top', `${box.top + fit.y / dpr}px`);
   }
 }
 
@@ -743,6 +747,7 @@ function randomizeSeed() {
       const fps = Number(stageFpsEl.value) || 60;
       persistFpsCap(fps);
       fpsCapMs = 1000 / fps;
+      playbackCadence.reset(); titleCadence.reset(); presentedFps.reset();
       // The same reasoning as the resolution menu next to it: halving the
       // draw rate halves the work, so what the ladder learned at the old
       // rate describes a different workload. The frame callbacks go clean
@@ -930,6 +935,8 @@ function noteFrameGap(rafDeltaMs) {
 // where it happens; the frame-gap check above covers the projection cases
 // where it does not.
 document.addEventListener('visibilitychange', () => {
+  playbackCadence.reset(); titleCadence.reset(); presentedFps.reset();
+  lastRafMs = null;
   if (document.visibilityState === 'hidden') { displaySlept = true; return; }
   // Coming back, the first frames are a cold cache and a giant rAF gap, not
   // a scene the machine cannot draw. The ladder must not read them as
@@ -1214,6 +1221,7 @@ function updatePauseButtonUI() {
 function togglePause() {
   if (!running || !sim || !audioEngine) return;
   paused = !paused;
+  playbackCadence.reset(); presentedFps.reset();
   if (paused) audioEngine.ctx.suspend();
   else { audioEngine.ctx.resume(); lastRafMs = null; }
   updatePauseButtonUI();
@@ -1636,20 +1644,36 @@ function renderExportFrame(timeMs, { beforeDraw = null } = {}) {
   if (!Number.isFinite(target)) throw new Error('Export frame time is not a number.');
   if (audioEngine?.master) audioEngine.master.gain.value = 0;
   if (audioEngine?.ctx?.state === 'running') audioEngine.ctx.suspend();
-  const advanced = stepExportClock({
-    simTime,
-    targetMs: target,
-    stepMs: STEP_MS,
-    step: (dt, at) => sim.step(dt, at),
-  });
-  simTime = advanced.simTime;
-  if (typeof beforeDraw === 'function') beforeDraw();
-  const drawsBefore = renderer.drawCount ?? 0;
-  renderer.draw(sim, 0);
-  return {
-    width: canvas.width, height: canvas.height, timeMs: simTime,
-    draws: (renderer.drawCount ?? 0) - drawsBefore,
-  };
+  try {
+    const advanced = stepExportClock({
+      simTime,
+      targetMs: target,
+      stepMs: STEP_MS,
+      step: (dt, at) => sim.step(dt, at),
+    });
+    simTime = advanced.simTime;
+    if (typeof beforeDraw === 'function') beforeDraw();
+    const drawsBefore = renderer.drawCount ?? 0;
+    const result = renderer.draw(sim, 0);
+    if (!result?.presented || !renderer.getCaptureSource()) throw new Error(`Export presentation failed: ${result?.reason || 'no completed frame'}.`);
+    return {
+      width: canvas.width, height: canvas.height, timeMs: simTime,
+      draws: (renderer.drawCount ?? 0) - drawsBefore,
+      presented: true, generation: result.generation, frameId: result.frameId,
+    };
+  } catch (err) {
+    abortBulkExport();
+    throw failBulkExport(`Export presentation failed: ${err?.message || err}`);
+  }
+}
+
+function abortBulkExport() {
+  bulkExportArmed = false;
+  bulkExportSize = null;
+  bulkPresentation = null;
+  abortRecording('Export presentation failed; the recording was discarded.');
+  stopTimeline({ preservePause: true });
+  rangePresentation?.dispose();
 }
 
 /** Rebuild the current song at an exact frame size and arm the export clock.
@@ -1992,6 +2016,7 @@ function startTimeline(timelineData, extra = {}) {
 
   acc = 0;
   lastRafMs = null;
+  playbackCadence.reset(); presentedFps.reset(); fpsEma = null;
   // Fresh song, fresh button: the demo/play buttons must lose focus so a
   // stray keypress never re-"clicks" them.
   document.activeElement?.blur?.();
@@ -2092,8 +2117,13 @@ function startTimeline(timelineData, extra = {}) {
   if (exportMode) {
     // No rAF loop: the exporter asks for each frame. Frame 0 is drawn now so
     // the first capture is the opening, not an unpainted canvas.
-    try { renderer.draw(sim, 0); }
-    catch (err) { console.error('[bulk export] first frame', err); }
+    try {
+      const result = renderer.draw(sim, 0);
+      if (!result?.presented) throw new Error(result?.reason || 'no completed frame');
+    } catch (err) {
+      abortBulkExport();
+      throw failBulkExport(`Export presentation failed on the first frame: ${err?.message || err}`);
+    }
   } else {
     rafHandle = requestAnimationFrame(frame);
   }
@@ -2130,10 +2160,11 @@ function startTimeline(timelineData, extra = {}) {
     seek: (ms) => seekSong(ms),
     // tools/bulk-export.mjs drives these: arm at an exact size, then ask for
     // each output frame by time. See docs/video-export.md, "Bulk export".
-    exportReady: exportMode,
+    get exportReady() { return bulkExportArmed; },
     get durationMs() { return conductor?.durationMs || 0; },
     get exportSize() { return { width: canvas.width, height: canvas.height }; },
     get presentationDiagnostics() { return renderer?.diagnostics || titlePresentation?.diagnostics; },
+    get frameRates() { return { presented: presentedFps.fps, callback: fpsEma }; },
     get displayPrefs() { return { ...displayPrefs }; },
     beginBulkExport: (size) => beginBulkExport(size),
     renderExportFrame: (timeMs, options) => renderExportFrame(timeMs, options),
@@ -3368,7 +3399,7 @@ function frame(tRaf) {
     if (perfGovernor.level !== prevLevel) fitCanvas();
     fpsEma = emaFps(fpsEma, rafDeltaMs);
     if (fpsHudVisible && fpsHudEl) {
-      fpsHudEl.textContent = `${Math.round(fpsEma)} fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
+      fpsHudEl.textContent = `${Math.round(presentedFps.fps)} presented fps  ·  ${Math.round(fpsEma)} callback fps  ·  perf ${perfGovernor.level}/${PERF_MAX_LEVEL}`;
     }
   }
   lastRafMs = tRaf;
@@ -3413,11 +3444,11 @@ function frame(tRaf) {
   // FPS cap: skip the draw when we're ahead of the target frame period.
   // The sim still steps at full rate so audio sync stays tight; only the
   // GPU-bound draw is throttled.
-  if (!shouldDrawFrame(tRaf, lastDrawMs, 1000 / fpsCapMs)) {
+  if (!playbackCadence.shouldDraw(tRaf, 1000 / fpsCapMs)) {
+    presentedFps.sample(tRaf, false);
     rafHandle = requestAnimationFrame(frame);
     return;
   }
-  lastDrawMs = tRaf;
 
   if (pendingCapturePresetId && captureClock.captureReady) {
     const presetId = pendingCapturePresetId;
@@ -3426,8 +3457,11 @@ function frame(tRaf) {
   }
 
   const alpha = acc / STEP_MS;
+  let presented = false;
   try {
-    renderer.draw(sim, alpha);
+    const result = renderer.draw(sim, alpha);
+    presented = !!result?.presented;
+    if (!presented) throw new Error(`Presentation failed: ${result?.reason || 'no completed frame'}`);
   } catch (err) {
     // One bad frame must not kill the whole run (canvas NaN colors used to
     // throw here and leave the world frozen on the last good paint). But it
@@ -3525,9 +3559,12 @@ function frame(tRaf) {
 
   // One composite per rendered frame, after the stage is final --
   // visionLoop samples the same canvas here, which is what says so.
-  songRecorder?.captureFrame(renderer?.getCaptureSource());
+  const capture = presented ? renderer?.getCaptureSource() : null;
+  presentedFps.sample(tRaf, !!capture);
+  if (capture) songRecorder?.captureFrame(capture);
+  else if (songRecorder?.recording || pendingCapturePresetId) abortRecording('Presentation failed; the recording was discarded.');
   updateRecordReadout(tRaf);
-  visionLoop.maybeSample(tRaf, simTime);
+  if (presented) visionLoop.maybeSample(tRaf, simTime);
   debugOverlay.render();
 
   // Fallback completion: FractureEngine finishes after musical last impact +
@@ -3609,8 +3646,7 @@ function clientToStage(e) {
  *  instant a song starts. */
 function titleFrame(tRaf) {
   if (running) return;
-  if (!shouldDrawFrame(tRaf, titleLastDrawMs, 1000 / fpsCapMs)) { titleRafHandle = requestAnimationFrame(titleFrame); return; }
-  titleLastDrawMs = tRaf;
+  if (!titleCadence.shouldDraw(tRaf, 1000 / fpsCapMs)) { titleRafHandle = requestAnimationFrame(titleFrame); return; }
   // Rebuilt whenever the backing store changes size, not just once: the
   // backdrop bakes its star and nebula positions against the dimensions it
   // was constructed with, so one built for a 1920x1080 buffer draws almost
@@ -3634,6 +3670,7 @@ function titleFrame(tRaf) {
 }
 
 function startTitleBackdrop() {
+  titleCadence.reset();
   if (titleRafHandle == null) titleRafHandle = requestAnimationFrame(titleFrame);
 }
 
@@ -4735,6 +4772,17 @@ function finishRecording() {
     showErrorBanner('Could not save the recording: ' + (err?.message || err));
     syncRecordUI();
   });
+  syncRecordUI();
+}
+
+function abortRecording(message) {
+  const active = songRecorder?.recording || pendingCapturePresetId;
+  pendingCapturePresetId = null;
+  pendingExportPresetId = null;
+  songRecorder?.cancel();
+  if (!active) return;
+  captureClock.release(audioEngine?.nowMs || 0);
+  setExportNote(message, 'isWarning');
   syncRecordUI();
 }
 

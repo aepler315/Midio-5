@@ -82,3 +82,127 @@ test('persistent readback failures retry only after a presentation generation ch
   assert.equal(attempts, 2);
   owner.dispose();
 });
+
+for (const failure of ['denied', 'output-context', 'working-context', 'creation', 'commit']) {
+  test(`failed ${failure} presentation publishes no first or stale capture and cleans up`, () => {
+    const canvas = surface();
+    const residency = new GraphicsResidency({ budgetBytes: 1000000 });
+    const owner = new PixelPresentation({ canvas, presentation: pixel, residency });
+    assert.equal(owner.getCaptureSource(), null, 'a canvas reference is not a frame');
+    const source = owner.beginFrame();
+    assert.ok(source);
+    const good = owner.finishFrame();
+    assert.equal(good.presented, true);
+    assert.equal(owner.getCaptureSource().generation, good.generation);
+    owner.setPresentation({ ...pixel, pixelated: false }); // releases the working surface
+    assert.equal(owner.getCaptureSource(), null);
+    owner.setPresentation({ ...pixel, paletteId: 'range32' });
+    if (failure === 'denied') residency.budgetBytes = 1;
+    if (failure === 'output-context') canvas.getContext = () => null;
+    if (failure === 'working-context') canvas.ownerDocument.createElement = () => ({ width: 0, height: 0, getContext: () => null });
+    if (failure === 'creation') canvas.ownerDocument.createElement = () => { throw Error('creation failed'); };
+    if (failure === 'commit') {
+      const commit = residency.commit.bind(residency);
+      residency.commit = (reservation, resource, dispose) => { residency.release(reservation.key); return commit(reservation, resource, dispose); };
+    }
+    assert.equal(owner.beginFrame(), null);
+    assert.equal(owner.finishFrame().presented, false);
+    assert.equal(owner.getCaptureSource(), null, 'failed new profile must not advertise the previous frame');
+    assert.equal(residency.usedBytes, 0);
+    owner.dispose();
+    assert.equal(owner.getCaptureSource(), null);
+    const first = new PixelPresentation({ canvas, presentation: pixel, residency });
+    assert.equal(first.beginFrame(), null);
+    assert.equal(first.finishFrame().presented, false);
+    assert.equal(first.getCaptureSource(), null);
+    assert.equal(residency.usedBytes, 0);
+    first.dispose();
+  });
+}
+test('capture is invalid during a draw, after resize, external release and disposal', () => {
+  const canvas = surface(), residency = new GraphicsResidency();
+  const owner = new PixelPresentation({ canvas, presentation: pixel, residency });
+  owner.beginFrame(); owner.finishFrame();
+  const first = owner.getCaptureSource();
+  owner.beginFrame();
+  assert.equal(owner.getCaptureSource(), null);
+  owner.finishFrame();
+  assert.ok(owner.getCaptureSource().frameId > first.frameId);
+  canvas.width = 1920;
+  assert.equal(owner.getCaptureSource(), null);
+  owner.beginFrame(); owner.finishFrame();
+  residency.release(owner.key);
+  assert.equal(owner.getCaptureSource(), null);
+  assert.equal(owner.beginFrame().width, 320, 'released buffers are recreated with a reservation');
+  owner.finishFrame(); owner.dispose();
+  assert.equal(owner.getCaptureSource(), null);
+});
+test('failed output composite invalidates capture while a completed SecurityError Pixel fallback is valid', () => {
+  const canvas = surface(), owner = new PixelPresentation({ canvas, presentation: { ...pixel, paletteId: 'range32' } });
+  const source = owner.beginFrame();
+  source.getContext('2d').getImageData = () => { throw Object.assign(Error('tainted'), { name: 'SecurityError' }); };
+  assert.equal(owner.finishFrame().presented, true);
+  assert.ok(owner.getCaptureSource());
+  owner.beginFrame();
+  canvas.getContext('2d').drawImage = () => { throw Error('composite failed'); };
+  assert.equal(owner.finishFrame().presented, false);
+  assert.equal(owner.getCaptureSource(), null);
+  owner.dispose();
+});
+test('adapter explicitly reports an unsuccessful allocation without drawing', () => {
+  let draws = 0;
+  const adapter = createPresentingRenderer({ canvas: surface(), presentation: pixel, residency: new GraphicsResidency({ budgetBytes: 1 }),
+    rendererFactory: () => ({ draw() { draws++; }, dispose() {} }) });
+  assert.equal(adapter.draw({}, 0).presented, false);
+  assert.equal(draws, 0);
+  assert.equal(adapter.getCaptureSource(), null);
+  adapter.dispose();
+});
+
+test('disposed adapters and context loss after begin cannot publish successful presentation', () => {
+  const canvas=surface(320,180),owner=new PixelPresentation({canvas,presentation:pixel});
+  owner.beginFrame();
+  canvas.getContext('2d').isContextLost=()=>true;
+  assert.equal(owner.finishFrame().presented,false);
+  assert.equal(owner.getCaptureSource(),null);
+  const adapter=createPresentingRenderer({canvas:surface(),presentation:pixel,rendererFactory:()=>({draw(){},dispose(){}})});
+  assert.equal(adapter.draw({},0).presented,true);
+  adapter.dispose();
+  assert.equal(adapter.draw({},0).presented,false);
+  assert.equal(adapter.getCaptureSource(),null);
+  owner.dispose();
+});
+
+test('throwing inner disposal still invalidates capture and releases residency', () => {
+  const residency=new GraphicsResidency({budgetBytes:1000000});
+  const adapter=createPresentingRenderer({canvas:surface(),presentation:pixel,residency,
+    rendererFactory:()=>({draw(){},dispose(){throw new Error('inner cleanup failed');}})});
+  assert.equal(adapter.draw({},0).presented,true);
+  assert.ok(adapter.getCaptureSource());
+  assert.throws(()=>adapter.dispose(),/inner cleanup failed/);
+  assert.equal(adapter.getCaptureSource(),null);
+  assert.equal(residency.entries.size,0);
+  assert.equal(adapter.draw({},0).presented,false);
+  assert.doesNotThrow(()=>adapter.dispose());
+});
+
+test('failed reservation commit releases the uncommitted canvas storage', () => {
+  const canvas=surface(),buffer=surface(0,0);
+  canvas.ownerDocument.createElement=()=>buffer;
+  const residency=new GraphicsResidency({budgetBytes:1000000});
+  residency.commit=()=>false;
+  const owner=new PixelPresentation({canvas,presentation:pixel,residency});
+  assert.equal(owner.beginFrame(),null);
+  assert.deepEqual([buffer.width,buffer.height],[0,0]);
+  assert.equal(residency.pendingBytes,0);
+  owner.dispose();
+});
+
+test('reapplying a profile before a backing reset invalidates capture without retrying taint', () => {
+  const owner=new PixelPresentation({canvas:surface(),presentation:pixel});
+  owner.beginFrame();const first=owner.finishFrame();assert.ok(owner.getCaptureSource());
+  owner.setPresentation({...pixel});
+  assert.equal(owner.getCaptureSource(),null);
+  assert.equal(owner.generation,first.generation);
+  owner.beginFrame();assert.equal(owner.finishFrame().presented,true);owner.dispose();
+});

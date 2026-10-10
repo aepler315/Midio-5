@@ -223,7 +223,9 @@ export class SongRecorder {
    * Cheap by construction: one `drawImage` into a canvas of the export's
    * size. At the car preset that is a downscale into 800x480.
    */
-  captureFrame({ canvas = this.stage, pixelated = false, scaling = 'fit' } = {}) {
+  captureFrame(source = {}) {
+    if (source == null) return;
+    const { canvas = this.stage, pixelated = false, scaling = 'fit' } = source;
     if (!this.recording || !this._ctx || !canvas) return;
     const fit = pixelated ? fitPixelRect(canvas.width, canvas.height, this._canvas.width, this._canvas.height, scaling) : this._fit;
     if (JSON.stringify(fit) !== this._lastCaptureFit) {

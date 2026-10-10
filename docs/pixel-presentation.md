@@ -18,6 +18,12 @@ Preferences live in the versioned `smw:display:v1` record. Old `8bit` presets mi
 
 The 30/60 fps cap controls title and playback drawing independently of simulation. Offline export freezes the effective quality and look, and never treats frame capture cost as governor pressure. The debug overlay reports requested/effective look, working/output sizes, quality, palette status, transform time and readback time.
 
+Drawing returns an explicit `presented` result. Capture is nullable until a frame finishes successfully; profile/backing resets, allocation failure, context loss, released buffers and disposal invalidate readiness. Export aborts and discards the partial recording on presentation failure. Live playback keeps its audio/simulation clocks running and reports failures at bounded intervals. A successfully drawn Pixel fallback after palette taint is still a valid frame.
+
+Title and playback keep independent phase-preserving draw deadlines. The playback HUD labels delivered presentation FPS separately from callback FPS; the governor still receives raw callback timing. Integer layout resolves both origin and scale in physical pixels, including the parent's origin and DPR, and applies the logical image dimensions through a transform to avoid CSS layout rounding at fractional DPR.
+
+`npm run test:retro` verifies default Range v2 and explicit fallback, shader/context failures, real checkerboard raster boundaries at four DPRs, meaningful content and temporal changes, exact opaque pre-encode palettes, and export rejection. `npm run test:export` records and decodes live Pixel/Palette transitions using a generated fixture; its optional fourth argument `v2` requests and verifies the actual v2 backend. Lossy decoded frames use stated brightness/coverage tolerances for bars rather than exact palette membership. The bounded pixel browser CI job preserves diagnostic artifacts on failure.
+
 ```sh
 npm test
 npm run lint

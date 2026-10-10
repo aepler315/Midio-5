@@ -55,11 +55,12 @@ async function saveStage(page, destination) {
 // going missing again, as it did once already -- still shows up in the diff.
 const WORLDS = [
   { name: 'The Range', kind: 'alpine',
-    // The Range reserves the major upper-sky form for SpaceRidge. Optional
-    // mirage and broad god-ray fans are deliberately excluded there.
-    mustPaint: ['_drawSky', '_drawGround'],
-    mustNotPaint: ['_drawFataMorgana', '_drawGodRays'],
-    watch: ['drawDeepSky', '_drawStarfield', '_drawFarShore', '_drawOcean', '_drawLayer'] },
+    // The Range keeps its existing terrain/water composition and reserves
+    // the major upper-sky form for SpaceRidge. Its retired foreground ground
+    // bar must stay absent (including the explicit renderer fallback).
+    mustPaint: ['_drawSky', '_drawFarShore', '_drawOcean', '_drawLayer'],
+    mustNotPaint: ['_drawGround', '_drawFataMorgana', '_drawGodRays'],
+    watch: ['drawDeepSky', '_drawStarfield'] },
   { name: 'After Hours', kind: 'city',
     mustPaint: ['_drawSky', '_drawGround'],
     watch: ['drawDeepSky', '_drawHaze', '_drawFogBanks', '_drawMoon'] },
@@ -247,7 +248,7 @@ try {
 
       for (const pass of world.mustNotPaint || []) {
         assert.equal(paint[pass]?.missing, undefined, `${name}: missing ${pass} audit target`);
-        assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint an interior`);
+        assert.equal(paint[pass]?.paintedPx, 0, `${name}: ${pass} must not paint this world`);
       }
       // Same destination at deepest supported quality and reduced motion.
       await page.keyboard.press('r');

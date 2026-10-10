@@ -22,3 +22,21 @@ export function resolveFpsHudVisible(search = '') {
     return false;
   }
 }
+
+/** A bounded one-second window of completed presentations. Sample every
+ * callback, including skipped/failed draws, so failures decay to zero. */
+export class PresentedFpsMeter {
+  constructor() { this.reset(); }
+  reset() { this.times = []; this.started = null; this.last = null; this.fps = 0; }
+  sample(nowMs, presented) {
+    if (!Number.isFinite(nowMs)) return this.fps;
+    if (this.last != null && (nowMs < this.last || nowMs - this.last > 2000)) this.reset();
+    this.started ??= nowMs;
+    if (presented && nowMs !== this.last) this.times.push(nowMs);
+    this.last = nowMs;
+    this.times = this.times.filter(t => t > nowMs - 1000 + 1e-6);
+    const elapsed = Math.min(1000, nowMs - this.started);
+    this.fps = elapsed >= 250 ? this.times.length * 1000 / elapsed : 0;
+    return this.fps;
+  }
+}

@@ -59,7 +59,9 @@ async function runCapture(args) {
   const manifest = normalizeManifest(JSON.parse(await fs.readFile(manifestPath, 'utf8')));
   const out = path.resolve(args.out);
   await newOutput(out);
-  const report = { version: 1, status: 'failed', createdAt: new Date().toISOString(), settings: manifest.settings, songs: [],
+  const angle=process.env.VISUAL_ANGLE || 'swiftshader';
+  if(!['swiftshader','gl'].includes(angle))throw new Error('VISUAL_ANGLE must be swiftshader or gl');
+  const report = { angle, version: 1, status: 'failed', createdAt: new Date().toISOString(), settings: manifest.settings, songs: [],
     timingScope: 'Fixed export clock. Software WebGL; not a live playback or device FPS measurement.' };
   let server, browser;
   try {
@@ -68,7 +70,7 @@ async function runCapture(args) {
     await fs.writeFile(path.join(out, 'manifest.json'), JSON.stringify(manifest, null, 2));
     server = await serveSnapshot(snapshot);
     browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+      args: [`--use-angle=${angle}`, '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
     report.browser = browser.version();
     for (const song of manifest.songs) {
       const dir = path.join(out, song.id); await fs.mkdir(dir);

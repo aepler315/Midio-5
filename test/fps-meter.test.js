@@ -36,3 +36,22 @@ test('resolveFpsHudVisible: false when absent or on a malformed search string', 
   assert.equal(resolveFpsHudVisible('?renderer=webgl'), false);
   assert.equal(resolveFpsHudVisible(undefined), false);
 });
+
+test('delivered FPS counts successful presentations separately from 144 Hz callbacks', async () => {
+  const { PresentedFpsMeter } = await import('../src/render/FpsMeter.js');
+  const { FrameCadence } = await import('../src/render/FrameCadence.js');
+  const meter = new PresentedFpsMeter(), cadence = new FrameCadence();
+  let callbackFps = null;
+  for (let i = 0; i <= 1440; i++) {
+    const now = i * 1000 / 144;
+    callbackFps = emaFps(callbackFps, 1000 / 144);
+    meter.sample(now, cadence.shouldDraw(now, 60));
+  }
+  assert.ok(Math.abs(meter.fps - 60) <= 1, `delivered ${meter.fps}`);
+  assert.ok(Math.abs(callbackFps - 144) < .01);
+  for (let i = 1; i <= 150; i++) meter.sample(10000 + i * 1000 / 144, false);
+  assert.equal(meter.fps, 0, 'failed presentations are not delivered frames');
+  meter.reset();
+  meter.sample(15000, true);
+  assert.equal(meter.fps, 0, 'a resume does not count the gap as delivered time');
+});
