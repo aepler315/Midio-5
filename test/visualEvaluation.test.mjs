@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeManifest, captureSchedule, compareReports, imageDifference } from '../tools/lib/visual-evaluation.mjs';
+import { normalizeManifest, captureSchedule, compareReports, imageDifference, differingFrames } from '../tools/lib/visual-evaluation.mjs';
 
 const manifest = (song = {}) => ({ version: 1, songs: [{ id: 'song', fixture: 'contrast', ...song }] });
 test('rejects empty, duplicate, unsafe and ambiguous song inputs', () => {
@@ -49,6 +49,11 @@ test('comparison reports changed pixels without assigning a quality verdict', ()
   assert.equal(diff.frames[0].difference.changedFraction, 1);
   assert.equal(diff.verdict, 'unreviewed');
   assert.deepEqual(imageDifference([0, 0, 0, 255], [0, 0, 0, 255]), { changedFraction: 0, meanAbsoluteError: 0 });
+});
+test('a repeat run names every frame that differs from its identical-input baseline', () => {
+  assert.deepEqual(differingFrames(compareReports(report(), report())), []);
+  const b = report(); b.songs[0].frames[0].sha256 = 'c'.repeat(64);
+  assert.deepEqual(differingFrames(compareReports(report(), b)), ['a@1000']);
 });
 test('comparison refuses frames drawn at different actual musical times', () => {
   const a = report(), b = report();

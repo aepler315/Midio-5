@@ -8,7 +8,7 @@
     "start": "node tools/serve.js",
     "dev": "node tools/serve.js 8080",
     "archive": "node tools/archive-serve.mjs --open",
-    "lint": "eslint src tools test",
+    "lint": "eslint src tools test ridgeview",
     "test": "node --test test/*.js test/*.mjs",
     "test:all": "node --test",
     "test:smoke": "node tools/smoke.mjs",

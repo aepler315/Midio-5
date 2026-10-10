@@ -13,13 +13,28 @@ on:
 permissions:
   contents: read
 jobs:
+  songs:
+    # One capture job per corpus recording, read from the fixture so a song
+    # added there is never silently left out of CI.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ids: ${{ steps.read.outputs.ids }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          sparse-checkout: test/fixtures
+      - id: read
+        run: echo "ids=$(node -e 'console.log(JSON.stringify(require("./test/fixtures/visual-evaluation.json").songs.map(s => s.id)))')" >> "$GITHUB_OUTPUT"
+
   capture:
+    needs: songs
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        song: [silence, kicks, contrast]
+        song: ${{ fromJSON(needs.songs.outputs.ids) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/setup
@@ -42,7 +57,9 @@ jobs:
       - name: Repeat identical corpus
         run: npm run visual:eval -- --manifest .smoke/visual-evaluation/corpus.json --out .smoke/visual-evaluation/repeat
       - name: Compare identical inputs
-        run: npm run visual:eval -- --compare .smoke/visual-evaluation/baseline .smoke/visual-evaluation/repeat --out .smoke/visual-evaluation/comparison
+        # Software WebGL renders identical inputs byte-for-byte; any differing
+        # PNG means nondeterministic rendering and fails the job.
+        run: npm run visual:eval -- --compare .smoke/visual-evaluation/baseline .smoke/visual-evaluation/repeat --out .smoke/visual-evaluation/comparison --require-identical
       - name: Retain real rendered evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

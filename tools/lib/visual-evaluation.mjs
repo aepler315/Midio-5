@@ -165,3 +165,8 @@ export function compareReports(before, after) {
   }
   return { version: 1, verdict: 'unreviewed', frames };
 }
+
+/** `song@timeMs` for every compared frame whose PNG bytes differ. */
+export function differingFrames(diff) {
+  return diff.frames.filter(f => !f.identical).map(f => `${f.songId}@${f.timeMs}`);
+}

@@ -13,6 +13,13 @@ capture when changing render history; sparse captures skip draws between
 windows. Preserve baseline evidence and unrelated work. Do not auto-promote
 an aesthetic change merely because the capture command passed.
 
+Never commit captured evidence (PNG, GIF, MP4, ZIP, HTML reports, capture
+JSON) to the repository: every byte stays in git history forever. Keep it in
+`.smoke/`, retain it as a CI artifact (`actions/upload-artifact`), or attach
+anything that must outlive artifact retention to a GitHub Release, and link
+it from the PR description. `docs/evidence/` is closed to new files; see its
+README.
+
 Run relevant behavior tests and `npm test`/`npm run lint` before completion.
 Document unavailable browser/device checks accurately. For nonvisual changes,
 use the tests relevant to the change; a visual capture is unnecessary.

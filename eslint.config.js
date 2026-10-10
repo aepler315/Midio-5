@@ -34,8 +34,14 @@ export default [
     languageOptions: { globals: globals.audioWorklet },
   },
   {
+    // Ridgeview (ridgeview/README.md) is a separate browser app with its own
+    // package; same split: page code in src/, Node harnesses beside it.
+    files: ['ridgeview/src/**/*.{js,mjs}'],
+    languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: globals.browser },
+  },
+  {
     // Node harnesses that also evaluate code inside a page.
-    files: ['tools/**/*.{js,mjs}', 'test/**/*.{js,mjs}'],
+    files: ['tools/**/*.{js,mjs}', 'test/**/*.{js,mjs}', 'ridgeview/tools/**/*.{js,mjs}', 'ridgeview/test/**/*.{js,mjs}'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
@@ -61,6 +67,8 @@ export default [
       'node_modules/**', '.smoke/**', 'slskd/**', 'data/**', '_site/**',
       // Generated, minified Three.js subset (tools/build-range-runtime.mjs).
       'src/vendor/**',
+      // Ridgeview's vendored Three.js copy (ridgeview/tools/vendor-three.mjs).
+      'ridgeview/vendor/**',
       // Generated range profiles (tools/build-ranges.mjs): one JSON.stringify
       // blob each, so the same "data, not code" call as data/** above.
       // JSON writes shortest round-trip floats, and for a float32 sample

@@ -349,8 +349,6 @@ export class RangeScene {
       r.clear(true, true, false);
       r.render(p.depthScene, this.mirrorCamera);
       for (const band of BANDS) r.render(p.scenes[band], this.mirrorCamera);
-      if (u.uGiantPeak.value[0] > .001 && u.uMidioCloud.value < .5)
-        r.render(p.actors.reflection.scene, this.mirrorCamera);
       u.uClipBelow.value = -1e9;
       m.frame = frame.frameId;
       m.view = viewId;
@@ -664,10 +662,17 @@ export class RangeScene {
         // Three's compile() creates programs but does not reject a failed
         // link. Check before publishing: otherwise trees draw over empty
         // terrain, while presentation incorrectly suppresses its fallback.
+        // Every band (a band's trees may be absent from the far scene), the
+        // cast (not parented until it first appears) and the rock stage.
         const gl = this.renderer.getContext();
-        for (const scene of [scenes.far, depthScene]) {
-          const compiled = this.renderer.compile(scene, this.camera);
-          for (const m of compiled) {
+        const targets = [...BANDS.map(band => [scenes[band]]), [depthScene],
+          ...Object.values(actors.groups).map(group => [group, this.camera, scenes.far])];
+        if (stageGL) targets.push([stageGL.scene, stageGL.camera]);
+        const checked = new Set();
+        for (const [scene, camera = this.camera, target = null] of targets) {
+          for (const m of this.renderer.compile(scene, camera, target)) {
+            if (checked.has(m)) continue;
+            checked.add(m);
             for (const program of this.renderer.properties.get(m).programs.values()) {
               if (gl.getProgramParameter(program.program, gl.LINK_STATUS)) continue;
               if (gl.isContextLost()) throw new RangeAssetError('context-lost', `GPU context lost while compiling ${view.id}`);

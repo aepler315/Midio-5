@@ -22,6 +22,10 @@ jobs:
         run: npm run lint
       - name: Run test suite
         run: npm test
+      - name: Run Ridgeview test suite
+        # Ridgeview has its own package.json but resolves the same pinned
+        # three/playwright from the root install.
+        run: npm --prefix ridgeview test
 
   audio-smoke:
     runs-on: ubuntu-latest
